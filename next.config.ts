@@ -12,14 +12,14 @@ const isDesktopBuild = process.env.PI_WEB_DESKTOP_BUILD === "1";
 // swaps it for an equivalent built at runtime; both bundlers must run it.
 const gfmAutolinkEmailLoader = join(configDir, "lib/gfm-autolink-email-loader.cjs");
 
-const nextConfig: NextConfig = {
+console.log(
+  '[next.config.ts] LOADED:',
+  process.cwd(),
+  'allowedDevOrigins:',
+  ['macb00kpr0m4.taila0e40f.ts.net']
+);
 
-  // because:
-  //   ⚠ Blocked cross-origin request to Next.js dev resource /_next/hmr from "macb00kpr0m4.taila0e40f.ts.net". Cross-origin access to Next.js dev resources is blocked by default for safety.
-  // so now add this to allow this host in development, then I can access the dev server from my other machine via Tailscale.
-  allowedDevOrigins: [
-    'macb00kpr0m4.taila0e40f.ts.net',
-  ],
+const nextConfig: NextConfig = {
 
   logging: {
     // Use Next's source-level switch rather than filtering arbitrary stdout.
@@ -100,6 +100,11 @@ const nextConfig: NextConfig = {
     "172.30.*.*",
     "172.31.*.*",
     "192.168.*.*",
+
+    // Because:
+    //        ⚠ Blocked cross-origin request to Next.js dev resource /_next/hmr from "macb00kpr0m4.taila0e40f.ts.net". Cross-origin access to Next.js dev resources is blocked by default for safety.
+    // So now add this to allow this host in development, then I can access the dev server from my other machine via Tailscale.
+    'macb00kpr0m4.taila0e40f.ts.net',
   ],
   async headers() {
     return [
