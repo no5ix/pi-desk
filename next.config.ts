@@ -13,6 +13,14 @@ const isDesktopBuild = process.env.PI_WEB_DESKTOP_BUILD === "1";
 const gfmAutolinkEmailLoader = join(configDir, "lib/gfm-autolink-email-loader.cjs");
 
 const nextConfig: NextConfig = {
+
+  // because:
+  //   ⚠ Blocked cross-origin request to Next.js dev resource /_next/hmr from "macb00kpr0m4.taila0e40f.ts.net". Cross-origin access to Next.js dev resources is blocked by default for safety.
+  // so now add this to allow this host in development, then I can access the dev server from my other machine via Tailscale.
+  allowedDevOrigins: [
+    'macb00kpr0m4.taila0e40f.ts.net',
+  ],
+
   logging: {
     // Use Next's source-level switch rather than filtering arbitrary stdout.
     // Query strings can carry credentials, even when diagnostics are enabled.
