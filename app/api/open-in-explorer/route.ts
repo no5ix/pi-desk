@@ -2,7 +2,7 @@ import { stat } from "fs/promises";
 import { resolve } from "path";
 import { NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
-import { isFileManagerSupported, launchFileManager } from "@/lib/open-in-file-manager";
+import { fileManagerPlatform, isFileManagerSupported, launchFileManager } from "@/lib/open-in-file-manager";
 import { isLocalRequest } from "@/lib/remote-access";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,8 @@ function availabilityFor(request: Request): { supported: boolean; reason: string
 /** Lets the sidebar pick the button label and disable it when unavailable. */
 export async function GET(request: Request) {
   const { supported, reason } = availabilityFor(request);
-  return NextResponse.json({ supported, reason, platform: process.platform });
+  // Under WSL this is "win32": Explorer answers, so the button names it.
+  return NextResponse.json({ supported, reason, platform: fileManagerPlatform() });
 }
 
 /** Opens the session workspace in the OS file manager. */
