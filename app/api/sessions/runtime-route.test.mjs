@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gunzipSync } from "node:zlib";
 import test from "node:test";
 import { createJiti } from "jiti";
 
@@ -114,7 +113,7 @@ test("the running poll carries the sidebar state revision and deleting a session
   assert.equal(await revision(), 2);
 });
 
-test("session listing returns a gzip-compressed response when the client accepts it", async (t) => {
+test("session listing sends plain JSON and varies on Accept-Encoding for the server to compress", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "pi-web-list-gzip-"));
   const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
   process.env.PI_CODING_AGENT_DIR = dir;
@@ -141,9 +140,12 @@ test("session listing returns a gzip-compressed response when the client accepts
   }));
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("Content-Encoding"), "gzip");
+  // Next 16.4.6 compresses route-handler responses. A handler-set
+  // `Content-Encoding` is dropped as forwarded framing and the already-gzipped
+  // bytes get encoded a second time, so the handler must send plain JSON.
+  assert.equal(response.headers.get("Content-Encoding"), null);
   assert.match(response.headers.get("Vary") ?? "", /(?:^|,\s*)Accept-Encoding(?:\s*,|$)/i);
-  const payload = JSON.parse(gunzipSync(Buffer.from(await response.arrayBuffer())).toString("utf8"));
+  const payload = JSON.parse(await response.text());
   assert.equal(payload.sessions.length, 4);
   // Bounded by the fork's sessionListFirstMessage (its own test pins the limit).
   assert.ok(payload.sessions[0].firstMessage.length < firstMessage.length);
@@ -361,7 +363,7 @@ test("live detail and state routes work without a persisted JSONL file", async (
   });
 });
 
-test("session detail returns a gzip-compressed response when the client accepts it", async (t) => {
+test("session detail sends plain JSON for the server to compress", async (t) => {
   const previousRegistry = globalThis.__piSessions;
   const id = "live-route-gzip-test";
   const timestamp = "2026-09-05T00:00:00.000Z";
@@ -401,7 +403,7 @@ test("session detail returns a gzip-compressed response when the client accepts 
   );
 
   assert.equal(response.status, 200);
-  assert.equal(response.headers.get("Content-Encoding"), "gzip");
-  const payload = JSON.parse(gunzipSync(Buffer.from(await response.arrayBuffer())).toString("utf8"));
+  assert.equal(response.headers.get("Content-Encoding"), null);
+  const payload = JSON.parse(await response.text());
   assert.equal(payload.info.firstMessage, firstMessage);
 });

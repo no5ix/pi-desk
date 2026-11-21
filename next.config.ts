@@ -74,6 +74,10 @@ const nextConfig: NextConfig = {
     // are truncated and fail with "Failed to parse body as FormData."
     proxyClientMaxBodySize: "128mb",
     optimizePackageImports: ["react-syntax-highlighter"],
+    // Next 16.4.0 added this upgrade policy. "security" keeps `next dev` and
+    // `next build` reminding about published advisories for the installed
+    // version only, never about newer majors.
+    agentUpgrade: "security",
   },
   // next/image is only used for the static logo, so the /_next/image optimizer
   // (and its sharp/libheif attack surface, see GHSA-2xp9-vwfh-vxw4) is not needed.

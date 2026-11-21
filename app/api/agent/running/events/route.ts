@@ -66,8 +66,13 @@ export async function GET(req: Request) {
   return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      // Next 16.4.6 compresses route-handler responses. `no-transform` keeps
+      // that middleware off this stream: a gzipper with no per-chunk flush
+      // holds every event, including the 30s heartbeat, in its buffer.
+      // Same pair as the agent-events and terminal streams above.
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }

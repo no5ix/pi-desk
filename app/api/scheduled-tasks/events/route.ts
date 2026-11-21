@@ -36,6 +36,8 @@ export async function GET(req: Request) {
     cancel() { dispose(); },
   });
   return new Response(stream, {
-    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+    // `no-transform`: Next 16.4.6's route-handler compression would buffer
+    // this stream (see the agent-events route).
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" },
   });
 }
