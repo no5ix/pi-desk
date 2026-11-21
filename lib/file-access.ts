@@ -75,3 +75,13 @@ export async function isCwdAllowed(target: string): Promise<boolean> {
   const allowedRoots = await getAllowedFileRoots();
   return isFilePathAllowed(target, allowedRoots) && isExistingFilePathAllowed(target, allowedRoots);
 }
+
+/**
+ * The answer that refuses a request's project folder: 400 without one, 403
+ * when it is outside the folders Pi Web may read. Undefined when allowed.
+ */
+export async function cwdAccessRefusal(cwd: string | null | undefined): Promise<Response | undefined> {
+  if (!cwd) return Response.json({ error: "cwd required" }, { status: 400 });
+  if (!isExistingFilePathAllowed(cwd, await getAllowedFileRoots())) return Response.json({ error: "Access denied" }, { status: 403 });
+  return undefined;
+}
