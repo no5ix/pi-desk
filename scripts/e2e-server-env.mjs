@@ -18,6 +18,8 @@ export function createE2EServerEnv(parentEnv, agentDir, mode) {
     LOCALAPPDATA: join(home, "AppData", "Local"),
     NODE_ENV: mode === "dev" ? "development" : "production",
     PI_WEB_PASSWORD: "",
+    // A real tailnet listener must not be added by a test server (lib/tailscale-serve.ts).
+    PI_WEB_DISABLE_TAILSCALE_SERVE: "1",
     NEXT_TELEMETRY_DISABLED: "1",
   };
   // Desktop shells export their serialized config; Next must read this checkout's

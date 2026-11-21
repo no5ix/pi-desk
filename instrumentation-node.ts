@@ -4,6 +4,7 @@ import { closeAllAgentEventStreams } from "@/lib/agent-event-stream";
 import { startScheduler } from "@/lib/scheduled-tasks";
 import { restartRelayFromConfig } from "@/lib/relay/runtime";
 import { applyCodemodeWorkerDefault } from "@/lib/codemode-workers";
+import { startTailscaleServeAtStartup } from "@/lib/tailscale-serve";
 
 export function registerNodeInstrumentation(): void {
   // Before any session can run a codemode script (lib/codemode-workers.ts).
@@ -34,6 +35,12 @@ export function registerNodeInstrumentation(): void {
       console.error("[relay] could not start:", error instanceof Error ? error.message : error);
     });
   }
+
+  // Tailscale Serve for this port (Settings › Remote access). Unawaited: the
+  // CLI calls take seconds and register() must not delay Next's `Ready` line,
+  // which bin/browser-opener.js waits for. Off with PI_WEB_DISABLE_TAILSCALE_SERVE=1;
+  // macOS only. Prints `tailscale serve status` in green when it lands.
+  startTailscaleServeAtStartup();
 
   // In production Next 16 answers SIGINT/SIGTERM with server.close() and waits
   // for every connection to end, without a timeout. SSE streams only end when

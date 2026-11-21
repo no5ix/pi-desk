@@ -3349,6 +3349,50 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   font-size: var(--fs-caption);
   font-weight: var(--fw-medium);
 }
+
+/* The project line under the topbar title: folder + project name, then the git
+   branch. The `> small` rule above stops matching once the labels live inside this
+   row, so the labels repeat it. The branch is dim monospace, like the sidebar's
+   `.sidebar-project-tree-branch`, and takes the remaining width last. */
+.app-topbar-subtitle-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 2px;
+}
+.app-topbar-project,
+.app-topbar-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+}
+.app-topbar-project {
+  flex: 0 1 auto;
+}
+.app-topbar-branch {
+  flex: 0 1 auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+.app-topbar-project svg,
+.app-topbar-branch svg {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+.app-topbar-project > span,
+.app-topbar-branch > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .native-icon-button,
 .native-toolbar-button {
   border: 0 !important;
@@ -5444,7 +5488,8 @@ html.dark {
     max-width: 160px;
   }
 
-  .app-topbar-title > small {
+  .app-topbar-title > small,
+  .app-topbar-subtitle-row {
     display: none;
   }
 }

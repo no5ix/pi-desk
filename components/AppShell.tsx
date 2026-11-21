@@ -106,6 +106,9 @@ import type { McpErrorResponse, ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { FileExplorerHandle } from "./FileExplorer";
 import type { AgentEndInfo } from "@/hooks/useAgentSession";
+import { useProjectBranch } from "@/hooks/useProjectBranch";
+import { sendSafariNotification } from "@/lib/safari-notification";
+import { formatCompletionSummary } from "@/lib/completion-notification";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
@@ -1503,6 +1506,22 @@ export function AppShell() {
     // A stopped run did not finish a task: refresh, but announce nothing.
     if (end?.aborted) return;
     if (isHiddenRelation(selectedSession?.relation)) return;
+
+    // Settings › General › Safari notification: the local macOS notification carries
+    // the run's length and its start/end clock times. It is deliberately not gated on
+    // this tab's focus — it is a Notification Center notice on the computer running Pi,
+    // and the user may be looking at any window, not at this page.
+    if (end?.startedAt !== undefined && end.endedAt !== undefined) {
+      void sendSafariNotification({
+        title: selectedSession?.name ?? translate("i18n.sessionComplete"),
+        body: formatCompletionSummary(
+          translate("safariNotify.summary"),
+          { startedAt: end.startedAt, endedAt: end.endedAt, poppedAt: Date.now() },
+          locale,
+        ),
+      });
+    }
+
     if (!shouldShowBrowserNotification()) return;
     const targetSession = selectedSession;
     deliverSessionNotification({
@@ -1511,7 +1530,7 @@ export function AppShell() {
       body: translate("i18n.taskFinished"),
       tag: targetSession ? `pi-session-complete:${targetSession.id}` : "pi-session-complete",
     });
-  }, [deliverSessionNotification, hydrateSelectedSession, selectedSession, translate]);
+  }, [deliverSessionNotification, hydrateSelectedSession, locale, selectedSession, translate]);
 
   // Scheduled runs have their own notification (success or failure, which task, why).
   // The desktop app shows it natively; a browser tab uses the same path as session completion.
@@ -2037,6 +2056,16 @@ export function AppShell() {
     : isChatWorkspaceActive
       ? translate("workspace.chatTitle")
       : activeCwdName ?? translate("appshell.subtitle");
+  // The git branch beside the project name. A selected session carries it
+  // (SessionInfo.branch, lib/session-reader.ts); a fresh composer asks the worktree
+  // endpoint for its project. Chats and page views have no repository, so no chip.
+  const activeProjectBranch = useProjectBranch(
+    isChatWorkspaceActive || pageOpen || selectedSession ? null : visibleProjectCwd,
+  );
+  const topBarBranch = isChatWorkspaceActive || pageOpen
+    ? null
+    : selectedSession?.branch ?? activeProjectBranch;
+  const topBarProjectIcon = !pageOpen && !isChatWorkspaceActive && !!activeCwdName;
   const windowTitle = isChatWorkspaceActive
     ? `${topBarTitle} - ${PRODUCT_NAME}`
     : activeCwdName
@@ -2363,7 +2392,34 @@ export function AppShell() {
           )}
           <div className="app-topbar-title" title={topBarTitle}>
             <span>{topBarTitle}</span>
-            <small>{topBarSubtitle}</small>
+            {topBarSubtitle && (
+              <span className="app-topbar-subtitle-row">
+                <small className="app-topbar-project">
+                  {topBarProjectIcon && (
+                    // The sidebar's project folder (SessionSidebar's row glyph), so the
+                    // header and the project tree read as the same object.
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  )}
+                  <span>{topBarSubtitle}</span>
+                </small>
+                {topBarBranch && (
+                  <small
+                    className="app-topbar-branch"
+                    title={translate("chat.currentBranch", { branch: topBarBranch })}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <line x1="6" y1="3" x2="6" y2="15" />
+                      <circle cx="18" cy="6" r="3" />
+                      <circle cx="6" cy="18" r="3" />
+                      <path d="M18 9a9 9 0 0 1-9 9" />
+                    </svg>
+                    <span>{topBarBranch}</span>
+                  </small>
+                )}
+              </span>
+            )}
           </div>
           {showChat && !pageOpen && projectTrust?.requiresTrust && !projectTrust.trusted && (
             <button

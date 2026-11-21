@@ -23,6 +23,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { formatCompactRelativeTime, formatRelativeTime } from "@/lib/i18n/format";
 import { createPortal } from "react-dom";
 import { ProjectPicker, selectProjectDirectoryNative } from "./ProjectPicker";
+import { pickProjectDirectoryFromServer } from "@/lib/project-directory-pick";
 import {
   ProjectContextMenu,
   currentCheckout,
@@ -1227,6 +1228,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   const handleAddProject = useCallback(async () => {
     if (!isTauriDesktop()) {
+      // A browser tab cannot return a folder path (Safari has no showDirectoryPicker,
+      // a directory file input reports names only), so the local server shows the
+      // native macOS panel — the same Finder dialog the desktop app gets from the
+      // Tauri plugin. Null means cancelled/non-macOS/remote/refused, and the in-app
+      // picker stays as the fallback for a typed path.
+      const picked = await pickProjectDirectoryFromServer(t("sidebar.addProjectPrompt"));
+      if (picked) {
+        activateProject(picked);
+        return;
+      }
       setProjectPickerOpen(true);
       return;
     }
@@ -1237,7 +1248,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } catch (error) {
       console.error("Failed to select project folder:", error);
     }
-  }, [selectedCwd, homeDir, activateProject]);
+  }, [activateProject, homeDir, selectedCwd, t]);
 
   const archiveProject = useCallback((projectRoot: string) => {
     archiveProjectRoot(projectRoot);

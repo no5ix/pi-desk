@@ -23,7 +23,7 @@ const CANDIDATES: Record<string, string[]> = {
   win32: ["C:\\Program Files\\Tailscale\\tailscale.exe"],
 };
 
-function tailscaleBinaries(platform = process.platform): string[] {
+export function tailscaleBinaries(platform = process.platform): string[] {
   return [...(CANDIDATES[platform] ?? []).filter((path) => existsSync(path)), "tailscale"];
 }
 
@@ -69,7 +69,7 @@ export function readTailscaleStatus(): Promise<TailscaleStatus> {
   return status;
 }
 
-async function readTailscaleStatusUncached(): Promise<TailscaleStatus> {
+export async function readTailscaleStatusUncached(): Promise<TailscaleStatus> {
   for (const binary of tailscaleBinaries()) {
     try {
       return parseTailscaleStatus(await run(binary));

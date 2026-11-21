@@ -22,7 +22,9 @@ async function checkCwdAllowed(cwd: string): Promise<NextResponse | null> {
   return (await isCwdAllowed(cwd)) ? null : NextResponse.json({ error: "Access denied" }, { status: 403 });
 }
 
-// GET /api/worktrees?cwd=  →  { projectRoot, projectKey, isGit, isTopLevel, currentWorktreePath, worktrees }
+// GET /api/worktrees?cwd=  →  { projectRoot, projectKey, isGit, isTopLevel, currentWorktreePath, worktrees, branch }
+//   `branch` is the cwd's current branch (null for non-git / detached HEAD), read from
+//   the same resolveProject() call, so the conversation header gets it for free.
 //   &branches=1 additionally returns { branches (local), remoteBranches (remote-only) }
 export async function GET(req: Request) {
   try {
@@ -71,6 +73,7 @@ export async function GET(req: Request) {
       isTopLevel: project.isTopLevel,
       currentWorktreePath,
       worktrees,
+      branch: project.branch,
       ...(includeBranches ? { branches, remoteBranches } : {}),
     });
   } catch (error) {

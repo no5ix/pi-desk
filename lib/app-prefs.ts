@@ -45,6 +45,8 @@ export const APP_PREF_KEYS = {
   updateSnooze: "pi-web:update-snooze",
   closeQuits: "pi-desktop-close-quits",
   notifyOnComplete: "pi-desktop-notify-on-complete",
+  /** Settings › General › Safari notification: a local macOS notification when a task ends. */
+  safariNotifyOnComplete: "pi-web:safari-notify-on-complete",
   chatDrafts: "pi-chat-drafts-v1",
   diffViewMode: "pi-diff-view-mode",
   /** Tasks page layout: "calendar" or the list (anything else). */

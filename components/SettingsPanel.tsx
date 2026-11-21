@@ -39,6 +39,7 @@ import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigDetailNavigationContext, ConfigSwitch, type ConfigDetailNavigation } from "./SettingsUi";
 import { ArtifactsSettingRow, AutoTitleSettingRow } from "./ArtifactsSettingRow";
 import { RemoteAccessSection } from "./RemoteAccessSection";
+import { SafariNotificationSection } from "./SafariNotificationSection";
 import { RelaySection } from "./RelaySection";
 import { NetworkProxySection } from "./NetworkProxySection";
 import { ChatsSettingsSection } from "./ChatsSettingsSection";
@@ -387,6 +388,8 @@ function GeneralSettings({
             <RelaySection />
 
             <RemoteAccessSection />
+
+            <SafariNotificationSection />
           </div>
         </div>
       </div>

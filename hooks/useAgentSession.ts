@@ -194,6 +194,14 @@ export type BuiltinSlashCommandResult =
 /** How a run ended, for completion feedback: `aborted` when it was stopped rather than finished. */
 export interface AgentEndInfo {
   aborted: boolean;
+  /**
+   * When the hook saw the run begin (the prompt submit, or its `agent_start` event).
+   * With `endedAt` this is the "task lasted" span of the completion notification
+   * (Settings › General › Safari notification, lib/completion-notification.ts).
+   */
+  startedAt?: number;
+  /** When the run settled. */
+  endedAt?: number;
 }
 
 export interface UseAgentSessionOptions {
@@ -1361,12 +1369,25 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return wasRunning;
   }, []);
 
+  // A run's wall clock, for the completion notification's start/end times. The start is
+  // stamped when the prompt is sent (an extension-triggered run has no local submit) and
+  // kept until the run settles, so the several agent_end/agent_settled paths agree.
+  const runStartedAtRef = useRef<number | null>(null);
+  const beginRunTiming = useCallback(() => {
+    if (runStartedAtRef.current === null) runStartedAtRef.current = Date.now();
+  }, []);
+  const endRunTiming = useCallback((aborted: boolean): AgentEndInfo => {
+    const startedAt = runStartedAtRef.current;
+    runStartedAtRef.current = null;
+    return startedAt === null ? { aborted } : { aborted, startedAt, endedAt: Date.now() };
+  }, []);
+
   const notifyPromptStage = useCallback((runId: number, aborted = false) => {
     if (notifiedPromptRunIdRef.current === runId) return false;
     notifiedPromptRunIdRef.current = runId;
-    onAgentEnd?.({ aborted });
+    onAgentEnd?.(endRunTiming(aborted));
     return true;
-  }, [onAgentEnd]);
+  }, [endRunTiming, onAgentEnd]);
 
   const scheduleEventStreamClose = useCallback((sid: string) => {
     if (sessionPropIdRef.current === sid) {
@@ -1448,11 +1469,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (promptWasPending) {
         notifyPromptStage(runId);
       } else if (agentWasActive && wasRunning) {
-        onAgentEnd?.({ aborted: false });
+        onAgentEnd?.(endRunTiming(false));
       }
       if (sid) scheduleEventStreamClose(sid);
     }
-  }, [loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, settleUiStage]);
+  }, [loadSession, notifyPromptStage, onAgentEnd, scheduleEventStreamClose, settleUiStage, endRunTiming]);
 
   const waitForPromptSettlement = useCallback(async (sid: string, runId?: number) => {
     await delay(PROMPT_SETTLE_INITIAL_DELAY_MS);
@@ -1611,6 +1632,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       case "agent_start":
         cancelEventStreamGrace();
+        beginRunTiming();
         sdkAgentActiveRef.current = true;
         agentRunningRef.current = true;
         setAgentRunning(true);
@@ -1666,7 +1688,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           void loadSession(sid);
           scheduleEventStreamClose(sid);
         }
-        if (wasRunning) onAgentEnd?.({ aborted: event.aborted === true });
+        if (wasRunning) onAgentEnd?.(endRunTiming(event.aborted === true));
         break;
       }
       case "prompt_done":
@@ -1889,7 +1911,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleForkAgentEvent(event);
         break;
     }
-  }, [addNotice, cancelEventStreamGrace, handleExtensionUiRequest, handleForkAgentEvent, loadSession, notifyPromptStage, onAgentEnd, reportCompactFailure, scheduleEventStreamClose, scrollToBottom, setCompactNotice, settleUiStage, syncLiveModel]);
+  }, [addNotice, beginRunTiming, cancelEventStreamGrace, endRunTiming, handleExtensionUiRequest, handleForkAgentEvent, loadSession, notifyPromptStage, onAgentEnd, reportCompactFailure, scheduleEventStreamClose, scrollToBottom, setCompactNotice, settleUiStage, syncLiveModel]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -1936,6 +1958,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
     const promptRunId = promptRunIdRef.current + 1;
     cancelEventStreamGrace();
+    beginRunTiming();
     rpcPromptPendingRef.current = true;
 
     const imageBlocks = images?.map((img) => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mimeType, data: img.data } }));
@@ -2030,7 +2053,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, cancelEventStreamGrace, chatWorkspace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, editEntryId, setEdit, branchSummarySessionIdRef, t]);
+  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, beginRunTiming, cancelEventStreamGrace, chatWorkspace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, editEntryId, setEdit, branchSummarySessionIdRef, t]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
