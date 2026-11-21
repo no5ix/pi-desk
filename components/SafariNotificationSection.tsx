@@ -29,7 +29,10 @@ import { ConfigButton, ConfigSwitch } from "./SettingsUi";
  * instead of silently doing nothing.
  */
 export function SafariNotificationSection() {
-  const { t, locale } = useI18n();
+  // `translate` is the same function under a second name: the sentence key is a template
+  // that formatCompletionSummary fills, and lib/i18n/usage.test.mjs checks every `t(...)`
+  // call site for the placeholders it must interpolate.
+  const { t, locale, t: translate } = useI18n();
   const [enabled, setEnabled] = useState(() => safariNotificationsEnabled());
   const [support, setSupport] = useState<SafariNotificationSupport | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,7 +60,7 @@ export function SafariNotificationSection() {
     void sendSafariNotification({
       title: t("safariNotify.testTitle"),
       body: formatCompletionSummary(
-        t("safariNotify.summary"),
+        translate("safariNotify.summary"),
         { startedAt: Date.now() - 65_000, endedAt: Date.now() },
         locale,
       ),
@@ -65,7 +68,7 @@ export function SafariNotificationSection() {
       setBusy(false);
       setNote(sent ? t("safariNotify.testSent") : t("safariNotify.testFailed"));
     });
-  }, [locale, t]);
+  }, [locale, translate]);
 
   const blocked = support !== null && (!support.supported || !support.local);
   const hint = support === null

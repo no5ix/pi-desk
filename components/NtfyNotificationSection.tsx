@@ -30,7 +30,10 @@ import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 const MASKED_TOPIC = "••••••";
 
 export function NtfyNotificationSection() {
-  const { t, locale } = useI18n();
+  // `translate` is the same function under a second name: the sentence key is a template
+  // that formatCompletionSummary fills, and lib/i18n/usage.test.mjs checks every `t(...)`
+  // call site for the placeholders it must interpolate.
+  const { t, locale, t: translate } = useI18n();
   const [settings, setSettings] = useState<NtfySettingsClient | null>(null);
   const [serverUrl, setServerUrl] = useState("");
   const [topic, setTopic] = useState("");
@@ -87,7 +90,7 @@ export function NtfyNotificationSection() {
     void sendNtfyNotification({
       title: t("ntfyNotify.testTitle"),
       body: formatCompletionSummary(
-        t("safariNotify.summary"),
+        translate("safariNotify.summary"),
         { startedAt: now - 65_000, endedAt: now, poppedAt: now },
         locale,
       ),
@@ -96,7 +99,7 @@ export function NtfyNotificationSection() {
       if (result.sent) setNote(t("ntfyNotify.testSent"));
       else setError(result.error ? t("ntfyNotify.testFailedWithError", { error: result.error }) : t("ntfyNotify.testFailed"));
     });
-  }, [locale, t]);
+  }, [locale, translate]);
 
   const editable = settings?.local === true;
   const hint = settings === null

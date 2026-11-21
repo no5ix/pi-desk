@@ -74,7 +74,12 @@ test("a removed worktree is listed from the repo it branched from", async () => 
   // Not merely some list: the same one the repo answers, which is what a session that ran
   // without worktree isolation gets.
   assert.deepEqual(fromRemoved.body, fromRepo.body);
-  assert.deepEqual(fromRemoved.body.modelList.map((m) => `${m.provider}:${m.id}`), ["acme:one"], "an empty list would make the comparison say nothing");
+  // The guard against a vacuous comparison is the fixture's own provider, not the whole
+  // list: the SDK also lists every provider this machine has credentials for (an
+  // ANTHROPIC_API_KEY in the environment adds Anthropic's models), and that is not what
+  // this test is about — the two answers being the same list is.
+  assert.ok(fromRemoved.body.modelList.some((m) => `${m.provider}:${m.id}` === "acme:one"),
+    "an empty list, or one without the fixture provider, would make the comparison say nothing");
 });
 
 test("the repo a removed worktree falls back to is authorized as any other cwd", async () => {

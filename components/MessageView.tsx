@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState, useRef, useEffect, useMemo } from "react";
+import { memo, useState, useRef, useEffect, useMemo, useContext } from "react";
 import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
@@ -11,6 +11,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { formatDurationHms } from "@/lib/completion-notification";
+import { ProcessDetailsContext } from "./process-details-context";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
 import { isThinkingLevelRefusal, refusalAllowedValues } from "@/lib/thinking-level-error";
 import { diffGapLabel, parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
@@ -1047,7 +1048,12 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
   blockIndex: number;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(isThinkingExpandedByDefault);
+  // A thinking card inside a turn's Process details opens collapsed even when the
+  // "expand thinking by default" preference is on: opening the group reveals the steps of
+  // the turn, not all of their text. Outside the group — a thinking message on its own, a
+  // live reply — the preference rules, and the card stays clickable either way.
+  const insideProcessDetails = useContext(ProcessDetailsContext);
+  const [expanded, setExpanded] = useState(() => isThinkingExpandedByDefault() && !insideProcessDetails);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1057,10 +1063,10 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
 
   // Keep already-mounted blocks in sync when the preference changes.
   useEffect(() => {
-    const onChange = () => setExpanded(isThinkingExpandedByDefault());
+    const onChange = () => setExpanded(isThinkingExpandedByDefault() && !insideProcessDetails);
     window.addEventListener(THINKING_EXPANDED_EVENT, onChange);
     return () => window.removeEventListener(THINKING_EXPANDED_EVENT, onChange);
-  }, []);
+  }, [insideProcessDetails]);
 
   // Load deferred history content whenever the block is expanded.
   // loadThinkingContent() memoizes in-flight promises and drops failed ones
@@ -1887,10 +1893,14 @@ function CompactionMessageView({ message, kind = "compaction" }: { message: Cust
   const summary = getMessageText(message.content);
   const parsedSummary = useMemo(() => parseCompactionSummary(summary), [summary]);
   const time = formatTime(message.timestamp, locale);
+  // A compaction is a note about the past, not part of the conversation, so the card
+  // opens collapsed: its header (label, time) stays visible and is the toggle.
+  const [expanded, setExpanded] = useState(false);
 
   return (
     <div style={{ marginBottom: 16 }}>
       <div
+        className="compaction-card"
         style={{
           border: "var(--hairline) solid var(--border)",
           borderRadius: "var(--radius-md)",
@@ -1898,23 +1908,46 @@ function CompactionMessageView({ message, kind = "compaction" }: { message: Cust
           background: "var(--bg)",
         }}
       >
-        <div
+        <button
+          type="button"
+          className="compaction-card-header"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+          title={t(expanded ? "chat.collapseCompaction" : "chat.expandCompaction")}
           style={{
             display: "flex",
             alignItems: "center",
             gap: 8,
+            width: "100%",
             padding: "7px 10px",
-            borderBottom: "var(--hairline) solid var(--border)",
+            borderBottom: expanded ? "var(--hairline) solid var(--border)" : "none",
             background: "var(--bg-panel)",
             color: "var(--text-muted)",
+            textAlign: "left",
           }}
         >
+          <svg
+            className="compaction-card-chevron"
+            data-expanded={expanded ? "true" : "false"}
+            width="11"
+            height="11"
+            viewBox="0 0 15 15"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="4 2.5 7.5 6 4 9.5" />
+          </svg>
           <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)", fontWeight: "var(--fw-semibold)" }}>
             {kind === "branch_summary" ? "branch summary" : "compaction"}
           </span>
           {time && <span className="message-meta" style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{time}</span>}
-        </div>
+        </button>
 
+        {expanded && (
         <div style={{ padding: "11px 13px 12px" }}>
           <div style={{ color: "var(--text)", fontSize: "calc(15px + var(--chat-font-size-offset, 0px))", fontWeight: "var(--fw-bold)", lineHeight: 1.35 }}>
              {t(kind === "branch_summary" ? "i18n.branchSummaryTitle" : "i18n.conversationCompacted")}
@@ -1929,6 +1962,7 @@ function CompactionMessageView({ message, kind = "compaction" }: { message: Cust
           )}
           <CompactionFileMetadata readFiles={parsedSummary.readFiles} modifiedFiles={parsedSummary.modifiedFiles} />
         </div>
+        )}
       </div>
     </div>
   );

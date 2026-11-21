@@ -10,6 +10,7 @@ import { isHiddenRelation, SIDE_BOUNDARY_MESSAGE_TYPE } from "@/lib/session-fami
 import { EXTENSION_DIALOG_BASE_WIDTH, fitExtensionDialogWidth } from "@/lib/extension-dialog-fit";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, hasAssistantAnswer, isAssistantTruncated, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { getTurnDurationMs } from "@/lib/turn-duration";
+import { ProcessDetailsContext } from "./process-details-context";
 import { buildComposerHistory } from "@/lib/composer-history";
 import { ConversationFind } from "./ConversationFind";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
@@ -267,7 +268,9 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
       </button>
       {(expanded || reveal) && (
         <div style={{ marginTop: 8 }}>
-          {children}
+          <ProcessDetailsContext.Provider value={true}>
+            {children}
+          </ProcessDetailsContext.Provider>
         </div>
       )}
     </div>

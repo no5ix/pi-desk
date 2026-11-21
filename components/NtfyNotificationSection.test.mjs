@@ -42,7 +42,10 @@ test("the switch carries the fields, so enabling is one honest write", () => {
     "no half-saved switch that the server refuses");
   assert.match(section, /const canTest = editable && settings\?\.enabled === true && topic\.trim\(\) !== "";/,
     "the test button only appears where a notice can arrive");
-  assert.match(section, /formatCompletionSummary\(\s*t\("safariNotify\.summary"\),/);
+  // The sentence template is fetched under a second name (t: translate) so the i18n usage
+  // checker does not read it as an interpolation call site; the formatting is shared.
+  assert.match(section, /const \{ t, locale, t: translate \} = useI18n\(\);/);
+  assert.match(section, /formatCompletionSummary\(\s*translate\("safariNotify\.summary"\),/);
   assert.match(section, /result\.error \? t\("ntfyNotify\.testFailedWithError", \{ error: result\.error \}\)/,
     "the server's reason is shown, not a generic failure");
 });

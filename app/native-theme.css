@@ -5409,6 +5409,35 @@ html.dark {
   user-select: none;
 }
 
+/* The compaction / branch-summary card. Its header row is the toggle, and the card
+   starts collapsed (components/MessageView.tsx, CompactionMessageView): a compacted
+   history is a note about the past, not part of the conversation. */
+.compaction-card-header {
+  border: 0;
+  border-radius: 0;
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-native);
+}
+.compaction-card-header:hover {
+  background: var(--bg-hover);
+}
+.compaction-card-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.compaction-card-chevron {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  transition: transform var(--dur-fast) var(--ease-native);
+}
+.compaction-card-chevron[data-expanded="true"] {
+  transform: rotate(90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .compaction-card-chevron { transition: none; }
+}
+
 /* Message actions are pointer-revealed on hover-only devices, but remain in
    the tab order. Reveal them for keyboard focus and on touch, where there is
    no hover affordance. */

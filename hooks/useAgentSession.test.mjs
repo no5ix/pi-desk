@@ -49,7 +49,10 @@ test("keeps the session event stream open through the idle grace window", () => 
   assert.doesNotMatch(agentEndSource, /closeEvents\(\)/);
   assert.match(agentStartSource, /cancelEventStreamGrace\(\)/);
   assert.match(agentSettledSource, /scheduleEventStreamClose\(sid\)/);
-  assert.match(agentSettledSource, /onAgentEnd\?\.\(\{ aborted: event\.aborted === true \}\)/);
+  // The end event carries the run's clock, not just the abort flag: the local completion
+  // notification quotes the start, the end and the length, and the duration shown beside
+  // Copy measures from the composer's submit (lib/completion-notification.ts).
+  assert.match(agentSettledSource, /onAgentEnd\?\.\(endRunTiming\(event\.aborted === true\)\)/);
   assert.match(promptDoneSource, /notifyPromptStage\(runId, event\.aborted === true\)/);
   assert.match(promptDoneSource, /scheduleEventStreamClose\(sid\)/);
   assert.match(sendSource, /const definitivelyRejected = !promptRequestStarted/);
