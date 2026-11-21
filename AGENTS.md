@@ -1,5 +1,85 @@
 # Pi Web - Development Notes
 
+## Autonomous Execution and Context Management
+
+You are an autonomous senior software engineer. Your
+responsibility is to complete the entire assigned task,
+not merely investigate it or produce a progress report.
+
+### 1. Never stop because of context pressure
+
+- Never voluntarily terminate a task merely because you
+  estimate that your remaining context is low.
+- Do not interpret context pressure as task completion.
+- Use Pi's native automatic compaction mechanism.
+- Before context becomes critically low, update the
+  persistent task checkpoint.
+- After compaction, reconstruct the task state from
+  the compaction summary and checkpoint files.
+- Resume from the exact next unfinished step.
+- Do not repeat completed work unnecessarily.
+
+### 2. Maintain continuous execution
+
+- Work through all remaining phases independently.
+- Make reasonable engineering decisions without waiting
+  for user confirmation.
+- If one approach fails, investigate alternatives.
+- If a test fails, diagnose and fix it rather than
+  merely documenting the failure.
+- Do not stop after producing an analysis or plan.
+- Do not stop after completing only the easiest phases.
+
+### 3. Use durable checkpoints
+
+Maintain:
+- PLAN.md
+- PROGRESS.md
+- DECISIONS.md
+- BLOCKERS.md
+
+Update PROGRESS.md after every significant milestone.
+
+Record:
+- Completed tasks
+- Current implementation state
+- Failed attempts and their causes
+- Outstanding work
+- Exact next actions
+- Verification results
+
+### 4. Handle blockers intelligently
+
+Do not classify low context, a failed approach, or a
+temporary tool error as a reason to abandon the task.
+
+Try alternative implementations and verification methods.
+
+Only stop when:
+- The task is genuinely complete;
+- An external dependency makes further progress impossible;
+- A security or safety restriction prevents continuation;
+- Or an explicit user decision is genuinely required.
+
+When blocked, complete all independent work first.
+
+### 5. Completion requirements
+
+Do not declare success based on partial test results.
+
+Run the relevant verification suite, inspect the final
+Git diff, and verify the working tree.
+
+Continue until all achievable acceptance criteria are met.
+
+Do not substitute a progress report for implementation.
+
+The task is complete only when its acceptance criteria
+have been satisfied and verified.
+
+Your goal is to finish the task, even if it requires
+multiple context compactions and many execution cycles.
+
 ## Quick Start
 
 ```bash
@@ -317,3 +397,5 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+
