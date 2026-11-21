@@ -55,6 +55,7 @@ import { useWindowDrag } from "./desktop";
 import { ChatConfirmDialog } from "./ChatConfirmDialog";
 import { SessionSearch } from "./SessionSearch";
 import { ProjectViewMenu, type ProjectViewMode } from "./ProjectViewMenu";
+import { useCollapseExit } from "@/lib/sidebar-fold-motion";
 import { ChatsSectionMenu } from "./ChatsSectionMenu";
 import { orderChatFamilies, toggleId, pinnedFirst } from "@/lib/chat-groups";
 import { ArchivedProjectsSection } from "./ArchivedProjectsSection";
@@ -174,7 +175,10 @@ const SESSION_LIST_ITEM_HEIGHT = 54;
 function focusSidebarTreeRow(current: HTMLElement, offset: number | "first" | "last") {
   const rows = Array.from(
     current.closest(".sidebar-project-tree")?.querySelectorAll<HTMLElement>("[data-sidebar-tree-row]") ?? [],
-  );
+  )
+    // A closing fold keeps its rows mounted for one animation length, and the row walk
+    // must never land on a row that is on its way out.
+    .filter((row) => !row.closest("[data-fold=\"closing\"]"));
   if (rows.length === 0) return;
   const index = rows.indexOf(current);
   const next = offset === "first" || index < 0
@@ -636,6 +640,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (collapsedProjects.size === 0) removePref(APP_PREF_KEYS.collapsedProjects);
     else setPrefJson(APP_PREF_KEYS.collapsedProjects, [...collapsedProjects]);
   }, [collapsedProjects]);
+
+  // A fold animates in both directions, and a closing one needs its rows mounted for the
+  // length of the animation. lib/sidebar-fold-motion.ts keeps them mounted for exactly
+  // that: the keyboard row walk, the project counts and the flat-list virtualization all
+  // treat a folded project as having no rows, so nothing longer may stay mounted.
+  const closingProjects = useCollapseExit(collapsedProjects);
 
   useEffect(() => {
     if (pinnedChats.size === 0) removePref(APP_PREF_KEYS.pinnedChats);
@@ -1741,8 +1751,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </button>
           </div>
         </div>
-        {!isCollapsed && (
-          <div className="sidebar-project-tree-children">
+        {!isCollapsed || closingProjects.has(group.projectRoot) ? (
+          <div
+            className="sidebar-project-tree-children"
+            data-fold={isCollapsed ? "closing" : "open"}
+          >
             {visibleGroupTree.map((node) => {
               const nodeFamily = sessionFamilies.find(
                 (family) => family.root.id === node.session.id,
@@ -1820,7 +1833,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 );
               })}
           </div>
-        )}
+        ) : null}
       </div>
     );
   };
