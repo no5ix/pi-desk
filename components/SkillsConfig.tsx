@@ -48,6 +48,7 @@ import {
 import { isImeComposing } from "@/lib/ime";
 import { itemsToSwitch, projectTrustReloadKey } from "./settings-ui-helpers";
 import { MarkdownBody } from "./MarkdownBody";
+import { readJsonOrThrow } from "@/lib/fetch-json";
 
 type SkillScope = "global" | "project" | "path";
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -227,10 +228,8 @@ function SkillDetail({
         const params = new URLSearchParams({ cwd, filePath: skill.filePath });
         if (documentPath !== rootDocument) params.set("document", documentPath);
         const response = await fetch(`/api/skills/content?${params}`, { signal: controller.signal });
-        const data = (await response.json()) as Partial<SkillContentResponse> & { error?: string };
-        if (!response.ok || data.error || typeof data.content !== "string") {
-          throw new Error(data.error ?? `HTTP ${response.status}`);
-        }
+        const data = await readJsonOrThrow<Partial<SkillContentResponse>>(response);
+        if (typeof data.content !== "string") throw new Error(`HTTP ${response.status}`);
         setInstructions(skillInstructionsBody(data.content));
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -745,9 +744,8 @@ export function SkillsConfig({
     setError(null);
     try {
       const res = await fetch(`/api/skills?cwd=${encodeURIComponent(cwd)}`);
-      const d = (await res.json()) as Partial<SkillsResponse> & { error?: string };
+      const d = await readJsonOrThrow<Partial<SkillsResponse>>(res);
       if (!isCurrent()) return [];
-      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
       const list = d.skills ?? [];
       setSkills(list);
       setProjectResourcesLoaded(d.projectResourcesLoaded ?? true);
@@ -886,11 +884,7 @@ export function SkillsConfig({
           scope: skill?.install?.scope,
         }),
       });
-      const data = (await res.json()) as {
-        updates?: SkillUpdateResult[];
-        error?: string;
-      };
-      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const data = await readJsonOrThrow<{ updates?: SkillUpdateResult[] }>(res);
       setUpdateStatuses((current) => {
         const next = { ...current };
         for (const update of data.updates ?? []) {
@@ -1007,8 +1001,8 @@ export function SkillsConfig({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filePaths, disableModelInvocation }),
       });
-      const d = (await res.json()) as { results?: SkillToggleResult[]; error?: string };
-      if (!res.ok || d.error || !d.results) throw new Error(d.error ?? `HTTP ${res.status}`);
+      const d = await readJsonOrThrow<{ results?: SkillToggleResult[] }>(res);
+      if (!d.results) throw new Error(`HTTP ${res.status}`);
       const results = d.results;
       setSkills((prev) => applySkillToggleResults(prev, results, disableModelInvocation));
       const failures = results.filter((result) => result.error);

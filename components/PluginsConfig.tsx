@@ -48,6 +48,7 @@ import {
   ConfigTrustNotice,
 } from "./SettingsUi";
 import { itemsToSwitch, projectTrustReloadKey } from "./settings-ui-helpers";
+import { readJsonOrThrow } from "@/lib/fetch-json";
 import { PluginDiscovery } from "./PluginDiscovery";
 
 type PluginScope = PluginPackageInfo["scope"];
@@ -630,9 +631,8 @@ export function PluginsConfig({
     setGroupStatus(null);
     try {
       const res = await fetch(`/api/plugins?cwd=${encodeURIComponent(cwd)}`);
-      const next = (await res.json()) as PluginsResponse & { error?: string };
+      const next = await readJsonOrThrow<PluginsResponse>(res);
       if (!isCurrent()) return;
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
       setData(next);
       setSelected((current) => {
         if (current && (
@@ -693,11 +693,7 @@ export function PluginsConfig({
           scope: pkg?.scope,
         }),
       });
-      const data = (await res.json()) as {
-        updates?: PluginUpdateResult[];
-        error?: string;
-      };
-      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const data = await readJsonOrThrow<{ updates?: PluginUpdateResult[] }>(res);
       setUpdateStatuses((current) => {
         const next = { ...current };
         for (const update of data.updates ?? []) {
@@ -728,8 +724,7 @@ export function PluginsConfig({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "update", cwd }),
       });
-      const next = (await res.json()) as PluginsResponse & { error?: string };
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+      const next = await readJsonOrThrow<PluginsResponse>(res);
       setData(next);
       setUpdateStatuses({});
       setActionMessage(t("i18n.packagesUpdated"));
@@ -755,8 +750,7 @@ export function PluginsConfig({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, source: pkg.source, scope: pkg.scope, cwd }),
       });
-      const next = (await res.json()) as PluginsResponse & { error?: string };
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+      const next = await readJsonOrThrow<PluginsResponse>(res);
       setData(next);
       if (action === "remove") {
         setSelected(next.packages[0]
@@ -822,8 +816,8 @@ export function PluginsConfig({
           packages: targets.map(({ source }) => ({ source, scope })),
         }),
       });
-      const next = (await res.json()) as Partial<PluginsBulkResponse> & { error?: string };
-      if (!res.ok || next.error || !next.results) throw new Error(next.error ?? `HTTP ${res.status}`);
+      const next = await readJsonOrThrow<Partial<PluginsBulkResponse>>(res);
+      if (!next.results) throw new Error(`HTTP ${res.status}`);
       const { results, ...plugins } = next as PluginsBulkResponse;
       setData(plugins);
       const failures = results.filter((result) => result.error);
@@ -863,8 +857,7 @@ export function PluginsConfig({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "install", source, scope: installScope, cwd }),
       });
-      const next = (await res.json()) as PluginsResponse & { error?: string };
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+      const next = await readJsonOrThrow<PluginsResponse>(res);
       setData(next);
       const installed = findInstalledPackage(next.packages, source, installScope);
       setSelected(installed ? packageKey(installed) : key);

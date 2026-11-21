@@ -125,6 +125,7 @@ import { getSessionFamily, isHiddenRelation, sideChatTitle } from "@/lib/session
 import { createSideChat, deleteSideChat } from "@/lib/side-chat-client";
 import { addSideTab, pruneSideTabs, readSideTabs, SIDE_TABS_KEY, writeSideTabs, type SideTab } from "@/lib/side-tabs";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
+import { readJsonOrThrow } from "@/lib/fetch-json";
 import { archivedProjectRootFor, restoreProjectRoot } from "@/lib/archived-projects";
 import { getProjectDisplayName } from "@/lib/project-display";
 import {
@@ -2179,8 +2180,7 @@ export function AppShell() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        const data = await response.json() as ProjectTrustStatus & { error?: string };
-        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+        const data = await readJsonOrThrow<ProjectTrustStatus>(response);
         setProjectTrust(data);
       })
       .catch((error) => {

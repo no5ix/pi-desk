@@ -3,6 +3,7 @@
 import { type CSSProperties, type FormEvent, type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
+import { readJsonOrThrow } from "@/lib/fetch-json";
 import { isImeComposing } from "@/lib/ime";
 import { AppSelect } from "./AppSelect";
 import { APP_PREF_KEYS, type AppPrefKey, getPrefJson, getPref, setPrefJson, setPref } from "@/lib/app-prefs";
@@ -123,8 +124,7 @@ function readStringList(key: AppPrefKey): string[] {
 async function loadDirectories(directory?: string): Promise<BrowseResponse> {
   const query = directory ? `?path=${encodeURIComponent(directory)}` : "";
   const response = await fetch(`/api/cwd/browse${query}`);
-  const data = await response.json() as BrowseResponse;
-  if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+  const data = await readJsonOrThrow<BrowseResponse>(response);
   return data;
 }
 
@@ -144,10 +144,8 @@ async function createDirectory(parentPath: string, name: string): Promise<string
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: parentPath, name }),
   });
-  const data = await response.json() as CreateDirectoryResponse;
-  if (!response.ok || data.error || !data.path) {
-    throw new Error(data.error ?? `HTTP ${response.status}`);
-  }
+  const data = await readJsonOrThrow<CreateDirectoryResponse>(response);
+  if (!data.path) throw new Error(`HTTP ${response.status}`);
   return data.path;
 }
 
