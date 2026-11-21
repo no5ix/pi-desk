@@ -39,6 +39,7 @@ import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigDetailNavigationContext, ConfigSwitch, type ConfigDetailNavigation } from "./SettingsUi";
 import { ArtifactsSettingRow, AutoTitleSettingRow } from "./ArtifactsSettingRow";
 import { RemoteAccessSection } from "./RemoteAccessSection";
+import { NtfyNotificationSection } from "./NtfyNotificationSection";
 import { SafariNotificationSection } from "./SafariNotificationSection";
 import { RelaySection } from "./RelaySection";
 import { NetworkProxySection } from "./NetworkProxySection";
@@ -390,6 +391,8 @@ function GeneralSettings({
             <RemoteAccessSection />
 
             <SafariNotificationSection />
+
+            <NtfyNotificationSection />
           </div>
         </div>
       </div>

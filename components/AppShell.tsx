@@ -108,6 +108,7 @@ import type { FileExplorerHandle } from "./FileExplorer";
 import type { AgentEndInfo } from "@/hooks/useAgentSession";
 import { useProjectBranch } from "@/hooks/useProjectBranch";
 import { sendSafariNotification } from "@/lib/safari-notification";
+import { sendNtfyNotification } from "@/lib/ntfy-notification";
 import { formatCompletionSummary } from "@/lib/completion-notification";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
@@ -1507,19 +1508,21 @@ export function AppShell() {
     if (end?.aborted) return;
     if (isHiddenRelation(selectedSession?.relation)) return;
 
-    // Settings › General › Safari notification: the local macOS notification carries
-    // the run's length and its start/end clock times. It is deliberately not gated on
-    // this tab's focus — it is a Notification Center notice on the computer running Pi,
-    // and the user may be looking at any window, not at this page.
+    // Settings › General › Safari notification and ntfy notification: the session name
+    // plus the run's length and clock times. The local one is this Mac's Notification
+    // Center (the server raises it), the ntfy one reaches a phone. Neither is gated on
+    // this tab's focus — the user may be looking at any window, not at this page.
     if (end?.startedAt !== undefined && end.endedAt !== undefined) {
-      void sendSafariNotification({
-        title: selectedSession?.name ?? translate("i18n.sessionComplete"),
-        body: formatCompletionSummary(
-          translate("safariNotify.summary"),
-          { startedAt: end.startedAt, endedAt: end.endedAt, poppedAt: Date.now() },
-          locale,
-        ),
-      });
+      const completionTitle = selectedSession?.name ?? translate("i18n.sessionComplete");
+      const completionBody = formatCompletionSummary(
+        translate("safariNotify.summary"),
+        { startedAt: end.startedAt, endedAt: end.endedAt, poppedAt: Date.now() },
+        locale,
+      );
+      void sendSafariNotification({ title: completionTitle, body: completionBody });
+      // The ntfy switch lives on the server (lib/ntfy-settings.ts), so the client asks
+      // every time: a disabled ntfy answers 409 and publishes nothing.
+      void sendNtfyNotification({ title: completionTitle, body: completionBody });
     }
 
     if (!shouldShowBrowserNotification()) return;

@@ -9,6 +9,7 @@ import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { isHiddenRelation, SIDE_BOUNDARY_MESSAGE_TYPE } from "@/lib/session-family";
 import { EXTENSION_DIALOG_BASE_WIDTH, fitExtensionDialogWidth } from "@/lib/extension-dialog-fit";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, hasAssistantAnswer, isAssistantTruncated, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
+import { getTurnDurationMs } from "@/lib/turn-duration";
 import { buildComposerHistory } from "@/lib/composer-history";
 import { ConversationFind } from "./ConversationFind";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
@@ -534,6 +535,32 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       turns.push({ index: turns.length, question, answer });
     }
     return turns;
+  }, [messages]);
+
+  // How long each turn took, keyed by the reply that closes it — the same message that
+  // carries the footer timestamp. MessageView shows it beside Copy as `0h31m10s`, the
+  // shape the completion notification uses. A turn whose last response predates pi's
+  // `durationMs` has no known end, so it stays blank rather than guessed.
+  const turnDurationByIndex = useMemo(() => {
+    const durations = new Map<number, number>();
+    let anchorIdx = -1;
+    for (let idx = 0; idx < messages.length; idx++) {
+      if (getUserInputText(messages[idx])) anchorIdx = idx;
+      if (messages[idx].role !== "assistant" || anchorIdx < 0) continue;
+      let closesTurn = true;
+      for (let j = idx + 1; j < messages.length; j++) {
+        const role = messages[j].role;
+        if (role === "user") break;
+        if (role === "assistant") {
+          closesTurn = false;
+          break;
+        }
+      }
+      if (!closesTurn) continue;
+      const ms = getTurnDurationMs(messages, anchorIdx, idx + 1);
+      if (ms !== undefined) durations.set(idx, ms);
+    }
+    return durations;
   }, [messages]);
 
   // Fork/navigate stay referentially stable across busy transitions; gating
@@ -1467,6 +1494,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                     onCancelEdit={cancelEdit}
                     isEditing={editEntryId === entryIds[idx]}
                     showTimestamp={showTimestamp}
+                    turnDurationMs={showTimestamp ? turnDurationByIndex.get(idx) : undefined}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
                     sessionId={session?.id ?? sessionIdRef.current ?? undefined}
                     writtenFiles={options.writtenFiles}

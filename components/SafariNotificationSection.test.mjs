@@ -58,8 +58,9 @@ test("a finished run sends it, and a stopped run stays silent", () => {
   assert.ok(handler, "handleAgentEnd found");
   assert.match(handler[0], /if \(end\?\.aborted\) return;/, "a stopped run announces nothing");
   assert.match(handler[0], /if \(isHiddenRelation\(selectedSession\?\.relation\)\) return;/);
-  assert.match(handler[0], /if \(end\?\.startedAt !== undefined && end\.endedAt !== undefined\) \{\s*void sendSafariNotification\(\{\s*title: selectedSession\?\.name \?\? translate\("i18n\.sessionComplete"\),/);
-  assert.match(handler[0], /formatCompletionSummary\(\s*translate\("safariNotify\.summary"\),\s*\{ startedAt: end\.startedAt, endedAt: end\.endedAt, poppedAt: Date\.now\(\) \},\s*locale,\s*\),/);
+  assert.match(handler[0], /if \(end\?\.startedAt !== undefined && end\.endedAt !== undefined\) \{\s*const completionTitle = selectedSession\?\.name \?\? translate\("i18n\.sessionComplete"\);/);
+  assert.match(handler[0], /const completionBody = formatCompletionSummary\(\s*translate\("safariNotify\.summary"\),\s*\{ startedAt: end\.startedAt, endedAt: end\.endedAt, poppedAt: Date\.now\(\) \},\s*locale,\s*\);/);
+  assert.match(handler[0], /void sendSafariNotification\(\{ title: completionTitle, body: completionBody \}\);/);
   const sendAt = handler[0].indexOf("sendSafariNotification");
   const gateAt = handler[0].indexOf("shouldShowBrowserNotification()");
   assert.ok(sendAt >= 0 && gateAt >= 0 && sendAt < gateAt,

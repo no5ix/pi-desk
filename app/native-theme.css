@@ -5352,6 +5352,20 @@ html.dark {
   margin-bottom: 18px !important;
 }
 
+/* How long the turn took, in the assistant footer between the Copy button and the
+   timestamp (the reply that closes the turn). Always visible, unlike the hover-revealed
+   Copy button, and monospace like the other footer meta. The timestamp keeps its own
+   `margin-left: auto`, so this does not move the two existing controls. */
+.message-turn-duration {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-regular);
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
 /* Message actions are pointer-revealed on hover-only devices, but remain in
    the tab order. Reveal them for keyboard focus and on touch, where there is
    no hover affordance. */

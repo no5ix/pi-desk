@@ -10,6 +10,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
+import { formatDurationHms } from "@/lib/completion-notification";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
 import { isThinkingLevelRefusal, refusalAllowedValues } from "@/lib/thinking-level-error";
 import { diffGapLabel, parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
@@ -224,6 +225,12 @@ interface Props {
   compactError?: string | null;
   /** Opens Settings › Models on this provider/model (a refused thinking level's error). */
   onOpenModelSettings?: (provider: string, modelId: string) => void;
+  /**
+   * How long the turn this reply answers took, computed by ChatWindow over the whole
+   * message list (getTurnDurationMs in lib/turn-duration.ts). Shown in the footer beside
+   * Copy, in the completion notification's `0h31m10s` form, once the reply is finished.
+   */
+  turnDurationMs?: number;
 }
 
 export function getModelDisplayName(
@@ -293,12 +300,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} editDisabled={editDisabled} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} turnDurationMs={turnDurationMs} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -339,7 +346,8 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.onCompact === next.onCompact
     && prev.isCompacting === next.isCompacting
     && prev.compactError === next.compactError
-    && prev.onOpenModelSettings === next.onOpenModelSettings;
+    && prev.onOpenModelSettings === next.onOpenModelSettings
+    && prev.turnDurationMs === next.turnDurationMs;
 });
 
 function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing }: {
@@ -664,6 +672,7 @@ function AssistantMessageView({
   isCompacting,
   compactError,
   onOpenModelSettings,
+  turnDurationMs,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -682,6 +691,7 @@ function AssistantMessageView({
   isCompacting?: boolean;
   compactError?: string | null;
   onOpenModelSettings?: (provider: string, modelId: string) => void;
+  turnDurationMs?: number;
 }) {
   const { t, locale } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp, locale) : null;
@@ -986,6 +996,17 @@ function AssistantMessageView({
             )}
              {copied ? t("i18n.copied") : t("i18n.copy")}
           </button>
+        )}
+        {/* How long this turn took, between Copy and the timestamp: the task is over
+            when the reply is, so it appears with the finished footer. Same shape as the
+            completion notification (0h31m10s), not the spaced `3m 5s` of Process details. */}
+        {turnDurationMs !== undefined && !isStreaming && (
+          <span
+            className="message-turn-duration"
+            title={t("chat.turnDurationHint", { duration: formatDurationHms(turnDurationMs) })}
+          >
+            {formatDurationHms(turnDurationMs)}
+          </span>
         )}
         {time && !isStreaming && (
           <span className="message-meta" style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
