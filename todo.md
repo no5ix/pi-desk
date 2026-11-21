@@ -11,7 +11,7 @@
 # P1
 
  
- # extra 6 tasks
+## extra 6 tasks
 
  firstly, there are 6 extra tasks below, don't ask me any questions for the task below, you can make your decisions. implement them in the project `/Users/lynx/Documents/github/pi-desk-worktrees/pi-desk-branch-tailscale-safari` on the `feat/pi-desk-branch-tailscale-safari` branch: 
  
@@ -24,16 +24,16 @@
 5. the `compaction` card should be also collapsed by default when i open a session; and i should be able to click the compaction card's header to expand it;
 6. when expanding the `Process details`, the thinking card should be collapsed by default;
 
-# test and fix bugs
+## test and fix bugs
 secondly, test all the previous 4tasks and these new 6 tasks in the project /Users/lynx/Documents/github/pi-desk-worktrees/pi-desk-branch-tailscale-safari on the feat/pi-desk-branch-tailscale-safari branch and fix all the issues
 
-# Autonomous Execution and Context Management
+## Autonomous Execution and Context Management
 
 You are an autonomous senior software engineer. Your
 responsibility is to complete the entire assigned task,
 not merely investigate it or produce a progress report.
 
-## 1. Never stop because of context pressure
+### 1. Never stop because of context pressure
 
 - Never voluntarily terminate a task merely because you
   estimate that your remaining context is low.
@@ -46,7 +46,7 @@ not merely investigate it or produce a progress report.
 - Resume from the exact next unfinished step.
 - Do not repeat completed work unnecessarily.
 
-## 2. Maintain continuous execution
+### 2. Maintain continuous execution
 
 - Work through all remaining phases independently.
 - Make reasonable engineering decisions without waiting
@@ -57,7 +57,7 @@ not merely investigate it or produce a progress report.
 - Do not stop after producing an analysis or plan.
 - Do not stop after completing only the easiest phases.
 
-## 3. Use durable checkpoints
+### 3. Use durable checkpoints
 
 Maintain:
 - PLAN.md
@@ -75,7 +75,7 @@ Record:
 - Exact next actions
 - Verification results
 
-## 4. Handle blockers intelligently
+### 4. Handle blockers intelligently
 
 Do not classify low context, a failed approach, or a
 temporary tool error as a reason to abandon the task.
@@ -90,7 +90,7 @@ Only stop when:
 
 When blocked, complete all independent work first.
 
-## 5. Completion requirements
+### 5. Completion requirements
 
 Do not declare success based on partial test results.
 
