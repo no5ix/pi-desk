@@ -24,6 +24,7 @@ import {
   getSessionViewSnapshot,
   setSessionViewSnapshot,
 } from "@/lib/session-view-cache";
+import { createLoadSequence } from "@/lib/session-load-order";
 import { clearDraft, getDraft, rekeyDraft, restoreDraftSubmission } from "@/lib/draft-store";
 import { getPreferredToolPreset, setPreferredToolPreset } from "@/lib/tool-preset-preference";
 import { CONFIGURED_TOOL_PRESET, getPresetFromToolNames, getToolNamesForPreset, type ToolEntry, type ToolPreset } from "@/lib/tool-presets";
@@ -500,6 +501,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const sessionHookMountedRef = useRef(true);
   // In-flight session reads, keyed by session id (or force:<id> for fresh reads).
   const loadFlightsRef = useRef(new Map<string, Promise<unknown>>());
+  // Newest-wins tickets for the reads of this session: opening it (forced), the
+  // hydration/reconcile paths and the SSE settle handler all read, and the responses can
+  // land in the opposite order. Only the newest claim may apply what it fetched — see
+  // lib/session-load-order.ts for the stale-transcript bug this closes.
+  const sessionLoadSequenceRef = useRef(createLoadSequence());
   // Latest settled view state, readable from the unmount cleanup without
   // re-subscribing it. Assigned every render like sessionPropIdRef below.
   const dataRef = useRef<SessionData | null>(null);
@@ -761,12 +767,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const flightKey = options?.force ? `force:${sid}` : sid;
     const inflight = options?.force ? undefined : loadFlightsRef.current.get(flightKey);
     if (inflight) return await inflight;
+    const loadTicket = sessionLoadSequenceRef.current.take();
   const flight = (async (): Promise<unknown> => {
     let messagesLoaded = false;
     const sessionGeneration = sessionGenerationRef.current;
     const isCurrent = () => (
       sessionIdRef.current === sid
       && sessionGenerationRef.current === sessionGeneration
+      && sessionLoadSequenceRef.current.isLatest(loadTicket)
     );
     try {
       if (showLoading) setLoading(true);
