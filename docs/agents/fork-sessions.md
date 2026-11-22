@@ -164,6 +164,21 @@ session that wrote it. `TurnWrittenFiles` passes its `sessionId`; `AppShell.hand
 opens the tab with `modeHint: "diff"` and `diffSessionId` (in `components/file-tab-state.ts`,
 carried by `TabBar`).
 
+## An assistant reply's content list is dense (`lib/assistant-content.ts`)
+Much of the chat walks a reply's blocks with `for…of`, `.some`, spread — loops that do **not** skip
+holes in a sparse array — so one slot with no block in it throws `undefined is not an object
+(evaluating 'block.type')` and takes the window down; `.filter`/`.map` skip holes, which is why
+only some screens broke. Holes are reachable: pi's provider builders and this app's streaming
+reducer assign `content[contentIndex]`, so a block met late (a stream resumed mid-run, a `*_end`
+that lands after `message_start` reset the bubble) grows the array past its end, and a JSON round
+trip turns such a hole into `null`. `fillContentGaps` returns a dense copy at the same length, with
+`emptyTextBlock()` (what a `*_start` already puts in a block before its first delta: it renders and
+scans as nothing) in every empty slot; positions are kept because the wire numbers its deltas by
+content index. `normalizeToolCalls` runs it on every message entering client state (session reads,
+`message_end`, a reconnect seed) and `updateContentBlock` keeps the streaming entry dense;
+`extractTurnWrittenFiles`, `getTurnWrittenFiles`/`liveWrittenFiles` and `MessageView` apply it as a
+guard, since a session file is not ours to fix.
+
 ## The diff of a file as one session made it (`lib/session-file-diff.ts`, `GET /api/sessions/[id]/file-diff`)
 The card counts what the session's own `write` / `edit` / `apply_patch` calls changed, and a change
 the agent committed (or that the session made and the working tree no longer carries) has no git

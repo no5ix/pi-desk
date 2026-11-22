@@ -1,3 +1,4 @@
+import { fillContentGaps } from "./assistant-content";
 import type { AgentMessage, AssistantMessage, ToolCallContent } from "./types";
 
 function isObject(val: unknown): val is Record<string, unknown> {
@@ -47,7 +48,10 @@ function normalizeAssistantToolCalls(
   if (msg.role !== "assistant") return msg;
   const content = (msg as AssistantMessage).content;
   if (!Array.isArray(content)) return msg;
-  const normalized = content.map((block) => {
+  // fillContentGaps keeps every slot, so a message whose content carries a
+  // hole (pi builds it by index, and JSON turns a hole into null) stops
+  // handing `undefined` to the code that walks an assistant reply.
+  const normalized = fillContentGaps(content).map((block) => {
     const result = normalizeToolCallBlock(block, options);
     return result ?? block;
   });

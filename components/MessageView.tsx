@@ -13,6 +13,7 @@ import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { formatDurationHms } from "@/lib/completion-notification";
 import { ProcessDetailsContext } from "./process-details-context";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
+import { fillContentGaps } from "@/lib/assistant-content";
 import { isThinkingLevelRefusal, refusalAllowedValues } from "@/lib/thinking-level-error";
 import { diffGapLabel, parseUnifiedPatch, type SplitDiffCell, type SplitDiffFile } from "@/lib/patch";
 import { applyPatchPreviewToFiles, applyPatchResultHasFailures, extractApplyPatchPaths, getApplyPatchInputText, parseApplyPatchInput } from "@/lib/apply-patch";
@@ -279,6 +280,8 @@ export function replaceUserMessageText(message: UserMessage, text: string): User
   const content: Array<TextContent | ImageContent> = [];
   let replaced = false;
   for (const block of message.content) {
+    // A user message read from disk can carry a slot with no block in it.
+    if (!block || typeof block !== "object") continue;
     if (block.type !== "text") {
       content.push(block);
       continue;
@@ -298,7 +301,7 @@ function haveSameRelevantToolResults(
   next: Map<string, ToolResultMessage> | undefined,
 ): boolean {
   if (previous === next || message.role !== "assistant") return true;
-  for (const block of (message as AssistantMessage).content ?? []) {
+  for (const block of fillContentGaps((message as AssistantMessage).content)) {
     if (block.type === "toolCall" && previous?.get(block.toolCallId) !== next?.get(block.toolCallId)) {
       return false;
     }

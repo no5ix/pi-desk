@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { UnavailableWorkspaceNotice } from "@/lib/workspace-availability";
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode, SessionWorkspaceKind, ToolResultMessage } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
+import { fillContentGaps } from "@/lib/assistant-content";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { isHiddenRelation, SIDE_BOUNDARY_MESSAGE_TYPE } from "@/lib/session-family";
 import { EXTENSION_DIALOG_BASE_WIDTH, fitExtensionDialogWidth } from "@/lib/extension-dialog-fit";
@@ -234,7 +235,7 @@ export function getTurnWrittenFiles(finalAssistant: AssistantMessage, turnMessag
   }
   const turnContent: AssistantContentBlock[] = [];
   for (const message of turnMessages) {
-    if (message.role === "assistant") turnContent.push(...((message as AssistantMessage).content ?? []));
+    if (message.role === "assistant") turnContent.push(...fillContentGaps((message as AssistantMessage).content));
   }
   let files = extractTurnWrittenFiles(turnContent, toolResults, cwd);
   if (cached && JSON.stringify(cached.files) === JSON.stringify(files)) files = cached.files;
@@ -1230,10 +1231,10 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     const content: AssistantContentBlock[] = [];
     for (let i = anchorIdx + 1; i < messages.length; i++) {
       const message = messages[i];
-      if (message.role === "assistant") content.push(...((message as AssistantMessage).content ?? []));
+      if (message.role === "assistant") content.push(...fillContentGaps((message as AssistantMessage).content));
     }
     const streaming = streamState.streamingMessage as AssistantMessage | undefined;
-    if (streaming && Array.isArray(streaming.content)) content.push(...streaming.content);
+    if (streaming) content.push(...fillContentGaps(streaming.content));
     if (content.length === 0) return EMPTY_WRITTEN_FILES;
     const files = extractTurnWrittenFiles(content, toolResultsMap, messageCwd);
     if (files.length === 0) return EMPTY_WRITTEN_FILES;

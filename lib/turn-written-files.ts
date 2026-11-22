@@ -1,4 +1,5 @@
 import type { AssistantContentBlock, ToolResultMessage } from "./types";
+import { fillContentGaps } from "./assistant-content";
 import { resolveLocalFilePath } from "./file-links";
 import { isApplyPatchToolName, isEditToolName, isWriteToolName } from "./tool-names";
 import {
@@ -207,7 +208,10 @@ export function extractTurnWrittenFiles(
 ): WrittenFile[] {
   const byPath = new Map<string, WrittenFile>();
 
-  for (const block of content) {
+  // Content is collected across a whole turn, so one malformed slot from a
+  // session file or a late streaming delta must not take the chat down: gaps
+  // become empty text blocks, which are not file-writing tools.
+  for (const block of fillContentGaps(content)) {
     if (block.type !== "toolCall") continue;
     if (!isFileWritingToolName(block.toolName) && !isApplyPatchToolName(block.toolName)) continue;
 

@@ -1,4 +1,5 @@
 import type { ClientAssistantMessageEvent } from "./agent-event-wire";
+import { emptyTextBlock, fillContentGaps } from "./assistant-content";
 import { normalizeStreamingToolCalls } from "./normalize";
 import type {
   AgentMessage,
@@ -33,7 +34,15 @@ function updateContentBlock(
   const message = state.streamingMessage;
   if (!message || !Number.isInteger(contentIndex) || contentIndex < 0) return state;
 
-  const content = [...message.content];
+  // The wire numbers blocks by index, and this client can meet a block late: a
+  // stream resumed mid-run, a `*_end` that lands after `message_start` reset
+  // the bubble, a block type this reducer has no start case for. Writing the
+  // block at its index then grows the array past its end and leaves a hole,
+  // and a hole is `undefined` to anything that walks the content. Fill every
+  // slot up to the index instead, so the reply stays dense and the block keeps
+  // the position the deltas address.
+  const content = fillContentGaps(message.content);
+  while (content.length < contentIndex) content.push(emptyTextBlock());
   const nextBlock = update(content[contentIndex]);
   if (!nextBlock) return state;
   content[contentIndex] = nextBlock;

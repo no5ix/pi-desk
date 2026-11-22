@@ -1,4 +1,5 @@
 import type { AgentMessage, AssistantContentBlock, ToolResultMessage } from "./types";
+import { fillContentGaps } from "./assistant-content";
 import { resolveLocalFilePath } from "./file-links";
 import { isApplyPatchToolName, isEditToolName, isWriteToolName } from "./tool-names";
 import {
@@ -231,7 +232,7 @@ export function collectSessionFileCalls(
   const calls: CollectedCall[] = [];
   for (const message of messages) {
     if (message.role !== "assistant") continue;
-    const content = (message as { content?: AssistantContentBlock[] }).content ?? [];
+    const content = fillContentGaps((message as { content?: AssistantContentBlock[] }).content);
     for (const block of content) {
       if (block.type !== "toolCall" || !isFileWritingTool(block.toolName)) continue;
       const result = results.get(block.toolCallId);
