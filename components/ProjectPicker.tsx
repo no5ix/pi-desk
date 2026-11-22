@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { AnimatedDropdown, PathLabel, displayCwd } from "./path-ui";
 import { isTauriDesktop } from "@/lib/desktop-updater";
@@ -82,7 +82,26 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
   const [customPathOpen, setCustomPathOpen] = useState(false);
   const [customPathError, setCustomPathError] = useState<string | null>(null);
   const [customPathValidating, setCustomPathValidating] = useState(false);
+  // True when this picker is mounted inside the sidebar's web "Add project" overlay.
+  // That overlay only wants a folder, so the dropdown trigger is skipped and the
+  // browsable DirectoryPicker opens straight away (the web counterpart of the
+  // desktop native folder dialog).
+  const [directBrowse, setDirectBrowse] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const modalOverlayRef = useRef<HTMLElement | null>(null);
+
+  useLayoutEffect(() => {
+    if (variant !== "block" || isTauriDesktop()) return;
+    const overlay = dropdownRef.current?.closest<HTMLElement>(".project-picker-modal-overlay");
+    // The "continue in project" overlay is labelled and still needs the recent-project
+    // list; only the unlabelled add-project overlay goes straight to the browser.
+    if (!overlay || overlay.hasAttribute("aria-label")) return;
+    modalOverlayRef.current = overlay;
+    const shell = overlay.querySelector<HTMLElement>(".project-picker-modal-shell");
+    if (shell) shell.style.visibility = "hidden";
+    setDirectBrowse(true);
+    setCustomPathOpen(true);
+  }, [variant]);
 
   const closeDropdown = useCallback(() => {
     setDropdownOpen(false);
@@ -427,6 +446,9 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
           onCancel={() => {
             setCustomPathOpen(false);
             setCustomPathError(null);
+            // In the add-project overlay the folder browser is the whole dialog, so
+            // cancelling it must also dismiss the overlay (its onClick owns that state).
+            if (directBrowse) modalOverlayRef.current?.click();
           }}
           onSelect={(path) => void commitCustomPath(path)}
         />
