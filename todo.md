@@ -24,94 +24,74 @@
 5. the `compaction` card should be also collapsed by default when i open a session; and i should be able to click the compaction card's header to expand it;
 6. when expanding the `Process details`, the thinking card should be collapsed by default;
 
-## test and fix bugs
-secondly, test all the previous 4tasks and these new 6 tasks in the project /Users/lynx/Documents/github/pi-desk-worktrees/pi-desk-branch-tailscale-safari on the feat/pi-desk-branch-tailscale-safari branch and fix all the issues
-
-## Autonomous Execution and Context Management
-
-You are an autonomous senior software engineer. Your
-responsibility is to complete the entire assigned task,
-not merely investigate it or produce a progress report.
-
-### 1. Never stop because of context pressure
-
-- Never voluntarily terminate a task merely because you
-  estimate that your remaining context is low.
-- Do not interpret context pressure as task completion.
-- Use Pi's native automatic compaction mechanism.
-- Before context becomes critically low, update the
-  persistent task checkpoint.
-- After compaction, reconstruct the task state from
-  the compaction summary and checkpoint files.
-- Resume from the exact next unfinished step.
-- Do not repeat completed work unnecessarily.
-
-### 2. Maintain continuous execution
-
-- Work through all remaining phases independently.
-- Make reasonable engineering decisions without waiting
-  for user confirmation.
-- If one approach fails, investigate alternatives.
-- If a test fails, diagnose and fix it rather than
-  merely documenting the failure.
-- Do not stop after producing an analysis or plan.
-- Do not stop after completing only the easiest phases.
-
-### 3. Use durable checkpoints
-
-Maintain:
-- PLAN.md
-- PROGRESS.md
-- DECISIONS.md
-- BLOCKERS.md
-
-Update PROGRESS.md after every significant milestone.
-
-Record:
-- Completed tasks
-- Current implementation state
-- Failed attempts and their causes
-- Outstanding work
-- Exact next actions
-- Verification results
-
-### 4. Handle blockers intelligently
-
-Do not classify low context, a failed approach, or a
-temporary tool error as a reason to abandon the task.
-
-Try alternative implementations and verification methods.
-
-Only stop when:
-- The task is genuinely complete;
-- An external dependency makes further progress impossible;
-- A security or safety restriction prevents continuation;
-- Or an explicit user decision is genuinely required.
-
-When blocked, complete all independent work first.
-
-### 5. Completion requirements
-
-Do not declare success based on partial test results.
-
-Run the relevant verification suite, inspect the final
-Git diff, and verify the working tree.
-
-Continue until all achievable acceptance criteria are met.
-
-Do not substitute a progress report for implementation.
-
-The task is complete only when its acceptance criteria
-have been satisfied and verified.
-
-Your goal is to finish the task, even if it requires
-multiple context compactions and many execution cycles.
- thirdly, 
 
 # P2
 
-4. change the notification sound!
-5. terminal support fzf shortcuts;
-6. add a similar theme to gpt;
-1. add background support; when stop also stop background,
-3. use the global pi,
+1. file diff panel showed no diff,
+2. no project skills, 
+3. file diff before finishing, 
+4. prompt expand should expand scrollable be default, 
+5. the process details was not collapsed when there wasn’t a final report, 
+
+
+
+# P3
+
+1. safari local notice/ntfy settings page layout and buttons
+2. the subagent session should indent, 
+3. terminal bottom, 
+4. test background sub agent, 
+5. change the notification sound!
+6. terminal support fzf shortcuts;
+7. add a similar theme to gpt;
+8. add background support; when stop also stop background,
+9. use the global pi,
+10. didn’t have good worktree display support ; 
+
+
+# prompts
+
+
+
+
+
+# task1
+
+pic1: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122090852.png
+
+in the pic1,  when i click the `BLOCKERS.md`, the `Edited files` section showed there was `+21 -2`, but there's no diff on the right side diff panel, it just directly showed the file content; we need a real diff panel there
+
+
+# task2
+
+pic2: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122091558.png
+pic3: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122091501.png
+
+
+in the pic2, on the Settings-Skills page, we need the `project level skills` just like the `project level MCP` in the pic3; you can use the `project level mcp` as a reference to implement a similar one, there should be something like a `Turn on in this project` button to add a specific skill as a project skill;
+
+
+# task3
+
+pic4: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122093954.png
+
+now when the task is finished, there would be `edited files` block in the pic4 , but what i want is that once the ai agent modified any file while ai agent is working on the task but not complete yet, there should be a collapsed `edited files` block above the `composer`, and the `edited files` block should be dynamic, it would automatically change its file list and count to fit what ai agent modify; and when the task is finish, there should be only one `edited files` block
+
+
+# task4
+
+pic5: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122094715.png
+pic6: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122095025.png
+
+current behavior: in the pic5/6 only when i click the `Expand` button in the prompt block, the prompt block would be scrollable, but although i expand it, the prompt block height is still too small.
+
+expected behavior: the prompt block should be scrollable without clicking the scrollable, when i click the `Expand` button it should expand to the full height to fit the whole prompt, when i click `collapse` button, it should recover
+
+
+# task5
+
+current behavior: when i open a stopped task or a stopped session, then i  scroll up,  the `process details` block would automatically expand; and when there wasn’t a final report, the `process details` block would be expanded by default;
+
+expected behavior: 
+1. when i open a stopped task or a stopped session: the `process details` and `compaction` block should be always collapsed by default, they should never expand before i manually click it to expand; 
+2. when i open a running session: all the blocks (exclude the final report) should be collapsed to `process details` except for the recent 8 blocks(the recent 8 blocks should be collapsed to themselves including the `compaction` block), when the task stops, all the block (exclude the final report) should be collapsed to `process details`
