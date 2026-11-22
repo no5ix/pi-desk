@@ -201,6 +201,11 @@ interface Props {
   modelNames?: Record<string, string>;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
+  /**
+   * Opens one written file's diff in the preview pane, with the session that
+   * wrote it, so the `Edited files` card shows the change and not the file.
+   */
+  onOpenFileDiff?: (filePath: string, sessionId?: string) => void;
   onOpenSession?: (sessionId: string) => void;
   entryId?: string;
   searchBlock?: AssistantContentBlock;
@@ -301,12 +306,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenFileDiff, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} editDisabled={editDisabled} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} turnDurationMs={turnDurationMs} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenFileDiff={onOpenFileDiff} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} turnDurationMs={turnDurationMs} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -332,6 +337,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.modelNames === next.modelNames
     && prev.cwd === next.cwd
     && prev.onOpenFile === next.onOpenFile
+    && prev.onOpenFileDiff === next.onOpenFileDiff
     && prev.onOpenSession === next.onOpenSession
     && prev.entryId === next.entryId
     && prev.searchBlock === next.searchBlock
@@ -366,6 +372,10 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const { t, locale } = useI18n();
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // A long prompt's own "Expand" grows the bubble past its collapsed cap, so the
+  // whole prompt is visible without scrolling. The bubble's cap is lifted here in
+  // the parent, which owns it.
+  const [promptExpanded, setPromptExpanded] = useState(false);
 
   // Session files can hold `\r\n` or lone `\r` line endings (#680). Chrome renders
   // a lone `\r` as a space even in the pre-wrap command-args and raw-text views.
@@ -451,8 +461,11 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
           style={{
             flex: 1,
             minWidth: 0,
-            maxHeight: USER_BUBBLE_MAX_HEIGHT,
-            overflowY: "auto",
+            // Expanded (the slash command's argument, or a long prompt's own
+            // "Expand") the bubble grows to the whole message; collapsed it is a
+            // capped box the user scrolls, with the text's own scrollbar.
+            maxHeight: expanded || promptExpanded ? "none" : USER_BUBBLE_MAX_HEIGHT,
+            overflowY: expanded || promptExpanded ? "visible" : "auto",
           }}
         >
           {commandText ? (
@@ -518,7 +531,14 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             <>
               {imageBlocksNode}
               {attachedFiles.length > 0 && <AttachedFileList files={attachedFiles} />}
-              {bodyText && <CollapsibleUserText text={bodyText} cwd={cwd} onOpenFile={onOpenFile} />}
+              {bodyText && (
+                <CollapsibleUserText
+                  text={bodyText}
+                  cwd={cwd}
+                  onOpenFile={onOpenFile}
+                  onExpandedChange={setPromptExpanded}
+                />
+              )}
             </>
           )}
         </div>
@@ -662,6 +682,7 @@ function AssistantMessageView({
   modelNames,
   cwd,
   onOpenFile,
+  onOpenFileDiff,
   onOpenSession,
   showTimestamp,
   prevTimestamp,
@@ -681,6 +702,7 @@ function AssistantMessageView({
   modelNames?: Record<string, string>;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
+  onOpenFileDiff?: (filePath: string, sessionId?: string) => void;
   onOpenSession?: (sessionId: string) => void;
   showTimestamp?: boolean;
   prevTimestamp?: number;
@@ -959,7 +981,13 @@ function AssistantMessageView({
       )}
 
       {writtenFiles && writtenFiles.length > 0 && (
-        <TurnWrittenFiles files={writtenFiles} onOpenFile={onOpenFile} sessionId={sessionId} />
+        <TurnWrittenFiles
+          files={writtenFiles}
+          onOpenFile={onOpenFileDiff
+            ? (filePath: string) => { onOpenFileDiff(filePath, sessionId); }
+            : onOpenFile ? (filePath: string) => { onOpenFile(filePath); } : undefined}
+          sessionId={sessionId}
+        />
       )}
 
       <div className="message-assistant-footer" style={{
@@ -1829,14 +1857,19 @@ function PairedResult({ text, isEmpty, isError }: {
 }
 
 const USER_TEXT_COLLAPSE_HEIGHT = 220;
-function CollapsibleUserText({ text, cwd, onOpenFile }: {
+function CollapsibleUserText({ text, cwd, onOpenFile, onExpandedChange }: {
   text: string;
   cwd?: string;
   onOpenFile?: (filePath: string) => void;
+  /** Tells the bubble it may drop its collapsed height cap, so "Expand" shows the whole prompt. */
+  onExpandedChange?: (expanded: boolean) => void;
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
+  // The fade below the fold is a hint that more text follows, so it leaves once
+  // the box is scrolled to its end (and never appears on the expanded text).
+  const [scrolledToEnd, setScrolledToEnd] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1844,27 +1877,43 @@ function CollapsibleUserText({ text, cwd, onOpenFile }: {
     if (!el) return;
     // Small slack so content barely over the limit is not worth collapsing
     setOverflowing(el.scrollHeight > USER_TEXT_COLLAPSE_HEIGHT + 60);
+    setScrolledToEnd(false);
+    if (el.scrollTop > 0) el.scrollTop = 0;
   }, [text]);
 
   const collapsed = overflowing && !expanded;
   const fade = "linear-gradient(to bottom, black calc(100% - 48px), transparent 100%)";
+  const faded = collapsed && !scrolledToEnd;
 
   return (
     <div>
       <div
         ref={bodyRef}
+        // Collapsed, the prompt is a scrollable box: the text is readable down
+        // its full cap without first pressing "Expand". Expanded, it carries no
+        // cap at all, so the whole prompt shows at once and "Collapse" restores
+        // the box.
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          setScrolledToEnd(el.scrollTop + el.clientHeight >= el.scrollHeight - 8);
+        }}
         style={collapsed ? {
           maxHeight: USER_TEXT_COLLAPSE_HEIGHT,
-          overflow: "hidden",
-          maskImage: fade,
-          WebkitMaskImage: fade,
+          overflowY: "auto",
+          overflowX: "hidden",
+          maskImage: faded ? fade : undefined,
+          WebkitMaskImage: faded ? fade : undefined,
         } : undefined}
       >
         <MarkdownBody className="markdown-user-message" keepLineBreaks cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody>
       </div>
       {overflowing && (
         <button
-          onClick={() => setExpanded((v) => !v)}
+          onClick={() => {
+            const next = !expanded;
+            setExpanded(next);
+            onExpandedChange?.(next);
+          }}
           style={{
             display: "flex",
             alignItems: "center",

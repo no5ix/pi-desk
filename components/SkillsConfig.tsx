@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useLayoutEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type {
   SkillContentResponse,
@@ -141,6 +141,12 @@ function SkillDetail({
   updateError,
   onCheckUpdate,
   onUpdate,
+  inProject,
+  projectBusy,
+  projectError,
+  onSetInProject,
+  onShowProjectSkill,
+  projectEnabled,
 }: {
   skill: Skill;
   cwd: string;
@@ -153,6 +159,14 @@ function SkillDetail({
   updateError: string | null;
   onCheckUpdate: () => void;
   onUpdate: () => void;
+  /** What this skill is for the project: addable, carried by it, or shadowed by its own copy. */
+  inProject: "add" | "remove" | "shadowed" | null;
+  /** False while the project's own resources are not loaded (an untrusted folder). */
+  projectEnabled: boolean;
+  projectBusy: boolean;
+  projectError: string | null;
+  onSetInProject: (enabled: boolean) => void;
+  onShowProjectSkill?: () => void;
 }) {
   const { t } = useI18n();
   const label = sourceLabel(skill);
@@ -325,6 +339,38 @@ function SkillDetail({
           {skill.description}
         </span>
       </ConfigField>
+      {inProject && (
+        <ConfigField label={t("skills.detail.inProject")}>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+            {inProject === "remove" ? (
+              <ConfigButton size="small" disabled={projectBusy} onClick={() => onSetInProject(false)}>
+                {t("skills.inProject.turnOff")}
+              </ConfigButton>
+            ) : inProject === "add" ? (
+              <ConfigButton size="small" disabled={projectBusy || !projectEnabled} onClick={() => onSetInProject(true)}>
+                {t("skills.inProject.turnOn")}
+              </ConfigButton>
+            ) : (
+              <ConfigButton size="small" onClick={onShowProjectSkill}>
+                {t("skills.inProject.show")}
+              </ConfigButton>
+            )}
+            <span style={{ fontSize: "var(--fs-caption)", color: "var(--text-dim)" }}>
+              {inProject === "remove"
+                ? t("skills.inProject.carried")
+                : inProject === "shadowed"
+                  ? t("skills.inProject.shadowed")
+                  : t("skills.inProject.saved")}
+            </span>
+            {projectBusy && (
+              <span style={{ fontSize: "var(--fs-caption)", color: "var(--text-dim)" }}>{t("i18n.loading")}</span>
+            )}
+          </div>
+          {projectError && (
+            <span role="alert" style={{ fontSize: "var(--fs-caption)", color: "var(--danger)" }}>{projectError}</span>
+          )}
+        </ConfigField>
+      )}
 
       <ConfigField label={t("skills.instructions")}>
         <div ref={instructionsRef} className="skill-instructions-host">
@@ -653,6 +699,10 @@ export function SkillsConfig({
   const [checkingAll, setCheckingAll] = useState(false);
   const [updatingSkill, setUpdatingSkill] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
+  // Turning a global skill on in this project writes a folder into
+  // <cwd>/.pi/skills; this is that write in flight, and what the last one left undone.
+  const [projectBusy, setProjectBusy] = useState<string | null>(null);
+  const [projectError, setProjectError] = useState<string | null>(null);
   const [projectResourcesLoaded, setProjectResourcesLoaded] = useState(true);
 
   // Only the latest load may write state: switching projects while a slower
@@ -705,7 +755,46 @@ export function SkillsConfig({
 
   useEffect(() => {
     if (selected) setLastSettingsSelection("skills", selected, cwd);
+    setProjectError(null);
   }, [cwd, selected]);
+  // The skills this project carries in its own .pi/skills, by name. A global
+  // skill with the same name is shadowed by the project's copy, and only the
+  // project's own entries can be turned off in this project again.
+  const projectSkillByName = useMemo(() => {
+    const byName = new Map<string, Skill>();
+    for (const skill of skills) {
+      if (sourceLabel(skill) === "project") byName.set(skill.name.toLowerCase(), skill);
+    }
+    return byName;
+  }, [skills]);
+  const setSkillInProject = useCallback(async (skill: Skill, enabled: boolean) => {
+    setProjectBusy(skill.filePath);
+    setProjectError(null);
+    try {
+      const response = await fetch("/api/skills/project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, name: skill.name, action: enabled ? "add" : "remove" }),
+      });
+      const data = (await response.json()) as { ok?: boolean; reason?: string; error?: string };
+      if (!response.ok || !data.ok) {
+        setProjectError(data.reason === "target-exists"
+          ? t("skills.inProject.exists")
+          : data.error || `HTTP ${response.status}`);
+        return;
+      }
+      const list = await loadSkills();
+      if (enabled) {
+        // Land on the project's copy: it is the skill the project now runs.
+        const added = list.find((entry) => sourceLabel(entry) === "project" && entry.name === skill.name);
+        if (added) setSelected(added.filePath);
+      }
+    } catch (e) {
+      setProjectError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setProjectBusy(null);
+    }
+  }, [cwd, loadSkills, t]);
 
   const checkForUpdates = useCallback(async (skill?: Skill) => {
     const targets = skill
@@ -1058,6 +1147,19 @@ export function SkillsConfig({
                 updateError={updateError}
                 onCheckUpdate={() => void checkForUpdates(selectedSkill)}
                 onUpdate={() => void updateInstalledSkill(selectedSkill)}
+                inProject={selectedSkill
+                  ? sourceLabel(selectedSkill) === "project"
+                    ? "remove"
+                    : projectSkillByName.has(selectedSkill.name.toLowerCase()) ? "shadowed" : "add"
+                  : null}
+                projectEnabled={projectResourcesLoaded}
+                projectBusy={projectBusy === selectedSkill.filePath}
+                projectError={projectBusy === selectedSkill.filePath ? projectError : null}
+                onSetInProject={(enabled) => void setSkillInProject(selectedSkill, enabled)}
+                onShowProjectSkill={() => {
+                  const shadow = projectSkillByName.get(selectedSkill.name.toLowerCase());
+                  if (shadow) setSelected(shadow.filePath);
+                }}
               />
               ) : (
                 <ConfigEmptyState>{t("i18n.selectSkill")}</ConfigEmptyState>

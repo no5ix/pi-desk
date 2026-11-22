@@ -61,3 +61,18 @@
   is part of the web UI (the project picker's browse used it before this phase). If the folder
   window is ever made a privileged surface, that is the gate to add — the route is the only one
   that names paths without a project.
+
+## Environment (Phase D, 2026-11-22) — not caused by the code
+- `scripts/check-installed-deps.test.mjs` ("this checkout's node_modules matches its lockfile")
+  fails: this worktree's `node_modules` is a pnpm tree (its `.pnpm` store, with 773 broken
+  symlinks into a deleted worktree repaired by hand). `npm ci` is the fix, per AGENTS.md; the
+  three bin links left broken are `.bin/tauri`, `.bin/pi-ai`, `.bin/pi`.
+- `scripts/preview-runtime.test.mjs` ("the classic scripts set the globals the import map
+  re-exports") fails with *manifest exports for react are stale*: the bundle in
+  `public/preview-runtime/` predates the React this machine resolved (`ViewTransition` is new).
+  `npm run preview-runtime` regenerates it; untouched here — it is outside the five tasks and
+  rewrites a checked-in bundle.
+- `lib/rpc-manager-chat-only.integration.test.mjs` (#804, "Chat only names a model only an
+  extension provides") fails with "Missing expected rejection" on this machine, and
+  `lib/rpc-manager.ts` is untouched in this phase. Known from earlier phases: it passes on a tree
+  whose `node_modules` matches the lockfile.

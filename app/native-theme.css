@@ -11768,3 +11768,38 @@ html.dark .artifacts-thumb[data-tone="data"] { --tone: #4fc1d6; }
 .thinking-refusal-action:hover { background: var(--bg-hover); }
 .thinking-refusal-action:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
+
+/* The live "Edited files" card, docked above the composer while a turn runs.
+   It is the finished turn's card, on the composer's own axis, folded by default
+   so it reports the count without covering the input. */
+.chat-live-files {
+  width: 100%;
+  padding: 0 16px;
+  margin-bottom: 8px;
+}
+.chat-live-files-inner {
+  max-width: var(--chat-content-max-width, 820px);
+  margin: 0 auto;
+}
+.chat-live-files .turn-files-card {
+  margin-top: 0;
+}
+
+/* A diff the file viewer shows from a session's own record, not the working
+   tree. The caption names the source and stays pinned above the hunks. */
+.file-diff-source-note {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 5px 12px;
+  border-bottom: var(--hairline) solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+@media (max-width: 640px) {
+  .chat-live-files {
+    padding: 0 10px;
+  }
+}

@@ -48,7 +48,11 @@ test("the file viewer forwards whole-file @mentions to the text viewer", async (
 test("long user messages scroll inside a height-capped bubble (#419)", async () => {
   const messageView = await read("./MessageView.tsx");
   const bubble = messageView.slice(messageView.indexOf("message-user-bubble"));
-  assert.match(bubble.slice(0, 300), /maxHeight: USER_BUBBLE_MAX_HEIGHT,\s+overflowY: "auto",/);
+  // The cap and the scroll stay; "Expand" lifts both so the whole prompt fits.
+  assert.match(
+    bubble.slice(0, 620),
+    /maxHeight: expanded \|\| promptExpanded \? "none" : USER_BUBBLE_MAX_HEIGHT,\s+overflowY: expanded \|\| promptExpanded \? "visible" : "auto",/,
+  );
 });
 
 test("the right-panel file tree refreshes when a run ends", async () => {

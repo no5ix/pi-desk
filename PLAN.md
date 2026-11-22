@@ -59,3 +59,25 @@ Run `npm test` (+ i18n registry parity, fork-extractions, ui-menu-consistency wh
       `lib/apple-script.test.mjs`; gates: tsc, eslint, full suite (only the known #804 failure)
 - [ ] Safari: title, folders only, the pop-in and fade-out, a refused Desktop folder,
       a pick over Tailscale
+
+---
+# Phase D — five tasks on the running chat (2026-11-22)
+- [x] **1. "Edited files" opens a real diff.** A row opened the file's content. The row now opens
+      the file's diff, built from the session's own `write` / `edit` / `apply_patch` records
+      (`lib/session-file-diff.ts`, `GET /api/sessions/[id]/file-diff`); the panel names the source
+      and swaps to the working tree when both exist
+- [x] **2. Project-level skills, like project-level MCP.** Skills › a global skill ›
+      **Turn on in this project** writes `<cwd>/.pi/skills/<name>` (a link to the global folder,
+      a copy where links are refused); **Remove from this project** deletes it, the global skill
+      untouched; the project's own copy shadows the global one by name
+- [x] **3. A live "Edited files" card above the composer.** While a turn runs it is the one file
+      list, collapsed, counting and listing what the agent has written so far; the reply shows no
+      card, and the finished turn shows exactly one
+- [x] **4. A long prompt reads without "Expand".** The collapsed prompt is a scroll box;
+      **Expand** drops the cap so the whole prompt fits, **Collapse** restores the box
+- [x] **5. Collapse rules.** Process details and compaction always start collapsed and never
+      auto-expand. A running turn keeps its last 8 blocks as themselves (the compaction card
+      counts) and folds the older ones into Process details; when it stops, all of them fold
+- [ ] Manual Safari/desktop pass: the diff panel's source switch, the live card's count growing,
+      prompt scroll + Expand, a running turn's fold line moving as it works,
+      Settings › Skills on a trusted and an untrusted project

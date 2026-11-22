@@ -14,6 +14,7 @@ import { ProcessDetailsContext } from "./process-details-context";
 import { buildComposerHistory } from "@/lib/composer-history";
 import { ConversationFind } from "./ConversationFind";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
+import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
 import { useReportDesktopReady } from "./desktop";
@@ -87,6 +88,8 @@ interface Props {
   projectOptions?: string[];
   onProjectChange?: (projectRoot: string) => void;
   onOpenFile?: (filePath: string, page?: number) => void;
+  /** Opens a written file's diff, with the session that wrote it. */
+  onOpenFileDiff?: (filePath: string, sessionId?: string) => void;
   /** Fired after non-image drops are copied into the session cwd (so the explorer can refresh). */
   onProjectFilesImported?: () => void;
   /** Open the provider/auth configuration modal (offered by the scope-warning banner). */
@@ -117,6 +120,17 @@ function hasFinalAssistantAnswer(message: AgentMessage): boolean {
     block.type === "image" || (block.type === "text" && block.text.trim().length > 0)
   ));
 }
+
+/**
+ * How many of a running turn's trailing blocks stay unfolded above the composer.
+ * Everything older folds into the collapsed Process details card; when the turn
+ * stops, they all fold. A compaction card counts as one of these blocks.
+ */
+const LIVE_PROCESS_TAIL_BLOCKS = 8;
+
+// A stable empty list: the composer's live card keeps its identity between
+// renders while nothing is written.
+const EMPTY_WRITTEN_FILES: WrittenFile[] = [];
 
 function findFinalAssistantIndex(messages: AgentMessage[], userIdx: number, endIdx: number): number {
   for (let candidateIdx = endIdx - 1; candidateIdx > userIdx; candidateIdx--) {
@@ -277,7 +291,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onOpenFile, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatOnly = workspaceKind === "chat" || session?.workspaceKind === "chat";
@@ -1202,6 +1216,34 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     }));
   }, [messages.length, scrollContainerRef]);
 
+  // The files the running turn has written so far, for the card above the
+  // composer: the count and the list follow the agent's own writes as they land.
+  // It shows only while the turn runs — a finished turn carries its list under
+  // its reply, so a turn never shows two cards.
+  const liveFilesRef = useRef<WrittenFile[]>([]);
+  const liveWrittenFiles = useMemo(() => {
+    if (!sessionBusy && !streamState.isStreaming) return EMPTY_WRITTEN_FILES;
+    let anchorIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (isMessageGroupAnchor(messages[i])) { anchorIdx = i; break; }
+    }
+    const content: AssistantContentBlock[] = [];
+    for (let i = anchorIdx + 1; i < messages.length; i++) {
+      const message = messages[i];
+      if (message.role === "assistant") content.push(...((message as AssistantMessage).content ?? []));
+    }
+    const streaming = streamState.streamingMessage as AssistantMessage | undefined;
+    if (streaming && Array.isArray(streaming.content)) content.push(...streaming.content);
+    if (content.length === 0) return EMPTY_WRITTEN_FILES;
+    const files = extractTurnWrittenFiles(content, toolResultsMap, messageCwd);
+    if (files.length === 0) return EMPTY_WRITTEN_FILES;
+    // Keep the array identity while the list is equal, so the card does not
+    // re-render on every streamed token.
+    if (JSON.stringify(files) === JSON.stringify(liveFilesRef.current)) return liveFilesRef.current;
+    liveFilesRef.current = files;
+    return files;
+  }, [messages, streamState.isStreaming, streamState.streamingMessage, sessionBusy, toolResultsMap, messageCwd]);
+
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
@@ -1487,6 +1529,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                     modelNames={modelNames}
                     cwd={messageCwd}
                     onOpenFile={openFile}
+                    onOpenFileDiff={onOpenFileDiff}
                     onOpenSession={onOpenSession}
                     entryId={entryIds[idx]}
                     searchBlock={entryIds[idx] === pendingSearchScroll?.entryId ? searchBlock : undefined}
@@ -1547,22 +1590,18 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                   continue;
                 }
 
-                const isLiveTail = (sessionBusy || streamState.isStreaming) && endIdx === messages.length && userIdx === lastAnchorIdx;
-                if (isLiveTail) {
-                  for (let renderIdx = groupStartIdx; renderIdx < endIdx; renderIdx++) {
-                    rendered.push(renderMessage(renderIdx));
-                  }
-                  idx = endIdx;
-                  continue;
-                }
+                // A running turn keeps its most recent blocks as themselves, so the
+                // work in front of the user stays readable; everything older folds into
+                // the Process details card, exactly as a finished turn folds.
+                const liveTail = (sessionBusy || streamState.isStreaming) && endIdx === messages.length && userIdx === lastAnchorIdx;
 
                 if (hasAnchor) rendered.push(renderMessage(userIdx));
 
                 const finalAssistant = messages[finalAssistantIdx] as AssistantMessage;
                 const { answerMessage: finalAnswerMessage, processMessage: finalProcessMessage } = getFinalSplit(finalAssistant);
 
-                const processViews: ReactNode[] = [];
-                let processToolCount = 0;
+                const processIndexes: number[] = [];
+                const processToolCounts: number[] = [];
                 let processRefIdx: number | undefined;
                 let revealProcess = false;
 
@@ -1570,7 +1609,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                   const processMessage = messages[processIdx];
                   if (processMessage.role === "custom") {
                     revealProcess ||= Boolean(pendingSearchScroll && pendingSearchScroll.entryId === entryIds[processIdx]);
-                    processViews.push(renderMessage(processIdx, { attachRef: false, keyPrefix: "process" }));
+                    processIndexes.push(processIdx);
+                    processToolCounts.push(0);
                     continue;
                   }
                   if (processMessage.role !== "assistant") continue;
@@ -1578,40 +1618,67 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                   const blocks = getDisplayableAssistantBlocks(message);
                   if (blocks.length === 0) continue;
                   processRefIdx ??= visibleRefIndexByMessage.get(processIdx);
-                  processToolCount += countToolCallBlocks(blocks);
                   revealProcess ||= Boolean(pendingSearchScroll && entryIds[processIdx] === pendingSearchScroll.entryId && (!searchBlock || blocks.includes(searchBlock)));
-                  processViews.push(renderMessage(processIdx, {
-                    attachRef: false,
-                    keyPrefix: "process",
-                    messageOverride: message,
-                    showTimestamp: false,
-                  }));
+                  processIndexes.push(processIdx);
+                  processToolCounts.push(countToolCallBlocks(blocks));
                 }
 
-                if (processViews.length > 0) {
+                // How many of the running turn's blocks stay unfolded; the compaction
+                // card counts as one of them. A finished turn unfolds none.
+                const foldCount = liveTail
+                  ? Math.max(0, processIndexes.length - LIVE_PROCESS_TAIL_BLOCKS)
+                  : processIndexes.length;
+
+                const renderProcessView = (processIdx: number, index: number) => {
+                  const processMessage = messages[processIdx];
+                  // An unfolded block carries its own ref, so the turn rail and the
+                  // search jump still find it.
+                  const attachRef = index >= foldCount;
+                  if (processMessage.role === "custom") {
+                    return renderMessage(processIdx, { attachRef, keyPrefix: "process" });
+                  }
+                  return renderMessage(processIdx, {
+                    attachRef,
+                    keyPrefix: "process",
+                    messageOverride: processIdx === finalAssistantIdx ? finalProcessMessage : processMessage,
+                    showTimestamp: false,
+                  });
+                };
+
+                if (foldCount > 0) {
                   rendered.push(
                     <div
                       key={`process-group-${messageKeys[groupStartIdx] ?? groupStartIdx}`}
                       ref={processRefIdx === undefined ? undefined : (el) => { messageRefs.current[processRefIdx] = el; }}
                     >
-                      {/* Re-key on answer availability: useState reads defaultExpanded only
-                          on mount, so a turn first rendered without an answer (expanded)
-                          would otherwise stay open once its answer shows up, e.g. when
-                          switching between an answered and an unanswered leaf of the same
-                          turn. Manual toggles survive every other re-render. */}
-                      <ProcessDetailsGroup key={finalAnswerMessage ? "answered" : "unanswered"} messageCount={processViews.length} toolCallCount={processToolCount} defaultExpanded={!finalAnswerMessage} reveal={revealProcess} t={t}>
-                        {processViews}
+                      {/* Process details open collapsed, always: a stopped task, a stopped
+                          session and a running turn's older work alike. Nothing expands them
+                          by itself — a click on the trigger does, and a search jump (`reveal`)
+                          counts as one. */}
+                      <ProcessDetailsGroup
+                        messageCount={foldCount}
+                        toolCallCount={processToolCounts.slice(0, foldCount).reduce((sum, count) => sum + count, 0)}
+                        defaultExpanded={false}
+                        reveal={revealProcess}
+                        t={t}
+                      >
+                        {processIndexes.slice(0, foldCount).map((processIdx, index) => renderProcessView(processIdx, index))}
                       </ProcessDetailsGroup>
                     </div>,
                   );
+                }
+                for (let index = foldCount; index < processIndexes.length; index++) {
+                  rendered.push(renderProcessView(processIndexes[index], index));
                 }
 
                 if (finalAnswerMessage) {
                   // Each tool call is stored as its own assistant entry, so the
                   // final answer alone carries no record of what the turn wrote.
                   // Gather the turn's assistant blocks and derive the file list
-                  // from the write/edit calls among them.
-                  const writtenFiles = getTurnWrittenFiles(finalAssistant, messages.slice(userIdx + 1, finalAssistantIdx + 1), toolResultsMap, messageCwd);
+                  // from the write/edit calls among them. While the turn is still
+                  // running the composer's live card is that list, so the reply
+                  // shows none and the finished turn shows exactly one.
+                  const writtenFiles = liveTail ? undefined : getTurnWrittenFiles(finalAssistant, messages.slice(userIdx + 1, finalAssistantIdx + 1), toolResultsMap, messageCwd);
                   rendered.push(renderMessage(finalAssistantIdx, {
                     messageOverride: finalAnswerMessage,
                     writtenFiles,
@@ -1826,6 +1893,20 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
             cwd={newSessionCwd}
             isChat={chatOnly}
           />
+        )}
+        {liveWrittenFiles.length > 0 && (
+          <div className="chat-live-files">
+            <div className="chat-live-files-inner">
+              <TurnWrittenFiles
+                files={liveWrittenFiles}
+                defaultExpanded={false}
+                sessionId={session?.id ?? sessionIdRef.current ?? undefined}
+                onOpenFile={onOpenFileDiff
+                  ? (filePath: string, writtenIn?: string) => { onOpenFileDiff(filePath, writtenIn ?? session?.id ?? sessionIdRef.current ?? undefined); }
+                  : undefined}
+              />
+            </div>
+          </div>
         )}
         {chatInputElement}
         {(belowEditorWidgets.length > 0 || hasExtensionStatus) && (

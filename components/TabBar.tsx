@@ -13,6 +13,8 @@ export interface Tab {
   kind?: "terminal" | "artifact" | "side";
   closing?: boolean;
   sourceSessionId?: string | null;
+  /** Open the diff a session recorded for this file (`GET /api/sessions/[id]/file-diff`). */
+  diffSessionId?: string | null;
   initialDisplayMode?: FileViewerDisplayMode;
   /** PDF page requested by the link that opened this tab (`#page=N`). */
   page?: number;

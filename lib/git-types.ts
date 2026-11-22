@@ -27,3 +27,16 @@ export interface GitFileDiffResponse {
   status?: GitFileStatusKind;
   patch?: string;
 }
+
+/**
+ * One file's changes as a session recorded them (`GET /api/sessions/[id]/file-diff`).
+ * Same shape as a git diff, because the file viewer renders both in one view; the
+ * extra counts label it.
+ */
+export interface SessionFileDiffResponse extends GitFileDiffResponse {
+  source?: "session";
+  additions?: number;
+  deletions?: number;
+  /** The tool calls that touched the file. */
+  changes?: number;
+}

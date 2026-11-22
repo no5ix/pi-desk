@@ -132,3 +132,61 @@ The pi CLI's `AgentSessionRuntime` replaces its single session in place; Pi Web 
 
 ## Exported session HTML
 - `/api/sessions/[id]/export` delegates to pi's export helper and returns its HTML unmodified. Since pi 1.5.0 the template walks the session tree iteratively, so very deep linear sessions no longer overflow the browser call stack; do not bring back string patches on the generated HTML, they turn every export into a 500 when the template changes. `app/api/sessions/[id]/export/route.test.mjs` pins this.
+
+## Process details and a compaction card open collapsed, always (`components/ChatWindow.tsx`)
+Every `ProcessDetailsGroup` call site passes `defaultExpanded={false}`: a stopped task, a stopped
+session and a running turn's older work all fold, and nothing expands them by itself. The turn's
+group is keyed on its start index (`process-group-<key>`), so opening it mid-run survives the turn
+finishing, and a leaf switch to another group remounts it. A search hit inside still opens it
+(`reveal`, which counts as a click). `lib/message-display.ts`'s `collapsesProcessDetails()` (#906,
+"stay open under an error notice alone") is no longer used for the decision and has no caller in
+the chat — the fork's rule wins over it. The compaction card (`CompactionMessageView`) starts
+collapsed and auto-expands nowhere.
+
+A running turn keeps its newest work unfolded: `LIVE_PROCESS_TAIL_BLOCKS = 8` blocks counting from
+the end of the turn's process list stay themselves, a compaction card counts as one of them, and
+everything older folds into the card (`foldCount`). Only the last group of a running session is a
+live tail (`liveTail`), so a finished turn folds all of its process blocks. An unfolded block
+carries its own ref (`attachRef = index >= foldCount`), so the turn rail and the search jump keep
+finding it; the folded ones' ref lives on the group wrapper.
+
+## One Edited files card per turn, and a live one above the composer (`ChatWindow.tsx`, `TurnWrittenFiles.tsx`)
+While a turn runs, the card docked above the composer (`.chat-live-files`) is the turn's file list:
+`liveWrittenFiles` gathers the writes of the running turn's messages plus the streaming entry, so
+its count and rows grow as the agent works, and it is folded by default. The reply shows no card
+while the turn is live (`writtenFiles = liveTail ? undefined : …`); when the turn ends the live
+card goes empty and the turn's own card takes over, so a running turn shows one card and a
+finished turn shows one. The card sits inside the composer overlay, which the
+`--chat-composer-inset` ResizeObserver measures, so the scroll spacer grows with it.
+
+A row opens the file's **diff**, not its content: `onOpenFile(filePath, sessionId)` carries the
+session that wrote it. `TurnWrittenFiles` passes its `sessionId`; `AppShell.handleOpenSessionFileDiff`
+opens the tab with `modeHint: "diff"` and `diffSessionId` (in `components/file-tab-state.ts`,
+carried by `TabBar`).
+
+## The diff of a file as one session made it (`lib/session-file-diff.ts`, `GET /api/sessions/[id]/file-diff`)
+The card counts what the session's own `write` / `edit` / `apply_patch` calls changed, and a change
+the agent committed (or that the session made and the working tree no longer carries) has no git
+diff, so the panel used to show the file with no diff at all. The route reads the session (a live
+`AgentSessionWrapper` first, then the file) and rebuilds one file section: an `edit`'s
+`details.patch` verbatim, pi's numbered `details.diff` as context/added/removed lines, an `edit`
+with no details from its `oldText` / `newText` (context trimmed to the change), a `write` as an
+added file, an `apply_patch` through `applyPatchPreviewToFiles` (the parser the tool card uses), in
+call order, one `--- / +++` header, one hunk per call. Counts come from the hunks
+(`countPatchLines`), and a synthesized hunk's header says `@@ session change +N @@` because the
+line numbers of a chain of edits are not knowable from the records. A call with no result, an
+errored result, or a path that resolves to another file is skipped; the path must be absolute and
+the session's `cwd` resolves a call's relative path.
+`FileViewer` takes `diffSessionId`: its diff view shows that patch under a sticky
+`.file-diff-source-note` naming the count, and when the working tree has its own diff the toolbar
+switches between **Working-tree changes** and **Changes in this session** (`preferGitDiff`, reset
+with the file). The session record is the default: it is the number the row was built from.
+
+## A long prompt is a scroll box, and Expand shows it whole (`CollapsibleUserText`, `components/MessageView.tsx`)
+Collapsed, the prompt is `maxHeight: USER_TEXT_COLLAPSE_HEIGHT` with `overflowY: "auto"` — readable
+down its cap without pressing anything; the bottom fade only marks a box that is not scrolled to
+its end (`scrolledToEnd`). **Expand** removes the cap and the scroll, and tells the bubble
+(`onExpandedChange` → `promptExpanded`), because the bubble owns `USER_BUBBLE_MAX_HEIGHT` and
+`overflowY`: a scroll box inside a capped bubble cannot grow, so the cap has to be lifted where it
+lives. **Collapse** puts the box back. The toggle stays visible while expanded: the measurement is
+`scrollHeight > cap + 60` on the content, which stays true with no cap.

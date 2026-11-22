@@ -25,7 +25,7 @@ import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, markdownUrl
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { FrontmatterCard } from "./FrontmatterCard";
 import { diffGapLabel, parseUnifiedPatch } from "@/lib/patch";
-import type { GitFileDiffResponse } from "@/lib/git-types";
+import type { GitFileDiffResponse, SessionFileDiffResponse } from "@/lib/git-types";
 import { getFileIcon } from "./FileIcons";
 import { useI18n } from "@/hooks/useI18n";
 import { getDesktopPlatform } from "@/lib/desktop-window";
@@ -44,6 +44,13 @@ interface Props {
   filePath: string;
   cwd?: string;
   sourceSessionId?: string | null;
+  /**
+   * A session whose recorded `write` / `edit` / `apply_patch` calls touched this
+   * file. The diff view then shows what that session changed, which a git diff
+   * cannot: the agent's change may already be committed, and the `Edited files`
+   * card's counts are the session's own.
+   */
+  diffSessionId?: string | null;
   onOpenFile?: (filePath: string, page?: number) => void;
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   /** Insert this file's relative path into the chat input (@ mention). */
@@ -1082,6 +1089,7 @@ export function FileViewer({
   filePath,
   cwd,
   sourceSessionId,
+  diffSessionId,
   onOpenFile,
   onMentionLines,
   onAtMention,
@@ -1104,13 +1112,14 @@ export function FileViewer({
   if (isDocumentPreviewPath(filePath)) {
     return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} initialPage={initialPage} watchEnabled={watchEnabled} />;
   }
-  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} onAtMention={onAtMention} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} initialState={initialState} onStateChange={onStateChange} watchEnabled={watchEnabled} />;
+  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} diffSessionId={diffSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} onAtMention={onAtMention} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} initialState={initialState} onStateChange={onStateChange} watchEnabled={watchEnabled} />;
 }
 
 function TextFileViewer({
   filePath,
   cwd,
   sourceSessionId,
+  diffSessionId,
   onOpenFile,
   onMentionLines,
   onAtMention,
@@ -1125,6 +1134,13 @@ function TextFileViewer({
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
   const [gitDiffResolved, setGitDiffResolved] = useState(false);
+  const [sessionDiff, setSessionDiff] = useState<SessionFileDiffResponse | null>(null);
+  const [sessionDiffLoading, setSessionDiffLoading] = useState(false);
+  const [sessionDiffResolved, setSessionDiffResolved] = useState(false);
+  // Both records exist for a file that also has uncommitted changes: the session
+  // record is the default (it is what the card counted), and this switch offers
+  // the working tree. Reset with the file.
+  const [preferGitDiff, setPreferGitDiff] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1148,6 +1164,7 @@ function TextFileViewer({
   const esRef = useRef<EventSource | null>(null);
   const contentRequestRef = useRef(0);
   const gitDiffRequestRef = useRef(0);
+  const sessionDiffRequestRef = useRef(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const autoDiffAppliedRef = useRef(false);
   const scrollRestorePendingRef = useRef(true);
@@ -1250,6 +1267,28 @@ function TextFileViewer({
     }
   }, [cwd]);
 
+  // The session's own record of the file, for the same diff view. A committed
+  // change, or a file outside the repository, has no git diff; the session's
+  // tool calls do.
+  const fetchSessionDiff = useCallback(async (targetPath: string, sessionId: string) => {
+    const requestId = ++sessionDiffRequestRef.current;
+    setSessionDiffLoading(true);
+    try {
+      const params = new URLSearchParams({ path: targetPath });
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/file-diff?${params.toString()}`);
+      const next = await response.json() as SessionFileDiffResponse & { error?: string };
+      if (requestId !== sessionDiffRequestRef.current) return;
+      setSessionDiff(response.ok && next.supported && typeof next.patch === "string" ? next : null);
+    } catch {
+      if (requestId === sessionDiffRequestRef.current) setSessionDiff(null);
+    } finally {
+      if (requestId === sessionDiffRequestRef.current) {
+        setSessionDiffLoading(false);
+        setSessionDiffResolved(true);
+      }
+    }
+  }, []);
+
   // Reset and load the file itself when its identity changes. Live watching is
   // managed separately so pausing it never clears the displayed content.
   useEffect(() => {
@@ -1259,6 +1298,9 @@ function TextFileViewer({
     setData(null);
     setGitDiff(null);
     setGitDiffResolved(false);
+    setSessionDiff(null);
+    setSessionDiffResolved(diffSessionId ? false : true);
+    setPreferGitDiff(false);
     setWatching(false);
 
     fetchContent(filePath).finally(() => {
@@ -1268,7 +1310,7 @@ function TextFileViewer({
     return () => {
       active = false;
     };
-  }, [filePath, fetchContent, sourceSessionId]);
+  }, [filePath, fetchContent, sourceSessionId, diffSessionId]);
 
   useEffect(() => {
     setWatching(false);
@@ -1283,6 +1325,7 @@ function TextFileViewer({
     const synchronize = () => {
       void fetchContent(filePath);
       void fetchGitDiff(filePath);
+      if (diffSessionId) void fetchSessionDiff(filePath, diffSessionId);
     };
 
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
@@ -1312,27 +1355,43 @@ function TextFileViewer({
       es.close();
       if (esRef.current === es) esRef.current = null;
     };
-  }, [filePath, fetchContent, fetchGitDiff, sourceSessionId, watchEnabled]);
+  }, [filePath, fetchContent, fetchGitDiff, fetchSessionDiff, sourceSessionId, watchEnabled, diffSessionId]);
+
+  // The session's record of this file, asked for only when a card named the
+  // session. The file watcher refreshes it alongside the git diff.
+  useEffect(() => {
+    if (!diffSessionId) return;
+    void fetchSessionDiff(filePath, diffSessionId);
+  }, [diffSessionId, fetchSessionDiff, filePath, gitRefreshKey]);
 
   useEffect(() => {
     void fetchGitDiff(filePath);
   }, [fetchGitDiff, filePath, gitRefreshKey]);
 
   const hasGitDiff = gitDiff?.supported === true && typeof gitDiff.patch === "string";
-  const isDeletedDiff = hasGitDiff && gitDiff.status === "deleted";
+  const hasSessionDiff = sessionDiff?.supported === true && typeof sessionDiff.patch === "string";
+  // Which record the diff view shows. The session's own wins when it exists: the
+  // `Edited files` card that opened this tab counted those calls, and a change the
+  // agent committed leaves no git diff to show. A file with both offers the switch.
+  const diffSource: "session" | "git" = hasSessionDiff && !preferGitDiff ? "session" : "git";
+  const activeDiff: GitFileDiffResponse | null = diffSource === "session" ? sessionDiff : gitDiff;
+  const hasDiff = diffSource === "session" ? hasSessionDiff : hasGitDiff;
+  const diffResolved = gitDiffResolved && (!diffSessionId || sessionDiffResolved);
+  const diffLoading = gitDiffLoading || (Boolean(diffSessionId) && sessionDiffLoading);
+  const isDeletedDiff = hasDiff && activeDiff?.status === "deleted";
 
   useEffect(() => {
-    if (gitDiffResolved && !hasGitDiff && displayMode === "diff") updateDisplayMode("source");
-  }, [displayMode, gitDiffResolved, hasGitDiff, updateDisplayMode]);
+    if (diffResolved && !hasDiff && displayMode === "diff") updateDisplayMode("source");
+  }, [displayMode, diffResolved, hasDiff, updateDisplayMode]);
 
-  // Wait for the git request before restoring diff mode so the unresolved
+  // Wait for the diff requests before restoring diff mode so the unresolved
   // placeholder cannot immediately demote it back to source.
   useEffect(() => {
-    if (requestedInitialDisplayMode === "diff" && hasGitDiff && !autoDiffAppliedRef.current) {
+    if (requestedInitialDisplayMode === "diff" && hasDiff && !autoDiffAppliedRef.current) {
       autoDiffAppliedRef.current = true;
       updateDisplayMode("diff");
     }
-  }, [requestedInitialDisplayMode, hasGitDiff, updateDisplayMode]);
+  }, [requestedInitialDisplayMode, hasDiff, updateDisplayMode]);
 
   const markdownPreview = useMemo(
     () => (data?.language === "markdown" ? normalizeDisplayMath(data.content) : ""),
@@ -1365,7 +1424,7 @@ function TextFileViewer({
       ? "source"
       : displayMode;
   const useLightweightSource = sourceLines.length > SOURCE_HIGHLIGHT_MAX_LINES
-    && !(effectiveDisplayMode === "diff" && hasGitDiff)
+    && !(effectiveDisplayMode === "diff" && hasDiff)
     && !(effectiveDisplayMode === "preview" && hasPreview);
   // react-syntax-highlighter rebuilds every token element on each render, which
   // costs hundreds of milliseconds on large files. Cache the rendered trees so
@@ -1487,8 +1546,8 @@ function TextFileViewer({
   useEffect(() => {
     if (!scrollRestorePendingRef.current || loading) return;
     if (error && !isDeletedDiff) return;
-    if (requestedInitialDisplayMode === "diff" && !gitDiffResolved) return;
-    if (requestedInitialDisplayMode === "diff" && hasGitDiff && displayMode !== "diff") return;
+    if (requestedInitialDisplayMode === "diff" && !diffResolved) return;
+    if (requestedInitialDisplayMode === "diff" && hasDiff && displayMode !== "diff") return;
 
     const content = contentRef.current;
     if (!content) return;
@@ -1500,14 +1559,14 @@ function TextFileViewer({
     data?.content,
     displayMode,
     error,
-    gitDiffResolved,
-    hasGitDiff,
+    diffResolved,
+    hasDiff,
     isDeletedDiff,
     loading,
     requestedInitialDisplayMode,
   ]);
 
-  if (loading || (requestedInitialDisplayMode === "diff" && gitDiffLoading && !data)) {
+  if (loading || (requestedInitialDisplayMode === "diff" && diffLoading && !data)) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "var(--fs-body)" }}>
         {t("i18n.loading")}
@@ -1533,7 +1592,7 @@ function TextFileViewer({
     : [
         "source",
         ...(hasPreview ? ["preview" as const] : []),
-        ...(hasGitDiff ? ["diff" as const] : []),
+        ...(hasDiff ? ["diff" as const] : []),
       ];
   const metadata = isDeletedDiff
     ? t("files.deleted")
@@ -1584,7 +1643,7 @@ function TextFileViewer({
                     key={mode}
                     type="button"
                     onClick={() => updateDisplayMode(mode)}
-                    title={mode === "diff" ? t("i18n.compareHead") : undefined}
+                    title={mode === "diff" ? t(diffSource === "session" ? "files.diffFromSessionTitle" : "i18n.compareHead") : undefined}
                     aria-pressed={active}
                     className="file-viewer-mode-button"
                   >
@@ -1593,6 +1652,18 @@ function TextFileViewer({
                 );
               })}
             </div>
+          )}
+          {/* A file the agent changed and the working tree also changed: both
+              records exist, so the diff view says which one it shows and swaps. */}
+          {effectiveDisplayMode === "diff" && hasSessionDiff && hasGitDiff && (
+            <button
+              type="button"
+              className="file-viewer-mode-button"
+              onClick={() => setPreferGitDiff((value) => !value)}
+              title={t(diffSource === "session" ? "files.diffSwitchToGit" : "files.diffSwitchToSession")}
+            >
+              {t(diffSource === "session" ? "files.diffSwitchToGit" : "files.diffSwitchToSession")}
+            </button>
           )}
 
           <div className="file-viewer-actions">
@@ -1706,8 +1777,15 @@ function TextFileViewer({
         }}
         style={{ flex: 1, overflow: "auto", background: "var(--bg)", paddingBottom: data?.truncated ? 48 : undefined }}
       >
-        {effectiveDisplayMode === "diff" && hasGitDiff ? (
-          <DiffView patch={gitDiff.patch!} />
+        {effectiveDisplayMode === "diff" && hasDiff ? (
+          <>
+            {diffSource === "session" && (
+              <div className="file-diff-source-note">
+                {t("files.diffFromSession", { count: sessionDiff?.changes ?? 0 })}
+              </div>
+            )}
+            <DiffView patch={activeDiff?.patch ?? ""} />
+          </>
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           htmlScriptsEnabled && htmlHasScripts ? (
             <iframe

@@ -57,20 +57,27 @@ function useMissingFiles(filePaths: string[], sessionId?: string): Set<string> {
 
 /**
  * Card under a turn's reply listing the files it actually wrote, with the
- * lines each one gained and lost. A row opens the file in the preview pane;
- * right-click offers the native Open / Open With / Reveal menu. Entries come
- * from the turn's successful `write`/`edit`/`apply_patch` tool calls — the
- * reply text is never scanned for paths. Rows whose file has since been
- * removed are marked; clicking one still opens the viewer, which explains it.
+ * lines each one gained and lost. A row opens the diff the session made to that
+ * file in the preview pane (`onOpenFile` names the session, so the panel shows
+ * the recorded hunks rather than the file as it stands); right-click offers the
+ * native Open / Open With / Reveal menu. Entries come from the turn's successful
+ * `write`/`edit`/`apply_patch` tool calls — the reply text is never scanned for
+ * paths. Rows whose file has since been removed are marked; clicking one still
+ * opens the viewer, which explains it.
  */
-export function TurnWrittenFiles({ files, onOpenFile, sessionId }: {
+export function TurnWrittenFiles({ files, onOpenFile, sessionId, defaultExpanded = true }: {
   files: WrittenFile[];
-  onOpenFile?: (filePath: string) => void;
+  /** Opens one file's diff; `sessionId` is the session that wrote it. */
+  onOpenFile?: (filePath: string, sessionId?: string) => void;
   sessionId?: string;
+  /** The live card above the composer opens folded; a finished turn's card opens open. */
+  defaultExpanded?: boolean;
 }) {
   const { t } = useI18n();
-  const showFileMenu = useFileContextMenu(onOpenFile);
-  const [expanded, setExpanded] = useState(true);
+  const showFileMenu = useFileContextMenu(onOpenFile
+    ? (filePath: string) => { onOpenFile(filePath, sessionId); }
+    : undefined);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const missing = useMissingFiles(files.map((file) => file.filePath), sessionId);
   if (files.length === 0) return null;
 
@@ -106,7 +113,7 @@ export function TurnWrittenFiles({ files, onOpenFile, sessionId }: {
             className={`turn-files-row${isMissing ? " is-missing" : ""}`}
             title={isMissing ? `${filePath}\n${t("files.notFound")}` : filePath}
             aria-label={t("chat.openWrittenFile", { name })}
-            onClick={() => onOpenFile?.(filePath)}
+            onClick={() => onOpenFile?.(filePath, sessionId)}
             onContextMenu={(event) => showFileMenu(event, { filePath })}
           >
             <span className="turn-files-icon">{getFileIcon(name, 14)}</span>

@@ -278,3 +278,65 @@ it must reuse the app's window code — its overlay and its pop-out / disappear 
 `lib/project-directory-pick.test.mjs`, `lib/apple-script.ts`, `lib/apple-script.test.mjs`,
 `lib/i18n/locale-plugins.ts`, `app/native-theme.css`, `docs/agents/files-and-access.md`,
 `docs/agents/sessions.md`; deleted: `app/api/cwd/pick/route.ts`, `app/api/cwd/pick/route.test.mjs`.
+
+## Done (Phase D — the five tasks)
+- **1. The session's own diff (task 1).** `lib/session-file-diff.ts` rebuilds a unified patch for
+  one file out of the session's recorded calls: an `edit`'s `details.patch`, a `write`'s content
+  as an added file, pi's numbered `details.diff` as hunks, an `edit` with no details from its
+  `oldText`/`newText` (context trimmed around the change), an `apply_patch` through the same
+  parser the tool card uses; hunks stack under one file header, counts come from the hunks, and an
+  enormous write is capped with a `diff truncated` notice. `GET /api/sessions/[id]/file-diff`
+  (live wrapper first, then the file; the path must be absolute and inside an allowed root).
+  `FileViewer` takes `diffSessionId`, shows that patch in the diff view with a sticky
+  `.file-diff-source-note` ("Changes this session made (N edits)"), and offers
+  **Working-tree changes** / **Changes in this session** when both records exist. `file-tab-state`
+  and `TabBar` carry `diffSessionId`; `AppShell.handleOpenSessionFileDiff` opens the tab with
+  `modeHint: "diff"`. `TurnWrittenFiles` hands the writing session's id to the opener.
+- **2. Project skills (task 2).** `lib/project-skills.ts`: a name, never a path, is resolved from
+  the skills this project loads, and the target is fixed to `<cwd>/.pi/skills/<name>`
+  (`isSafeSkillName`, no traversal, a link — a junction on Windows — with a copy fallback, and
+  removal only of a top-level entry there). `POST /api/skills/project`
+  `{ cwd, name, action: "add" | "remove" }` behind the file-access allow-list. Skills › the detail
+  pane gains a **This project** row: **Turn on in this project**, **Remove from this project**, or
+  **Show the project's skill** when the project carries its own copy; the list reloads and lands on
+  the project's copy; the button is refused while the project's resources are not loaded (the
+  trust notice above already says why). i18n ×3.
+- **3. The live card (task 3).** `ChatWindow` memo `liveWrittenFiles` (the running turn's
+  `extractTurnWrittenFiles` over its messages plus the streaming entry), rendered in
+  `.chat-live-files` above the composer, folded by default; the reply's own card is suppressed
+  while the turn runs, so a running turn shows one card and a finished turn shows one. The card is
+  inside the measured composer overlay, so the scroll spacer grows with it.
+- **4. Prompt scroll and Expand (task 4).** `CollapsibleUserText`'s collapsed box is
+  `overflowY: "auto"` at the same cap (was a clipped fade), the fade only marks a box that is not
+  scrolled to its end, and **Expand** reports up (`onExpandedChange` → the bubble's
+  `maxHeight: expanded || promptExpanded ? "none" : USER_BUBBLE_MAX_HEIGHT`) so the whole prompt
+  fits; **Collapse** puts the box back.
+- **5. Collapse rules (task 5).** `ProcessDetailsGroup` is `defaultExpanded={false}` in every call
+  site (a stopped task, a stopped session, a running turn). `LIVE_PROCESS_TAIL_BLOCKS = 8`:
+  `foldCount = liveTail ? max(0, processIndexes.length - 8) : processIndexes.length`, so a running
+  turn's older work folds and its newest 8 blocks (a compaction card counts) stay themselves, with
+  their own refs for the turn rail and search; when the turn stops, `liveTail` goes false and all
+  of them fold. The compaction card was already collapsed-by-default and auto-expands nowhere.
+- Tests added: `lib/session-file-diff.test.mjs` (10), `app/api/sessions/*/file-diff/route.test.mjs`
+  (3), `lib/project-skills.test.mjs` (6), `app/api/skills/project/route.test.mjs` (4),
+  `components/MessageView.prompt-expand.test.mjs` (4), `components/TurnWrittenFiles.open-diff.test.mjs`
+  (3), `components/SkillsConfig.project-skills.test.mjs` (5).
+  Sentinels that pinned the old shape were retargeted: `components/ChatWindow.process-details.test.mjs`
+  (process details never open themselves, the live tail folds, the running turn has one card),
+  `components/FileViewer.test.mjs` (the lightweight-row harness passes `hasDiff`),
+  `components/restored-wiring.test.mjs` (#419's cap is lifted by `promptExpanded`).
+## Verified (Phase D)
+- `node_modules/.bin/tsc --noEmit` clean; `eslint` clean on every touched file.
+- `components/**/*.test.mjs`: **984/984**. Whole repo (app + lib + components + hooks + relay +
+  relay-shell + public + scripts): **4415 tests, 4409 pass, 3 fail, 3 skipped**, all three
+  failures environment-only (see BLOCKERS.md).
+## Files (Phase D)
+`lib/session-file-diff.ts`, `lib/session-file-diff.test.mjs`,
+`app/api/sessions/[id]/file-diff/route.ts`, `app/api/sessions/[id]/file-diff/route.test.mjs`,
+`lib/project-skills.ts`, `lib/project-skills.test.mjs`, `app/api/skills/project/route.ts`,
+`app/api/skills/project/route.test.mjs`, `components/FileViewer.tsx`, `components/TabBar.tsx`,
+`components/file-tab-state.ts`, `components/AppShell.tsx`, `components/MessageView.tsx`,
+`components/ChatWindow.tsx`, `components/TurnWrittenFiles.tsx`, `components/SkillsConfig.tsx`,
+`lib/git-types.ts`, `lib/i18n/locale-plugins.ts`, `lib/i18n/messages/{en,zh-CN,zh-TW}.ts`,
+`app/native-theme.css`; tests retargeted: `components/ChatWindow.process-details.test.mjs`,
+`components/FileViewer.test.mjs`, `components/restored-wiring.test.mjs`.

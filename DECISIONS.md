@@ -84,3 +84,40 @@
 - **No native panel, so no per-panel ceremony.** The panel lock, the front-app capture, the focus
   hand-back and the Accessibility dependency are gone with the panel; the button only shows the
   validation (`sidebar.checkingFolder`).
+
+## Phase D (five tasks on the running chat)
+- **The "Edited files" diff comes from the session, not from git.** The card counts what the
+  session's `write` / `edit` / `apply_patch` calls changed, and a change the agent committed has
+  no git diff at all: the row opened a file with no diff. The session's own records are the only
+  source that always describes *that* change, so `lib/session-file-diff.ts` rebuilds the hunks
+  from them.
+- **One file header, one hunk per recorded call.** The patch is a reading aid, not a patch to
+  apply: hunks the tools reported verbatim keep their `@@` lines, and a synthesized hunk says
+  `@@ session change +N @@` rather than pretending to a byte-exact index. Two edits of one file
+  stack under a single header, so the diff reads as the file's change, not as two tool calls.
+- **The session's record wins when both exist, with a switch to the working tree.** The card's
+  number is the thing the user clicked on, so it is what opens; the toolbar offers
+  **Working-tree changes** because the working tree is often further along (the user edited too).
+- **A project skill is a link to the global folder, with a copy as fallback.** A link keeps
+  `skills.sh` updates in one place and is what pi already does for global skills; a junction on
+  Windows needs no developer mode, and a plain copy covers a filesystem that refuses links. The
+  mode is answered, not promised.
+- **The request names a skill, never a path.** `/api/skills/project` resolves the source from the
+  skills this project already loads and fixes the target to `<cwd>/.pi/skills/<name>`; a browser
+  that names a path cannot make the app copy `~/.ssh` into a project.
+- **Removal deletes one top-level entry of the project's skills folder, and nothing above it.**
+  Removing a linked entry removes the link, so the global skill survives — checked in a test that
+  reads the global `SKILL.md` after the removal.
+- **Eight tail blocks is a named constant, and a compaction card is one of them.** The running
+  turn's newest work stays readable as it arrives; the number is a knob, not a magic value in the
+  loop, and counting the compaction card keeps the rule "the last eight blocks are themselves".
+- **Process details never open themselves.** Every call site passes `defaultExpanded={false}`.
+  Opening used to be automatic for an unanswered turn, and a session opened on a finished turn
+  showed its whole process. A search jump (`reveal`) counts as a click, so a search still lands.
+- **One Edited files card per turn.** While the turn runs, the composer-adjacent live card is the
+  list and the reply carries none; when the turn ends, the live card is gone and the turn's own
+  card is there. Two lists of the same files, one of them stale, is the failure this avoids.
+- **Expand lifts the bubble's cap through the parent, because the bubble owns the cap.**
+  `USER_BUBBLE_MAX_HEIGHT` lives on the bubble; a scroll box inside a capped, `overflow: visible`
+  bubble cannot grow. So `CollapsibleUserText` reports its state (`onExpandedChange`) and the
+  bubble drops both its cap and its scroll.

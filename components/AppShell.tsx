@@ -1703,11 +1703,12 @@ export function AppShell() {
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
-    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number },
+    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number; diffSessionId?: string | null },
   ) => {
     if (isChatWorkspaceActive && !(chatFolderCwd && isPathInside(filePath, chatFolderCwd))) return;
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
+    const diffSessionId = options?.diffSessionId;
     const page = options?.page;
     const tabId = `file:${filePath}`;
     setFileTabs((prev) => openFileTab(prev, {
@@ -1716,6 +1717,7 @@ export function AppShell() {
       modeHint,
       page,
       sourceSessionId,
+      diffSessionId,
       tabId,
     }));
     setActiveFileTabId(tabId);
@@ -1736,6 +1738,18 @@ export function AppShell() {
 
   const handleOpenLinkedFile = useCallback((filePath: string, page?: number) => {
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
+  }, [handleOpenFile, selectedSession?.id]);
+
+  // A written-file row opens the change the session made, not the file as it
+  // stands: the card's counts are the session's own, and a change the agent
+  // committed has no working-tree diff to show.
+  const handleOpenSessionFileDiff = useCallback((filePath: string, sessionId?: string) => {
+    const session = sessionId ?? selectedSession?.id ?? null;
+    handleOpenFile(filePath, getFileName(filePath), {
+      modeHint: "diff",
+      sourceSessionId: session,
+      diffSessionId: session,
+    });
   }, [handleOpenFile, selectedSession?.id]);
 
   const handleOpenTerminal = useCallback((cwd: string) => {
@@ -3090,6 +3104,7 @@ export function AppShell() {
               onProjectChange={selectedSession || isChatWorkspaceActive ? undefined : handleProjectChangeFromComposer}
               onOpenModelsConfig={() => setSettingsSection("models")}
               onOpenFile={handleOpenLinkedFile}
+              onOpenFileDiff={handleOpenSessionFileDiff}
               onOpenSession={handleOpenSession}
               onSideSession={isChatWorkspaceActive ? undefined : handleSideSession}
               quoteSelectionEnabled={quoteSelectionEnabled}
@@ -3436,6 +3451,7 @@ export function AppShell() {
               filePath={activeFileTab.filePath}
               cwd={workbenchCwd ?? undefined}
               sourceSessionId={activeFileTab.sourceSessionId}
+              diffSessionId={activeFileTab.diffSessionId}
               gitRefreshKey={explorerRefreshKey}
               initialDisplayMode={activeFileTab.initialDisplayMode}
               initialPage={activeFileTab.page}
