@@ -1,3 +1,13 @@
+# nosix - how to open it
+
+- Create a hardlink for custom.css to `/Users/lynx/.pi/agent/desktop`: run this command on the project root path `ln ./custom.css /Users/lynx/.pi/agent/desktop/custom.css`
+- web version (he AI agent will keep going even if you close the webpage, as long as the server is still up):
+    - prod: `npm run build` then  `npm start`, if you encounter some errors, run `npm ci` first
+    - dev: `npm run dev`, if you encounter some errors, run `npm ci` first
+- desktop version (he AI agent will stop if you close the desktop app): 
+    - dev: `npm run desktop:dev`
+
+
 # Pi Agent
 
 **English** | [简体中文](./README.zh-CN.md)

@@ -1,0 +1,108 @@
+/* Pi Agent custom stylesheet.
+ * Loaded last, so these rules win the cascade.
+ * Reload the window (Ctrl+R / Cmd+R) to apply edits.
+ *
+ * Font variables used by the app:
+ *   --font-ui       chat and interface text
+ *   --font-display  headings
+ *   --font-mono     code blocks and tool output
+ *
+ * Example:
+ * :root {
+ *   --font-ui: "Inter", "Segoe UI", -apple-system, sans-serif;
+ *   --font-mono: "Cascadia Code", "JetBrains Mono", monospace;
+ * }
+ * .markdown-body { font-size: 15px; }
+ */
+
+/* .directory-picker-path {
+ border: 0 !important;
+} */
+
+
+.sidebar-search-input {
+ border: 0;
+} 
+
+
+.chat-composer {
+  border: 0 !important;
+}
+
+/* dark theme Shadow for the composer input box. */
+html.dark {
+    --shadow-composer: 0 0px 0px #00000047, 0 0px 36px #0000004d !important;
+}
+
+/* light theme Shadow for the composer input box. */
+:root {
+    --shadow-composer: 0 0px 0px #0a0a0a47, 0 0px 36px #a57f7f4d !important;
+}
+
+
+/* .process-details-trigger {
+  border: 0 !important;
+}
+
+.compaction-card {
+  border: 0 !important;
+} */
+
+.compaction-card-header {
+    background: var(--bg-subtle) !important;
+}
+
+.markdown-body .markdown-inline-code {
+  box-shadow: none !important;
+  background: var(--bg-selected) !important;
+}
+
+/* conversation section header */
+.app-topbar {
+  border-bottom: 0 !important;
+  box-shadow: var(--shadow-composer) !important;
+}
+
+/* sidebar */
+.app-sidebar {
+  border-right: 0 !important;
+}
+
+/* .markdown-code-header {
+  border: 0 !important;
+}
+
+.markdown-code-block {
+  border: 0 !important;
+}
+
+.markdown-code-block.markdown-code-actions {
+  border: 0 !important;
+}
+
+.markdown-code-action.is-active {
+  border: 0 !important;
+}
+.markdown-code-action.is-active.markdown-code-action {
+  border: 0 !important;
+} */
+
+/* session info popover */
+.session-info-popover {
+  background: var(--bg-panel) !important;
+  border-bottom: var(--hairline) solid var(--border) !important;
+  border-left: var(--hairline) solid var(--border) !important;
+}
+
+/* agent session panel */
+.agent-session-panel {
+  background: var(--bg-panel) !important;
+  border-radius: 0 !important;
+}
+
+/* system prompt panel */
+.system-prompt-panel {
+  background: var(--bg-panel) !important;
+  border-bottom: var(--hairline) solid var(--border) !important;
+  border-left: var(--hairline) solid var(--border) !important;
+}
