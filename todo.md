@@ -40,15 +40,18 @@
 1. sometimes the safari just pop out notification but there's no task;
 2. ntfy didn't pop a notification
 3. safari local notice/ntfy settings page layout and buttons
-4. the subagent session should indent, 
-5. terminal bottom, 
-6. test background sub agent, 
-7. change the notification sound!
-8. terminal support fzf shortcuts;
-9. add a similar theme to gpt;
-10. add background support; when stop also stop background,
-11. use the global pi,
-12. didn’t have good worktree display support ; 
+
+# P4
+
+1. the subagent session should indent, 
+2. terminal bottom, 
+3. test background sub agent, 
+4. change the notification sound!
+5. terminal support fzf shortcuts;
+6. add a similar theme to gpt;
+7. add background support; when stop also stop background,
+8. use the global pi,
+9. didn’t have good worktree display support ; 
 
 
 # prompts
