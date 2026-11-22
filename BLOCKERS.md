@@ -94,3 +94,12 @@ A scan of this tree's 1924 nested `.pnpm` links against their parents' ranges fo
 mismatch (`eslint-module-utils` → `debug@3.2.7`), so the tree is otherwise self-consistent;
 its remaining difference from the lockfile is version drift from a newer install, which
 `npm ci` aligns.
+
+## Project-level skills: the loader's one-name rule (Phase E, documented, not blocking)
+pi keeps one skill per name and loads the global folder before the project folder. A project copy of a
+skill that lives in `~/.pi/agent/skills` is therefore ignored by that project's sessions (the global
+entry wins) even though the panel lists the copy and its own switch. For skills.sh installs
+(`~/.agents/skills`) the project copy wins, which is the case the user's flow exercises. Nothing in
+pi-web can give a project an off-switch for a global skill without a second file, so the panel says
+which file a session follows (`skills.inProject.winnerGlobal`). Fixing the general case needs an
+upstream skill override (project wins by name).

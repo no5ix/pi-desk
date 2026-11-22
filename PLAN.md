@@ -85,3 +85,7 @@ Run `npm test` (+ i18n registry parity, fork-extractions, ui-menu-consistency wh
 - [ ] Manual Safari/desktop pass: the diff panel's source switch, the live card's count growing,
       prompt scroll + Expand, a running turn's fold line moving as it works,
       Settings › Skills on a trusted and an untrusted project
+
+### Phase E — project-level Skills to the user\u0027s four rules (done)
+Copy, not link; both files listed with the winner; a two-way project switch; absolute paths;
+legacy links migrated on the next switch. See PROGRESS.md.

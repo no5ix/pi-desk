@@ -102,6 +102,12 @@ export interface SkillInfo {
     scope?: string;
   };
   install?: SkillInstallInfo;
+  /**
+   * One skill name, two files (the project's copy and the user's own): the
+   * side a session in this project follows. The other side is on the list
+   * too, so its switch is not hidden, and this says what the agent runs.
+   */
+  skillCollision?: { winner: "project" | "global"; linkedToGlobal?: boolean };
 }
 
 export interface SkillsResponse {

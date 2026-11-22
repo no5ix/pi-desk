@@ -11803,3 +11803,12 @@ html.dark .artifacts-thumb[data-tone="data"] { --tone: #4fc1d6; }
     padding: 0 10px;
   }
 }
+
+/* Settings › Skills › "This project": the note beside the project's own
+   buttons. It says where the skill is saved and, when the project's copy and
+   the global skill share a name, which file the project's sessions run. */
+.skill-in-project-note {
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  max-width: 42ch;
+}

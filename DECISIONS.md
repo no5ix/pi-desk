@@ -121,3 +121,26 @@
   `USER_BUBBLE_MAX_HEIGHT` lives on the bubble; a scroll box inside a capped, `overflow: visible`
   bubble cannot grow. So `CollapsibleUserText` reports its state (`onExpandedChange`) and the
   bubble drops both its cap and its scroll.
+
+## Project-level skills: a copy, not a link (Phase E)
+- The user toggles the global skill and the project skill as two rows. A link makes them one file, so
+  a project flip rewrote the global skill's frontmatter and re-enabled it in every other project, and
+  pi's one-name loader showed only one of the two rows. A copy keeps the states independent.
+- Turning a skill **off in one project** also needs a copy: pi keeps one skill per name, so the only
+  per-project state is a project file. Writing the global file is a global change, not a project one.
+- `addShadowedSkills()` puts the file pi's loader hid back on the panel's list and records
+  `skillCollision.winner`, because the panel must not hide a switch it is offering.
+- The supplement reads the folders with pi's own `loadSkillsFromDir` and dedupes by real path: a
+  project link to a global folder stays one row, and the twin's parsing, name rules and frontmatter
+  state come from pi, not from a second reader.
+- An untrusted project's own skills are neither loaded nor put back on the list — trust decides what
+  loads, so it decides what the panel may show and toggle.
+- **Known limit, stated in the UI:** which file a session runs is pi's loader's choice (global folder
+  first, then project, first name wins). For a skill from `~/.agents/skills` (skills.sh) the project
+  copy wins in its own project, so per-project on/off is real; for a skill in `~/.pi/agent/skills` the
+  global entry wins and the project copy is listed for its switch while sessions follow the global.
+  The row's note names the winner either way.
+- **A project skill left as a link is migrated, not kept.** The listing shows the global file beside
+  it (`skillCollision.linkedToGlobal`) and the note says the switches share one file; the next
+  on/off in this project replaces the link with a copy, so the state stops being shared. `isLinkedSkillEntry()`
+  treats symlinks and Windows junctions alike.

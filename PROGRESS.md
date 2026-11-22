@@ -360,3 +360,49 @@ required: the loader runs at build time.
 A 1924-link scan of `.pnpm` against the parents' semver ranges found one mismatch
 (`eslint-module-utils` → `debug@3.2.7`); the rest of the tree is self-consistent, so the open
 environment item stays "installed tree is newer than the lockfile" (`npm ci`).
+
+### Project-level Skills, reworked to the user's four rules (Phase E)
+The first cut linked the global skill's folder into `<cwd>/.pi/skills/<name>`. Real use showed that a
+link makes the two entries **one file**, so the panel hid the global row, and flipping the project's
+switch rewrote the global skill's `disable-model-invocation` — which turned the skill back on in every
+other project. Reworked:
+
+1. **Turning a skill on in a project leaves the global skill alone.** `installProjectSkill(cwd, name,
+   state)` writes a real **copy** at `<cwd>/.pi/skills/<name>/` (SKILL.md and the skill's own files)
+   and sets the switch the project asked for; a project flip touches only that copy. Proven byte-level
+   in `lib/project-skills.test.mjs` ("flipping the project's switch never moves the global skill's
+   switch").
+2. **A project skill shows its absolute path.** `SkillDetail` renders `shortenPath(skill.filePath)`
+   for every scope, so the row reads `~/Documents/github/pi-desk/.pi/skills/<name>/SKILL.md`.
+3. **A global skill's state is global.** With no shared file, the global row's switch writes the
+   global file and is seen the same in every project; the project row's switch writes the project copy.
+4. **The button mirrors the state.** `ProjectSkillControl { state, hasCopy, winner,
+   selectedIsProjectCopy }` drives the **This project** row: an enabled skill offers **Turn off in
+   this project**, a disabled one **Turn on in this project**, and **Remove from this project** appears
+   only once the project carries a copy. `POST /api/skills/project` takes `action: "on" | "off" |
+   "remove"` (`add`/`delete` still accepted); turning a globally-on skill off in one project gives that
+   project a copy switched off, because writing the global file would switch it off everywhere.
+
+**One name, two files.** pi's loader keeps the first entry per name, so the global and the project
+file never both reach the list and one switch would be invisible. `lib/skill-shadowing.ts`
+(`addShadowedSkills`) puts the hidden twin back — read with pi's own `loadSkillsFromDir`, deduped by
+real path so a link stays one row — and marks the pair with `skillCollision: { winner }`; the panel
+says which file the project's sessions run. An untrusted project's folder is neither loaded nor put
+back. `lib/skill-roots.ts` holds the shared folder rules so the listing and the writer agree.
+`/api/skills/content` accepts the new rows for free: its allow-list is the service's own list.
+
+Verification: `tsc --noEmit` clean; `eslint --quiet` clean on the touched files; `lib` suite 2841 tests
+1 fail (the known `#804` environment case), `app`+`components` 1289 tests 0 fail, `scripts`+`hooks`
+262 tests 0 fail. New/updated tests: `lib/project-skills.test.mjs` (8), `lib/skill-shadowing.test.mjs`
+(5), `app/api/skills/project/route.test.mjs` (5), `components/SkillsConfig.project-skills.test.mjs` (8,
+including the label text in all three locales). Docs: `docs/agents/settings-ui.md`, `AGENTS.md` map.
+
+**Legacy links are migrated.** The user's projects already carry the link the first cut made, and a
+link is one file behind two rows: the global row stays hidden and a project flip moves the global
+skill. `addShadowedSkills` now detects a project entry whose real path is a user skill, lists the
+global file beside it and marks the pair `skillCollision.linkedToGlobal`; the row's note says the file
+is shared and that turning it on or off in this project makes it the project's own copy.
+`installProjectSkill` then drops the link (its target stays) and writes the copy —
+`lib/project-skills.test.mjs` "a project skill left as a link becomes the project's own copy on the
+next switch", `lib/skill-shadowing.test.mjs` the pair. `isLinkedSkillEntry()` covers symlinks and
+Windows junctions.

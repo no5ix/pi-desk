@@ -1,141 +1,145 @@
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync, statSync, symlinkSync } from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
+import { loadSkillsFromDir, type Skill } from "@earendil-works/pi-coding-agent";
+import {
+  findProjectSkill,
+  globalSkillDirs,
+  isLinkedSkillEntry,
+  isSafeSkillName,
+  projectSkillTarget,
+  PROJECT_SKILLS_RELATIVE_DIR,
+} from "./skill-roots";
 import { loadSkillsWithInstallInfo } from "./skills-service";
+import { setDisableModelInvocation } from "./skill-frontmatter";
+import { replaceFileAtomicSync } from "./atomic-file";
 
 /**
- * Project-level skills: a skill folder inside the project's own `.pi/skills`.
+ * Project-level skills: turn one skill on, or off, for a single project.
  *
- * Pi discovers `<cwd>/.pi/skills/**\/SKILL.md`, so a project can carry skills
- * nobody else sees — the same split the project's `.pi/mcp.json` gives MCP
- * servers. Turning a global skill on in one project links its folder here, which
- * keeps the global skill's updates (a `skills.sh` update lands in the linked
- * folder); a copy is used where links are unavailable, e.g. Windows without
- * developer mode.
- */
-export const PROJECT_SKILLS_RELATIVE_DIR = path.join(".pi", "skills");
-
-export interface ProjectSkillResult {
-  ok: boolean;
-  /** The folder the skill landed at, or the one removed. */
-  target?: string;
-  /** How it landed: a link to the global folder, or a private copy. */
-  mode?: "link" | "copy";
-  /** A stable code the panel maps to a sentence. */
-  reason?:
-    | "invalid-name"
-    | "skill-not-found"
-    | "source-missing"
-    | "already-in-project"
-    | "target-exists"
-    | "not-in-project"
-    | "failed";
-  error?: string;
-}
-
-export function projectSkillsRoot(cwd: string): string {
-  return path.join(cwd, PROJECT_SKILLS_RELATIVE_DIR);
-}
-
-/**
- * A skill folder name pi accepts and this module can delete safely: a single
- * path segment, no traversal, no hidden dot-folder.
- */
-export function isSafeSkillName(name: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(name);
-}
-
-/** Refuse a target that escapes the project's skills folder through a link. */
-function projectSkillTarget(cwd: string, name: string): string | null {
-  if (!isSafeSkillName(name)) return null;
-  const root = path.resolve(projectSkillsRoot(cwd));
-  const target = path.resolve(root, name);
-  const relative = path.relative(root, target);
-  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
-  return target;
-}
-
-/** Copy a skill folder, following the links a skills tree is full of. */
-export function copySkillTree(source: string, target: string): void {
-  const stat = statSync(source);
-  if (stat.isFile()) {
-    mkdirSync(path.dirname(target), { recursive: true });
-    copyFileSync(source, target);
-    return;
-  }
-  if (!stat.isDirectory()) return;
-  mkdirSync(target, { recursive: true });
-  for (const entry of readdirSync(source, { withFileTypes: true })) {
-    copySkillTree(path.join(source, entry.name), path.join(target, entry.name));
-  }
-}
-
-function linkSkillFolder(source: string, target: string): void {
-  mkdirSync(path.dirname(target), { recursive: true });
-  // A directory junction needs no developer mode on Windows; elsewhere a link.
-  symlinkSync(source, target, process.platform === "win32" ? "junction" : "dir");
-}
-
-/**
- * Turn a global skill on in one project: link its folder into
- * `<cwd>/.pi/skills/<name>`, copying where links are refused.
+ * A project skill is a real file under `<cwd>/.pi/skills/<name>/SKILL.md` —
+ * pi's own project skill location, loaded only in sessions started in that
+ * project and gated behind the same project trust. It is a **copy**, never a
+ * link: the panel flips the global and the project switches independently, and
+ * a shared file would move the global skill's state (and every other project
+ * that follows it) whenever the project's switch is touched.
  *
- * The source is resolved from the skills this project already loads, so the
- * caller never names a path: the request carries a skill name only.
+ * pi keeps one skill per name, so a project copy collides with the global one
+ * and the loader reports a single entry. `lib/skill-shadowing.ts` puts the
+ * hidden file back on the panel's list and says which side a session follows.
  */
-export async function installProjectSkill(cwd: string, name: string): Promise<ProjectSkillResult> {
-  const target = projectSkillTarget(cwd, name);
-  if (!target) return { ok: false, reason: "invalid-name" };
 
-  const skills = await loadSkillsWithInstallInfo(cwd);
-  const wanted = name.toLowerCase();
-  const source = skills.skills.find((skill) => skill.name.toLowerCase() === wanted && skill.sourceInfo?.scope !== "project");
-  if (!source) return { ok: false, reason: "skill-not-found" };
-  const sourceDir = path.resolve(source.baseDir);
-  if (!existsSync(source.filePath) || !existsSync(sourceDir)) return { ok: false, reason: "source-missing" };
+export {
+  PROJECT_SKILLS_RELATIVE_DIR,
+  isSafeSkillName,
+  isLinkedSkillEntry,
+  projectSkillDirs,
+  existingProjectSkillDirs,
+  findProjectSkill,
+  projectSkillTarget,
+  globalSkillDirs,
+} from "./skill-roots";
 
-  if (existsSync(target) || safeLstat(target)) return { ok: false, target, reason: "target-exists" };
-
-  try {
-    linkSkillFolder(sourceDir, target);
-    return { ok: true, target, mode: "link" };
-  } catch (error) {
-    // No permission to link (Windows without developer mode, a filesystem
-    // without links): the project gets its own copy of the folder.
-    try {
-      copySkillTree(sourceDir, target);
-      return { ok: true, target, mode: "copy" };
-    } catch (copyError) {
-      return { ok: false, target, reason: "failed", error: errorMessage(copyError) || errorMessage(error) };
+/** Copy a skill folder (SKILL.md, scripts, references, …) into place. */
+export function copySkillTree(source: string, target: string): number {
+  fs.mkdirSync(target, { recursive: true });
+  let files = 0;
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const from = path.join(source, entry.name);
+    const to = path.join(target, entry.name);
+    if (entry.isDirectory()) {
+      files += copySkillTree(from, to);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(from, to);
+      files += 1;
     }
   }
+  return files;
 }
 
 /**
- * Take a skill out of the project: remove the entry in the project's skills
- * folder. A linked skill's global folder is never touched, and only a top-level
- * entry of that folder is removable.
+ * The skill named `name` the user installed globally, read off disk.
+ *
+ * The loader list is not enough: a project copy of the same name hides the
+ * global entry, so the global file is missing from the list exactly when a
+ * re-install needs to read it.
  */
-export function removeProjectSkill(cwd: string, name: string): ProjectSkillResult {
+export function findGlobalSkillByName(name: string, opts: { dirs?: Array<{ dir: string; source: "user" | "skills.sh" }> } = {}): Skill | null {
+  if (!isSafeSkillName(name)) return null;
+  for (const { dir, source } of opts.dirs ?? globalSkillDirs()) {
+    const { skills } = loadSkillsFromDir({ dir, source });
+    const hit = skills.find((skill) => skill.name === name);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+export type ProjectSkillState = "on" | "off";
+
+export interface ProjectSkillResult {
+  path: string;
+  state: ProjectSkillState;
+  files: number;
+}
+
+/**
+ * Put the skill named `name` into this project, switched to `state`.
+ *
+ * Copies the user's own skill when the project has none of its own; an
+ * existing project copy is only re-flipped, so turning a skill off and on
+ * keeps whatever the project changed in its own instructions.
+ */
+export async function installProjectSkill(cwd: string, name: string, state: ProjectSkillState): Promise<ProjectSkillResult> {
+  const existing = findProjectSkill(cwd, name);
   const target = projectSkillTarget(cwd, name);
-  if (!target) return { ok: false, reason: "invalid-name" };
-  const entry = safeLstat(target);
-  if (!entry) return { ok: false, target, reason: "not-in-project" };
-  try {
-    rmSync(target, { recursive: true, force: true });
-    return { ok: true, target };
-  } catch (error) {
-    return { ok: false, target, reason: "failed", error: errorMessage(error) };
+  // A copy of its own: only its switch moves, never the global skill's.
+  if (existing && !isLinkedSkillEntry(existing.dir)) {
+    writeSkillState(existing.file, state === "on");
+    return { path: existing.file, state, files: 0 };
   }
+  const loaded = await loadSkillsWithInstallInfo(cwd);
+  const source =
+    loaded.skills
+      .filter((skill) => skill.name === name && skill.sourceInfo?.scope !== "project")
+      .map((skill) => ({ baseDir: skill.baseDir ?? path.dirname(skill.filePath), filePath: skill.filePath }))
+      .find((candidate) => fs.existsSync(path.join(candidate.baseDir, "SKILL.md")))
+    ?? findGlobalSkillByName(name);
+  if (!source) {
+    throw Object.assign(new Error(`No global skill named "${name}" to turn on in this project.`), { code: "skill-not-found" });
+  }
+  // An older build linked the global folder in, which made the two rows one
+  // file. The link goes (its target stays) and the project gets its own copy.
+  const dir = existing?.dir ?? target.dir;
+  if (existing) fs.rmSync(existing.dir, { recursive: true, force: true });
+  const files = copySkillTree(source.baseDir, dir);
+  const file = path.join(dir, "SKILL.md");
+  // The copy inherits the global file's switch; the project asked for `state`.
+  writeSkillState(file, state === "on");
+  return { path: file, state, files };
 }
 
-function safeLstat(target: string) {
-  try {
-    return lstatSync(target);
-  } catch {
-    return null;
+/** Flip the project's own copy; the global skill's file is not touched. */
+export function setProjectSkillState(cwd: string, name: string, state: ProjectSkillState): ProjectSkillResult {
+  const existing = findProjectSkill(cwd, name);
+  if (!existing) {
+    throw Object.assign(new Error(`This project has no skill named "${name}".`), { code: "not-in-project" });
   }
+  writeSkillState(existing.file, state === "on");
+  return { path: existing.file, state, files: 0 };
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error ?? "");
+/** Take this project's copy away; the global skill stays as it was. */
+export function removeProjectSkill(cwd: string, name: string): string {
+  const existing = findProjectSkill(cwd, name);
+  if (!existing) {
+    throw Object.assign(new Error(`This project has no skill named "${name}".`), { code: "not-in-project" });
+  }
+  fs.rmSync(existing.dir, { recursive: true, force: true });
+  return existing.dir;
+}
+
+/** Write `disable-model-invocation` through pi-web's own frontmatter writer. */
+function writeSkillState(filePath: string, enabled: boolean): void {
+  const content = fs.readFileSync(filePath, "utf8");
+  const updated = setDisableModelInvocation(content, !enabled);
+  if (updated !== content) replaceFileAtomicSync(filePath, updated);
 }

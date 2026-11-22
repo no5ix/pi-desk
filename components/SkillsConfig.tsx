@@ -52,6 +52,23 @@ import { MarkdownBody } from "./MarkdownBody";
 type SkillScope = "global" | "project" | "path";
 type Translate = ReturnType<typeof useI18n>["t"];
 
+/**
+ * A skill's state in the project that is open, for the "This project" row.
+ *
+ * pi keeps one skill per name, so a project's own copy and the user's skill
+ * collide: `winner` is the file a session in this project runs, and the panel
+ * lists both so neither switch is hidden. With no copy of its own, the project
+ * simply follows the global skill's state.
+ */
+export interface ProjectSkillControl {
+  state: "on" | "off";
+  hasCopy: boolean;
+  winner: "project" | "global";
+  /** An older build linked the global folder in: the two rows are one file. */
+  linkedToGlobal: boolean;
+  selectedIsProjectCopy: boolean;
+}
+
 function sourceLabel(skill: Skill): SkillScope {
   const src = skill.sourceInfo?.source;
   const scope = skill.sourceInfo?.scope;
@@ -145,6 +162,7 @@ function SkillDetail({
   projectBusy,
   projectError,
   onSetInProject,
+  onRemoveFromProject,
   onShowProjectSkill,
   projectEnabled,
 }: {
@@ -159,13 +177,15 @@ function SkillDetail({
   updateError: string | null;
   onCheckUpdate: () => void;
   onUpdate: () => void;
-  /** What this skill is for the project: addable, carried by it, or shadowed by its own copy. */
-  inProject: "add" | "remove" | "shadowed" | null;
+  /** What the skill is for this project: its state here, whether the project
+   *  carries a copy of its own, and which file a session in this project runs. */
+  inProject: ProjectSkillControl | null;
   /** False while the project's own resources are not loaded (an untrusted folder). */
   projectEnabled: boolean;
   projectBusy: boolean;
   projectError: string | null;
-  onSetInProject: (enabled: boolean) => void;
+  onSetInProject: (state: "on" | "off") => void;
+  onRemoveFromProject: () => void;
   onShowProjectSkill?: () => void;
 }) {
   const { t } = useI18n();
@@ -229,7 +249,9 @@ function SkillDetail({
           <ConfigDetailHeaderInfo>
             <ConfigScopeTag scope={label}>{scopeLabel(label, t)}</ConfigScopeTag>
             <span className="config-detail-path">
-              {label === "project" ? displayPathWithin(skill.filePath, cwd) : shortenPath(skill.filePath)}
+              {/* Always the full path: a project skill is a file in the project,
+                  and "./.pi/skills" said nothing about which project. */}
+              {shortenPath(skill.filePath)}
             </span>
           </ConfigDetailHeaderInfo>
           <ConfigDetailActions>
@@ -342,24 +364,32 @@ function SkillDetail({
       {inProject && (
         <ConfigField label={t("skills.detail.inProject")}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
-            {inProject === "remove" ? (
-              <ConfigButton size="small" disabled={projectBusy} onClick={() => onSetInProject(false)}>
-                {t("skills.inProject.turnOff")}
+            {/* The button mirrors the state here, so an enabled skill offers the
+                way back off, and a disabled one offers the way on. */}
+            <ConfigButton
+              size="small"
+              disabled={projectBusy || !projectEnabled}
+              onClick={() => onSetInProject(inProject.state === "on" ? "off" : "on")}
+            >
+              {inProject.state === "on" ? t("skills.inProject.turnOff") : t("skills.inProject.turnOn")}
+            </ConfigButton>
+            {inProject.hasCopy && (
+              <ConfigButton size="small" disabled={projectBusy || !projectEnabled} onClick={onRemoveFromProject}>
+                {t("skills.inProject.remove")}
               </ConfigButton>
-            ) : inProject === "add" ? (
-              <ConfigButton size="small" disabled={projectBusy || !projectEnabled} onClick={() => onSetInProject(true)}>
-                {t("skills.inProject.turnOn")}
-              </ConfigButton>
-            ) : (
+            )}
+            {inProject.hasCopy && !inProject.selectedIsProjectCopy && (
               <ConfigButton size="small" onClick={onShowProjectSkill}>
                 {t("skills.inProject.show")}
               </ConfigButton>
             )}
-            <span style={{ fontSize: "var(--fs-caption)", color: "var(--text-dim)" }}>
-              {inProject === "remove"
-                ? t("skills.inProject.carried")
-                : inProject === "shadowed"
-                  ? t("skills.inProject.shadowed")
+            <span className="skill-in-project-note">
+              {inProject.linkedToGlobal
+                ? t("skills.inProject.linked")
+                : inProject.hasCopy
+                  ? inProject.winner === "global"
+                    ? t("skills.inProject.winnerGlobal")
+                    : t("skills.inProject.shadowed")
                   : t("skills.inProject.saved")}
             </span>
             {projectBusy && (
@@ -767,14 +797,14 @@ export function SkillsConfig({
     }
     return byName;
   }, [skills]);
-  const setSkillInProject = useCallback(async (skill: Skill, enabled: boolean) => {
+  const setSkillInProject = useCallback(async (skill: Skill, state: "on" | "off") => {
     setProjectBusy(skill.filePath);
     setProjectError(null);
     try {
       const response = await fetch("/api/skills/project", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, name: skill.name, action: enabled ? "add" : "remove" }),
+        body: JSON.stringify({ cwd, name: skill.name, action: state }),
       });
       const data = (await response.json()) as { ok?: boolean; reason?: string; error?: string };
       if (!response.ok || !data.ok) {
@@ -784,17 +814,55 @@ export function SkillsConfig({
         return;
       }
       const list = await loadSkills();
-      if (enabled) {
-        // Land on the project's copy: it is the skill the project now runs.
-        const added = list.find((entry) => sourceLabel(entry) === "project" && entry.name === skill.name);
-        if (added) setSelected(added.filePath);
-      }
+      // Land on the project's copy: it is the file this project's switch moves
+      // and the skill the project's sessions run.
+      const copy = list.find((entry) => sourceLabel(entry) === "project" && entry.name === skill.name);
+      if (copy) setSelected(copy.filePath);
     } catch (e) {
       setProjectError(e instanceof Error ? e.message : String(e));
     } finally {
       setProjectBusy(null);
     }
   }, [cwd, loadSkills, t]);
+
+  /** Drop the project's own copy, so the project follows the global skill again. */
+  const removeSkillFromProject = useCallback(async (skill: Skill) => {
+    setProjectBusy(skill.filePath);
+    setProjectError(null);
+    try {
+      const response = await fetch("/api/skills/project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, name: skill.name, action: "remove" }),
+      });
+      const data = (await response.json()) as { ok?: boolean; reason?: string; error?: string };
+      if (!response.ok || !data.ok) {
+        setProjectError(data.error || `HTTP ${response.status}`);
+        return;
+      }
+      const list = await loadSkills();
+      // The project has nothing of its own now, so show the skill it follows.
+      const globalEntry = list.find((entry) => sourceLabel(entry) !== "project" && entry.name === skill.name);
+      if (globalEntry) setSelected(globalEntry.filePath);
+    } catch (e) {
+      setProjectError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setProjectBusy(null);
+    }
+  }, [cwd, loadSkills, t]);
+
+  /** The "This project" row for one skill: its state here, and the two files' winner. */
+  const projectSkillControl = useCallback((skill: Skill): ProjectSkillControl => {
+    const copy = projectSkillByName.get(skill.name.toLowerCase());
+    const off = (copy ?? skill).disableModelInvocation;
+    return {
+      state: off ? "off" : "on",
+      hasCopy: !!copy,
+      winner: skill.skillCollision?.winner ?? (copy ? "project" : "global"),
+      linkedToGlobal: skill.skillCollision?.linkedToGlobal === true,
+      selectedIsProjectCopy: sourceLabel(skill) === "project",
+    };
+  }, [projectSkillByName]);
 
   const checkForUpdates = useCallback(async (skill?: Skill) => {
     const targets = skill
@@ -1147,15 +1215,12 @@ export function SkillsConfig({
                 updateError={updateError}
                 onCheckUpdate={() => void checkForUpdates(selectedSkill)}
                 onUpdate={() => void updateInstalledSkill(selectedSkill)}
-                inProject={selectedSkill
-                  ? sourceLabel(selectedSkill) === "project"
-                    ? "remove"
-                    : projectSkillByName.has(selectedSkill.name.toLowerCase()) ? "shadowed" : "add"
-                  : null}
+                inProject={selectedSkill ? projectSkillControl(selectedSkill) : null}
                 projectEnabled={projectResourcesLoaded}
                 projectBusy={projectBusy === selectedSkill.filePath}
                 projectError={projectBusy === selectedSkill.filePath ? projectError : null}
-                onSetInProject={(enabled) => void setSkillInProject(selectedSkill, enabled)}
+                onSetInProject={(state) => void setSkillInProject(selectedSkill, state)}
+                onRemoveFromProject={() => void removeSkillFromProject(selectedSkill)}
                 onShowProjectSkill={() => {
                   const shadow = projectSkillByName.get(selectedSkill.name.toLowerCase());
                   if (shadow) setSelected(shadow.filePath);

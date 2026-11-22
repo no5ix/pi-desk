@@ -16,21 +16,35 @@
 - `/api/skills/content`'s optional `document` is a path in the loaded skill's `baseDir` (pi's dirname of the skill file): relative, without `..`, `\`, `:` or NUL, `.md`/`.markdown` by name and by real path, inside the folder after symlinks (`isExistingPathWithinRoots()`), a regular file up to 1 MiB. One stat before the bounded read answers a FIFO or a directory with 400 and a larger file with 413; a missing file is 404, a link out of the folder 403, and no refusal or failed read names a path. Without `document` the route reads the loaded file exactly as before.
 - **Group switches.** Each sidebar group of the Skills, Plugins and MCP panels (a skill scope, a package scope, an `mcp.json`; not standalone extensions) has a `ConfigSidebarGroupSwitch` in its heading row, so the list's rows keep the heading's line. As with the Models provider switch, it is on only while every row is: a partial group reads as off beside its `n/m` count and one click completes it. A panel whose group can hold rows its switch never turns on passes its own `checked` (MCP: `mcpGroupSwitchChecked()`), or the switch stays off for good. One request carries the list (`PATCH /api/skills` `filePaths`, `POST /api/plugins` `packages`, `POST /api/mcp` `set-enabled` `servers`) and answers per item, so a refused row does not stop the rest; what was left undone shows under the heading (`ConfigSidebarGroupStatus`). An entry already in the requested state is left alone; enabling keeps an entry's own keys such as `autoload`. `SettingsManager` never throws a failed load or write (`flush()` resolves), so the bulk plugin path reads `drainErrors()`, or an unreadable settings.json would report success. Disabling empties the four resource lists and keeps no filters, so a group switched off leaves an enabled filtered package on (the SDK reports every object entry as `filtered`) and says so; the bulk route refuses it.
 
-- **Project-level skills, like project-level MCP** (`lib/project-skills.ts`, `POST /api/skills/project`,
-  the **This project** row in `SkillDetail`). A global skill is turned on in one project by linking its
-  folder to `<cwd>/.pi/skills/<name>` — pi discovers that folder recursively, and a link keeps one
-  copy, so a `skills.sh` update of the global skill lands in the project too; a directory junction is
-  used on Windows (no developer mode) and a plain copy of the folder covers a filesystem that refuses
-  links, and the answer reports which mode it used. **Remove from this project** deletes that entry and
-  never the global folder. The request carries the project folder and a skill *name*: the source folder
-  is resolved from the skills this project already loads and the target is fixed to the project's own
-  skills folder (`isSafeSkillName`, no traversal, only a top-level entry removable), so a browser cannot
-  name a path to copy. A project skill with the same name shadows the global one, and the global skill's
-  row then offers **Show the project's skill** instead of a second write. Project skills load only for a
-  trusted folder: while `/api/skills` answers `projectResourcesLoaded: false` the panel shows its
-  `ConfigTrustNotice` and the **Turn on in this project** button is refused. `lib/project-skills.test.mjs`
-  proves the round trip against a real agent dir, and that pi lists the linked folder as a project skill
-  once the project is trusted.
+- **Project-level skills, like project-level MCP** (`lib/project-skills.ts`, `lib/skill-roots.ts`,
+  `lib/skill-shadowing.ts`, `POST /api/skills/project`, the **This project** row in `SkillDetail`).
+  A skill's state in one project is the project's own file at `<cwd>/.pi/skills/<name>/SKILL.md`:
+  a **copy**, never a link, because the global row and the project row are toggled independently and
+  a shared file would move the global skill's `disable-model-invocation` (and every other project
+  that follows it) whenever the project's switch is touched — `lib/project-skills.test.mjs` proves a
+  project flip leaves the global file byte-identical. `POST /api/skills/project { cwd, name, action }`
+  takes `"on"`, `"off"` or `"remove"`; `on`/`off` copy the user's skill and write that state, and on an
+  existing copy they only rewrite the frontmatter key, so the project's own edits survive. Turning a
+  globally-on skill **off in one project** therefore needs a copy: pi keeps one skill per name, and
+  writing the global file would switch it off everywhere. The request carries a project folder and a
+  skill *name* — the source is resolved from the skills this project loads, falling back to
+  `globalSkillDirs()` (`~/.pi/agent/skills`, `~/.agents/skills`) because a project copy hides the
+  global entry from the loader — and the target is fixed to the project's own skills folder
+  (`isSafeSkillName`, no traversal), so a browser cannot name a path to copy.
+- **One name, two files.** pi loads the global folder and the project folder and keeps the first
+  entry per name, so the list never shows both files and one switch would be invisible. `GET /api/skills`
+  puts the hidden twin back through `addShadowedSkills()` (`lib/skill-shadowing.ts`): it reads the
+  other folder with pi's own `loadSkillsFromDir`, skips a file it already listed by real path (a link
+  to the global folder stays one row), marks every pair with `skillCollision: { winner }`, and shows
+  nothing of an untrusted project's folder, which is also unloaded. The row's button mirrors the state
+  here — an enabled skill offers **Turn off in this project**, a disabled one **Turn on in this
+  project** — with **Remove from this project** only once the project carries a copy (the project
+  follows the global skill again), and the note names which file the project's sessions run. A project
+  skill's path is shown through `shortenPath`, absolute (`~/proj/.pi/skills/<name>/SKILL.md`), never
+  `./.pi/skills/…`. Project skills load only for a trusted folder: while `/api/skills` answers
+  `projectResourcesLoaded: false` the panel shows its `ConfigTrustNotice` and refuses the write.
+  `lib/project-skills.test.mjs` and `lib/skill-shadowing.test.mjs` cover both directions of the
+  collision, and `app/api/skills/project/route.test.mjs` the refusals.
 ## Settings on a phone
 - At ≤640px Settings fills the screen and shows one level at a time (`SettingsPanel`'s `usePhoneSettingsLevel`): the list of sections, a section, then a row's detail. The plain Settings button opens on the sections (`openAtHome`); the sidebar's Models and Skills buttons and a bare `/mcp` open their section. Above 640px the level is always the section, so a desktop window narrowed to a phone's width keeps the section it shows (the e2e's short settings panel check at 320px relies on it). The header is three columns, Back, title, close, the sides equal so the title stays centered and is cut short in its own column; Back is named after the level above and the title is the shown level's name; over a detail that is the active row's label, reported by `ConfigSidebarItem` / `ConfigListAction` after each render (a rename shows at once), never by rows in a hidden, still-mounted section.
 - A split view shows one pane through `ConfigDetailNavigationContext` (`data-pane="list" | "detail"`, the phone CSS in `app/settings.css`). A row's or add button's click opens the detail unless its handler called `preventDefault()`: Models' Add provider does, and its picker's choice calls `openDetail()` (`useConfigDetailNavigation()`). Deleting a provider or a model goes back to the list (`closeDetail()`). Outside the provider (no Settings) both panes stack as before. A section's settings row above its list (Models' enabledModels banner, Sub-agents' switch) shows on the list level only (`data-phone-level` on the section host).
