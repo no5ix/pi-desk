@@ -27,6 +27,12 @@ interface Props {
   onCloseError: () => void;
 }
 
+// xterm measures cells in CSS pixels, so this is the glyph size the panel
+// draws at. It shipped at 13, which the desktop users found too large: 9 is the
+// same text 30% smaller (13 -> 9.1, kept whole so the canvas grid stays crisp).
+// The family follows the app's mono choice; the size has no setting of its own.
+const TERMINAL_FONT_SIZE = 9;
+
 export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }: Props) {
   const { t } = useI18n();
   const { id, cwd, restored } = tab;
@@ -82,8 +88,15 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     const terminal = new Terminal({
       cursorBlink: true,
       fontFamily: getComputedStyle(container).getPropertyValue("--font-mono").trim() || "monospace",
-      fontSize: 13,
+      fontSize: TERMINAL_FONT_SIZE,
       lineHeight: 1.25,
+      // macOS: Option is Meta, like Terminal.app's "Use Option as Meta key".
+      // Left off, the browser hands xterm the accented character for the chord
+      // (Option+E is "´", Option+R is "®") and it reaches the shell as that
+      // text, so fzf's Option+E / Option+R and readline's Option+F / Option+B
+      // word jumps never fire. xterm only reads this on macOS, so Windows and
+      // Linux keep sending Alt as Alt; the phone's ALT latch is unaffected.
+      macOptionIsMeta: true,
       scrollback: 8000,
       screenReaderMode: true,
       disableStdin: true,

@@ -120,6 +120,23 @@ try {
       await showSidebar();
       await openWorkspaceTerminal();
       await ready();
+      // Glyph size and Option-as-Meta are user-visible contracts of the panel.
+      // 9px is the requested 30% reduction from the 13px it shipped with.
+      assert.equal(
+        await page.locator(".terminal-panel:visible .xterm-rows").first().evaluate((element) => getComputedStyle(element).fontSize),
+        "9px", "the terminal draws its glyphs 30% smaller than the size it shipped with");
+      // xterm's Meta path is macOS-only, so the chord check is macOS-only. With
+      // it, Option+E reaches the PTY as ESC + e (visible as `^[e`); without it
+      // the browser sends the accented character and the chord never arrives.
+      if (process.platform === "darwin") {
+        await run("cat -v");
+        await page.locator(".terminal-panel:visible .xterm-helper-textarea").focus();
+        await page.keyboard.press("Alt+e");
+        await page.keyboard.press("Alt+r");
+        await waitOutput("\\^\\[e");
+        await page.keyboard.press("Control+c");
+        await waitOutput("\\^C");
+      }
       await run("export PR695_TOKEN=alive; printf '\\nTOKEN:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput("TOKEN:alive:[0-9]+");
       const pid = (await text()).match(/TOKEN:alive:(\d+)/)[1];

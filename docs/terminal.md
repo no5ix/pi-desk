@@ -55,10 +55,28 @@ On Debian/Ubuntu, install `python3` and `build-essential` first. This forces a
 source build instead of reusing a missing or incompatible prebuilt binary.
 Restart Pi Web after repair.
 
+## Rendering and keys
+`components/TerminalPanel.tsx` draws at `TERMINAL_FONT_SIZE` (9 CSS px): xterm
+measures cells in CSS pixels, and 9 is the 13px the panel shipped with, 30%
+smaller, kept whole so the canvas grid stays crisp. The family follows the app's
+mono font choice and is re-measured on a font change without restarting the PTY;
+the size has no setting of its own.
+
+`macOptionIsMeta: true` makes Option behave as Meta on macOS, like Terminal.app's
+"Use Option as Meta key". Left off, the browser hands xterm the accented
+character for the chord (Option+E is `´`, Option+R is `®`), the shell receives
+that text and fzf's Option+E / Option+R — like readline's Option+F / Option+B
+word jumps — never fire. With it the PTY receives ESC + letter. xterm reads the
+option only on macOS, so Windows and Linux keep Alt as Alt, and the phone's
+CTRL / ALT latch (`lib/terminal-extra-keys.ts`) stays a separate path.
+
 ## Verification
 
 Run `npm test` for native PTY, lease, output cursor, input queue, and storage
-checks. `npm run test:terminal` starts an isolated development server and runs
-desktop/mobile browser checks using generated session fixtures. Install the
+checks, and `components/TerminalPanel.options.test.mjs` for the glyph size and
+the Option-as-Meta option. `npm run test:terminal` starts an isolated development
+server and runs desktop/mobile browser checks using generated session fixtures;
+it also asserts the 9px glyph size and, on macOS, that Option+E / Option+R reach
+the shell as `^[e` / `^[r` (`cat -v` makes the bytes visible). Install the
 Playwright Chromium browser first with `npx playwright install chromium`.
 The browser check prints the temporary location of its screenshots and log.
