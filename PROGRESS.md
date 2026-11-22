@@ -416,3 +416,52 @@ comes from the install lock (`install.skillsShUrl`), as it always did. Checked o
 `pi-desk` answers project 1, global / skills.sh 17, global 11, path 0 — `modern-web-guidance` reads
 PROJECT on and GLOBAL / SKILLS.SH off, its state the user set; `stock-pet-go` shows only the global
 row, no PATH rows. `lib/skill-shadowing.test.mjs` covers it.
+
+## Phase F — the folder window is used like a native panel (2026-01-27)
+
+The user asked, with screenshots, why web **Add project** opens "an ugly window" (the app's folder
+window) while the desktop opens the macOS panel, and whether web can use the desktop's window and
+get the folder path. Discussion first, no code: the browser's panel (pic 2, the composer's **Add
+files**) is a **file** chooser, answers with file contents and no absolute path, Chrome's
+`showDirectoryPicker` gives a handle with no path and Safari does not ship it, and a session needs
+a real cwd on the server — so no browser API can answer. Desktop asks the OS (Tauri dialog) and gets
+a path; a web page is sandboxed. The only honest way to show the macOS panel in Safari is to ask a
+running desktop app on the same machine to pick and hand the path over the local API. The user
+chose the other option: **make the app's own window behave like a native one**.
+
+- `GET /api/cwd/places` (`lib/directory-places.ts`) answers the window's rail: Home, Documents,
+  Desktop, Downloads under the server's home, each with `exists`/`readable` (`access(R_OK|X_OK)`,
+  `realpath`), so a folder denied by TCC is visibly not openable instead of opening on a refusal.
+  The caller's remembered paths come back the same way, deduped, capped at 32.
+- `app/api/cwd/browse` now answers `mtime` per folder (`lib/directory-browser.ts`), so the window
+  can order by last change like a native list. `BrowsableDirectory.mtime` is optional (drives have none).
+- `DirectoryPicker` gained a **rail** (places, folders pinned in the window, folders taken in it),
+  a **filter**, **name / date** ordering (the shared `AppSelect`, not an OS menu), a **hidden
+  folders** switch, and a **keyboard**: `Cmd/Ctrl+Shift+G` to the path field, arrows / `Home` /
+  `End` / `PageUp` / `PageDown` over a `role="listbox"` with `aria-activedescendant`, `Enter` to
+  open, `Cmd/Ctrl+Enter` to take the folder in view, `Backspace` up a level, type-ahead by letters.
+  The caret is clamped during render, so a filter that empties the list leaves no selection behind.
+- Favourites (12) and recents (8) persist in this browser (`pi-web:directory-picker-favourites` /
+  `-recent`), with the order and the hidden switch (`-sort`, `-hidden`). A folder is recorded when
+  it is taken, in the same breath as `onSelect` — the commit point stays one, and the parent still
+  validates the path through `/api/cwd/validate`.
+- Styling is fork CSS only (`app/native-theme.css`): the two-column body, the rail rows, the
+  revealed-on-contact unpin, the toolbar, the caret row on `--bg-selected`, a focused list ring,
+  and a phone (≤640px) fold that puts the rail above the list.
+- Escape, the fade contract and the folders-only list were re-pinned as they were: the rewrite kept
+  `requestClose()` on every way out (the Escape assertion caught a regression while writing this).
+
+### Files (Phase F)
+- `lib/directory-places.ts` (new), `app/api/cwd/places/route.ts` (new),
+  `lib/directory-browser.ts`, `lib/app-prefs.ts`, `components/DirectoryPicker.tsx`,
+  `app/native-theme.css`, `lib/i18n/messages/{en,zh-CN,zh-TW}.ts`.
+- Tests: `lib/directory-places.test.mjs` (new, 5), `app/api/cwd/places/route.test.mjs` (new, 4),
+  `components/DirectoryPicker.folder-window.test.mjs` (new, 6), `components/DirectoryPicker.test.mjs`,
+  `lib/directory-browser.test.mjs`.
+- Docs: `docs/agents/files-and-access.md`, `docs/agents/sessions.md`, `AGENTS.md`.
+
+### Verified (Phase F)
+- `tsc --noEmit` clean; `eslint --quiet` clean on every touched file.
+- Full suite: 4419 tests, 4417 pass, 1 skipped, 1 fail — the known environment failure
+  `Chat only names a model only an extension provides instead of a bare not found (#804)`.
+- `node --test scripts/ui-menu-consistency.test.mjs` 2/2 (the sort control is the shared app select).

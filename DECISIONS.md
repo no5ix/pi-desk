@@ -147,3 +147,26 @@
 - **A row put back is a global row.** The supplement's twin is read with pi's `user` source, because
   the sidebar groups are built from pi's scope and any other source label puts the row under a PATH
   heading. The skills.sh badge is the install lock's business, not the reader's.
+
+## The folder window, not the OS panel (Phase F)
+- **No web API can answer "which folder?" with a path**, so the app keeps its own folder window. A
+  browser's file input answers with file contents and nothing else, `webkitdirectory` reports the
+  files inside and no absolute path, macOS titles that panel "Choose Files to Upload" and a page
+  cannot retitle it, Chrome's `showDirectoryPicker` gives a handle whose most identifying property
+  is the folder's name and Safari does not ship it, and a pi session needs a real cwd on the server.
+- **The rail is read from the server, and says what it cannot open.** Home, Documents, Desktop and
+  Downloads are probed (`realpath`, `access(R_OK|X_OK)`), because macOS TCC denies those to the
+  process; a row that opens on a refusal is worse than one visibly off. The UI names the places by id
+  in the app's language, never by path.
+- **Pinned and recent folders live in the browser, and are re-probed on every open.** One server can
+  be reached from several machines; a favourite is a fact about the person's folder, not the
+  session's. The route answers the caller's paths with `exists`/`readable` only, deduped and capped
+  at 32, so a remembered folder that is gone is shown as gone and no request reads an unbounded list.
+- **The window's commit point stays one.** Recording a taken folder happens in the same click as
+  `onSelect`; the parent still validates the path through `/api/cwd/validate`. The window never
+  adopts a folder on its own authority.
+- **The native panel in Safari is possible only through the desktop app, and that is not the chosen
+  path.** When the desktop app runs on the same machine as the browser it can show the macOS dialog
+  and hand the path to the tab over the local API (the desktop-token pattern the native dialogs use);
+  with no app running there is nothing to ask, so the in-app window has to be good anyway. The user
+  chose the window; the desktop-assisted pick stays an option.

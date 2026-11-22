@@ -33,7 +33,8 @@ test("the window lists folders, so a pick cannot be a file", () => {
 
   assert.ok(!/\bfiles\b/.test(picker), "no file list enters this window");
   assert.match(picker, /drives\.map\(\(drive\) =>/, "drives come first, on Windows");
-  assert.match(picker, /directories\.map\(\(entry\) =>/, "then the folders inside the folder in view");
+  assert.match(picker, /visibleDirectories\.map\(\(entry, index\) =>/, "then the folders inside the folder in view");
+  assert.match(picker, /directories\.filter\(\(entry\) =>/, "the filter and the hidden switch narrow that list, never add to it");
   const browse = readFileSync(new URL("../app/api/cwd/browse/route.ts", import.meta.url), "utf8");
   assert.match(browse, /listDirectories\(/, "the server lists directories");
   assert.match(browse, /directoryStat\.isDirectory\(\)/, "and refuses a file as the starting folder");
@@ -98,7 +99,13 @@ test("it arrives and leaves with the app's shared modal animation", () => {
 });
 
 test("choosing a folder is reported at once, not after a fade", () => {
-  const select = picker.match(/onClick=\{\(\) => onSelect\(currentPath\)\}/);
+  // The button reports through chooseFolder, which records the folder for the next open and
+  // reports it in the same breath. The recording must not stand between the click and the
+  // parent adopting the folder.
+  const select = picker.match(/onClick=\{\(\) => chooseFolder\(currentPath\)\}/);
   assert.ok(select, "the Select button reports the path straight away");
+  const commit = picker.match(/const chooseFolder = useCallback\(\(path: string\) => \{[\s\S]*?\n  \}, \[onSelect, recent\]\);/);
+  assert.ok(commit, "one commit path");
+  assert.match(commit[0], /onSelect\(path\);\n  \}/, "reported last, with no timer in front of it");
   assert.ok(!picker.includes("requestClose(() =>"), "no fade wrapper around a choice");
 });

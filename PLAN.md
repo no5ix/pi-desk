@@ -86,6 +86,20 @@ Run `npm test` (+ i18n registry parity, fork-extractions, ui-menu-consistency wh
       prompt scroll + Expand, a running turn's fold line moving as it works,
       Settings › Skills on a trusted and an untrusted project
 
-### Phase E — project-level Skills to the user\u0027s four rules (done)
+### Phase E — project-level Skills to the user's four rules (done)
 Copy, not link; both files listed with the winner; a two-way project switch; absolute paths;
 legacy links migrated on the next switch. See PROGRESS.md.
+
+### Phase F — the folder window is used like a native panel (done)
+Asked why web "Add project" opens the app's window while the desktop opens macOS's panel, and
+whether web can have that panel with a path. No web API can answer with a folder path, and the
+desktop answer comes from the OS; the user chose to make the app's own window native-feeling.
+- [x] Places rail (`GET /api/cwd/places`, `lib/directory-places.ts`): Home, Documents, Desktop,
+      Downloads, folders pinned in the window, folders taken in it; a folder the server cannot
+      open is visibly not openable
+- [x] Filter, order by name or last change (`mtime` added to `/api/cwd/browse`), hidden folders,
+      all remembered in app prefs
+- [x] Keyboard: `Cmd+Shift+G`, arrows / Home / End / PageUp / PageDown, Enter, `Cmd+Enter`,
+      Backspace, type-ahead; a listbox a screen reader can walk
+- [x] Phone (≤640px): the rail folds above the list; the sort control is the shared app select
+- [ ] Manual Safari pass of the window (rail, keys, pin, order, phone width)

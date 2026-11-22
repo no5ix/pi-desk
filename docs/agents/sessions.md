@@ -137,7 +137,10 @@ The body keeps the text's layout, as pi's TUI does (`MarkdownBody`'s `keepTextLa
 
 ## Session sidebar: project groups, pins and archive
 - **Add project** (`handleAddProject`): in a browser tab the click opens the app's own folder window —
-  `DirectoryPicker` titled "Choose folder", folders only, starting at the project in use — and the chosen
+  `DirectoryPicker` titled "Choose folder", folders only, starting at the project in use, with a rail of
+  places (Home, Documents, Desktop, Downloads, the folders pinned in the window, the folders taken in it),
+  a filter, name/date ordering, a hidden switch and a keyboard (`Cmd+Shift+G`, arrows, `Enter`,
+  `Cmd+Enter`, `Backspace`) — and the chosen
   path is adopted through `/api/cwd/validate`; on the desktop it is the native dialog. Why not the
   browser's panel, the measurements, and the fade contract: [files-and-access.md](files-and-access.md).
 State (`lib/session-ui-state.ts`, `lib/session-ui-state-shared.ts`, `app/api/sessions/ui-state/route.ts`, `hooks/useSessionUiState.ts`):

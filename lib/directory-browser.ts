@@ -5,6 +5,11 @@ import path from "path";
 export interface BrowsableDirectory {
   name: string;
   path: string;
+  /**
+   * Last change of the folder in ms, for a browser that can order by date like
+   * a native one. Absent when the folder could not be stat'ed, and for drives.
+   */
+  mtime?: number;
 }
 
 export function shouldShowWindowsDrivePicker(
@@ -78,19 +83,19 @@ export async function createDirectory(parentDirectory: string, name: string): Pr
 
 export async function listDirectories(directory: string): Promise<BrowsableDirectory[]> {
   const entries = await readdir(directory, { withFileTypes: true });
-  // 忽略损坏、不可访问或不指向目录的符号链接。
-  const candidates = await Promise.all(entries.map(async (entry) => {
+  // Ignore broken, unreadable, or non-directory symlinks.
+  const candidates = await Promise.all(entries.map(async (entry): Promise<BrowsableDirectory | null> => {
+    const entryPath = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      return { name: entry.name, path: path.join(directory, entry.name) };
+      return { name: entry.name, path: entryPath, mtime: await modifiedTime(entryPath) };
     }
     if (!entry.isSymbolicLink()) return null;
 
     try {
-      const entryPath = path.join(directory, entry.name);
       const realEntryPath = await realpath(entryPath);
       const entryStat = await stat(realEntryPath);
       if (!entryStat.isDirectory()) return null;
-      return { name: entry.name, path: entryPath };
+      return { name: entry.name, path: entryPath, mtime: entryStat.mtimeMs };
     } catch {
       return null;
     }
@@ -99,6 +104,15 @@ export async function listDirectories(directory: string): Promise<BrowsableDirec
   return candidates
     .filter((entry): entry is BrowsableDirectory => entry !== null)
     .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+/** One folder's mtime, or nothing when the folder cannot be read. */
+async function modifiedTime(entryPath: string): Promise<number | undefined> {
+  try {
+    return (await stat(entryPath)).mtimeMs;
+  } catch {
+    return undefined;
+  }
 }
 /** True for EACCES/EPERM — a read/write denial (POSIX modes or macOS TCC). */
 export function isPermissionError(error: unknown): boolean {

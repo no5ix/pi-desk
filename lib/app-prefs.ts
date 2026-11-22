@@ -55,6 +55,11 @@ export const APP_PREF_KEYS = {
   tasksCalendarView: "pi-web:tasks-calendar-view",
   /** Tasks calendar filter: project keys and `type:*` keys switched off. */
   tasksCalendarHidden: "pi-web:tasks-calendar-hidden",
+  /** The folder picker's remembered state: order, hidden folders, favourites, recents. */
+  directoryPickerSort: "pi-web:directory-picker-sort",
+  directoryPickerHidden: "pi-web:directory-picker-hidden",
+  directoryPickerFavourites: "pi-web:directory-picker-favourites",
+  directoryPickerRecent: "pi-web:directory-picker-recent",
   /** Last open session / cwd / file tabs for desktop cold-start restore. */
   workspace: "pi-workspace-v1",
 } as const;
