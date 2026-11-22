@@ -126,3 +126,8 @@ html.dark {
 /* .chat-project-context {
  display: none !important;
 } */
+
+
+.directory-picker-footer, .directory-picker-sheet-header {
+  padding: 6px 18px !important;
+}
