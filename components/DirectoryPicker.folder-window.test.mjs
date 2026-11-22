@@ -92,17 +92,40 @@ test("the list has a filter, an order, and a hidden switch, all remembered", () 
   assert.match(browser, /mtime: entryStat\.mtimeMs/, "and for folders reached through a link");
 });
 
-test("a phone folds the rail above the list, and the rows keep the app's look", () => {
+test("a phone folds the rail above the list, and the blocks are told apart by colour, not lines", () => {
   const body = rule(".directory-picker-body");
   assert.match(body, /display: flex;/, "rail and list side by side on a wide window");
   const phone = css.match(/@media \(max-width: 640px\) \{\n\s*\.directory-picker-body \{\n\s*flex-direction: column;/);
   assert.ok(phone, "a narrow window moves the rail above the list");
-  assert.match(rule(".directory-picker-rail"), /border-right: var\(--hairline\) solid var\(--border\);/);
-  assert.match(rule(".directory-picker-rail"), /background: var\(--bg-panel\);/);
+
+  // Two tones, no dividers: the window's frame (the rail, the footer band, the sheet's head)
+  // is the base tone, and the reading surface — the title, the path field, the list's own
+  // toolbar and the folders — is the app's raised card tone.
+  assert.match(rule(".directory-picker-rail"), /background: var\(--bg\);/, "the rail is the window's frame tone");
+  assert.doesNotMatch(rule(".directory-picker-rail"), /border/);
+  assert.doesNotMatch(phone ? phone[0] : css, /border/, "and it keeps no divider line on a phone");
+  for (const selector of [".directory-picker-header", ".directory-picker-pathbar", ".directory-picker-main"]) {
+    assert.match(rule(selector), /background: var\(--surface-elevated\);/, `${selector} is the raised card tone`);
+  }
+  assert.match(rule(".directory-picker-footer"), /background: var\(--bg\);/, "the footer band is the frame tone");
+  assert.match(rule(".directory-picker-sheet-header"), /background: var\(--bg\);/);
+  assert.match(picker, /background: "var\(--surface-elevated\)", width: 400/, "the new-directory sheet is a card with a band");
+  for (const selector of [".directory-picker-toolbar", ".directory-picker-footer", ".directory-picker-main", ".directory-picker-sheet-header", ".directory-picker-header", ".directory-picker-pathbar"]) {
+    assert.doesNotMatch(rule(selector), /border/, `${selector} is a block, not a box`);
+  }
+  // The window's own outline is its shape over the scrim, and the controls keep theirs.
+  assert.match(picker, /border: "var\(--hairline\) solid var\(--border\)"/, "the panel keeps its outline");
+  assert.ok(!picker.includes("borderBottom") && !picker.includes("borderTop"),
+    "no divider line is set inline on a band");
+
   assert.match(rule(".directory-picker-entry.is-active"), /background: var\(--bg-selected\);/, "the caret row is the app's selected colour");
+  assert.match(rule(".directory-picker-entry"), /color: var\(--text\);/, "the folder names are the readable tone on the card");
+  assert.match(rule(".directory-picker-rail-link"), /color: var\(--text-muted\);/, "the rail's rows stay the secondary tone");
+  assert.match(rule(".directory-picker-rail-row:hover"), /background: var\(--bg-selected\);/);
   assert.match(rule(".directory-picker-list"), /outline: none;/);
   assert.match(rule(".directory-picker-list:focus-visible"), /box-shadow: inset 0 0 0 2px var\(--accent\);/, "a focused list shows it");
   assert.match(rule(".directory-picker-toggle[aria-pressed=\"true\"]"), /background: var\(--bg-selected\);/);
+  assert.match(rule(".directory-picker-toolbar .app-select-trigger"), /width: auto;/, "the toolbar stays one row of controls");
   assert.match(css, /\.directory-picker-forget \{\n\s*opacity: 0;\n\}/, "a row's unpin is revealed on contact, not shouted");
   assert.match(css, /\.directory-picker-rail-row:hover \.directory-picker-forget,[\s\S]*?opacity: 1;/, "and appears on hover or focus");
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.directory-picker-panel,[\s\S]*?animation: none;/, "the fade stays optional");

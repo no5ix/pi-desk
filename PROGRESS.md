@@ -448,6 +448,13 @@ chose the other option: **make the app's own window behave like a native one**.
 - Styling is fork CSS only (`app/native-theme.css`): the two-column body, the rail rows, the
   revealed-on-contact unpin, the toolbar, the caret row on `--bg-selected`, a focused list ring,
   and a phone (≤640px) fold that puts the rail above the list.
+- **Blocks by colour, not lines** (the user's screenshot ask): every hairline in the window went —
+  the header, the path bar, the list toolbar, the footer, the rail's column edge, the phone rule's
+  edge. The frame (rail, footer band, the sheet's head) is `--bg`; the reading surface (title, path
+  field, toolbar, rows) is `--surface-elevated`, the app's card tone. The panel keeps its outline and
+  the controls keep theirs. Also fixed from the same screenshot: the toolbar stacked three rows
+  because the shared `AppSelect` is full-width — it is scoped to `width: auto` inside this toolbar,
+  so filter + order + hidden sit on one row. Names on the card are `--text`, rail rows `--text-muted`.
 - Escape, the fade contract and the folders-only list were re-pinned as they were: the rewrite kept
   `requestClose()` on every way out (the Escape assertion caught a regression while writing this).
 
@@ -465,3 +472,56 @@ chose the other option: **make the app's own window behave like a native one**.
 - Full suite: 4419 tests, 4417 pass, 1 skipped, 1 fail — the known environment failure
   `Chat only names a model only an extension provides instead of a bare not found (#804)`.
 - `node --test scripts/ui-menu-consistency.test.mjs` 2/2 (the sort control is the shared app select).
+
+## Phase G — notifications: one sentence per finished task (2026-01-27)
+
+User reports, all four from one design spread over four channels (the page's
+notification, the macOS notification the server raises, web push, ntfy), each with its
+own idea of what to say:
+
+- a notification reading "Session 127.0.0.1 finished" with no task behind it;
+- the local notification working only in Safari;
+- a finished task with no notification at all;
+- ntfy showing the session name three times around the text.
+
+What changed:
+
+- `lib/task-completion-notice.ts` — the one announcer. Title = the session's name;
+  body = "The task lasted 0h18m13s, started at 10:04:34, and ended at 10:22:47. This
+  notification pops up at 10:22:47." (the `safariNotify.summary` message). The same
+  text goes to the local notification (macOS Notification Center through the server,
+  plus the page's own notification on Chrome/Edge) and to ntfy. Never throws.
+- Three rules: **no span, no notice** (never "0h0m0s"); **only a task that has just
+  finished** — a span older than `COMPLETION_NOTICE_MAX_AGE_MS` (5 min) is a run this
+  page is catching up on (a stale reconnect after a long turn, a session opened in a
+  background tab), which is the notification that reads as "there was no task";
+  **once per run**, keyed by session + end time, across `agent_end`, `agent_settled`,
+  the running-state poll, a reconnect, a reload. A stopped run announces nothing.
+- Missing numbers are fetched, not guessed: `lib/session-last-run.ts` reads the tail
+  of the session file (last user entry through the last entry after it; widens the
+  window when the span is wider), behind `GET /api/sessions/[id]/last-run`. That is
+  what makes a task started from a phone over the relay, a queued prompt, a page
+  reloaded mid-run, or an extension/scheduled-triggered run announce itself.
+- The page path no longer says "Task finished.", and the focus gate that made it
+  vanish (an installed PWA with a notification icon made the push path "active") lives
+  in the sender now and skips only the page's own banner — the Mac and the phone still
+  hear about it.
+- ntfy: `buildNtfyRequest` puts the session name only in the `Title` header; the
+  message is the sentence alone.
+- Web push: `completionBody` in `lib/web-push.ts` fills the same template per
+  subscriber locale, from the span the wrapper carries (`withRunSpan` in
+  `lib/rpc-manager.ts`; `AgentRunOutcome` gained `startedAt`/`endedAt`).
+- Settings › General: the section reads **"Local browser notification"** with the
+  switch "Notify me on this computer when a task finishes", and its rows sit in the
+  grey `settings-option-list` card like the ntfy section's. All three locales say
+  browser/computer (no "Safari"/"Mac" in the title or switch) and the hint names the
+  browsers. Files and pref keys keep the `safari` name.
+
+Verified:
+
+- `node --experimental-strip-types --test lib/task-completion-notice.test.mjs lib/session-last-run.test.mjs lib/web-push.test.mjs lib/ntfy-settings.test.mjs components/SafariNotificationSection.test.mjs components/NtfyNotificationSection.test.mjs hooks/useAgentSession.test.mjs "app/api/sessions/[id]/last-run/route.test.mjs" public/sw.test.mjs` — 129/129.
+- `tsc --noEmit` and `eslint --quiet` clean on the touched files.
+
+Known, not in these four: a scheduled run announces itself twice (the scheduler's own
+notification and the completion push), and a desktop window in the foreground gets no
+page banner at all (the app's own notification centre is the desktop path).

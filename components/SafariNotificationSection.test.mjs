@@ -5,11 +5,13 @@ import { createJiti } from "jiti";
 
 const { getLocalePlugin, getSupportedLocales } = await createJiti(import.meta.url).import("../lib/i18n/registry.ts");
 
-// Settings › General › Safari notification: a finished task raises a local macOS
-// notification whose title is the session name and whose body is the run's length and
-// clock times. A plain Safari tab cannot do this, so the sender is the local server
-// (app/api/notifications/local). The settings row and the sender are pinned here; the
-// route's gates are in app/api/notifications/local/route.test.mjs.
+// Settings › General › Local browser notification: a finished task raises a notification
+// whose title is the session name and whose body is the run's length and clock times.
+// Chrome and Edge raise it from the page; a plain Safari tab cannot, so the local server
+// raises it too (app/api/notifications/local). The settings row, the sender and the one
+// notice per finished task are pinned here; the route's gates are in
+// app/api/notifications/local/route.test.mjs, and the notice's own rules in
+// lib/task-completion-notice.test.mjs.
 
 const section = readFileSync(new URL("./SafariNotificationSection.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/safari-notification.ts", import.meta.url), "utf8");
@@ -21,6 +23,7 @@ test("the row lives in Settings › General and states the truth about the platf
   assert.match(settings, /import \{ SafariNotificationSection \} from "\.\/SafariNotificationSection";/);
   assert.match(settings, /<SafariNotificationSection \/>/);
   assert.match(section, /className="settings-general-section safari-notification-section"/);
+  assert.match(section, /<div className="settings-option-list">/, "the row sits in a card, like the ntfy section's");
   // The probe decides, so a phone (local: false) or a Linux server gets a disabled
   // switch and a reason, not a switch that silently does nothing.
   assert.match(section, /getSafariNotificationSupport\(\)/);
@@ -53,18 +56,35 @@ test("the sender never breaks the completion path", () => {
   assert.match(client, /if \(!response\.ok\) return \{ supported: false, local: false \};/, "the probe answers, it never rejects");
 });
 
-test("a finished run sends it, and a stopped run stays silent", () => {
+test("a finished run announces it once, and a stopped run stays silent", () => {
   const handler = appShell.match(/const handleAgentEnd = useCallback[\s\S]*?\n  \}, \[[^\]]*\]\);/);
   assert.ok(handler, "handleAgentEnd found");
   assert.match(handler[0], /if \(end\?\.aborted\) return;/, "a stopped run announces nothing");
   assert.match(handler[0], /if \(isHiddenRelation\(selectedSession\?\.relation\)\) return;/);
-  assert.match(handler[0], /if \(end\?\.startedAt !== undefined && end\.endedAt !== undefined\) \{\s*const completionTitle = selectedSession\?\.name \?\? translate\("i18n\.sessionComplete"\);/);
-  assert.match(handler[0], /const completionBody = formatCompletionSummary\(\s*translate\("safariNotify\.summary"\),\s*\{ startedAt: end\.startedAt, endedAt: end\.endedAt, poppedAt: Date\.now\(\) \},\s*locale,\s*\);/);
-  assert.match(handler[0], /void sendSafariNotification\(\{ title: completionTitle, body: completionBody \}\);/);
-  const sendAt = handler[0].indexOf("sendSafariNotification");
-  const gateAt = handler[0].indexOf("shouldShowBrowserNotification()");
-  assert.ok(sendAt >= 0 && gateAt >= 0 && sendAt < gateAt,
-    "the local notice is not gated on this tab's Web Push state: it is a Notification Center notice on this Mac");
+  assert.match(handler[0], /void notifyTaskCompletion\(/, "one sender for every channel");
+  assert.match(handler[0], /sessionName: selectedSession\?\.name \?\? null/);
+  assert.match(handler[0], /end: end \?\? \{ aborted: false \},/);
+  assert.match(handler[0], /fetchLastRun: fetchLastRunTimes/, "a run this page did not see begin gets its times from the session file");
+  assert.match(handler[0], /notified: notifiedCompletionRunsRef\.current/, "one notice per finished run");
+  assert.doesNotMatch(handler[0], /shouldShowBrowserNotification\(\)/,
+    "the foreground rule belongs to the sender, so the Notification Center notice is not gated on this tab's push state");
+  assert.doesNotMatch(handler[0], /sendSafariNotification|sendNtfyNotification|formatCompletionSummary/,
+    "the chat does not ask the channels by hand any more");
+  const shell = appShell;
+  assert.match(shell, /const notifiedCompletionRunsRef = useRef\(new Set<string>\(\)\);/);
+});
+
+test("the row is named for what it is, in every language", () => {
+  const messages = getLocalePlugin("en").messages;
+  assert.equal(messages["safariNotify.title"], "Local browser notification");
+  assert.ok(!messages["safariNotify.switch"].includes("Mac"),
+    "the switch does not promise a Mac: Chrome and Edge on any system get the page's notification");
+  assert.match(messages["safariNotify.hint"], /Chrome and Edge/, "the hint names the browsers it works in");
+  for (const locale of getSupportedLocales()) {
+    const localized = getLocalePlugin(locale).messages;
+    assert.ok(!localized["safariNotify.title"].startsWith("Safari"), `${locale}: the section is not named after one browser`);
+    assert.ok(!localized["safariNotify.switch"].includes("Mac"), `${locale}: the switch is not Mac-specific`);
+  }
 });
 
 test("every locale carries the sentence with the same four placeholders", () => {

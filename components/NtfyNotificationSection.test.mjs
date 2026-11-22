@@ -14,6 +14,7 @@ const { getLocalePlugin, getSupportedLocales } = await createJiti(import.meta.ur
 const section = readFileSync(new URL("./NtfyNotificationSection.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/ntfy-notification.ts", import.meta.url), "utf8");
 const appShell = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
+const notice = readFileSync(new URL("../lib/task-completion-notice.ts", import.meta.url), "utf8");
 const settings = readFileSync(new URL("./SettingsPanel.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
@@ -51,14 +52,16 @@ test("the switch carries the fields, so enabling is one honest write", () => {
     "the server's reason is shown, not a generic failure");
 });
 
-test("a finished run publishes the session name and the sentence", () => {
+test("a finished run announces the session name and the sentence on every channel", () => {
   const handler = appShell.match(/const handleAgentEnd = useCallback[\s\S]*?\n  \}, \[[^\]]*\]\);/);
   assert.ok(handler, "handleAgentEnd found");
-  assert.match(handler[0], /const completionTitle = selectedSession\?\.name \?\? translate\("i18n\.sessionComplete"\);/,
-    "the title is the session's name");
-  assert.match(handler[0], /const completionBody = formatCompletionSummary\(\s*translate\("safariNotify\.summary"\),\s*\{ startedAt: end\.startedAt, endedAt: end\.endedAt, poppedAt: Date\.now\(\) \},\s*locale,\s*\);/);
-  assert.match(handler[0], /void sendSafariNotification\(\{ title: completionTitle, body: completionBody \}\);[\s\S]{0,220}void sendNtfyNotification\(\{ title: completionTitle, body: completionBody \}\);/,
-    "one sentence, sent to both the Mac and the topic — and the client never gates on the ntfy switch, the server owns it");
+  assert.match(handler[0], /void notifyTaskCompletion\(/, "one sender for the local notice and the push");
+  assert.match(handler[0], /sessionName: selectedSession\?\.name \?\? null/, "the title is the session's name");
+  assert.match(handler[0], /translate,\s*locale,/, "the sentence is in the page's language");
+  assert.match(notice, /title = sessionName\?\.trim\(\) \|\| deps\.translate\("i18n\.sessionComplete"\)/);
+  assert.match(notice, /formatCompletionSummary\(\s*deps\.translate\("safariNotify\.summary"\),\s*\{ startedAt: times\.startedAt, endedAt: times\.endedAt, poppedAt: now \},\s*deps\.locale,\s*\)/);
+  assert.match(notice, /sent\.local = await sendLocal\(\{ title, body \}\);[\s\S]*?sent\.ntfy = \(await sendNtfy\(\{ title, body \}\)\)\.sent;/,
+    "one sentence, sent to the Mac and to the topic — and the client never gates on the ntfy switch, the server owns it");
   assert.match(client, /if \(response\.ok\) return \{ sent: true \};/, "the completion path is fire-and-forget");
 });
 

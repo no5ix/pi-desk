@@ -3,7 +3,9 @@ import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import webpush from "web-push";
 import { writePrivateFileAtomicSync } from "./atomic-file";
+import { formatCompletionSummary } from "./completion-notification";
 import { enLocale } from "./i18n/messages/en";
+import { getLocalePlugin } from "./i18n/registry";
 import { zhCNLocale } from "./i18n/messages/zh-CN";
 import { getAgentDir } from "./session-reader";
 import { isTailscaleLoginAllowed } from "./remote-access";
@@ -42,7 +44,7 @@ interface WebPushEnvironment {
 
 /** What happened in a session: a run finished, failed, or is waiting on a dialog. */
 export type SessionPushEvent =
-  | { kind: "complete" }
+  | { kind: "complete"; startedAt?: number; endedAt?: number }
   | { kind: "failed"; detail?: string }
   | { kind: "attention"; detail?: string };
 
@@ -192,6 +194,25 @@ function shortDetail(detail: string | undefined): string {
   return line.length > 140 ? `${line.slice(0, 139)}…` : line;
 }
 
+/**
+ * The completion body: the same sentence the app's other notifications carry, so a
+ * phone and a desktop window say the same thing about one finished task, and the
+ * session name is never repeated in the content. Without a span (an older build, a
+ * run whose start the server never saw) it falls back to the short phrase.
+ */
+function completionBody(locale: string, startedAt: number | undefined, endedAt: number | undefined): string {
+  if (typeof startedAt !== "number" || typeof endedAt !== "number" || endedAt < startedAt) {
+    return localeText(locale, "taskFinished");
+  }
+  const normalized = pushLocale(locale);
+  // The sentence lives in the app's message plugins (Settings › General › Local browser
+  // notification), so the phone and the desktop window read the same words.
+  const plugin = getLocalePlugin(normalized);
+  const template = plugin?.messages["safariNotify.summary"]
+    ?? "The task lasted {duration}, started at {started}, and ended at {ended}. This notification pops up at {now}.";
+  return formatCompletionSummary(template, { startedAt, endedAt, poppedAt: Date.now() }, normalized);
+}
+
 export function sessionPushPayload(
   sessionId: string,
   sessionName: string | undefined,
@@ -201,8 +222,9 @@ export function sessionPushPayload(
   const url = `/?session=${encodeURIComponent(sessionId)}`;
   if (event.kind === "complete") {
     return {
+      // The session's name is the title, and the content is only the run's sentence.
       title: sessionName ?? localeText(locale, "sessionComplete"),
-      body: localeText(locale, "taskFinished"),
+      body: completionBody(locale, event.startedAt, event.endedAt),
       url,
       tag: `pi-session-complete:${sessionId}`,
     };

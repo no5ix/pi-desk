@@ -490,7 +490,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
       style={{ position: "fixed", inset: 0, zIndex: "var(--z-modal)", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}
     >
       <div className={`directory-picker-panel${closing ? " is-closing" : ""}`} style={{ ...panelSurfaceStyle, position: "relative", width: 760, maxWidth: "calc(100vw - 16px)", height: "min(620px, calc(100dvh - 16px))", maxHeight: "calc(100dvh - 16px)", display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, padding: "12px 18px", borderBottom: "var(--hairline) solid var(--border)" }}>
+        <div className="directory-picker-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, padding: "12px 18px" }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ color: "var(--text)", fontWeight: "var(--fw-bold)", fontSize: "var(--fs-title)" }}>{title ?? t("directoryPicker.selectDirectory")}</div>
           </div>
@@ -506,7 +506,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
           </button>
         </div>
 
-        <form onSubmit={handlePathSubmit} style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, padding: "10px 14px", borderBottom: "var(--hairline) solid var(--border)" }}>
+        <form className="directory-picker-pathbar" onSubmit={handlePathSubmit} style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, padding: "10px 14px" }}>
           <button className="directory-picker-back" type="button" onClick={() => void navigateTo(parentDirectory ?? undefined)} disabled={loading || !canNavigateUp} title={t("directoryPicker.goToParent")} aria-label={t("directoryPicker.goToParent")} style={{ width: 36, height: 36, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg-hover)", color: "var(--text-muted)", cursor: canNavigateUp ? "pointer" : "default", opacity: canNavigateUp ? 1 : 0.45 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="m18 15-6-6-6 6" />
@@ -699,7 +699,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
           </div>
         </div>
 
-        <div className="directory-picker-footer" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexShrink: 0, padding: "10px 18px", borderTop: "var(--hairline) solid var(--border)" }}>
+        <div className="directory-picker-footer" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexShrink: 0, padding: "10px 18px" }}>
           <button
             className="directory-picker-action"
             type="button"
@@ -744,9 +744,9 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
                 event.preventDefault();
                 void handleCreateDirectory();
               }}
-              style={{ ...panelSurfaceStyle, width: 400, maxWidth: "100%" }}
+              style={{ ...panelSurfaceStyle, background: "var(--surface-elevated)", width: 400, maxWidth: "100%" }}
             >
-              <div style={{ padding: "12px 18px", borderBottom: "var(--hairline) solid var(--border)", color: "var(--text)", fontSize: "var(--fs-title)", fontWeight: "var(--fw-bold)" }}>
+              <div className="directory-picker-sheet-header" style={{ padding: "12px 18px", color: "var(--text)", fontSize: "var(--fs-title)", fontWeight: "var(--fw-bold)" }}>
                 {t("directoryPicker.createDirectory")}
               </div>
               <div style={{ padding: "12px 18px" }}>

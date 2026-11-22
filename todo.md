@@ -38,29 +38,51 @@
 # P3
 
 1. sometimes the safari just pop out notification but there's no task;
-2. safari local notice/ntfy settings page layout and buttons
-3. the subagent session should indent, 
-4. terminal bottom, 
-5. test background sub agent, 
-6. change the notification sound!
-7. terminal support fzf shortcuts;
-8. add a similar theme to gpt;
-9. add background support; when stop also stop background,
-10. use the global pi,
-11. didn’t have good worktree display support ; 
+2. ntfy didn't pop a notification
+3. safari local notice/ntfy settings page layout and buttons
+4. the subagent session should indent, 
+5. terminal bottom, 
+6. test background sub agent, 
+7. change the notification sound!
+8. terminal support fzf shortcuts;
+9. add a similar theme to gpt;
+10. add background support; when stop also stop background,
+11. use the global pi,
+12. didn’t have good worktree display support ; 
 
 
 # prompts
 
+## safari local notification issue
 
 
+
+1. fix: sometimes the browser just pop out a local notification like "Session 127.0.0.1 finished" , but there's no task;
+2. fix: this local browser notification that i previously  ask you to implement in the pic 1/2,  which should be compatible to edge/chrome/safari, not only safari, so the relevant settings section's title in the pic2 should be "Local browser notification", and the "Notify me on this Mac when a task finishes   A finished task raises a notification titled with the session's name, and its body carries the run's length and clock times.   macOS shows it in Notification Center, from the app that runs Pi (Terminal, or Pi Agent Desktop). A Safari page raises one only as a web app added to the Dock.  Test" part in the pic 2 should have a gray background color, just like the pic 3.
+3. fix : sometimes when a task is finished, but there's no local browser notification and no NTFY push notification
+4. fix: i just received a NTFY push notification, the title is "Project Skill Behavior Clarification and Dev Fixes", the content is  "Project Skill Behavior Clarification and Dev Fixes The task lasted Oh1m49s, started at 16:13:02, and ended at 16:14:51. This notification pops up at 16:14:51.Project Skill Behavior Clarification and Dev Fixes Project Skill Behavior Clarification and Dev Fixes The task lasted Oh1m49s, started at 16:13:02, and ended at 16:14:51. This notification pops up at 16:14:51.", the "Project Skill Behavior Clarification and Dev Fixes" text in the content part is unnecessary. the NTFY push notification's format should be
+   1. the `title` should be the Session's name
+   2. the `content` format is "The task lasted `*h*m*s`, started at hh:mm:ss, and ended at hh:mm:ss. This notification pops up at hh:mm:ss.", for example "The task lasted 0h18m13s, started at 10:04:34, and ended at 10:22:47. This notification pops up at 10:22:47."
 
 
 # stale prompts
 
+## add project button ugly
+
+don't modify anything, let's discuss:
+
+I manually tested the current code on the `feat/pi-desk-branch-tailscale-safari` branch, I only use this project's web version(starting by `npm run dev` or `npm start`), I don't use it desktop version.
+
+when i was on its web version in safari browser, as you can see in the pic 1, when I click the `add project` button, it pop out a window in the pic 1, which was really ugly, it didn't pop out a window like the desktop version in the pic 2,  but it should, since when I click `add files` button in the composer in the pic 3, the desktop/web version both pop out the same window in the pic 3. 
+
+
+1. can we use the same window in the pic 2?, i know it's a file window not a folder window, but we can also choose a folder, and  when we confirm, we can get the folder's path?
+2. when i use the desktop version, i can click `add project` button to open a window like pic 4, why i can not do it using a web version?
+
+
 ## project skills bug task
 
-pic1: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122141823.png
+pic 1: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122141823.png
 pic2:/Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122143300.png
 pic3: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122143155.png
 

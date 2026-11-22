@@ -177,8 +177,11 @@ export function buildNtfyRequest(
   const title = ntfyText(message.title, 200);
   const body = ntfyText(message.body, 4000);
   if (!title && !body) return null;
-  // ntfy reads the title from a header; the message is the whole body. A session name
-  // may be non-ASCII, and ntfy decodes header values as UTF-8.
+  // ntfy reads the title from a header; the message is the body and nothing else. The
+  // session name is the title, so it is never pasted into the message too: a phone shows
+  // the title as the heading and the message as its content, and repeating the name made
+  // the content read as the name three times around the sentence the user asked for.
+  // A session name may be non-ASCII, and ntfy decodes header values as UTF-8.
   const priority = typeof message.priority === "number" && message.priority >= 1 && message.priority <= 5
     ? String(message.priority)
     : "3";
@@ -194,7 +197,7 @@ export function buildNtfyRequest(
         Tags: "pi",
         "Content-Type": "text/plain; charset=utf-8",
       },
-      body: title && body ? `${title}\n${body}` : body || title,
+      body: body || title,
       cache: "no-store",
     },
   };

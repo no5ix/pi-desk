@@ -107,9 +107,7 @@ import type { ChatInputHandle } from "./ChatInput";
 import type { FileExplorerHandle } from "./FileExplorer";
 import type { AgentEndInfo } from "@/hooks/useAgentSession";
 import { useProjectBranch } from "@/hooks/useProjectBranch";
-import { sendSafariNotification } from "@/lib/safari-notification";
-import { sendNtfyNotification } from "@/lib/ntfy-notification";
-import { formatCompletionSummary } from "@/lib/completion-notification";
+import { fetchLastRunTimes, notifyTaskCompletion } from "@/lib/task-completion-notice";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
@@ -187,6 +185,8 @@ export function AppShell() {
     setPref(APP_PREF_KEYS.quoteSelectionEnabled, String(enabled));
   }, []);
   const notifiedAttentionRequestIdsRef = useRef(new Set<string>());
+  /** Finished tasks this page has announced, keyed by session id and the run's end. */
+  const notifiedCompletionRunsRef = useRef(new Set<string>());
   const handleBackgroundTaskDone = useCallback(() => {
     if (soundEnabledRef.current) playDoneSound();
   }, [playDoneSound, soundEnabledRef]);
@@ -1508,32 +1508,27 @@ export function AppShell() {
     if (end?.aborted) return;
     if (isHiddenRelation(selectedSession?.relation)) return;
 
-    // Settings › General › Safari notification and ntfy notification: the session name
-    // plus the run's length and clock times. The local one is this Mac's Notification
-    // Center (the server raises it), the ntfy one reaches a phone. Neither is gated on
-    // this tab's focus — the user may be looking at any window, not at this page.
-    if (end?.startedAt !== undefined && end.endedAt !== undefined) {
-      const completionTitle = selectedSession?.name ?? translate("i18n.sessionComplete");
-      const completionBody = formatCompletionSummary(
-        translate("safariNotify.summary"),
-        { startedAt: end.startedAt, endedAt: end.endedAt, poppedAt: Date.now() },
+    // One notice per finished task, the same sentence on every channel: the local
+    // notification (Settings › General › Local browser notification — the Mac's
+    // Notification Center through the server, and the page's own notification on
+    // Chrome/Edge, which is what makes it work in every browser) and the ntfy push.
+    // lib/task-completion-notice.ts keeps it to a run that has a span and just
+    // finished, once per run: a stale reconnect, a session opened in a background
+    // tab, or a task started on a phone announces nothing it should not.
+    void notifyTaskCompletion(
+      {
+        sessionId: selectedSession?.id ?? null,
+        sessionName: selectedSession?.name ?? null,
+        end: end ?? { aborted: false },
+      },
+      {
+        translate,
         locale,
-      );
-      void sendSafariNotification({ title: completionTitle, body: completionBody });
-      // The ntfy switch lives on the server (lib/ntfy-settings.ts), so the client asks
-      // every time: a disabled ntfy answers 409 and publishes nothing.
-      void sendNtfyNotification({ title: completionTitle, body: completionBody });
-    }
-
-    if (!shouldShowBrowserNotification()) return;
-    const targetSession = selectedSession;
-    deliverSessionNotification({
-      targetSession,
-      title: targetSession?.name ?? translate("i18n.sessionComplete"),
-      body: translate("i18n.taskFinished"),
-      tag: targetSession ? `pi-session-complete:${targetSession.id}` : "pi-session-complete",
-    });
-  }, [deliverSessionNotification, hydrateSelectedSession, locale, selectedSession, translate]);
+        fetchLastRun: fetchLastRunTimes,
+        notified: notifiedCompletionRunsRef.current,
+      },
+    );
+  }, [hydrateSelectedSession, locale, selectedSession, translate]);
 
   // Scheduled runs have their own notification (success or failure, which task, why).
   // The desktop app shows it natively; a browser tab uses the same path as session completion.

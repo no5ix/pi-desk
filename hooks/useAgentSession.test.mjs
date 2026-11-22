@@ -9,6 +9,7 @@ const phaseLabelSource = await jitiSource(new URL("../lib/chat-phase-label.ts", 
 const chatInputSource = await jitiSource(new URL("../components/ChatInput.tsx", import.meta.url));
 const messageViewSource = await jitiSource(new URL("../components/MessageView.tsx", import.meta.url));
 const appShellSource = await jitiSource(new URL("../components/AppShell.tsx", import.meta.url));
+const completionNoticeSource = await jitiSource(new URL("../lib/task-completion-notice.ts", import.meta.url));
 
 test("keeps the session event stream open through the idle grace window", () => {
   const finishSource = source.slice(
@@ -680,10 +681,16 @@ test("routes blocking extension requests through deduplicated browser attention 
     /isBlockingExtensionUiRequest\(request\)[\s\S]*?onAttentionNeeded\?\.\(request\)/,
   );
   assert.match(chatWindowSource, /onAttentionNeeded, onSessionCreated/);
-  assert.match(completionSource, /if \(!shouldShowBrowserNotification\(\)\) return/);
+  // A finished task's notice is one call, and the rules that used to sit in the handler
+  // (the per-session tag, the foreground skip) belong to the sender now, so every channel
+  // shares them: lib/task-completion-notice.ts.
+  assert.match(completionSource, /void notifyTaskCompletion\(/);
+  const completionHandler = completionSource.slice(0, completionSource.indexOf("useScheduledRunNotifications"));
+  assert.doesNotMatch(completionHandler, /shouldShowBrowserNotification\(\)/, "the handler does not gate the notice by hand");
   assert.doesNotMatch(completionSource, /pushActive/);
-  assert.match(completionSource, /tag: targetSession \? `pi-session-complete:\$\{targetSession\.id\}`/);
-  assert.doesNotMatch(completionSource, /document\.visibilityState === "visible"/);
+  assert.match(completionNoticeSource, /shouldShowBrowserNotification\(\)/);
+  assert.match(completionNoticeSource, /tag: completionNoticeTag\(sessionId\)/);
+  assert.doesNotMatch(completionNoticeSource, /document\.visibilityState === "visible"/);
   assert.match(attentionSource, /shouldShowBrowserNotification\(\)/);
   assert.match(attentionSource, /claimExtensionAttentionNotification\(request, notifiedAttentionRequestIdsRef\.current\)/);
   assert.match(attentionSource, /tag: `pi-extension-ui:\$\{request\.id\}`/);

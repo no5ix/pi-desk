@@ -4238,7 +4238,20 @@ html.dark {
 
 /* The folder window's two columns. The rail is a native panel's sidebar — the folders
    people mean (Home, Documents, Desktop, Downloads), the folders pinned here, the folders
-   taken here — and the list keeps its own toolbar. A phone folds the rail above the list. */
+   taken here — and the list keeps its own toolbar. A phone folds the rail above the list.
+
+   Blocks are told apart by colour, never by lines. The window's frame (its rail and its
+   footer band) is the base tone; the reading surface — the title, the path field, the list's
+   own toolbar and the folders — is the app's raised card tone, the one the chat uses. Two
+   tones, no hairline between them. */
+.directory-picker-header {
+  background: var(--surface-elevated);
+}
+
+.directory-picker-pathbar {
+  background: var(--surface-elevated);
+}
+
 .directory-picker-body {
   display: flex;
   flex: 1;
@@ -4250,8 +4263,7 @@ html.dark {
   flex-shrink: 0;
   overflow: auto;
   padding: 8px 8px 12px;
-  border-right: var(--hairline) solid var(--border);
-  background: var(--bg-panel);
+  background: var(--bg);
 }
 
 .directory-picker-rail-heading {
@@ -4279,7 +4291,7 @@ html.dark {
 }
 
 .directory-picker-rail-row:hover {
-  background: var(--bg-hover);
+  background: var(--bg-selected);
 }
 
 .directory-picker-rail-link {
@@ -4376,6 +4388,7 @@ html.dark {
   flex: 1;
   min-width: 0;
   min-height: 0;
+  background: var(--surface-elevated);
 }
 
 .directory-picker-toolbar {
@@ -4385,7 +4398,14 @@ html.dark {
   gap: 8px;
   flex-shrink: 0;
   padding: 8px 12px;
-  border-bottom: var(--hairline) solid var(--border);
+}
+
+/* The toolbar is one row of controls: the filter takes the room, the order and the
+   hidden switch keep their own width. The shared app select is full-width by default. */
+.directory-picker-toolbar .app-select-trigger {
+  width: auto;
+  min-width: 140px;
+  flex: 0 0 auto;
 }
 
 .directory-picker-filter {
@@ -4408,6 +4428,7 @@ html.dark {
 .directory-picker-toggle {
   height: 30px;
   padding: 0 10px;
+  flex: 0 0 auto;
   border: var(--hairline) solid var(--border);
   border-radius: var(--radius-sm);
   background: none;
@@ -4431,6 +4452,14 @@ html.dark {
   outline-offset: -2px;
 }
 
+.directory-picker-footer {
+  background: var(--bg);
+}
+
+.directory-picker-sheet-header {
+  background: var(--bg);
+}
+
 .directory-picker-list {
   outline: none;
 }
@@ -4450,7 +4479,7 @@ html.dark {
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
-  color: var(--text-muted);
+  color: var(--text);
   cursor: pointer;
   text-align: left;
   font-family: var(--font-mono);
@@ -4482,8 +4511,6 @@ html.dark {
   .directory-picker-rail {
     width: auto;
     max-height: 140px;
-    border-right: 0;
-    border-bottom: var(--hairline) solid var(--border);
   }
 }
 

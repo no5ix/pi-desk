@@ -171,6 +171,17 @@ function agentRunOutcome(event: AgentEvent): AgentRunOutcome {
 }
 
 /**
+ * Attach the run's span to its outcome, for the listeners that announce a finished task
+ * (the phone push, and anything else that says how long the task took). A run this
+ * process never saw begin gets no span, so a listener says the short phrase instead of
+ * inventing a duration.
+ */
+function withRunSpan(outcome: AgentRunOutcome, startedAt: number | null, endedAt: number): AgentRunOutcome {
+  if (typeof startedAt !== "number" || !Number.isFinite(startedAt) || endedAt < startedAt) return outcome;
+  return { ...outcome, startedAt, endedAt };
+}
+
+/**
  * A prompt parked while a manual compaction runs. pi's SDK refuses prompts then
  * ("Cannot submit a prompt while compaction is in progress"), so the wrapper
  * holds the submission and flushes it FIFO at compaction end, as pi's TUI
@@ -834,10 +845,15 @@ export class AgentSessionWrapper {
   private notifyAgentRunCompleteIfIdle(): void {
     if (!this.isRunning()) this.runStartedAt = null;
     if (!this.agentRunNeedsCompletion || this.isRunning() || this.composerQueue.snapshot().length) return;
+    // The run's span, read before the fields are cleared: the completion listeners say
+    // "The task lasted 0h18m13s, started at 10:04:34, and ended at 10:22:47", and a run
+    // this process never saw `agent_start` for has no span to say.
+    const runStartedAt = this.runStartedAt;
     this.agentRunNeedsCompletion = false;
     this.runStartedAt = null;
     this.retrying = false;
-    this.lastFinishedRun = { outcome: this.lastRunOutcome, finishedAt: Date.now() };
+    const finishedAt = Date.now();
+    this.lastFinishedRun = { outcome: this.lastRunOutcome, finishedAt };
     try {
       this.onDirectTurnSettled?.(this.lastRunAborted);
     } catch (error) {
@@ -851,7 +867,7 @@ export class AgentSessionWrapper {
     recordRecentRunOutcome(this.sessionId, this.lastFinishedRun);
     // A stopped run still reports its "aborted" outcome; listeners decide what to announce.
     try {
-      this.onAgentRunComplete?.(this.sessionId, this.lastRunOutcome);
+      this.onAgentRunComplete?.(this.sessionId, withRunSpan(this.lastRunOutcome, runStartedAt, finishedAt));
     } catch (error) {
       console.error("[pi-web] completion listener failed:", error instanceof Error ? error.message : error);
     }
@@ -4033,7 +4049,7 @@ export async function startRpcSession(
         const sessionName = inner.sessionManager.getSessionName() ?? null;
         const push = outcome.status === "failed"
           ? notifySessionEvent(completedSessionId, { kind: "failed", detail: outcome.error }, sessionName)
-          : notifySessionEvent(completedSessionId, { kind: "complete" }, sessionName);
+          : notifySessionEvent(completedSessionId, { kind: "complete", startedAt: outcome.startedAt, endedAt: outcome.endedAt }, sessionName);
         void push.catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
         });

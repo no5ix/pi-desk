@@ -458,9 +458,9 @@ export interface SessionContext {
 
 /** How a run ended, for the completion push: the final assistant message's stop reason. */
 export type AgentRunOutcome =
-  | { status: "done" }
-  | { status: "failed"; error: string }
-  | { status: "aborted" };
+  | { status: "done"; startedAt?: number; endedAt?: number }
+  | { status: "failed"; error: string; startedAt?: number; endedAt?: number }
+  | { status: "aborted"; startedAt?: number; endedAt?: number };
 
 /** What the Tasks page shows for one live session (`GET /api/agent/tasks`). */
 export interface AgentTaskSnapshot {
