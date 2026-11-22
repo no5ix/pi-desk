@@ -78,6 +78,10 @@ Run `npm test` (+ i18n registry parity, fork-extractions, ui-menu-consistency wh
 - [x] **5. Collapse rules.** Process details and compaction always start collapsed and never
       auto-expand. A running turn keeps its last 8 blocks as themselves (the compaction card
       counts) and folds the older ones into Process details; when it stops, all of them fold
+- [x] **6. Fix: `npm run dev` would not compile the page.** The lookbehind loader is now
+      version-agnostic (`lib/gfm-autolink-email-loader.cjs`, #753): every lookbehind regex
+      literal in `mdast-util-gfm-autolink-literal` is rewritten, and one surviving is a build
+      failure. Needs a dev-server restart
 - [ ] Manual Safari/desktop pass: the diff panel's source switch, the live card's count growing,
       prompt scroll + Expand, a running turn's fold line moving as it works,
       Settings › Skills on a trusted and an untrusted project

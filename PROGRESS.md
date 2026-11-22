@@ -340,3 +340,23 @@ it must reuse the app's window code — its overlay and its pop-out / disappear 
 `lib/git-types.ts`, `lib/i18n/locale-plugins.ts`, `lib/i18n/messages/{en,zh-CN,zh-TW}.ts`,
 `app/native-theme.css`; tests retargeted: `components/ChatWindow.process-details.test.mjs`,
 `components/FileViewer.test.mjs`, `components/restored-wiring.test.mjs`.
+### Fixed after the user ran `npm run dev` (Phase D): the page would not compile
+`npm run dev` started, then every page load died with
+`mdast-util-gfm-autolink-email-loader … no longer contains the email regex` (a loader throw
+inside Turbopack), so the page was blank. This machine resolves `mdast-util-gfm-autolink-literal`
+**2.1.2** while the lockfile pins 2.0.1, and 2.1.x moved the Safari #753 problem around instead
+of away: four regex literals (the URL regex and the `xmpp:` / `mailto:` / bare email regexes)
+each start with a lookbehind, which Safari parses only from 16.4.
+`lib/gfm-autolink-email-loader.cjs` is now version-agnostic: it scans the module's regex
+literals (division, comments, strings and templates skipped), rewrites every one carrying a
+lookbehind into a runtime construction whose fallbacks are the same pattern with the lookbehind
+groups stripped (nesting- and class-aware, flags kept), and throws if a lookbehind literal
+survives. Verified on the installed 2.1.2 and the pinned 2.0.1: no lookbehind literal left,
+`node --check` on the rewritten module, and a modern browser gets the identical upstream regex.
+`lib/gfm-autolink-email-loader.test.mjs` rewritten for the contract (9 tests: the installed
+package, the 2.0.1 shape, four 2.1.x shapes, the old-Safari fallbacks, an email matched through
+a fallback, the stripper, the literal scanner, a template case). A dev-server **restart** is
+required: the loader runs at build time.
+A 1924-link scan of `.pnpm` against the parents' semver ranges found one mismatch
+(`eslint-module-utils` → `debug@3.2.7`); the rest of the tree is self-consistent, so the open
+environment item stays "installed tree is newer than the lockfile" (`npm ci`).

@@ -76,3 +76,21 @@
   extension provides") fails with "Missing expected rejection" on this machine, and
   `lib/rpc-manager.ts` is untouched in this phase. Known from earlier phases: it passes on a tree
   whose `node_modules` matches the lockfile.
+
+## Resolved in Phase D: the dev server refused to compile (`npm run dev`)
+`Error: mdast-util-gfm-autolink-literal no longer contains the email regex that
+lib/gfm-autolink-email-loader.cjs rewrites` on every page load, blank page. Cause: this
+machine's tree resolves `mdast-util-gfm-autolink-literal` **2.1.2** (the lockfile pins 2.0.1;
+`remark-gfm` asks `^2.0.0`, and the `.pnpm` store here holds only 2.1.2). 2.1.x replaced the
+one email lookbehind with **four** (the URL regex, `xmpp:`, `mailto:`, bare email), so the
+loader — written for 2.0.1's exact text — threw. The old Safari fix (#753) was also
+insufficient for 2.1.x: the URL regex's lookbehind would have broken iOS 16.2 by itself.
+Fix: the loader now rewrites every lookbehind regex literal it finds (runtime construction,
+with lookbehind-free fallbacks) and throws if one survives. Verified against the installed
+2.1.2 and the pinned 2.0.1: no lookbehind literal left, valid ESM, and the modern browser gets
+the identical upstream regex (`lib/gfm-autolink-email-loader.test.mjs`, 9 tests). A **restart of
+`npm run dev`** is needed: the loader runs at build time.
+A scan of this tree's 1924 nested `.pnpm` links against their parents' ranges found one
+mismatch (`eslint-module-utils` → `debug@3.2.7`), so the tree is otherwise self-consistent;
+its remaining difference from the lockfile is version drift from a newer install, which
+`npm ci` aligns.

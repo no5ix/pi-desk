@@ -190,3 +190,22 @@ its end (`scrolledToEnd`). **Expand** removes the cap and the scroll, and tells 
 `overflowY`: a scroll box inside a capped bubble cannot grow, so the cap has to be lifted where it
 lives. **Collapse** puts the box back. The toggle stays visible while expanded: the measurement is
 `scrollHeight > cap + 60` on the content, which stays true with no cap.
+
+## No RegExp lookbehind may reach a bundle (`lib/gfm-autolink-email-loader.cjs`, #753)
+`mdast-util-gfm-autolink-literal` (through `remark-gfm`, from `lib/markdown.ts`) gates
+autolinking with lookbehind, which Safari parses only from 16.4; a regex literal Safari
+cannot parse is a SyntaxError for the whole chunk, and this module is in the first load of
+`/`, so old iOS showed a blank page. `next.config.ts` runs the loader over the package's
+`lib/index.js` (Turbopack's `webpackLoaders` rule and the webpack rule). The loader rewrites
+**every** regex literal in that module that contains a lookbehind — 2.0.1 ships one, 2.1.x
+ships four (the URL regex and the `xmpp:` / `mailto:` / bare email regexes) — replacing each
+with a runtime construction: the modern regex is built from its source string (a browser
+without lookbehind fails at construction, which is catchable, not at parse time), and the
+fallbacks are the same pattern with its lookbehind groups removed, keeping the flags. Dropping
+a lookbehind only widens where a match may start; `findAndReplace` and the handlers reject what
+they do not want. The loader throws when a lookbehind literal survives its own rewrite, so the
+build fails loudly instead of shipping a chunk old Safari cannot parse: an app that opens is
+the requirement, and `npm run dev` dying with "Error evaluating Node.js code" is the symptom
+this guard prevents. When the installed tree resolves a newer 2.x than the lockfile's 2.0.1,
+the loader follows the package, not the lockfile — check the package's lookbehinds, do not
+pin the loader to one version's text.
