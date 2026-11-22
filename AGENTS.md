@@ -103,6 +103,14 @@ Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
   running keeps working, which makes it look like a repo bug. `scripts/prepare-desktop.mjs`
   deletes both `__NEXT_PRIVATE_*` vars for this exact reason; do the same (or run from a
   normal terminal) before any `next build` / `npm run test:e2e`.
+- **The Pi desktop app's shell exports the model provider's environment**
+  (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`,
+  `ANTHROPIC_DEFAULT_*_MODEL`, `PI_MODEL`, `PI_PROVIDER`, …). A test that assumes
+  "no provider has credentials, so the session has no usable model" passes in CI
+  and fails from this shell, because pi-web's runtime sees a working built-in
+  model. Tests in that class clear the provider variables around their own body
+  and restore them (`lib/rpc-manager-chat-only.integration.test.mjs` is the
+  pattern); never "fix" such a failure by weakening the assertion.
 - The `node` on `PATH` may not be the one the project runs on: the Pi app bundles its own
   runtime, while a dev server started from a terminal uses another install. Check with
   `ps -o command= -p $(lsof -nP -iTCP:30141 -sTCP:LISTEN -t)`.
