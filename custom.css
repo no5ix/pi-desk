@@ -106,3 +106,23 @@ html.dark {
   border-bottom: var(--hairline) solid var(--border) !important;
   border-left: var(--hairline) solid var(--border) !important;
 }
+
+/* extension status line: such as LSP, Background running tasks */
+.extension-status-line {
+  min-height: 22px !important;
+  max-height: min(22px, 18vh) !important;
+}
+
+/* button[aria-label="Change model"] {
+  width: 50% !important;
+} */
+
+/* .model-selector.is-toolbar {
+  width: 60% !important;
+  flex: 0 0 auto !important;
+  margin-right: 14px !important;
+} */
+
+/* .chat-project-context {
+ display: none !important;
+} */
