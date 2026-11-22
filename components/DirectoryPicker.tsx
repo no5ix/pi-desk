@@ -65,6 +65,25 @@ const secondaryActionStyle: CSSProperties = {
   color: "var(--text-muted)",
 };
 
+// The places the left rail jumps to, like the sidebar of the system's own open panel. The
+// browse route expands "~", so these resolve on the machine the server runs on.
+const FAVORITE_PLACES: ReadonlyArray<{ label: string; path: string; folderName?: string }> = [
+  { label: "Home", path: "~" },
+  { label: "Desktop", path: "~/Desktop", folderName: "Desktop" },
+  { label: "Documents", path: "~/Documents", folderName: "Documents" },
+  { label: "Downloads", path: "~/Downloads", folderName: "Downloads" },
+];
+
+// Hover and narrow-window rules that inline styles cannot express. Scoped to this window by
+// the dp- prefix so nothing else in the app is touched.
+const PICKER_LAYOUT_CSS = `
+.dp-place, .dp-row { transition: background var(--dur-fast, 120ms) var(--ease-native, ease); }
+.dp-place:hover:not(:disabled), .dp-row:hover { background: var(--bg-hover); }
+.dp-place:focus-visible, .dp-row:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.dp-place.is-active { background: var(--sidebar-selected); color: var(--text); }
+@media (max-width: 600px) { .dp-rail { display: none !important; } }
+`;
+
 async function loadDirectories(directory?: string): Promise<BrowseResponse> {
   const query = directory ? `?path=${encodeURIComponent(directory)}` : "";
   const response = await fetch(`/api/cwd/browse${query}`);
@@ -88,8 +107,24 @@ async function createDirectory(parentPath: string, name: string): Promise<string
 
 function FolderIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
-      <path d="M1.5 3h4l1.5 2h7.5v7.5h-13z" />
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" fillOpacity="0.16" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" aria-hidden="true" style={{ color: "var(--info)", flexShrink: 0 }}>
+      <path d="M1.5 3.5h4l1.5 1.75h7.5V12.5h-13z" />
+    </svg>
+  );
+}
+
+function HomeIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" strokeLinecap="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M2 7.5 8 2.5l6 5M3.5 6.5v6.5h9V6.5" />
+    </svg>
+  );
+}
+
+function ChevronIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-dim)" }}>
+      <path d="m6 3 5 5-5 5" />
     </svg>
   );
 }
@@ -106,6 +141,13 @@ function DriveIcon() {
 
 function isWindowsDriveRoot(directory: string): boolean {
   return /^[a-zA-Z]:[\\/]?$/.test(directory);
+}
+
+/** The last segment of a path, for the folder name shown above the list. */
+function folderLabel(directory: string): string {
+  const trimmed = directory.replace(/[\\/]+$/, "");
+  const last = trimmed.split(/[\\/]/).pop();
+  return last || directory || "/";
 }
 
 /**
@@ -225,7 +267,8 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
       }}
       style={{ position: "fixed", inset: 0, zIndex: "var(--z-modal)", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}
     >
-      <div className={`directory-picker-panel${closing ? " is-closing" : ""}`} style={{ ...panelSurfaceStyle, position: "relative", width: 520, maxWidth: "calc(100vw - 16px)", height: "min(620px, calc(100dvh - 16px))", maxHeight: "calc(100dvh - 16px)", display: "flex", flexDirection: "column" }}>
+      <style>{PICKER_LAYOUT_CSS}</style>
+      <div className={`directory-picker-panel${closing ? " is-closing" : ""}`} style={{ ...panelSurfaceStyle, position: "relative", width: 720, maxWidth: "calc(100vw - 16px)", height: "min(540px, calc(100dvh - 16px))", maxHeight: "calc(100dvh - 16px)", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, padding: "12px 18px", borderBottom: "var(--hairline) solid var(--border)" }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ color: "var(--text)", fontWeight: "var(--fw-bold)", fontSize: "var(--fs-title)" }}>{title ?? t("directoryPicker.selectDirectory")}</div>
@@ -242,82 +285,117 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
           </button>
         </div>
 
-        <form onSubmit={handlePathSubmit} style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, padding: "10px 14px", borderBottom: "var(--hairline) solid var(--border)" }}>
-          <button className="directory-picker-back" type="button" onClick={() => void navigateTo(parentDirectory ?? undefined)} disabled={loading || !canNavigateUp} title={t("directoryPicker.goToParent")} aria-label={t("directoryPicker.goToParent")} style={{ width: 36, height: 36, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg-hover)", color: "var(--text-muted)", cursor: canNavigateUp ? "pointer" : "default", opacity: canNavigateUp ? 1 : 0.45 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="m18 15-6-6-6 6" />
-            </svg>
-          </button>
-          <label htmlFor="directory-path" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}>
-            {t("directoryPicker.directoryPath")}
-          </label>
-          <input
-            className="directory-picker-path"
-            id="directory-path"
-            type="text"
-            value={pathInput}
-            placeholder="/path/to/project or ~/project"
-            autoFocus
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => {
-              setPathInput(event.target.value);
-              setLoadError(null);
-            }}
-            style={{ ...textInputStyle, minWidth: 0, flex: 1 }}
-          />
-          <button
-            className="directory-picker-action"
-            type="submit"
-            disabled={loading || !pathInput.trim()}
-            title={t("directoryPicker.goToDirectory")}
-            style={{ minWidth: 58, height: 36, padding: "0 12px", border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg-hover)", color: "var(--text-muted)", cursor: loading || !pathInput.trim() ? "default" : "pointer", opacity: loading || !pathInput.trim() ? 0.6 : 1 }}
+        <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+          <nav
+            className="dp-rail"
+            aria-label="Places"
+            style={{ width: 168, flexShrink: 0, display: "flex", flexDirection: "column", gap: 2, padding: "10px 8px", overflowY: "auto", background: "var(--bg-hover)", borderRight: "var(--hairline) solid var(--separator)" }}
           >
-            {t("directoryPicker.go")}
-          </button>
-        </form>
+            {FAVORITE_PLACES.map((place) => {
+              const active = place.folderName !== undefined && currentPath.endsWith(`/${place.folderName}`);
+              return (
+                <button
+                  key={place.path}
+                  className={`dp-place${active ? " is-active" : ""}`}
+                  type="button"
+                  onClick={() => void navigateTo(place.path)}
+                  disabled={loading}
+                  style={{ width: "100%", height: 30, display: "flex", alignItems: "center", gap: 8, padding: "0 10px", border: 0, borderRadius: "var(--radius-sm)", background: "none", color: "var(--text-muted)", cursor: loading ? "default" : "pointer", textAlign: "left", fontSize: "var(--fs-body)" }}
+                >
+                  {place.path === "~" ? <HomeIcon /> : <FolderIcon />}
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{place.label}</span>
+                </button>
+              );
+            })}
+          </nav>
 
-        <div className="directory-picker-list" style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "8px 10px" }}>
-          {loading ? (
-            <div style={{ padding: 8, color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{t("directoryPicker.loadingDirectories")}</div>
-          ) : drives !== null ? (
-            <>
-              {drives.length > 0 ? (
-                drives.map((drive) => (
+          <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", background: "var(--surface)" }}>
+            <form onSubmit={handlePathSubmit} style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, padding: "10px 14px", borderBottom: "var(--hairline) solid var(--separator)" }}>
+              <button className="directory-picker-back" type="button" onClick={() => void navigateTo(parentDirectory ?? undefined)} disabled={loading || !canNavigateUp} title={t("directoryPicker.goToParent")} aria-label={t("directoryPicker.goToParent")} style={{ width: 36, height: 36, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg-hover)", color: "var(--text-muted)", cursor: canNavigateUp ? "pointer" : "default", opacity: canNavigateUp ? 1 : 0.45 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="m18 15-6-6-6 6" />
+                </svg>
+              </button>
+              <label htmlFor="directory-path" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}>
+                {t("directoryPicker.directoryPath")}
+              </label>
+              <input
+                className="directory-picker-path"
+                id="directory-path"
+                type="text"
+                value={pathInput}
+                placeholder="/path/to/project or ~/project"
+                autoFocus
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => {
+                  setPathInput(event.target.value);
+                  setLoadError(null);
+                }}
+                style={{ ...textInputStyle, minWidth: 0, flex: 1 }}
+              />
+              <button
+                className="directory-picker-action"
+                type="submit"
+                disabled={loading || !pathInput.trim()}
+                title={t("directoryPicker.goToDirectory")}
+                style={{ minWidth: 58, height: 36, padding: "0 12px", border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg-hover)", color: "var(--text-muted)", cursor: loading || !pathInput.trim() ? "default" : "pointer", opacity: loading || !pathInput.trim() ? 0.6 : 1 }}
+              >
+                {t("directoryPicker.go")}
+              </button>
+            </form>
+
+            {currentPath && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, padding: "10px 18px 6px", color: "var(--text)", fontSize: "var(--fs-body)", fontWeight: "var(--fw-semibold)" }}>
+                <FolderIcon />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{folderLabel(currentPath)}</span>
+              </div>
+            )}
+
+            <div className="directory-picker-list" style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "4px 10px 10px" }}>
+              {loading ? (
+                <div style={{ padding: 8, color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{t("directoryPicker.loadingDirectories")}</div>
+              ) : drives !== null ? (
+                <>
+                  {drives.length > 0 ? (
+                    drives.map((drive) => (
+                      <button
+                        key={drive.path}
+                        className="directory-picker-entry dp-row"
+                        type="button"
+                        onClick={() => void navigateTo(drive.path)}
+                        title={drive.path}
+                        style={{ width: "100%", height: 32, display: "flex", alignItems: "center", gap: 9, padding: "0 10px", border: 0, borderRadius: "var(--radius-sm)", background: "none", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: "var(--fs-body)" }}
+                      >
+                        <DriveIcon />
+                        <span>{drive.name}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div style={{ padding: 8, color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{t("directoryPicker.noDrives")}</div>
+                  )}
+                </>
+              ) : directories.length > 0 ? (
+                directories.map((entry) => (
                   <button
-                    key={drive.path}
-                    className="directory-picker-entry"
+                    key={entry.path}
+                    className="directory-picker-entry dp-row"
                     type="button"
-                    onClick={() => void navigateTo(drive.path)}
-                    title={drive.path}
-                    style={{ width: "100%", minHeight: 34, display: "flex", alignItems: "center", gap: 7, padding: "6px 8px", border: 0, borderRadius: "var(--radius-sm)", background: "none", color: "var(--text-muted)", cursor: "pointer", textAlign: "left", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)" }}
+                    onClick={() => void navigateTo(entry.path)}
+                    title={entry.path}
+                    style={{ width: "100%", height: 32, display: "flex", alignItems: "center", gap: 9, padding: "0 10px", border: 0, borderRadius: "var(--radius-sm)", background: "none", color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: "var(--fs-body)" }}
                   >
-                    <DriveIcon />
-                    <span>{drive.name}</span>
+                    <FolderIcon />
+                    <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.name}</span>
+                    <ChevronIcon />
                   </button>
                 ))
               ) : (
-                <div style={{ padding: 8, color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{t("directoryPicker.noDrives")}</div>
+                <div style={{ padding: 8, color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{t("directoryPicker.noSubdirectories")}</div>
               )}
-            </>
-          ) : directories.length > 0 ? (
-            directories.map((entry) => (
-              <button
-                key={entry.path}
-                className="directory-picker-entry"
-                type="button"
-                onClick={() => void navigateTo(entry.path)}
-                title={entry.path}
-                style={{ width: "100%", minHeight: 30, display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", border: 0, borderRadius: "var(--radius-sm)", background: "none", color: "var(--text-muted)", cursor: "pointer", textAlign: "left", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)" }}
-              >
-                <FolderIcon />
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.name}</span>
-              </button>
-            ))
-          ) : (
-            <div style={{ padding: 8, color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{t("directoryPicker.noSubdirectories")}</div>
-          )}
-          {(loadError || error) && <div style={{ padding: "8px", color: "var(--danger)", fontSize: "var(--fs-micro)" }}>{loadError ?? error}</div>}
+              {(loadError || error) && <div style={{ padding: "8px", color: "var(--danger)", fontSize: "var(--fs-micro)" }}>{loadError ?? error}</div>}
+            </div>
+          </div>
         </div>
 
         <div className="directory-picker-footer" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexShrink: 0, padding: "10px 18px", borderTop: "var(--hairline) solid var(--border)" }}>
