@@ -48,3 +48,16 @@
 - **The project fold jumped** — it animated `clip-path`/`opacity` and an `auto` height
   behind `@supports (interpolate-size)`; a paint change does not move the layout. The fold
   is a measured height transition now (`node e2e/sidebar-fold.mjs` measures it).
+
+## Superseded in Phase C4 (kept for the record)
+
+- **Safari over Tailscale could not pick a folder** (the native route answered 403 to a relay
+  mark, so the remote page fell back to the typed picker). Moot: the folder window is a page
+  window over `/api/cwd/browse`, so it works from the phone and the tailnet hostname.
+- **The focus hand-back needed the Accessibility permission** for the process running `osascript`
+  (without it the panel worked and the focus stayed away). Moot with the panel gone.
+- `/api/cwd/browse` lists directory names and is upstream: it is gated by the web password and
+  the cross-site rules (`isApiRequestAllowed`, `proxy.ts`), not by `isLocalRequest()`, because it
+  is part of the web UI (the project picker's browse used it before this phase). If the folder
+  window is ever made a privileged surface, that is the gate to add — the route is the only one
+  that names paths without a project.

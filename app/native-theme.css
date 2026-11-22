@@ -4207,6 +4207,60 @@ html.dark {
   animation: native-modal-in var(--dur-base) var(--ease-sheet) both;
 }
 
+/* The folder window (components/DirectoryPicker.tsx) — the app's own modal, opened by
+   "Add project" and by the project picker's browse. It arrives and leaves like every other
+   dialog here: the shared blurred scrim, the sheet-style entrance, and the reverse on
+   dismissal, which the component keeps mounted for (DIRECTORY_PICKER_CLOSE_MS). A web page
+   has no folder panel of its own: the browser's is a file chooser, titled "Choose Files to
+   Upload" on macOS and listing files, and an AppleScript panel is not the browser's window
+   either. Inline styles set the panel size and the flat scrim, so the scrim needs
+   !important, as the other native modal rules do. */
+.directory-picker-backdrop {
+  background: rgba(16, 16, 18, 0.34) !important;
+  -webkit-backdrop-filter: blur(3px) saturate(110%);
+  backdrop-filter: blur(3px) saturate(110%);
+  animation: native-backdrop-in var(--dur-base) var(--ease-native) both;
+}
+
+.directory-picker-panel {
+  box-shadow: var(--shadow-dialog);
+  animation: native-modal-in var(--dur-base) var(--ease-sheet) both;
+}
+
+.directory-picker-backdrop.is-closing {
+  animation: native-backdrop-out var(--dur-base) var(--ease-native) both;
+  pointer-events: none;
+}
+
+.directory-picker-panel.is-closing {
+  animation: native-modal-out var(--dur-base) var(--ease-sheet) both;
+}
+
+@keyframes native-backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes native-modal-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .directory-picker-backdrop,
+  .directory-picker-panel,
+  .directory-picker-backdrop.is-closing,
+  .directory-picker-panel.is-closing {
+    animation: none;
+  }
+}
+
 .native-modal-header {
   min-height: 52px;
   padding: 14px 18px !important;

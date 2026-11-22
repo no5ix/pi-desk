@@ -1,79 +1,48 @@
 /**
- * The web path's native folder pick.
+ * Adopting a project folder chosen in the browser.
  *
- * The desktop app picks a project folder with the Tauri dialog plugin
- * (selectDirectoryNative in lib/desktop-native.ts). A browser tab has no folder API
- * that returns a path — Safari has no showDirectoryPicker() and a directory file
- * input reports only names — so the local server shows the native macOS panel instead
- * (app/api/cwd/pick). This helper is the client half: ask the server, then validate
- * the chosen path through /api/cwd/validate exactly like the native Tauri path does,
- * so the folder lands in the file allow-list.
+ * "Add project" opens the app's own folder window — the same **DirectoryPicker** the project
+ * picker's browse uses (components/DirectoryPicker.tsx): the app's overlay and panel, the
+ * app's modal animation, folders only, and a real path on this computer as the answer.
  *
- * The answer is a status, not a path-or-null: pressing **Cancel** in the panel is
- * a finished decision and must end the flow, while a panel this server cannot show
- * (non-macOS, a remote page, a network failure) is the reason to fall back to the
- * in-app typed-path picker. Collapsing the two made Cancel open the typed picker over
- * the chat, which reads as a stray window.
+ * Two paths the web platform offers were measured and are not used. A native AppleScript
+ * panel is never the browser's own window: Finder's activates Finder (the Dock bounce, the
+ * desktop coming forward) and one owned by `osascript` is not even the key window, so the
+ * keyboard stays in the tab. And the composer's **Add files** control in its folder form
+ * (`<input type="file" webkitdirectory>`) opens a *file* chooser — macOS titles it "Choose
+ * Files to Upload", lists files, and a web page cannot retitle it — while reporting only the
+ * files inside the folder, with no absolute path at all (see
+ * lib/project-directory-resolve.ts in git history, which tried to find the folder by name).
+ *
+ * So the dialog's path goes through `/api/cwd/validate`, the route that probes permissions
+ * (macOS TCC denies Desktop, Documents and Downloads) and grants file access. Nothing is
+ * adopted on the dialog's own authority.
  */
 
-export type ProjectDirectoryPick =
-  /** A folder the server picked and /api/cwd/validate accepted. */
+export type ProjectDirectoryChoice =
   | { status: "picked"; cwd: string }
-  /** The user dismissed the panel, or a panel is already open. Nothing further to do. */
-  | { status: "cancelled" }
-  /** No native panel here, or the chosen folder was refused: offer the typed picker. */
   | { status: "unavailable"; reason: string };
 
-export interface ProjectDirectoryPickOptions {
-  /** The panel's prompt line. */
-  prompt?: string;
-  /**
-   * The folder the sidebar is sitting in. The panel opens in its parent, so the projects
-   * beside the current one are visible straight away; the server ignores it unless it is
-   * a real directory.
-   */
-  cwd?: string;
-}
-
-export async function pickProjectDirectoryFromServer(
-  options: ProjectDirectoryPickOptions = {},
-): Promise<ProjectDirectoryPick> {
+/**
+ * Ask the server to take this folder as a project. `ok`/`error` in the answer is the
+ * message to show *in the dialog* — the window stays open so the user can go up a level and
+ * choose again, which is what a refused folder means here.
+ */
+export async function chooseProjectDirectory(cwd: string): Promise<ProjectDirectoryChoice> {
+  const trimmed = typeof cwd === "string" ? cwd.trim() : "";
+  if (!trimmed) return { status: "unavailable", reason: "Choose a folder first." };
   if (typeof window === "undefined") return { status: "unavailable", reason: "no browser" };
-  const payload: { prompt?: string; cwd?: string } = {};
-  if (options.prompt) payload.prompt = options.prompt;
-  if (options.cwd) payload.cwd = options.cwd;
-  let response: Response;
   try {
-    response = await fetch("/api/cwd/pick", {
+    const response = await fetch("/api/cwd/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ cwd: trimmed }),
     });
-  } catch (error: unknown) {
-    return { status: "unavailable", reason: error instanceof Error ? error.message : String(error) };
-  }
-  const data = await response.json().catch(() => ({}) as unknown) as { cwd?: unknown; cancelled?: unknown };
-  if (!response.ok) {
-    // 409 is "a panel is already open": the user is looking at it, so add nothing.
-    if (response.status === 409) return { status: "cancelled" };
-    return { status: "unavailable", reason: `the folder panel answered ${response.status}` };
-  }
-  if (data.cancelled === true) return { status: "cancelled" };
-  if (typeof data.cwd !== "string" || !data.cwd) {
-    return { status: "unavailable", reason: "the folder panel returned no path" };
-  }
-  const chosen = data.cwd;
-  try {
-    const validated = await fetch("/api/cwd/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cwd: chosen }),
-    });
-    const result = await validated.json().catch(() => ({}) as unknown) as { cwd?: string; error?: string };
-    if (!validated.ok || result.error) {
-      return { status: "unavailable", reason: result.error || `the folder was refused (${validated.status})` };
+    const data = await response.json().catch(() => ({}) as unknown) as { cwd?: string; error?: string };
+    if (!response.ok || data.error) {
+      return { status: "unavailable", reason: data.error || `The folder was refused (${response.status})` };
     }
-    return { status: "picked", cwd: result.cwd ?? chosen };
+    return { status: "picked", cwd: data.cwd ?? trimmed };
   } catch (error: unknown) {
     return { status: "unavailable", reason: error instanceof Error ? error.message : String(error) };
   }

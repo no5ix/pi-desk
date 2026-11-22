@@ -44,3 +44,18 @@ Run `npm test` (+ i18n registry parity, fork-extractions, ui-menu-consistency wh
 - [x] Opens beside the current project (`folderPanelLocation`), hint validated server-side
 - [x] The Add project button shows the panel (spin, disabled, title) in three locales
 - [x] Measured on the machine and through the dev server; invariants pinned by tests
+
+---
+
+# Phase C4 — "Add project" is the app's own window (2026-11-22)
+
+- [x] A window titled **Choose folder**, listing folders only (no files), reusing the app's
+      folder browser (`DirectoryPicker`) instead of a native panel
+- [x] The app's overlay and modal animation on that window, in and out, reduced-motion aware
+- [x] One dismissal path so the fade is never cut short; a choice is reported at once
+- [x] The path validated through `/api/cwd/validate`; a refusal stays inside the window
+- [x] The AppleScript panel, the file-input pick and the by-name resolver removed
+- [x] Tests: `components/DirectoryPicker.test.mjs`, `lib/project-directory-pick.test.mjs`,
+      `lib/apple-script.test.mjs`; gates: tsc, eslint, full suite (only the known #804 failure)
+- [ ] Safari: title, folders only, the pop-in and fade-out, a refused Desktop folder,
+      a pick over Tailscale

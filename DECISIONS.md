@@ -61,3 +61,26 @@
 - **The button carries the panel's progress.** The click's work is a native window, not a
   page transition, so the icon spins, the button is disabled and `aria-busy`, and the title
   says where the panel is. One panel per click.
+
+## Phase C4 — the folder window is the app's own
+- **A web page cannot retitle the browser's file panel, so it is not the folder chooser.**
+  `<input type="file" webkitdirectory>` answers with the files inside the folder (no absolute
+  path) and macOS titles its panel "Choose Files to Upload" with files selectable. Measured in
+  Safari, with the user's screenshot.
+- **Reuse the window the app already has.** `DirectoryPicker` (portal, backdrop, panel, folders
+  only, path field) is the app's folder browser; "Add project" opens it with a `title` prop. The
+  title is additive, so the project picker keeps its own heading, and the shared window keeps
+  one implementation.
+- **The animation belongs to CSS, the timer to the component, and the two must agree.**
+  `DIRECTORY_PICKER_CLOSE_MS` equals `--dur-base`; a shorter timer cuts the fade, a longer one
+  leaves a dead click. Pinned by a test that parses both files.
+- **One dismissal path.** Backdrop, Escape, × and Cancel call `requestClose`; a bare `onCancel`
+  in a handler is the bug where the window disappears between two paints.
+- **A choice is not a dismissal.** Selecting a folder reports at once: the project appears in the
+  tree immediately, and a fade would only delay it.
+- **The window's path is a candidate, and a refusal stays in the window.** `/api/cwd/validate`
+  decides (permissions, the allow-list); showing its message inside the window means the fix is
+  one click up the tree, not a toast over the chat.
+- **No native panel, so no per-panel ceremony.** The panel lock, the front-app capture, the focus
+  hand-back and the Accessibility dependency are gone with the panel; the button only shows the
+  validation (`sidebar.checkingFolder`).

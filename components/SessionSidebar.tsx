@@ -23,7 +23,8 @@ import { useI18n } from "@/hooks/useI18n";
 import { formatCompactRelativeTime, formatRelativeTime } from "@/lib/i18n/format";
 import { createPortal } from "react-dom";
 import { ProjectPicker, selectProjectDirectoryNative } from "./ProjectPicker";
-import { pickProjectDirectoryFromServer } from "@/lib/project-directory-pick";
+import { DirectoryPicker } from "./DirectoryPicker";
+import { chooseProjectDirectory } from "@/lib/project-directory-pick";
 import {
   ProjectContextMenu,
   currentCheckout,
@@ -522,9 +523,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   );
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  // True from the click on "Add project" until the native panel answers, so the button
-  // shows that the panel is up (and cannot open a second one) instead of looking inert.
+  // "Add project" in a browser opens the app's own folder window — components/DirectoryPicker,
+  // the same window the project picker's browse uses: the app's overlay, the app's modal
+  // animation, folders only, and a path this computer really has. The path is validated
+  // before it is adopted, and a refusal is shown inside the window so the user can go up a
+  // level and choose again.
+  const [projectFolderOpen, setProjectFolderOpen] = useState(false);
   const [projectPickBusy, setProjectPickBusy] = useState(false);
+  const [projectPickError, setProjectPickError] = useState<string | null>(null);
   // The chat whose conversation is being copied into a project (the picker is open for it).
   const [continueChat, setContinueChat] = useState<SessionInfo | null>(null);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
@@ -1239,41 +1245,47 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onNewSession?.(tempId, cwd, workspaceKind);
   }, [selectedCwd, chatWorkspaceCwd, archivedProjectRoots, onNewSession, projectRootFor, isChatCwd, t]);
 
-  const handleAddProject = useCallback(async () => {
-    // One panel per click: the native panel is modal, and a second request while it is up
-    // is refused by the route (409).
-    if (projectPickBusy) return;
+  const handleAddProject = useCallback(() => {
+    if (!isTauriDesktop()) {
+      // The app's own window, opened at once. A browser tab has nothing better: the file
+      // input's panel is a file chooser (macOS titles it "Choose Files to Upload", lists
+      // files, and a page cannot retitle it) and reports only the files inside a folder,
+      // never its path; an AppleScript panel is not the browser's window either (Finder's
+      // activates Finder, one owned by osascript is not the key window).
+      setProjectPickError(null);
+      setProjectFolderOpen(true);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const cwd = await selectProjectDirectoryNative(selectedCwd, homeDir);
+        if (cwd) activateProject(cwd);
+      } catch (error) {
+        console.error("Failed to select project folder:", error);
+      }
+    })();
+  }, [activateProject, homeDir, selectedCwd]);
+
+  /** The window's "Choose this folder": validate it, then adopt it. */
+  const handleProjectFolderSelect = useCallback(async (cwd: string) => {
     setProjectPickBusy(true);
+    setProjectPickError(null);
     try {
-      if (!isTauriDesktop()) {
-        // A browser tab cannot return a folder path (Safari has no showDirectoryPicker,
-        // a directory file input reports names only), so the local server shows the native
-        // macOS panel — the System Events panel of lib/apple-script.ts, which opens in the
-        // folder beside the current project and hands the front back to the browser, the
-        // way the composer's Add files panel does. Cancel ends the flow: opening the typed
-        // picker afterwards put a stray panel over the chat. Only a server that cannot
-        // show a panel at all (non-macOS, a remote page, a refused folder) falls back to
-        // the typed picker.
-        const picked = await pickProjectDirectoryFromServer({
-          prompt: t("sidebar.addProjectPrompt"),
-          cwd: selectedCwd || homeDir || undefined,
-        });
-        if (picked.status === "picked") {
-          activateProject(picked.cwd);
-          return;
-        }
-        if (picked.status === "unavailable") setProjectPickerOpen(true);
+      const picked = await chooseProjectDirectory(cwd);
+      if (picked.status === "picked") {
+        setProjectFolderOpen(false);
+        setProjectPickError(null);
+        activateProject(picked.cwd);
         return;
       }
-
-      const cwd = await selectProjectDirectoryNative(selectedCwd, homeDir);
-      if (cwd) activateProject(cwd);
-    } catch (error) {
-      console.error("Failed to select project folder:", error);
+      // Keep the window open: a refused folder (macOS TCC denies Desktop, Documents,
+      // Downloads) is answered by going up a level, not by a toast over the chat.
+      setProjectPickError(picked.reason);
     } finally {
       setProjectPickBusy(false);
     }
-  }, [activateProject, homeDir, projectPickBusy, selectedCwd, t]);
+  }, [activateProject]);
 
   const archiveProject = useCallback((projectRoot: string) => {
     archiveProjectRoot(projectRoot);
@@ -2287,10 +2299,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             <button
               type="button"
               className={`sidebar-project-tree-add${projectPickBusy ? " is-busy" : ""}`}
-              onClick={() => void handleAddProject()}
+              onClick={() => handleAddProject()}
               disabled={projectPickBusy}
               aria-busy={projectPickBusy}
-              title={t(projectPickBusy ? "sidebar.pickInFinder" : "sidebar.addProject")}
+              title={t(projectPickBusy ? "sidebar.checkingFolder" : "sidebar.addProject")}
               aria-label={t("sidebar.addProject")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2327,10 +2339,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     <button
                       type="button"
                       className={`sidebar-empty-add${projectPickBusy ? " is-busy" : ""}`}
-                      onClick={() => void handleAddProject()}
+                      onClick={() => handleAddProject()}
                       disabled={projectPickBusy}
                       aria-busy={projectPickBusy}
-                      title={t(projectPickBusy ? "sidebar.pickInFinder" : "sidebar.addProject")}
+                      title={t(projectPickBusy ? "sidebar.checkingFolder" : "sidebar.addProject")}
                       aria-label={t("sidebar.addProject")}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2495,7 +2507,27 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           </div>
         </div>
       )}
-      {projectPickerOpen && (
+      {/*
+     * The web "Add project" window: the app's overlay and panel, animated by the shared
+     * modal keyframes in app/native-theme.css, listing folders only (a project is a
+     * folder), starting at the current project, and answering with a path on this
+     * computer. Cancel fades the window out and adopts nothing.
+     */}
+    {projectFolderOpen && (
+      <DirectoryPicker
+        title={t("sidebar.chooseFolderTitle")}
+        initialPath={selectedCwd || homeDir || undefined}
+        busy={projectPickBusy}
+        error={projectPickError}
+        onSelect={(cwd) => void handleProjectFolderSelect(cwd)}
+        onCancel={() => {
+          setProjectFolderOpen(false);
+          setProjectPickError(null);
+        }}
+      />
+    )}
+
+    {projectPickerOpen && (
         <div className="project-picker-modal-overlay" role="dialog" aria-modal="true" onClick={() => setProjectPickerOpen(false)}>
           <div className="project-picker-modal-shell" onClick={(e) => e.stopPropagation()}>
             <ProjectPicker

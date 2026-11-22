@@ -108,16 +108,33 @@ function isWindowsDriveRoot(directory: string): boolean {
   return /^[a-zA-Z]:[\\/]?$/.test(directory);
 }
 
+/**
+ * How long the window stays mounted after a dismissal, matching the panel's fade-out in
+ * app/native-theme.css (`--dur-base`). The window is the app's own — overlay, panel and
+ * animation — so it leaves the way it arrived instead of vanishing between paints.
+ */
+export const DIRECTORY_PICKER_CLOSE_MS = 180;
+
 interface Props {
   onCancel: () => void;
   onSelect: (path: string) => void;
   initialPath?: string;
   busy?: boolean;
   error?: string | null;
+  /** The window's title; the folder chooser for "Add project" says "Choose folder". */
+  title?: string;
 }
 
-export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false, error }: Props) {
+export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false, error, title }: Props) {
   const { t } = useI18n();
+  const [closing, setClosing] = useState(false);
+  // Dismissal fades the window out, then tells the parent. Choosing a folder is reported
+  // straight away — the parent adopts it and closes the window, and a fade after a choice
+  // would only delay the project appearing in the tree.
+  const requestClose = useCallback(() => {
+    setClosing(true);
+    setTimeout(() => onCancel(), DIRECTORY_PICKER_CLOSE_MS);
+  }, [onCancel]);
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const [currentPath, setCurrentPath] = useState("");
   const [parentDirectory, setParentDirectory] = useState<string | null>(null);
@@ -196,27 +213,27 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
 
   return createPortal(
     <div
-      className="directory-picker-backdrop"
+      className={`directory-picker-backdrop${closing ? " is-closing" : ""}`}
       role="dialog"
       aria-modal="true"
-      aria-label={t("directoryPicker.selectDirectory")}
+      aria-label={title ?? t("directoryPicker.selectDirectory")}
       onClick={(event) => {
-        if (event.target === event.currentTarget && !busy) onCancel();
+        if (event.target === event.currentTarget && !busy && !closing) requestClose();
       }}
       onKeyDown={(event) => {
-        if (event.key === "Escape" && !busy && !isImeComposing(event)) onCancel();
+        if (event.key === "Escape" && !busy && !closing && !isImeComposing(event)) requestClose();
       }}
       style={{ position: "fixed", inset: 0, zIndex: "var(--z-modal)", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}
     >
-      <div className="directory-picker-panel" style={{ ...panelSurfaceStyle, position: "relative", width: 520, maxWidth: "calc(100vw - 16px)", height: "min(620px, calc(100dvh - 16px))", maxHeight: "calc(100dvh - 16px)", display: "flex", flexDirection: "column" }}>
+      <div className={`directory-picker-panel${closing ? " is-closing" : ""}`} style={{ ...panelSurfaceStyle, position: "relative", width: 520, maxWidth: "calc(100vw - 16px)", height: "min(620px, calc(100dvh - 16px))", maxHeight: "calc(100dvh - 16px)", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, padding: "12px 18px", borderBottom: "var(--hairline) solid var(--border)" }}>
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ color: "var(--text)", fontWeight: "var(--fw-bold)", fontSize: "var(--fs-title)" }}>{t("directoryPicker.selectDirectory")}</div>
+            <div style={{ color: "var(--text)", fontWeight: "var(--fw-bold)", fontSize: "var(--fs-title)" }}>{title ?? t("directoryPicker.selectDirectory")}</div>
           </div>
           <button
             type="button"
-            onClick={onCancel}
-            disabled={busy}
+            onClick={requestClose}
+            disabled={busy || closing}
             title={t("i18n.close")}
             aria-label={t("i18n.close")}
             style={{ padding: "2px 6px", border: 0, background: "none", color: "var(--text-muted)", fontSize: 20, lineHeight: 1, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}
@@ -316,7 +333,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
           >
             {t("directoryPicker.newDirectory")}
           </button>
-          <button className="directory-picker-action" type="button" onClick={onCancel} disabled={busy} style={{ ...secondaryActionStyle, cursor: busy ? "default" : "pointer" }}>{t("i18n.cancel")}</button>
+          <button className="directory-picker-action" type="button" onClick={requestClose} disabled={busy || closing} style={{ ...secondaryActionStyle, cursor: busy ? "default" : "pointer" }}>{t("i18n.cancel")}</button>
           <button
             className="directory-picker-action"
             type="button"

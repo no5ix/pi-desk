@@ -224,3 +224,57 @@ Each step below was measured on this Mac, not assumed:
 `app/api/cwd/pick/route.test.mjs`, `lib/project-directory-pick.ts`,
 `lib/project-directory-pick.test.mjs`, `components/SessionSidebar.tsx`,
 `app/native-theme.css`, `lib/i18n/locale-plugins.ts`.
+
+## Phase C4 — "Add project" is the app's own window (2026-11-22)
+
+Manual test in Safari, with a screenshot of the panel: the web path from Phase C3 (the composer's
+**Add files** control in its folder form, `<input type="file" webkitdirectory>`) opens macOS's
+**file** chooser — titled "Choose Files to Upload", files selectable, an **Upload** button, and a
+page cannot retitle it. The request: the window must be titled **Choose folder**, folders only, and
+it must reuse the app's window code — its overlay and its pop-out / disappear animation.
+
+- The window is `components/DirectoryPicker.tsx`, the folder browser the project picker's browse
+  already uses: a portal, a full-screen backdrop, a panel with a title row, a path field, **folders
+  only** (drives, then the subdirectories of the folder in view), New directory, Cancel, and
+  "Select this folder". It answers with a real path, so no lookup by name is needed.
+- `DirectoryPicker` gained an additive `title` prop (header + `aria-label`); the sidebar passes
+  `sidebar.chooseFolderTitle` ("Choose folder" / 选择文件夹 / 選擇資料夾). The project picker passes no
+  title, so its own heading is untouched.
+- It arrives and leaves with the app's shared modal animation, added in `app/native-theme.css`:
+  `.directory-picker-backdrop` / `.directory-picker-panel` get `native-backdrop-in` /
+  `native-modal-in` (the settings dialog's keyframes) and the blurred scrim; `.is-closing` gets the
+  new `native-backdrop-out` / `native-modal-out`, and `pointer-events: none` while fading. Reduced
+  motion: no animation.
+- `DirectoryPicker` got one dismissal path, `requestClose()`: it sets `closing`, marks both classes,
+  and calls the parent after `DIRECTORY_PICKER_CLOSE_MS` (180). Backdrop click, Escape, × and Cancel
+  all go through it, so the window never vanishes between two paints. Choosing a folder is reported
+  at once — a fade after a choice only delays the project appearing in the tree.
+- The chosen path is a **candidate**: `lib/project-directory-pick.ts` (`chooseProjectDirectory`)
+  posts it to `/api/cwd/validate`, the route that probes permissions (TCC denies Desktop, Documents,
+  Downloads) and grants file access — the same step the desktop and typed pickers use. A refusal
+  stays inside the window (its `error` prop) so the user goes up a level and chooses again.
+- Deleted with the native panel: `app/api/cwd/pick/**`, `pickProjectDirectoryFromServer`,
+  `folderPanelScript` / `folderPanelLocation` / `appleScriptCancelled`, the one-panel-per-click lock,
+  and the `sidebar.pickInFinder` label. `lib/apple-script.ts` is the notification bridge only. The
+  whole webkitdirectory + resolver-by-name experiment is out of the tree (its resolver is in git
+  history, and the reason is in the docs).
+- Side effect worth having: because the window is a page window over `/api/cwd/browse`, folder
+  picking now works from Safari over Tailscale, where the native route answered 403.
+- Verification: `tsc --noEmit` clean · `eslint . --quiet` clean · full suite **4378 tests, 4376
+  pass, 1 fail (the pre-existing #804 chat-only case), 1 skipped** · `scripts/fork-ownership.test.mjs`
+  12/12. New/rewritten tests: `components/DirectoryPicker.test.mjs` (5: folders only, the title,
+  every dismissal path, the shared animation and the `DIRECTORY_PICKER_CLOSE_MS` ↔ `--dur-base`
+  pairing, select-is-immediate), `lib/project-directory-pick.test.mjs` (7: validate-first, refusal
+  as a message, no-fetch cases, and the sidebar wiring), `lib/apple-script.test.mjs` (2: escaping
+  and "no panel builder comes back").
+- Docs: the "Adding a project folder" section of `docs/agents/files-and-access.md` is rewritten for
+  the window (with the two web paths that were measured and rejected), and
+  `docs/agents/sessions.md` gained an "Add project" bullet in the sidebar section.
+
+### Files (Phase C4)
+
+`components/DirectoryPicker.tsx`, `components/DirectoryPicker.test.mjs`,
+`components/SessionSidebar.tsx`, `lib/project-directory-pick.ts`,
+`lib/project-directory-pick.test.mjs`, `lib/apple-script.ts`, `lib/apple-script.test.mjs`,
+`lib/i18n/locale-plugins.ts`, `app/native-theme.css`, `docs/agents/files-and-access.md`,
+`docs/agents/sessions.md`; deleted: `app/api/cwd/pick/route.ts`, `app/api/cwd/pick/route.test.mjs`.
