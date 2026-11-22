@@ -37,3 +37,27 @@
   was geometric (where the rows below are, frame by frame), so the test samples
   `getBoundingClientRect().top` of the group below every frame and asserts the movement
   starts in the first frames, is spread across frames, and equals the content height.
+
+---
+
+# Phase C3 decisions (2026-11-22)
+
+- **The reference is the composer's Add files panel.** A folder pick cannot be a web
+  control (no `showDirectoryPicker()` in Safari, and a directory input yields no absolute
+  path), so the native panel stays and is made to behave like the browser's own: it is
+  there at once, it is the key window, and focus returns by itself.
+- **Show the panel from System Events and activate it.** Finder's panel activates Finder
+  (Dock bounce, desktop forward). A panel issued by osascript is owned by a background-only
+  process and is not the key window, so the keyboard stays in the old app. System Events
+  has no Dock icon, and activating it makes the panel key — measured, both ways.
+- **Capture the frontmost app and restore it on both exits.** The capture and the write
+  need the Accessibility permission, so both sit in `try` blocks: without the permission
+  the panel works, without the hand-back.
+- **The default location goes before the prompt.** `with prompt "x" of (loc)` compiles as
+  possession of the string (-1723). Measured, and pinned by a test.
+- **The panel opens in the folder that holds the current project.** The browser's hint is
+  used only if it resolves to a real directory, and the answer is always the panel's own
+  path — the hint is a location, not an input to the result.
+- **The button carries the panel's progress.** The click's work is a native window, not a
+  page transition, so the icon spins, the button is disabled and `aria-busy`, and the title
+  says where the panel is. One panel per click.

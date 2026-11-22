@@ -33,3 +33,14 @@ Run `npm test` (+ i18n registry parity, fork-extractions, ui-menu-consistency wh
 - [x] Tests: `lib/project-directory-pick.test.mjs`, `lib/ntfy-settings.test.mjs`,
       `app/api/notifications/ntfy/route.test.mjs`, `components/NtfyNotificationSection.test.mjs`,
       `lib/sidebar-fold-motion.test.mjs`, `e2e/sidebar-fold.mjs`
+
+---
+
+# Phase C3 — the Add project panel as smooth as Add files (2026-11-22)
+
+- [x] Panel by System Events (activated, key window), never Finder, never a non-key
+      osascript window
+- [x] Focus handed back on the answer and the cancel; permission-fragile calls guarded
+- [x] Opens beside the current project (`folderPanelLocation`), hint validated server-side
+- [x] The Add project button shows the panel (spin, disabled, title) in three locales
+- [x] Measured on the machine and through the dev server; invariants pinned by tests

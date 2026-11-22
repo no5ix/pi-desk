@@ -43,7 +43,10 @@ test("the route is macOS-only and the picked path is validated by the caller", (
   const source = readFileSync(new URL("./route.ts", import.meta.url), "utf8");
   assert.match(source, /isLocalRequest\(req\)/, "the local gate, never a bare loopback Host check");
   assert.match(source, /process\.platform !== "darwin"/, "macOS only");
-  assert.match(source, /choose folder with prompt/, "the native Finder panel");
+  assert.match(source, /folderPanelScript\(\{ prompt, defaultPath: folderPanelLocation\(body\.cwd\) \}\)/,
+    "the System Events panel of lib/apple-script.ts, opened beside the current project");
+  assert.ok(!source.includes('"Finder"'), "the route does not fall back to Finder's activating panel");
+  assert.match(source, /\{ cwd: path \}/, "the answer is the panel's own path, never the hint");
   assert.match(source, /panelOpen/, "one panel per process");
 
   const client = readFileSync(new URL("../../../../lib/project-directory-pick.ts", import.meta.url), "utf8");
@@ -52,6 +55,6 @@ test("the route is macOS-only and the picked path is validated by the caller", (
 
   const sidebar = readFileSync(new URL("../../../../components/SessionSidebar.tsx", import.meta.url), "utf8");
   assert.match(sidebar, /import \{ pickProjectDirectoryFromServer \} from "@\/lib\/project-directory-pick";/);
-  assert.match(sidebar, /const picked = await pickProjectDirectoryFromServer\(t\("sidebar\.addProjectPrompt"\)\);\s*if \(picked\.status === "picked"\) \{\s*activateProject\(picked\.cwd\);\s*return;\s*\}\s*if \(picked\.status === "unavailable"\) setProjectPickerOpen\(true\);/,
+  assert.match(sidebar, /const picked = await pickProjectDirectoryFromServer\(\{\s*prompt: t\("sidebar\.addProjectPrompt"\),\s*cwd: selectedCwd \|\| homeDir \|\| undefined,\s*\}\);\s*if \(picked\.status === "picked"\) \{\s*activateProject\(picked\.cwd\);\s*return;\s*\}\s*if \(picked\.status === "unavailable"\) setProjectPickerOpen\(true\);/,
     "the web Add project button uses the Finder pick; Cancel ends the flow, and only a server that cannot show a panel falls back to the typed picker");
 });

@@ -143,3 +143,84 @@ macOS targets (26.3), so the transition often simply did not exist.
 `lib/sidebar-fold-motion.ts`, `lib/sidebar-fold-motion.test.mjs`,
 `e2e/sidebar-fold.mjs`, `e2e/sidebar-fold.fixture.jsx`, `e2e/README.md`, `package.json`,
 `docs/agents/sessions.md`.
+
+---
+
+## Phase C3 — the Add project panel, made to behave like the composer's Add files (2026-11-22)
+
+The user's reference is the composer's **Add files** (pic 1: the `+` button, tooltip "Add
+files"; pic 2: the panel it opens, "Choose Files to Upload" with Cancel / Upload). That
+panel is a plain `<input type="file">`, so macOS shows it as Safari's own: it is there
+immediately, it is the **key** window, and focus comes back by itself. A folder pick cannot
+be that control: `showDirectoryPicker()` is not in Safari (not through 27.x) and a directory
+`<input type="file" webkitdirectory>` reports names and relative paths, never the absolute
+path Pi needs as a cwd. So the panel stays native, and the job was to give it the same
+behaviour.
+
+### What the panel does now (`folderPanelScript` in `lib/apple-script.ts`)
+
+Each step below was measured on this Mac, not assumed:
+
+- **Not Finder.** `tell application "Finder" to choose folder` wakes Finder, bounces it in
+  the Dock, and puts the desktop forward; the page keeps the menu bar only after the user
+  clicks back. Finder is out.
+- **Not osascript alone either.** A panel issued by osascript is owned by a
+  background-only process, so it is **not the key window**: the panel appeared, the
+  frontmost app stayed `Code`, and a Return sent to the front app never reached it (the
+  panel ran to its timeout). Measured: `front while the panel is up: Code`.
+- **System Events, activated.** The panel command runs inside
+  `tell application "System Events" … activate … choose folder of (defaultLocation) with
+  prompt …`. System Events has no Dock icon, and activating it gives the panel a key
+  window: `front while the panel is up: System Events`, Return accepted it after 1914 ms,
+  stdout `/Users/lynx/Documents/`, exit 0.
+- **Focus goes back.** The app that was frontmost when the click happened is captured and
+  made frontmost again on both exits (the choice and the cancel) — `restoreFront`, measured
+  as `front after: Code`.
+- **Permission-fragile calls are guarded.** `name of first application process whose
+  frontmost is true` and `set frontmost of application process …` are the two calls that
+  need Accessibility for the process running osascript; both sit in `try` blocks, so a
+  machine that has not granted it still gets a working panel, just without the focus
+  hand-back.
+- **Syntax trap.** `choose folder with prompt "…" of (defaultLocation)` compiles as the
+  possession operator applied to the prompt string —
+  `Can’t get "Choose a project folder" of (defaultLocation). Access not allowed. (-1723)`.
+  The location has to come **before** the prompt. The unit test pins the order.
+
+### Where it opens, and what the page shows
+
+- `folderPanelLocation(cwd)` (same file): the panel opens in the folder that **holds** the
+  current project, so a sibling project is one click away. `components/SessionSidebar.tsx`
+  passes `selectedCwd || homeDir`; the server accepts the hint only if it resolves to a real
+  directory, and it never reaches the answer, which is always the panel's own path. A bad
+  hint leaves `path to home folder` in the script.
+- The Add project button carries the panel's progress: `is-busy` spins the icon
+  (`spin 0.8s`, no spin under reduced motion), the button is `disabled` + `aria-busy`, and
+  the title becomes "Choose the folder in the panel macOS opened" (`sidebar.pickInFinder`,
+  three locales). One panel per click (`projectPickBusy`, plus the route's 409).
+- Cancel still ends the flow with nothing (Phase C2), and 409 ("a panel is already open") is
+  treated the same way.
+
+### Verification
+
+- Through the running dev server, with the panel accepted / dismissed by key code:
+  - accept → `{"cwd":"/Users/lynx/Documents"}`
+  - Escape → `{"cancelled":true}`
+- `lib/apple-script.test.mjs` (8): no Finder, the panel inside the activated System Events
+  tell, the location-before-prompt order, `restoreFront` on both exits with `-128`
+  re-raised, every permission-dependent call inside a `try`, the prompt as an escaped
+  literal, `folderPanelLocation` against a real temp tree, and the home-folder fallback.
+- `app/api/cwd/pick/route.test.mjs`, `lib/project-directory-pick.test.mjs` (8): the panel
+  script is built with the location hint, the answer is the panel's path, and the sidebar
+  passes the hint, shows the busy state, and opens nothing on a cancel.
+- `tsc --noEmit` clean · `eslint . --quiet` clean · full suite 4383 tests, 4381 pass, the
+  one pre-existing #804 failure, 1 skipped.
+- The temporary scripts that opened the real panel (`scripts/pick-panel-smoke.mjs`,
+  `scripts/pick-panel-accept.mjs`) were removed after measuring: they open UI, so they are
+  not CI-safe. The measurements are recorded above and the invariants are pinned by tests.
+
+### Files (Phase C3)
+
+`lib/apple-script.ts`, `lib/apple-script.test.mjs`, `app/api/cwd/pick/route.ts`,
+`app/api/cwd/pick/route.test.mjs`, `lib/project-directory-pick.ts`,
+`lib/project-directory-pick.test.mjs`, `components/SessionSidebar.tsx`,
+`app/native-theme.css`, `lib/i18n/locale-plugins.ts`.

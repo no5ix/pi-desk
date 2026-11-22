@@ -522,6 +522,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   );
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  // True from the click on "Add project" until the native panel answers, so the button
+  // shows that the panel is up (and cannot open a second one) instead of looking inert.
+  const [projectPickBusy, setProjectPickBusy] = useState(false);
   // The chat whose conversation is being copied into a project (the picker is open for it).
   const [continueChat, setContinueChat] = useState<SessionInfo | null>(null);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
@@ -1237,29 +1240,40 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [selectedCwd, chatWorkspaceCwd, archivedProjectRoots, onNewSession, projectRootFor, isChatCwd, t]);
 
   const handleAddProject = useCallback(async () => {
-    if (!isTauriDesktop()) {
-      // A browser tab cannot return a folder path (Safari has no showDirectoryPicker,
-      // a directory file input reports names only), so the local server shows the
-      // native macOS panel — the same Finder dialog the desktop app gets from the
-      // Tauri plugin. Cancel ends the flow: opening the typed picker afterwards put a
-      // stray panel over the chat. Only a server that cannot show a panel at all
-      // (non-macOS, a remote page, a refused folder) falls back to the typed picker.
-      const picked = await pickProjectDirectoryFromServer(t("sidebar.addProjectPrompt"));
-      if (picked.status === "picked") {
-        activateProject(picked.cwd);
+    // One panel per click: the native panel is modal, and a second request while it is up
+    // is refused by the route (409).
+    if (projectPickBusy) return;
+    setProjectPickBusy(true);
+    try {
+      if (!isTauriDesktop()) {
+        // A browser tab cannot return a folder path (Safari has no showDirectoryPicker,
+        // a directory file input reports names only), so the local server shows the native
+        // macOS panel — the System Events panel of lib/apple-script.ts, which opens in the
+        // folder beside the current project and hands the front back to the browser, the
+        // way the composer's Add files panel does. Cancel ends the flow: opening the typed
+        // picker afterwards put a stray panel over the chat. Only a server that cannot
+        // show a panel at all (non-macOS, a remote page, a refused folder) falls back to
+        // the typed picker.
+        const picked = await pickProjectDirectoryFromServer({
+          prompt: t("sidebar.addProjectPrompt"),
+          cwd: selectedCwd || homeDir || undefined,
+        });
+        if (picked.status === "picked") {
+          activateProject(picked.cwd);
+          return;
+        }
+        if (picked.status === "unavailable") setProjectPickerOpen(true);
         return;
       }
-      if (picked.status === "unavailable") setProjectPickerOpen(true);
-      return;
-    }
 
-    try {
       const cwd = await selectProjectDirectoryNative(selectedCwd, homeDir);
       if (cwd) activateProject(cwd);
     } catch (error) {
       console.error("Failed to select project folder:", error);
+    } finally {
+      setProjectPickBusy(false);
     }
-  }, [activateProject, homeDir, selectedCwd, t]);
+  }, [activateProject, homeDir, projectPickBusy, selectedCwd, t]);
 
   const archiveProject = useCallback((projectRoot: string) => {
     archiveProjectRoot(projectRoot);
@@ -2272,9 +2286,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </button>
             <button
               type="button"
-              className="sidebar-project-tree-add"
+              className={`sidebar-project-tree-add${projectPickBusy ? " is-busy" : ""}`}
               onClick={() => void handleAddProject()}
-              title={t("sidebar.addProject")}
+              disabled={projectPickBusy}
+              aria-busy={projectPickBusy}
+              title={t(projectPickBusy ? "sidebar.pickInFinder" : "sidebar.addProject")}
               aria-label={t("sidebar.addProject")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2310,9 +2326,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     <span className="sidebar-empty-text">{t("sidebar.noProjects")}</span>
                     <button
                       type="button"
-                      className="sidebar-empty-add"
+                      className={`sidebar-empty-add${projectPickBusy ? " is-busy" : ""}`}
                       onClick={() => void handleAddProject()}
-                      title={t("sidebar.addProject")}
+                      disabled={projectPickBusy}
+                      aria-busy={projectPickBusy}
+                      title={t(projectPickBusy ? "sidebar.pickInFinder" : "sidebar.addProject")}
                       aria-label={t("sidebar.addProject")}
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
