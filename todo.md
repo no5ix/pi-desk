@@ -56,14 +56,27 @@
 
 
 
-# task1
+# stale prompts
+
+## project skills bug task
+
+pic1: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122141823.png
+pic2:/Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122143300.png
+pic3: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122143155.png
+
+current behavior: i open a `pi-desk` session , in the pic1, i disabled `modern-web-guidance` as global skill, then click the `Turn on in this project` button, then `modern-web-guidance` was removed from global skills,  then enabled `modern-web-guidance` skill as project skill for the project `pi-desk`, then it showed relative path `./.pi/skills/modern-web-guidance/SKILL.md`. then i opened a `tab-to-find` session, the `modern-web-guidance` as global skill was still enabled in th pic2; in the pic3, the enabled skill `find-skills` page showed a button `Turn on in this project`
+expected behavior: i open a `pi-desk` session , in the pic1, i disabled `modern-web-guidance` as global skill, then  clicking the `Turn on in this project` button, `modern-web-guidance` should not be removed from global skills, it should just show as a disabled global skill,  then if i click `Turn on in this project` button to enable `modern-web-guidance` skill as project skill for the project `pi-desk`, then it should showed the absolute path `~/Documents/github/pi-desk/.pi/skills/modern-web-guidance/SKILL.md`. then i opened a `tab-to-find` session, the `modern-web-guidance` as global skill should still be disabled in th pic2 since it's a global skill; in the pic3, the enabled skill `find-skills` page should showed a button `Turn off in this project`. 
+
+
+
+## task1
 
 pic1: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122090852.png
 
 in the pic1,  when i click the `BLOCKERS.md`, the `Edited files` section showed there was `+21 -2`, but there's no diff on the right side diff panel, it just directly showed the file content; we need a real diff panel there
 
 
-# task2
+## task2
 
 pic2: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122091558.png
 pic3: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122091501.png
@@ -72,14 +85,14 @@ pic3: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-
 in the pic2, on the Settings-Skills page, we need the `project level skills` just like the `project level MCP` in the pic3; you can use the `project level mcp` as a reference to implement a similar one, there should be something like a `Turn on in this project` button to add a specific skill as a project skill;
 
 
-# task3
+## task3
 
 pic4: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122093954.png
 
 now when the task is finished, there would be `edited files` block in the pic4 , but what i want is that once the ai agent modified any file while ai agent is working on the task but not complete yet, there should be a collapsed `edited files` block above the `composer`, and the `edited files` block should be dynamic, it would automatically change its file list and count to fit what ai agent modify; and when the task is finish, there should be only one `edited files` block
 
 
-# task4
+## task4
 
 pic5: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122094715.png
 pic6: /Users/lynx/Documents/github/sux-mac/clipboard-history/2026-11-22/2026-11-22-images/20261122095025.png
@@ -89,7 +102,7 @@ current behavior: in the pic5/6 only when i click the `Expand` button in the pro
 expected behavior: the prompt block should be scrollable without clicking the scrollable, when i click the `Expand` button it should expand to the full height to fit the whole prompt, when i click `collapse` button, it should recover
 
 
-# task5
+## task5
 
 current behavior: when i open a stopped task or a stopped session, then i  scroll up,  the `process details` block would automatically expand; and when there wasn’t a final report, the `process details` block would be expanded by default;
 
