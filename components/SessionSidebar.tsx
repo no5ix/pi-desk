@@ -2616,7 +2616,7 @@ function SessionFamilyItem({
       className="session-tree-item"
       data-session-depth={depth}
       aria-level={depth + 1}
-      style={depth > 0 ? { marginLeft: depth * 14 } : undefined}
+      style={depth > 0 ? { marginLeft: depth * 30 } : undefined}
     >
       <div style={{ position: "relative" }}>
         <SessionItem
