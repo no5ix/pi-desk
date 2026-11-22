@@ -1,105 +1,97 @@
-# PLAN — feat/pi-desk-branch-tailscale-safari
+# Fix the two stubborn notification bugs
 
-## Phase A — verify the 4 committed features (74f4e582)
-1. Add project → native Finder (`app/api/cwd/pick`, `lib/apple-script.ts`, `lib/project-directory-pick.ts`, `SessionSidebar.handleAddProject`)
-2. Topbar branch chip (`AppShell`, `app/api/worktrees/route.ts`, `hooks/useProjectBranch.ts`)
-3. Tailscale Serve at startup (`lib/tailscale-serve.ts`, `instrumentation-node.ts`)
-4. Local macOS completion notification (`app/api/notifications/local`, `lib/completion-notification.ts`, `SafariNotificationSection`, `AgentEndInfo` timing)
+Branch: `fix/notification-double-and-missing` (from `pi-desk-main`).
 
-Tests to add (repo style: `node --experimental-strip-types --test`, `*.test.mjs`, pure functions + source sentinels; never spawn osascript/tailscale in tests):
-- `lib/tailscale-serve.test.mjs`, `lib/completion-notification.test.mjs`, `lib/apple-script.test.mjs`
-- `app/api/cwd/pick/route.test.mjs` (gate only), `app/api/notifications/local/route.test.mjs` (GET + 403 + 400)
-- `lib/project-directory-pick.test.mjs` (mocked fetch)
-- `components/AppShell.topbar-branch.test.mjs`, `components/SessionSidebar.add-project.test.mjs`, `components/SafariNotificationSection.test.mjs`
+## The two reports
 
-## Phase B — 6 new tasks
-1. ntfy notification (Settings › General): server url (default `https://ntfy.sh`), topic, switch, **Send Test Notice**; on finish publish title = session name, body = the same sentence.
-2. Turn duration next to the **Copy** button in the message footer: `Copy 0h31m10s      Nov 21 11:46PM`, both existing controls keep their place.
-3. Animate sidebar project expand/collapse.
-4. Fix: opening a session sometimes shows a stale transcript (missing final report); a refresh shows it.
-5. Compaction card: collapsed by default, header click expands.
-6. Process details: thinking cards collapsed by default.
+1. A task finishes and there is **no** local browser notification and **no** ntfy push.
+2. With nothing running, the mobile Safari web app delivers **a stack of** push
+   notifications on the iPhone.
 
-## Phase C
-Run `npm test` (+ i18n registry parity, fork-extractions, ui-menu-consistency where relevant), `tsc --noEmit`, `eslint`, review `git diff`, commit.
+## Root causes found in the code
 
----
+### Why a finished task can be silent
 
-# Phase C2 — the manual-test fixes (2026-11-22)
+* `lib/task-completion-notice.ts` is a **page** module, and it is the only sender for
+  ntfy (`/api/notifications/ntfy` POST) and for the macOS notification
+  (`/api/notifications/local` POST). Both of those are server capabilities that need no
+  page. So with the chat page closed, navigated away, discarded by the browser,
+  suspended on iOS, or for a run started from a phone over the relay with no page open,
+  those two channels announce nothing at all. The server — which owns the run, knows the
+  span, and pushes Web Push at that exact moment (`lib/rpc-manager.ts:4045`
+  `onAgentRunComplete`) — sends nothing on those channels.
+* The in-page banner is gated by `APP_PREF_KEYS.safariNotifyOnComplete` (localStorage,
+  default **false**, one per browser). Chrome/Edge with permission granted stay silent
+  until the user finds that switch in a browser they opened once.
+* A notice needs a span. Without one, the page reads the session file's tail
+  (`/api/sessions/[id]/last-run`); a not-yet-flushed new session, a tail wider than the
+  2 MB window, or a reload before the file has the run answers `null` →
+  `skipped: "no-times"` → silence on **every** channel, ntfy included.
+* `COMPLETION_NOTICE_MAX_AGE_MS` (5 min) drops a run the page learned about late —
+  correct for a reconnect, and also the reason a long task in a background tab can go
+  unannounced.
+* In `npm run dev` the service worker is unregistered (`components/PwaRegistration.tsx`),
+  so there is no push subscription at all and the banner falls back to the page
+  `Notification` constructor (Chrome yes, plain Safari tab no).
 
-- [x] 1 · Add project: Cancel in Finder must not open the in-app picker
-- [x] 2 · ntfy: `Send Test Notice` (ByteString header, em dash) + the panel layout
-- [x] 3 · Project fold: a real 200–300 ms height animation, siblings moving from frame one
-- [x] Tests: `lib/project-directory-pick.test.mjs`, `lib/ntfy-settings.test.mjs`,
-      `app/api/notifications/ntfy/route.test.mjs`, `components/NtfyNotificationSection.test.mjs`,
-      `lib/sidebar-fold-motion.test.mjs`, `e2e/sidebar-fold.mjs`
+### Why the phone buzzes with nothing running
 
----
+* `lib/web-push.ts:82` `PUSH_OPTIONS = { TTL: 2419200 }` — 4 weeks. RFC 8030: a push
+  service stores a message for at least its TTL while the subscriber is unreachable.
+  An iPhone that is offline, powered off, or in a Focus mode therefore accumulates every
+  finished run of every session for four weeks and receives the whole stack the moment it
+  is reachable again. The body's "This notification pops up at hh:mm:ss" is a lie for
+  every one of them. This is the "a lot of notifications, no task running" report.
+* The page banner's tag is `pi-task-complete:<id>`
+  (`lib/task-completion-notice.ts:completionNoticeTag`) while the push payload's tag is
+  `pi-session-complete:<id>` (`lib/web-push.ts:sessionPushPayload`). The service worker's
+  "a same-tag notification under 10 s old is this same completion, so replace it quietly"
+  rule (`public/sw.js:hasRecentNotification`, the #1515 fix) can therefore never match the
+  page's banner: one finished task alerts twice.
+* The server has no per-run dedupe: the guard is the wrapper's own
+  `agentRunNeedsCompletion` flag, cleared when it fires. A wrapper re-created mid-run, a
+  session driven from two windows, or a restart that settles a restored run can announce
+  the same finished task again.
+* An attention push (`kind: "attention"`) is sent for every blocking dialog — MCP and
+  project trust dialogs included — with no cooldown, so a phone buzzes "Waiting for you"
+  while no task runs.
 
-# Phase C3 — the Add project panel as smooth as Add files (2026-11-22)
+## The fix
 
-- [x] Panel by System Events (activated, key window), never Finder, never a non-key
-      osascript window
-- [x] Focus handed back on the answer and the cancel; permission-fragile calls guarded
-- [x] Opens beside the current project (`folderPanelLocation`), hint validated server-side
-- [x] The Add project button shows the panel (spin, disabled, title) in three locales
-- [x] Measured on the machine and through the dev server; invariants pinned by tests
+**One rule: the server announces a finished run; the page only decorates the tab.**
 
----
+1. `lib/task-completion-server.ts` (new): the one place a run's end is announced
+   server-side — Web Push, ntfy, and the macOS notification — with
+   * per-run dedupe (session + kind + span, bounded LRU on `globalThis`),
+   * a stale-run guard (a run that ended more than 5 min ago announces nothing),
+   * a stopped run announces nothing,
+   * attention pushes deduped per request id and rate limited per session.
+   Wired from `lib/rpc-manager.ts` `onAgentRunComplete` / `onAttentionNeeded`, which
+   already know the span, the name, and the suppression for subagents and side chats.
+2. `lib/task-completion-notice.ts` (page): keeps only the page's own banner, gated by the
+   browser's own switch and `Notification` permission, and **announces with the short
+   "Task finished." sentence when there is no span** (once per session per 30 s) instead
+   of going silent. ntfy and the macOS notification move out of the page.
+3. `lib/web-push.ts`: `TTL` 4 weeks → 5 minutes (`PUSH_TTL_SECONDS`), payload carries
+   `sentAt`, and the tag comes from `lib/notification-tags.ts`.
+4. `public/sw.js`: a push that lands more than 5 minutes after it was sent is a queued
+   delivery, so it is shown **collapsed and silent** under one catch-up tag — the burst
+   becomes one quiet row, and a notification is still shown (iOS revokes the subscription
+   when a push is handled without one, see 3e9fcfa5).
+5. `lib/notification-tags.ts` (new, shared): the tag builder the page, the server payload
+   and the worker all use, so the #1515 suppression works again and one finished task
+   makes one banner.
+6. `lib/local-notification.ts` + `app/api/notifications/local`: the macOS notification
+   gains a **server-side** switch (it is the server that raises it; a browser pref cannot
+   describe it) plus the app locale, so a server-announced notice reads in the user's
+   language. Settings › General gets that switch next to the per-browser page switch.
+7. `lib/ntfy-publish.ts` (new): the publish call, shared by the route and the server
+   announcer.
 
-# Phase C4 — "Add project" is the app's own window (2026-11-22)
+## Verification
 
-- [x] A window titled **Choose folder**, listing folders only (no files), reusing the app's
-      folder browser (`DirectoryPicker`) instead of a native panel
-- [x] The app's overlay and modal animation on that window, in and out, reduced-motion aware
-- [x] One dismissal path so the fade is never cut short; a choice is reported at once
-- [x] The path validated through `/api/cwd/validate`; a refusal stays inside the window
-- [x] The AppleScript panel, the file-input pick and the by-name resolver removed
-- [x] Tests: `components/DirectoryPicker.test.mjs`, `lib/project-directory-pick.test.mjs`,
-      `lib/apple-script.test.mjs`; gates: tsc, eslint, full suite (only the known #804 failure)
-- [ ] Safari: title, folders only, the pop-in and fade-out, a refused Desktop folder,
-      a pick over Tailscale
-
----
-# Phase D — five tasks on the running chat (2026-11-22)
-- [x] **1. "Edited files" opens a real diff.** A row opened the file's content. The row now opens
-      the file's diff, built from the session's own `write` / `edit` / `apply_patch` records
-      (`lib/session-file-diff.ts`, `GET /api/sessions/[id]/file-diff`); the panel names the source
-      and swaps to the working tree when both exist
-- [x] **2. Project-level skills, like project-level MCP.** Skills › a global skill ›
-      **Turn on in this project** writes `<cwd>/.pi/skills/<name>` (a link to the global folder,
-      a copy where links are refused); **Remove from this project** deletes it, the global skill
-      untouched; the project's own copy shadows the global one by name
-- [x] **3. A live "Edited files" card above the composer.** While a turn runs it is the one file
-      list, collapsed, counting and listing what the agent has written so far; the reply shows no
-      card, and the finished turn shows exactly one
-- [x] **4. A long prompt reads without "Expand".** The collapsed prompt is a scroll box;
-      **Expand** drops the cap so the whole prompt fits, **Collapse** restores the box
-- [x] **5. Collapse rules.** Process details and compaction always start collapsed and never
-      auto-expand. A running turn keeps its last 8 blocks as themselves (the compaction card
-      counts) and folds the older ones into Process details; when it stops, all of them fold
-- [x] **6. Fix: `npm run dev` would not compile the page.** The lookbehind loader is now
-      version-agnostic (`lib/gfm-autolink-email-loader.cjs`, #753): every lookbehind regex
-      literal in `mdast-util-gfm-autolink-literal` is rewritten, and one surviving is a build
-      failure. Needs a dev-server restart
-- [ ] Manual Safari/desktop pass: the diff panel's source switch, the live card's count growing,
-      prompt scroll + Expand, a running turn's fold line moving as it works,
-      Settings › Skills on a trusted and an untrusted project
-
-### Phase E — project-level Skills to the user's four rules (done)
-Copy, not link; both files listed with the winner; a two-way project switch; absolute paths;
-legacy links migrated on the next switch. See PROGRESS.md.
-
-### Phase F — the folder window is used like a native panel (done)
-Asked why web "Add project" opens the app's window while the desktop opens macOS's panel, and
-whether web can have that panel with a path. No web API can answer with a folder path, and the
-desktop answer comes from the OS; the user chose to make the app's own window native-feeling.
-- [x] Places rail (`GET /api/cwd/places`, `lib/directory-places.ts`): Home, Documents, Desktop,
-      Downloads, folders pinned in the window, folders taken in it; a folder the server cannot
-      open is visibly not openable
-- [x] Filter, order by name or last change (`mtime` added to `/api/cwd/browse`), hidden folders,
-      all remembered in app prefs
-- [x] Keyboard: `Cmd+Shift+G`, arrows / Home / End / PageUp / PageDown, Enter, `Cmd+Enter`,
-      Backspace, type-ahead; a listbox a screen reader can walk
-- [x] Phone (≤640px): the rail folds above the list; the sort control is the shared app select
-- [ ] Manual Safari pass of the window (rail, keys, pin, order, phone width)
+`node --test lib/task-completion-notice.test.mjs lib/web-push.test.mjs
+lib/task-completion-server.test.mjs lib/notification-tags.test.mjs public/sw.test.mjs
+app/api/notifications/local/route.test.mjs app/api/notifications/ntfy/route.test.mjs
+components/SafariNotificationSection.test.mjs components/NtfyNotificationSection.test.mjs
+components/fork-extractions.test.mjs` · `tsc --noEmit` · `npm run lint` · full `node --test`.

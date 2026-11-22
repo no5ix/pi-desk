@@ -225,7 +225,11 @@ lib/
   session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
   session-file-diff.ts  a file's diff rebuilt from one session's write/edit/apply_patch records
   session-last-run.ts   a session file's last run: its start, end, and how long (the notification's numbers)
-  task-completion-notice.ts  one notice per finished task: the session name as title, the run's sentence as body, on the local notification and ntfy
+  task-completion-notice.ts  this browser's own banner for a finished task (the server announces the rest)
+  task-completion-server.ts  the one announcer of a finished run: push + ntfy + macOS notification, once per run
+  notification-tags.ts  the notification tag and the windows every channel shares (public/sw.js mirrors it)
+  local-notification.ts  the macOS notification the server raises, and the installation's switch
+  ntfy-publish.ts  publish one ntfy message (the route's Test notice and the announcer)
   project-skills.ts   a project's own `.pi/skills` folder: copy a skill in, flip it, take it out
   skill-roots.ts      the skill folders of a project and of the user, read by listing and writer
   skill-shadowing.ts  the twin file pi's one-name loader hides, back on the Skills list
@@ -300,7 +304,7 @@ Fork notes:
 - [fork-sessions.md](docs/agents/fork-sessions.md): branch summaries, the not-yet-flushed new session, the SDK → wire → client event pipeline, the incremental session scanner, `useAgentSession` guards (request ids, load deadline, streaming seed, render-phase scroll save), compaction / retry / 0.86 events, `isRunning()` and `isIdle`, running-state propagation and reconciliation, session automation, the single-shot composer send, `!command` output, stats, transcript system messages, extension command session actions, the Process details collapse rule and a running turn's live tail, one Edited files card per turn with the live card above the composer, a long prompt's scroll box and its Expand, a file's diff as one session made it (`lib/session-file-diff.ts`), and why an assistant reply's content list stays dense (`lib/assistant-content.ts`).
 - [fork-models.md](docs/agents/fork-models.md): routed model, cost by model and cache warming, classifier and image models, the four thinking-level states, model defaults, remote provider catalogs (refresh only on request), `enabledModels` minimal edits and `resync`, auth and credential deletion.
 - [fork-tools-subagents.md](docs/agents/fork-tools-subagents.md): new-session tool presets and Chat only, exact system prompts through `before_agent_start`, built-in subagents (setting, disabled built-ins, profile files, notifications).
-- [fork-files-security.md](docs/agents/fork-files-security.md): security posture (web password, OAuth tokens, preview sandboxes), worktrees and branch switching, the file access allow-list, web password throttling, the one sentence a finished task is announced with (`lib/task-completion-notice.ts`) and the phone pushes.
+- [fork-files-security.md](docs/agents/fork-files-security.md): security posture (web password, OAuth tokens, preview sandboxes), worktrees and branch switching, the file access allow-list, web password throttling, the one sentence a finished task is announced with (the server: `lib/task-completion-server.ts`, the page's banner: `lib/task-completion-notice.ts`, shared tag and windows: `lib/notification-tags.ts`) and the phone pushes.
 - [fork-desktop.md](docs/agents/fork-desktop.md): the Tauri shell (desktop token, native menus in Rust, file context menu, window state, tauri plugin version pairing), workspace terminals and node-pty / quickjs staging, Windows overwrite installs, and the payload credential scan that keeps `.pi/mcp.json` out of an installer.
 - [fork-ui.md](docs/agents/fork-ui.md): who contains whom in the topbar / chat column / right panel, the settings dialog tabs, touch affordances, completion sound, plugins and skills.
 - [fork-chat-workspace.md](docs/agents/fork-chat-workspace.md): the non-project Chats section, the hidden `chat-workspace` cwd and `workspaceKind` identity, project-workbench suppression, and the server-enforced chat policy (skills and MCP yes; no file, shell or other extension tools; no context files), text attachments, and continuing a chat in a project.

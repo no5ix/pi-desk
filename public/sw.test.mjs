@@ -128,6 +128,45 @@ test("push ignores malformed payloads", async () => {
   assert.deepEqual(event.shown, []);
 });
 
+test("a push the service sat on is a queued delivery, shown quiet and collapsed", async () => {
+  // The server sends with a short TTL, so a phone that was offline usually loses a stale
+  // notice. What does arrive minutes later is collapsed under one catch-up tag, silent: the
+  // stack of "a lot of notifications with nothing running" becomes one quiet row.
+  const event = dispatchPush({ ...completionPush, sentAt: Date.now() - 60 * 60_000 }, []);
+  await event.pending;
+
+  assert.equal(event.shown.length, 1, "a notification is still shown: iOS revokes the subscription when a push is handled without one");
+  assert.equal(event.shown[0].options.tag, "pi-session-catchup", "one row for the whole backlog");
+  assert.equal(event.shown[0].options.silent, true, "a day-old completion does not beep");
+  assert.equal(event.shown[0].options.renotify, false);
+  assert.equal(event.shown[0].options.data.url, "/?session=session-1", "it still opens the session");
+});
+
+test("a push that lands within the TTL alerts as usual", async () => {
+  const event = dispatchPush({ ...completionPush, sentAt: Date.now() - 2000 }, [], existingNotifications([
+    { tag: "pi-session-complete:session-2", data: { url: "/?session=session-2", shownAt: Date.now() } },
+  ]));
+  await event.pending;
+
+  assert.equal(event.shown.length, 1);
+  assert.equal(event.shown[0].options.tag, "pi-session-complete:session-1");
+  assert.equal(event.shown[0].options.renotify, true);
+  assert.equal(event.shown[0].options.silent, undefined);
+});
+
+test("a backlog of late pushes shares one tag, so the browser shows one row", async () => {
+  const shown = [];
+  self.registration = { showNotification: async (title, options) => { shown.push(options); }, getNotifications: async () => [] };
+  const payload = { ...completionPush, sentAt: Date.now() - 30 * 60_000 };
+  for (let i = 0; i < 3; i += 1) {
+    const pending = new Promise((resolve) => listeners.get("push")({ data: { json: () => payload }, waitUntil: resolve }));
+    await pending;
+  }
+  assert.equal(shown.length, 3);
+  assert.deepEqual(new Set(shown.map((options) => options.tag)), new Set(["pi-session-catchup"]),
+    "the tag is what makes the browser replace, not stack");
+});
+
 test("notification click focuses an existing client at the session URL", async () => {
   const calls = [];
   const focusedClient = {

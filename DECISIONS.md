@@ -170,3 +170,32 @@
   and hand the path to the tab over the local API (the desktop-token pattern the native dialogs use);
   with no app running there is nothing to ask, so the in-app window has to be good anyway. The user
   chose the window; the desktop-assisted pick stays an option.
+
+## The server announces, the page decorates (notification reliability)
+- **The process that owns the run is the only sender that can be relied on.** ntfy and the
+  macOS row were a page's job, so a task started from a phone, a queued prompt, a run that
+  settles while the tab is closed, discarded, or suspended on iOS announced nothing on
+  those channels. `lib/task-completion-server.ts` sends the push, the ntfy message and the
+  Notification Center row from `onAgentRunComplete`, which already holds the run's span,
+  name and outcome. The page keeps the one channel no server can raise: its own banner.
+- **A notification is news for minutes.** The web-push TTL was 4 weeks (RFC 8030 asks a
+  push service to store a message for at least its TTL while the subscriber is away, and to
+  deliver the stored pile when it returns). A phone that was off, offline, or in a Focus
+  mode for a day woke to a stack of stale completions whose own body said when they
+  popped up. TTL is 5 minutes; a push that still lands late is shown silent and collapsed
+  under one catch-up tag, because iOS revokes a subscription whose push is handled without
+  a notification.
+- **One tag, built in one place.** The page tagged `pi-task-complete:` and the payload
+  tagged `pi-session-complete:`, so the worker's 10-second same-tag rule (#1515) never
+  matched and a finished task showed twice. `lib/notification-tags.ts` is the single
+  source; the worker repeats the literals and a test fails when they drift.
+- **A switch belongs to the machine that acts.** The banner is a browser's (localStorage,
+  plus that browser's permission); the Notification Center row needs no browser at all, so
+  it is an installation setting in Pi Web's settings file, on by default, writable only
+  from a local page. A phone's localStorage must not decide what the Mac shows.
+- **Silence has a cost, and so does noise.** A run with no span is announced with the short
+  "Task finished." rather than dropped — the server knows it ended, and "no notification at
+  all" was the complaint. A run this process is catching up on, and a run the user stopped,
+  stay silent; a dialog pushes once per dialog and at most once per session per ten
+  minutes, because the MCP trust prompts at session start are the buzzes people hear with
+  nothing running.

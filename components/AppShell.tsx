@@ -108,6 +108,7 @@ import type { FileExplorerHandle } from "./FileExplorer";
 import type { AgentEndInfo } from "@/hooks/useAgentSession";
 import { useProjectBranch } from "@/hooks/useProjectBranch";
 import { fetchLastRunTimes, notifyTaskCompletion } from "@/lib/task-completion-notice";
+import { safariNotificationsEnabled } from "@/lib/safari-notification";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
@@ -1508,13 +1509,13 @@ export function AppShell() {
     if (end?.aborted) return;
     if (isHiddenRelation(selectedSession?.relation)) return;
 
-    // One notice per finished task, the same sentence on every channel: the local
-    // notification (Settings › General › Local browser notification — the Mac's
-    // Notification Center through the server, and the page's own notification on
-    // Chrome/Edge, which is what makes it work in every browser) and the ntfy push.
-    // lib/task-completion-notice.ts keeps it to a run that has a span and just
-    // finished, once per run: a stale reconnect, a session opened in a background
-    // tab, or a task started on a phone announces nothing it should not.
+    // The page's own banner: the one channel no server can raise. The finished task
+    // itself is announced by the server (lib/task-completion-server.ts — the phone push,
+    // the ntfy message, the Mac's Notification Center row), so a task that finishes with
+    // this tab closed, discarded, or started from a phone over the relay is still said
+    // out loud. lib/task-completion-notice.ts keeps this banner to one per run, in the
+    // same sentence, under the push payload's tag, and switches it off while this window
+    // is in the foreground (Settings › General › Local browser notification).
     void notifyTaskCompletion(
       {
         sessionId: selectedSession?.id ?? null,
@@ -1525,6 +1526,7 @@ export function AppShell() {
         translate,
         locale,
         fetchLastRun: fetchLastRunTimes,
+        pageEnabled: safariNotificationsEnabled,
         notified: notifiedCompletionRunsRef.current,
       },
     );

@@ -53,15 +53,22 @@ test("the switch carries the fields, so enabling is one honest write", () => {
 });
 
 test("a finished run announces the session name and the sentence on every channel", () => {
+  const serverNotice = readFileSync(new URL("../lib/task-completion-server.ts", import.meta.url), "utf8");
   const handler = appShell.match(/const handleAgentEnd = useCallback[\s\S]*?\n  \}, \[[^\]]*\]\);/);
   assert.ok(handler, "handleAgentEnd found");
-  assert.match(handler[0], /void notifyTaskCompletion\(/, "one sender for the local notice and the push");
+  assert.match(handler[0], /void notifyTaskCompletion\(/, "the page's banner has one sender");
   assert.match(handler[0], /sessionName: selectedSession\?\.name \?\? null/, "the title is the session's name");
+  assert.match(handler[0], /pageEnabled: safariNotificationsEnabled/, "the banner is this browser's switch");
   assert.match(handler[0], /translate,\s*locale,/, "the sentence is in the page's language");
   assert.match(notice, /title = sessionName\?\.trim\(\) \|\| deps\.translate\("i18n\.sessionComplete"\)/);
   assert.match(notice, /formatCompletionSummary\(\s*deps\.translate\("safariNotify\.summary"\),\s*\{ startedAt: times\.startedAt, endedAt: times\.endedAt, poppedAt: now \},\s*deps\.locale,\s*\)/);
-  assert.match(notice, /sent\.local = await sendLocal\(\{ title, body \}\);[\s\S]*?sent\.ntfy = \(await sendNtfy\(\{ title, body \}\)\)\.sent;/,
-    "one sentence, sent to the Mac and to the topic — and the client never gates on the ntfy switch, the server owns it");
+  // The topic and the Mac are the server's channels: a run that finishes with every page
+  // closed has no page left to publish, which is where "no NTFY push" came from.
+  assert.match(serverNotice, /env\.publishNtfy\(\{ title: message\.title, body: message\.body, priority: NTFY_PRIORITY \}\)/);
+  assert.match(serverNotice, /env\.raiseLocal\(\{ title: message\.title, body: message\.body \}\)/);
+  assert.match(serverNotice, /env\.notifyPush\(sessionId, event, sessionName\)/);
+  assert.match(serverNotice, /sessionPushPayload\(sessionId, sessionName \?\? undefined, event, settings\.locale\)/,
+    "one payload builder, so the phone, the topic and Notification Center say the same sentence");
   assert.match(client, /if \(response\.ok\) return \{ sent: true \};/, "the completion path is fire-and-forget");
 });
 

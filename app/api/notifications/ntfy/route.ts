@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { buildNtfyRequest, parseNtfyUpdate, readNtfySettings, writeNtfySettings } from "@/lib/ntfy-settings";
+import { publishNtfyMessage } from "@/lib/ntfy-publish";
+import { parseNtfyUpdate, readNtfySettings, writeNtfySettings } from "@/lib/ntfy-settings";
 import { isLocalRequest } from "@/lib/remote-access";
 
 /**
@@ -13,7 +14,8 @@ import { isLocalRequest } from "@/lib/remote-access";
  * 0h18m13s, started at 10:04:34, and ended at 10:22:47. This notification pops up at
  * 10:22:47." Publishing happens here, not in the page, because the settings (and the
  * topic secret) are the installation's: any device that opens Pi can report a finished
- * task to the same topic.
+ * task to the same topic. Publishing itself is `lib/ntfy-publish.ts`, which
+ * `lib/task-completion-server.ts` uses for a run that finishes with every page closed.
  *
  * A topic is a shared secret — knowing `server/topic` lets a client read and write that
  * channel — so a page that is not Pi on this computer gets the topic masked, and only a
@@ -24,7 +26,6 @@ import { isLocalRequest } from "@/lib/remote-access";
 
 export const dynamic = "force-dynamic";
 
-const PUBLISH_TIMEOUT_MS = 8_000;
 const MASKED_TOPIC = "••••••";
 
 export async function GET(req: Request) {
@@ -62,30 +63,12 @@ export async function PUT(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const settings = readNtfySettings();
-  if (!settings.enabled) {
-    return NextResponse.json({ error: "ntfy notification is not enabled.", disabled: true }, { status: 409 });
+  const message = await req.json().catch(() => ({})) as { title?: unknown; body?: unknown; priority?: unknown };
+  const result = await publishNtfyMessage(message);
+  if (result.status === "sent") return NextResponse.json({ sent: true });
+  if (result.status === "disabled") {
+    return NextResponse.json({ error: result.error, disabled: true }, { status: 409 });
   }
-  const body = await req.json().catch(() => ({})) as { title?: unknown; body?: unknown; priority?: unknown };
-  const request = buildNtfyRequest(settings, body);
-  if (!request) {
-    return NextResponse.json(
-      { error: "A message needs a title or a body, and a topic must be set." },
-      { status: 400 },
-    );
-  }
-  try {
-    const response = await fetch(request.url, { ...request.init, signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS) });
-    if (!response.ok) {
-      const detail = (await response.text().catch(() => "")).slice(0, 300);
-      return NextResponse.json(
-        { error: detail.trim() || `ntfy responded ${response.status}` },
-        { status: 502 },
-      );
-    }
-    return NextResponse.json({ sent: true });
-  } catch (error: unknown) {
-    const reason = error instanceof Error ? (error.name === "TimeoutError" ? "timed out" : error.message) : String(error);
-    return NextResponse.json({ error: `Could not reach ${settings.serverUrl}: ${reason}` }, { status: 502 });
-  }
+  if (result.status === "invalid") return NextResponse.json({ error: result.error }, { status: 400 });
+  return NextResponse.json({ error: result.error }, { status: 502 });
 }

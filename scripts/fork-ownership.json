@@ -200,10 +200,10 @@
     },
     "lib/web-push.ts": {
       "risk": "medium",
-      "drift": 189,
-      "structuralDrift": 189,
+      "drift": 236,
+      "structuralDrift": 236,
       "disposition": "accepted",
-      "reason": "Fork adds failed / waiting-for-you pushes (notifySessionEvent, sessionPushPayload), a caller-supplied session name that skips SessionManager.listAll(), and per-device test send / unsubscribe. An upstream rewrite of the notifier must keep all three event kinds, 404/410 pruning, and sendTest rethrowing delivery errors. Subscriptions made through the encrypted relay carry relayDevice and are skipped once that device is revoked (isRelayDevicePaired)."
+      "reason": "Fork adds failed / waiting-for-you pushes (notifySessionEvent, sessionPushPayload), a caller-supplied session name that skips SessionManager.listAll(), and per-device test send / unsubscribe. An upstream rewrite of the notifier must keep all three event kinds, 404/410 pruning, and sendTest rethrowing delivery errors. Subscriptions made through the encrypted relay carry relayDevice and are skipped once that device is revoked (isRelayDevicePaired). Sends use urgency high and PUSH_TTL_SECONDS (5 min): the 4-week TTL upstream ships stores a push for a month while the phone is unreachable, and an iPhone that comes back delivers the whole pile. The payload carries sentAt and the tag comes from lib/notification-tags.ts, the same one the page's banner uses."
     },
     "lib/push-client.ts": {
       "risk": "medium",
@@ -218,6 +218,13 @@
       "structuralDrift": 19,
       "disposition": "accepted",
       "reason": "Admits the Settings › Remote access tailnet name only for an authorized Tailscale user, and its https Origin. A merge that drops the remoteAccess parameter fails closed (the phone loses access); one that admits the host without isRemoteAccessRequestAuthorized would open the server to the whole tailnet."
+    },
+    "public/sw.js": {
+      "risk": "medium",
+      "drift": 34,
+      "structuralDrift": 34,
+      "disposition": "accepted",
+      "reason": "A push older than LATE_PUSH_MAX_AGE_MS is a queued delivery: shown silent and collapsed under LATE_PUSH_TAG, so a phone that was offline wakes to one quiet row instead of a stack of stale task notices (the server's TTL is short; the worker cannot import lib/notification-tags.ts, so the numbers are repeated and lib/notification-tags.test.mjs fails when they drift). A notification is always shown: iOS revokes a subscription whose push is handled without one."
     },
     "components/PwaRegistration.tsx": {
       "risk": "low",

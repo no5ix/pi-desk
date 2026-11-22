@@ -1,44 +1,52 @@
 import { formatCompletionSummary } from "./completion-notification";
 import { shouldShowBrowserNotification, showBrowserNotification } from "./browser-notifications";
-import { sendNtfyNotification } from "./ntfy-notification";
-import { sendSafariNotification, safariNotificationsEnabled } from "./safari-notification";
+import { COMPLETION_NOTICE_MAX_AGE_MS, sessionNotificationTag } from "./notification-tags";
 
 /**
- * One notice per finished task, on every channel the user switched on.
+ * The banner this browser shows for a finished task.
  *
- * The chat used to ask each channel on its own terms, which produced both of the
- * complaints people notice: a notice that says nothing useful, and no notice at all.
- * So this is the one place a finished task is announced, and it says the same
- * sentence everywhere:
+ * A finished task is announced by the server (lib/task-completion-server.ts): the phone
+ * push, the ntfy message, and the Mac's Notification Center row all come from the process
+ * that owns the run, so they arrive with no page open. What no server can do is put a
+ * banner in the browser you are looking at, and that is this module's whole job.
+ *
+ * It says the same sentence the server says:
  *
  *   title  the session's name
  *   body   "The task lasted 0h18m13s, started at 10:04:34, and ended at 10:22:47.
  *           This notification pops up at 10:22:47."
  *
- * Three rules keep it honest:
+ * Four rules:
  *
- *  - **A run needs a span.** The page has one only for a run it saw begin; for a
- *    task started from a phone over the relay, a queued prompt, a page reloaded
- *    mid-run, or an extension-triggered run it asks the session file
- *    (`/api/sessions/[id]/last-run`). A run with no span says nothing — "0h0m0s"
- *    is worse than silence.
- *  - **A finished task is announced while it is finished.** A span older than
- *    `COMPLETION_NOTICE_MAX_AGE_MS` is a run that ended while this page was
- *    catching up (a stale reconnect, a session opened in a background tab): that
- *    is the notification people read as "there was no task", so it is dropped.
- *  - **Once per run.** The key is the session and the end time, so the several
- *    `agent_end` / `agent_settled` / poll paths, a reconnect, and a reload of the
- *    same page announce one task once.
+ *  - **A run needs a span, and a run with no numbers still says something.** The page has
+ *    a span only for a run it saw begin; for a task started from a phone over the relay, a
+ *    queued prompt, a page reloaded mid-run, or an extension-triggered run it asks the
+ *    session file (`/api/sessions/[id]/last-run`). A file with no run in it is not silence
+ *    any more: the page watched this run end, so it says the short
+ *    "Task finished." — once per session per `NO_TIMES_NOTICE_BUCKET_MS`. Silence is what
+ *    the report "the task finished and nothing told me" came from.
+ *  - **A finished task is announced while it is finished.** A span read out of the session
+ *    file and older than `COMPLETION_NOTICE_MAX_AGE_MS` is a run this page is catching up
+ *    on (a stale reconnect, a session opened in a background tab): that is the notification
+ *    people read as "there was no task", so it is dropped.
+ *  - **Once per run.** The key is the session and the run's end, so the several
+ *    `agent_end` / `agent_settled` / poll paths, a reconnect, and a reload of the same page
+ *    announce one task once.
+ *  - **One banner, not two.** The tag is the server push payload's tag
+ *    (`lib/notification-tags.ts`), so the browser replaces its own banner with the push for
+ *    the same completion — and the service worker's 10-second rule can recognise it.
  *
- * Channels: the local notification (the Mac's Notification Center through the
- * server, and the page's own notification on Chrome/Edge, which is what makes
- * this browser-neutral rather than Safari-only), and the ntfy push. The page's
- * notification is skipped while this window is in the foreground: an answer
- * you are looking at needs no banner. A stopped run announces nothing.
+ * The banner is skipped while this window is in the foreground: an answer you are looking
+ * at needs no banner. A stopped run announces nothing.
  */
 
-/** A span older than this is a run this page is catching up on, not one that just finished. */
-export const COMPLETION_NOTICE_MAX_AGE_MS = 5 * 60_000;
+/** A run whose end this page cannot number is announced once per this window. */
+export const NO_TIMES_NOTICE_BUCKET_MS = 30_000;
+
+/** The notification's tag: one banner per session, replaced by the next finished task. */
+export function completionNoticeTag(sessionId: string | null): string {
+  return sessionNotificationTag(sessionId);
+}
 
 export interface CompletionNoticeRequest {
   sessionId: string | null;
@@ -53,30 +61,23 @@ export interface CompletionNoticeDeps {
   now?: number;
   /** The session file's answer for a run this page did not see begin. */
   fetchLastRun?: (sessionId: string) => Promise<{ startedAt: number; endedAt: number } | null>;
-  sendLocal?: (options: { title: string; body: string }) => Promise<boolean>;
-  sendNtfy?: (options: { title: string; body: string }) => Promise<{ sent: boolean; error?: string }>;
   showPage?: typeof showBrowserNotification;
   /** The document's attention state, for the foreground rule. */
   attentionState?: Pick<Document, "visibilityState" | "hasFocus">;
-  /** Settings › General › Local browser notification. */
-  localEnabled?: () => boolean;
+  /** Settings › General › Local browser notification, this browser's own switch. */
+  pageEnabled?: () => boolean;
   /** Runs already announced in this page. */
   notified: Set<string>;
 }
 
-export type CompletionNoticeSkip = "aborted" | "no-times" | "stale" | "notified";
+export type CompletionNoticeSkip = "aborted" | "stale" | "notified" | "off" | "foreground";
 
 export interface CompletionNoticeOutcome {
   skipped?: CompletionNoticeSkip;
-  sent: { local: boolean; ntfy: boolean; page: boolean };
+  sent: { page: boolean };
   title?: string;
   body?: string;
   times?: { startedAt: number; endedAt: number };
-}
-
-/** The notification's tag: one banner per session, replaced by the next finished task. */
-export function completionNoticeTag(sessionId: string | null): string {
-  return `pi-task-complete:${sessionId ?? "current"}`;
 }
 
 function normalizeTimes(end: CompletionNoticeRequest["end"]): { startedAt: number; endedAt: number } | null {
@@ -87,74 +88,75 @@ function normalizeTimes(end: CompletionNoticeRequest["end"]): { startedAt: numbe
 }
 
 /**
- * Announce one finished task. Silent by design: a completion notice runs after a
- * reply has landed, and nothing about it may throw into the chat's handler.
+ * Announce one finished task in this browser. Silent by design: a completion notice runs
+ * after a reply has landed, and nothing about it may throw into the chat's handler.
  */
 export async function notifyTaskCompletion(
   request: CompletionNoticeRequest,
   deps: CompletionNoticeDeps,
 ): Promise<CompletionNoticeOutcome> {
   const { sessionId, sessionName, end } = request;
-  const sent = { local: false, ntfy: false, page: false };
+  const sent = { page: false };
   if (end.aborted) return { skipped: "aborted", sent };
 
   const now = deps.now ?? Date.now();
-  let times = normalizeTimes(end);
+  const ownTimes = normalizeTimes(end);
+  let times: { startedAt: number; endedAt: number } | undefined = ownTimes ?? undefined;
   if (!times && sessionId && deps.fetchLastRun) {
     try {
       const stored = await deps.fetchLastRun(sessionId);
-      if (stored) times = normalizeTimes({ aborted: false, startedAt: stored.startedAt, endedAt: stored.endedAt });
+      const storedTimes = stored
+        ? normalizeTimes({ aborted: false, startedAt: stored.startedAt, endedAt: stored.endedAt })
+        : undefined;
+      if (storedTimes) times = storedTimes;
     } catch {
       // A session file that cannot be read is a task with no numbers, not an error.
     }
   }
-  if (!times) return { skipped: "no-times", sent };
-  if (now - times.endedAt > COMPLETION_NOTICE_MAX_AGE_MS) return { skipped: "stale", sent, times };
+  // Numbers read out of the session file are the only ones that can be stale: this page
+  // did not watch the run, so an end time minutes old is a run it is catching up on.
+  if (times && !ownTimes && now - times.endedAt > COMPLETION_NOTICE_MAX_AGE_MS) {
+    return { skipped: "stale", sent, times };
+  }
 
-  const key = `${sessionId ?? "-"}:${times.endedAt}`;
+  const key = times
+    ? `${sessionId ?? "-"}:${times.endedAt}`
+    : `${sessionId ?? "-"}:no-times:${Math.floor(now / NO_TIMES_NOTICE_BUCKET_MS)}`;
   if (deps.notified.has(key)) return { skipped: "notified", sent, times };
   deps.notified.add(key);
 
-  const title = sessionName?.trim() || deps.translate("i18n.sessionComplete");
-  const body = formatCompletionSummary(
-    deps.translate("safariNotify.summary"),
-    { startedAt: times.startedAt, endedAt: times.endedAt, poppedAt: now },
-    deps.locale,
-  );
-  const localEnabled = deps.localEnabled ?? safariNotificationsEnabled;
-  const sendLocal = deps.sendLocal ?? sendSafariNotification;
-  const sendNtfy = deps.sendNtfy ?? sendNtfyNotification;
-  const showPage = deps.showPage ?? showBrowserNotification;
+  const pageEnabled = deps.pageEnabled ?? (() => true);
+  if (!pageEnabled()) return { skipped: "off", sent, times };
 
-  const foreground = deps.attentionState
-    ? !shouldShowBrowserNotification(deps.attentionState)
+  const attentionState = deps.attentionState;
+  const foreground = attentionState
+    ? !shouldShowBrowserNotification(attentionState)
     : !shouldShowBrowserNotification();
+  if (foreground) return { skipped: "foreground", sent, times };
 
-  if (localEnabled()) {
-    try {
-      sent.local = await sendLocal({ title, body });
-    } catch {
-      sent.local = false;
-    }
-    if (!foreground) {
-      try {
-        sent.page = (await showPage({
-          title,
-          body,
-          sessionUrl: sessionId ? `/?session=${encodeURIComponent(sessionId)}` : "/",
-          tag: completionNoticeTag(sessionId),
-          onClick: () => window.focus(),
-        })) !== null;
-      } catch {
-        sent.page = false;
-      }
-    }
-  }
+  const title = sessionName?.trim() || deps.translate("i18n.sessionComplete");
+  const body = times
+    ? formatCompletionSummary(
+      deps.translate("safariNotify.summary"),
+      { startedAt: times.startedAt, endedAt: times.endedAt, poppedAt: now },
+      deps.locale,
+    )
+    // The page watched this run end and has no numbers for it (a session file with no run
+    // in its tail yet, an unreadable file). "Task finished." is the honest short form; the
+    // server says the same thing on the phone (lib/web-push.ts completionBody).
+    : deps.translate("i18n.taskFinished");
 
+  const showPage = deps.showPage ?? showBrowserNotification;
   try {
-    sent.ntfy = (await sendNtfy({ title, body })).sent;
+    sent.page = (await showPage({
+      title,
+      body,
+      sessionUrl: sessionId ? `/?session=${encodeURIComponent(sessionId)}` : "/",
+      tag: completionNoticeTag(sessionId),
+      onClick: () => window.focus(),
+    })) !== null;
   } catch {
-    sent.ntfy = false;
+    sent.page = false;
   }
 
   return { sent, title, body, times };

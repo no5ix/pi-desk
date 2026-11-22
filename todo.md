@@ -37,9 +37,7 @@
 
 # P3
 
-1. sometimes the safari just pop out notification but there's no task;
-2. ntfy didn't pop a notification
-3. safari local notice/ntfy settings page layout and buttons
+1. safari local notice/ntfy settings page layout and buttons
 
 # P4
 

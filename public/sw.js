@@ -78,7 +78,7 @@ self.addEventListener("push", (event) => {
   } catch {
     // Ignore malformed or missing push payloads.
   }
-  const { title, body, url, tag } = payload;
+  const { title, body, url, tag, sentAt } = payload;
   if (typeof title !== "string" || !title || typeof body !== "string" || !body) return;
 
   // Always surface a system notification. iOS revokes the push subscription
@@ -87,20 +87,40 @@ self.addEventListener("push", (event) => {
   // subscription in the background-delivery case. Notifications sharing a tag
   // replace each other instead of stacking, so a visible window merely sees
   // the completion notification re-appear.
-  event.waitUntil(showPushNotification(title, body, url, tag));
+  event.waitUntil(showPushNotification(title, body, url, tag, sentAt));
 });
 
 // An open page announces a completion itself from its event stream, and the
 // push for the same completion lands a moment later. Both carry the session's
-// tag; with renotify the push replaced the page's notification and alerted a
-// second time (#1515). A same-tag notification shown this recently is that
-// completion's, so the push replaces it quietly. An older one belongs to an
-// earlier task and the push alerts again (#701).
+// tag (lib/notification-tags.ts, the tag the payload is built with); with
+// renotify the push replaces the page's notification and alerts a second time
+// (#1515). A same-tag notification shown this recently is that completion's, so
+// the push replaces it quietly. An older one belongs to an earlier task and the
+// push alerts again (#701).
 const RECENT_NOTIFICATION_MS = 10000;
 
-async function showPushNotification(title, body, url, tag) {
+// A push the push service sat on is not a finished task. The server sends with a short
+// TTL (lib/notification-tags.ts PUSH_TTL_SECONDS), so a phone that was off, offline, or in
+// a Focus mode loses a stale notice rather than collecting it; anything that still lands
+// minutes after it was sent is a queued delivery, and a stack of those is the bug people
+// report as "a lot of notifications with nothing running". One quiet row under one
+// catch-up tag: silent, not alerting, and collapsed by the tag, and a notification is
+// still shown, because iOS revokes the subscription when a push is handled without one.
+const LATE_PUSH_MAX_AGE_MS = 300000;
+const LATE_PUSH_TAG = "pi-session-catchup";
+
+async function showPushNotification(title, body, url, tag, sentAt) {
   const shownAt = Date.now();
   const data = { url: typeof url === "string" && url ? url : "/", shownAt };
+  if (typeof sentAt === "number" && Number.isFinite(sentAt) && shownAt - sentAt > LATE_PUSH_MAX_AGE_MS) {
+    return self.registration.showNotification(title, {
+      body,
+      data,
+      tag: LATE_PUSH_TAG,
+      renotify: false,
+      silent: true,
+    });
+  }
   if (typeof tag !== "string" || !tag) {
     return self.registration.showNotification(title, { body, data });
   }

@@ -10,6 +10,7 @@ import { zhCNLocale } from "./i18n/messages/zh-CN";
 import { getAgentDir } from "./session-reader";
 import { isTailscaleLoginAllowed } from "./remote-access";
 import { isRelayDevicePaired } from "./relay/runtime";
+import { PUSH_TTL_SECONDS, sessionNotificationTag } from "./notification-tags";
 
 export interface PushSubscriptionRecord {
   endpoint: string;
@@ -77,9 +78,22 @@ export function vapidSubject(): string {
   return "https://github.com/agegr/pi-web";
 }
 
-// Ask the push service to deliver immediately. Lower urgencies let idle
-// devices (especially iOS) defer delivery to an arbitrary later window.
-export const PUSH_OPTIONS = { TTL: 2419200, urgency: "high" as const };
+// Ask the push service to deliver immediately, and keep a message only while it is still
+// news. Two halves of one decision, learned the hard way:
+//
+//  - No TTL at all let iOS defer a finished task to an arbitrary later wake-up window
+//    (3e9fcfa5), so sends say `urgency: high`.
+//  - The four-week TTL that went in with it (2 419 200 s) is why a phone that was off,
+//    offline, or in a Focus mode woke up to a stack of notifications for tasks that
+//    finished days ago: RFC 8030 says a push service stores a message for at least its TTL
+//    while the subscriber cannot be reached, and delivers the stored pile when it can
+//    again. A completion notice is worth minutes, so a send that cannot land soon is
+//    dropped. The phone misses a task it was not watching, which beats a burst of stale
+//    banners whose "This notification pops up at …" sentence is a lie.
+//
+// `lib/notification-tags.ts` owns the number, and `public/sw.js` collapses whatever does
+// arrive late.
+export const PUSH_OPTIONS = { TTL: PUSH_TTL_SECONDS, urgency: "high" as const };
 
 function getDefaultEnvironment(): WebPushEnvironment {
   return {
@@ -218,7 +232,8 @@ export function sessionPushPayload(
   sessionName: string | undefined,
   event: SessionPushEvent,
   locale: string,
-): { title: string; body: string; url: string; tag: string } {
+  sentAt: number = Date.now(),
+): { title: string; body: string; url: string; tag: string; sentAt: number } {
   const url = `/?session=${encodeURIComponent(sessionId)}`;
   if (event.kind === "complete") {
     return {
@@ -226,7 +241,11 @@ export function sessionPushPayload(
       title: sessionName ?? localeText(locale, "sessionComplete"),
       body: completionBody(locale, event.startedAt, event.endedAt),
       url,
-      tag: `pi-session-complete:${sessionId}`,
+      // One notification per session, replaced by the next finished task. The page's own
+      // banner carries the same tag (lib/notification-tags.ts), so the pair is one banner
+      // and the worker's "this push is the completion I already showed" rule can match it.
+      tag: sessionNotificationTag(sessionId),
+      sentAt,
     };
   }
   const text = EVENT_TEXT[pushLocale(locale)];
@@ -237,7 +256,8 @@ export function sessionPushPayload(
     body: detail || (event.kind === "failed" ? text.failedBody : text.attentionBody),
     url,
     // One notification per session: a newer state replaces the older one.
-    tag: `pi-session-complete:${sessionId}`,
+    tag: sessionNotificationTag(sessionId),
+    sentAt,
   };
 }
 

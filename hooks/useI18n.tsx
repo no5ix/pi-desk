@@ -58,6 +58,17 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     setLocaleState(next);
     document.documentElement.lang = next;
     setPref(APP_PREF_KEYS.locale, next);
+    // The server announces a finished task with no page open (lib/task-completion-server.ts:
+    // the phone push, the ntfy message, the Mac's Notification Center row), and the
+    // installation — not this browser's localStorage — is what those sentences are in. So a
+    // page that knows the user's language tells the server. Only a page on this computer is
+    // accepted (app/api/notifications/local is local-only), which is right: a phone on the
+    // tailnet does not choose what the Mac reads.
+    void fetch("/api/notifications/local", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ locale: next }),
+    }).catch(() => undefined);
   }, []);
 
   const t = useCallback((key: string, params?: TranslationParams) => translateMessage(locale, key, messages, params), [locale, messages]);

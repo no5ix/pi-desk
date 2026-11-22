@@ -22,7 +22,7 @@ import {
 import { cacheSessionPath, getLatestModelChange, getLatestResponseModel, getSessionListVersion, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { computeLiveSessionTotalActiveMs } from "./session-timing";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
-import { notifySessionEvent } from "./web-push";
+import { announceAttention, announceRunEnd } from "./task-completion-server";
 import type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 export type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 import { isVerboseLogging } from "../bin/pi-web-options.js";
@@ -130,8 +130,12 @@ export interface AgentEvent {
 
 type EventListener = (event: AgentEvent) => void;
 type AgentRunCompleteListener = (sessionId: string, outcome: AgentRunOutcome) => void;
-/** A blocking extension dialog (select / confirm / input / editor / custom) is waiting for the user. */
-type AttentionNeededListener = (sessionId: string, prompt: string) => void;
+/**
+ * A blocking extension dialog (select / confirm / input / editor / custom) is waiting for
+ * the user. `requestId` is the dialog's own id: a dialog announces once, however often its
+ * request is replayed to a reconnecting page (lib/task-completion-server.ts).
+ */
+type AttentionNeededListener = (sessionId: string, prompt: string, requestId?: string) => void;
 
 // How recent runs ended, kept past the wrapper: the idle timeout destroys a
 // wrapper 10 minutes after its run, and the Tasks page is often read later than
@@ -935,13 +939,13 @@ export class AgentSessionWrapper {
     };
   }
 
-  private notifyAttentionNeeded(request: ExtensionUiRequestBody): void {
+  private notifyAttentionNeeded(request: ExtensionUiRequestBody, requestId?: string): void {
     if (this.suppressCompletionNotifications || !BLOCKING_UI_METHODS.has(request.method)) return;
     const prompt = typeof request.title === "string" ? request.title
       : typeof request.message === "string" ? request.message
         : "";
     try {
-      this.onAttentionNeeded?.(this.sessionId, prompt);
+      this.onAttentionNeeded?.(this.sessionId, prompt, requestId);
     } catch (error) {
       console.error("[pi-web] attention listener failed:", error instanceof Error ? error.message : error);
     }
@@ -2624,7 +2628,7 @@ export class AgentSessionWrapper {
           this.activeCustomUis.set(id, custom);
           this.emitCustomUiRender(id, custom);
           // Once per dialog: it re-renders on every keypress and redraw.
-          this.notifyAttentionNeeded({ method: "custom" });
+          this.notifyAttentionNeeded({ method: "custom" }, id);
         })
         .catch((error) => {
           if (completed) return;
@@ -2687,7 +2691,7 @@ export class AgentSessionWrapper {
         cancel: () => settle(defaultValue),
       });
       this.emit(fullRequest as AgentEvent);
-      this.notifyAttentionNeeded(request);
+      this.notifyAttentionNeeded(request, id);
     });
   }
 
@@ -4043,20 +4047,19 @@ export async function startRpcSession(
       chatFolder,
       chatUnlocked,
       onAgentRunComplete: (completedSessionId, outcome) => {
-        // A run the user stopped needs no message on their phone.
-        if (outcome.status === "aborted") return;
         // The live session knows its own name; no need to scan every session file.
         const sessionName = inner.sessionManager.getSessionName() ?? null;
-        const push = outcome.status === "failed"
-          ? notifySessionEvent(completedSessionId, { kind: "failed", detail: outcome.error }, sessionName)
-          : notifySessionEvent(completedSessionId, { kind: "complete", startedAt: outcome.startedAt, endedAt: outcome.endedAt }, sessionName);
-        void push.catch((error) => {
-          console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);
+        // One sender for every channel that needs no page: the phone push, the ntfy
+        // message, the Mac's Notification Center row. Announced once per run, and never
+        // for a run this process is only catching up on, nor for a run the user stopped
+        // (lib/task-completion-server.ts).
+        void announceRunEnd({ sessionId: completedSessionId, sessionName, outcome }).catch((error) => {
+          console.error("[pi-web] failed to announce the finished run:", error instanceof Error ? error.message : error);
         });
       },
-      onAttentionNeeded: (waitingSessionId, prompt) => {
+      onAttentionNeeded: (waitingSessionId, prompt, requestId) => {
         const sessionName = inner.sessionManager.getSessionName() ?? null;
-        void notifySessionEvent(waitingSessionId, { kind: "attention", detail: prompt }, sessionName).catch((error) => {
+        void announceAttention({ sessionId: waitingSessionId, sessionName, prompt, requestId }).catch((error) => {
           console.error("[pi-web] failed to send attention push:", error instanceof Error ? error.message : error);
         });
       },

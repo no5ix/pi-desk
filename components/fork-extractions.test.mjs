@@ -360,8 +360,32 @@ const FORK_FEATURES = [
     name: "Run outcome, attention and task snapshots",
     file: "lib/rpc-manager.ts",
     // agent_settled.aborted keeps a Stop during retry from pushing "failed"; recent
-    // outcomes keep the Tasks page right after the idle eviction.
-    markers: ["onAttentionNeeded", "getRpcTaskSnapshots", "recordRecentRunOutcome", "event.aborted === true", "notifySessionEvent("],
+    // outcomes keep the Tasks page right after the idle eviction. The run's end goes to
+    // one announcer, not to the push module by hand.
+    markers: ["onAttentionNeeded", "getRpcTaskSnapshots", "recordRecentRunOutcome", "event.aborted === true", "announceRunEnd({", "announceAttention({"],
+  },
+  {
+    name: "Server announces a finished run on every channel",
+    file: "lib/task-completion-server.ts",
+    // The bug this file exists to fix: a task that finished with every browser page
+    // closed had no sender at all for ntfy and the Mac's notification, and one run could
+    // announce several times. An upstream merge that puts the channels back in the page
+    // re-opens both.
+    markers: ["announceRunEnd", "announceAttention", "runAnnounceKey", "ATTENTION_COOLDOWN_MS", "env.publishNtfy", "env.raiseLocal", "sessionPushPayload"],
+  },
+  {
+    name: "The page announces only its own banner",
+    file: "lib/task-completion-notice.ts",
+    markers: ["pageEnabled", "NO_TIMES_NOTICE_BUCKET_MS", "sessionNotificationTag", "i18n.taskFinished"],
+    forbiddenMarkers: ["sendNtfyNotification", "sendSafariNotification", "pi-task-complete"],
+  },
+  {
+    name: "A late push is a queued delivery, shown quiet and collapsed",
+    file: "public/sw.js",
+    // Upstream's 4-week TTL + always-alert push handler turns an offline iPhone into a
+    // burst of stale notifications. The TTL lives in lib/notification-tags.ts; the
+    // worker repeats the numbers, and lib/notification-tags.test.mjs keeps them equal.
+    markers: ["LATE_PUSH_MAX_AGE_MS", "LATE_PUSH_TAG", "silent: true", "sentAt"],
   },
   {
     name: "Relay: proxy admits only this process's relay mark",
