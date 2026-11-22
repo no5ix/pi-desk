@@ -149,8 +149,19 @@ export function NtfyNotificationSection() {
         <div className="settings-option">
           <span className="settings-option-text">
             <span className="settings-option-title">{t("ntfyNotify.switch")}</span>
+            {/* The status line stays in the text column: putting it beside the buttons
+                squeezed it to a few characters per line. */}
             <span className="settings-option-hint" role="status">{error ?? note ?? hint}</span>
           </span>
+          <ConfigSwitch
+            checked={settings?.enabled === true}
+            loading={settings === null || busy}
+            disabled={!editable}
+            label={t("ntfyNotify.switch")}
+            onChange={toggle}
+          />
+        </div>
+        <div className="ntfy-notification-actions">
           <ConfigButton
             className="settings-option-action"
             variant="ghost"
@@ -169,13 +180,6 @@ export function NtfyNotificationSection() {
               {t("ntfyNotify.test")}
             </ConfigButton>
           )}
-          <ConfigSwitch
-            checked={settings?.enabled === true}
-            loading={settings === null || busy}
-            disabled={!editable}
-            label={t("ntfyNotify.switch")}
-            onChange={toggle}
-          />
         </div>
       </div>
     </section>

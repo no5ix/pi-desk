@@ -15,6 +15,7 @@ const section = readFileSync(new URL("./NtfyNotificationSection.tsx", import.met
 const client = readFileSync(new URL("../lib/ntfy-notification.ts", import.meta.url), "utf8");
 const appShell = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const settings = readFileSync(new URL("./SettingsPanel.tsx", import.meta.url), "utf8");
+const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 test("the row lives in Settings › General with the two fields and the two buttons", () => {
   assert.match(settings, /import \{ NtfyNotificationSection \} from "\.\/NtfyNotificationSection";/);
@@ -76,4 +77,21 @@ test("every locale carries the ntfy row", () => {
     assert.equal(messages["ntfyNotify.test"], locale === "en" ? "Send Test Notice" : messages["ntfyNotify.test"],
       "the button label is the user's words in English");
   }
+});
+
+test("the fields stack, the status line belongs to the switch, the buttons get their own row", () => {
+  // In one flex row — text, Save, Send Test Notice, switch — the status column was
+  // squeezed to a word per line, which is how the panel read in the screenshot.
+  const row = section.match(/<div className="settings-option">\n([\s\S]*?)\n        <\/div>/)[1];
+  assert.match(row, /<span className="settings-option-text">\n\s*<span className="settings-option-title">/);
+  assert.match(row, /<span className="settings-option-hint" role="status">\{error \?\? note \?\? hint\}<\/span>/,
+    "the notice (saved, hint, failure) sits under the title, at full width");
+  assert.match(row, /<ConfigSwitch/);
+  assert.ok(!row.includes("ConfigButton"), "no buttons compete with the text for width");
+  const actions = section.match(/<div className="ntfy-notification-actions">\n([\s\S]*?)\n        <\/div>/)[1];
+  assert.match(actions, /\{t\("ntfyNotify\.save"\)\}/);
+  assert.match(actions, /\{canTest && \(\n\s*<ConfigButton/);
+  assert.match(actions, /\{t\("ntfyNotify\.test"\)\}/, "Send Test Notice stays reachable beside Save");
+  assert.match(css, /\.ntfy-notification-actions \{\n\s*display: flex;\n\s*flex-wrap: wrap;\n\s*gap: 8px;\n\s*padding: 0 14px 12px;\n\}/,
+    "the row keeps the inset of the settings rows around it");
 });

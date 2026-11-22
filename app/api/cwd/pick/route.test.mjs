@@ -52,6 +52,6 @@ test("the route is macOS-only and the picked path is validated by the caller", (
 
   const sidebar = readFileSync(new URL("../../../../components/SessionSidebar.tsx", import.meta.url), "utf8");
   assert.match(sidebar, /import \{ pickProjectDirectoryFromServer \} from "@\/lib\/project-directory-pick";/);
-  assert.match(sidebar, /const picked = await pickProjectDirectoryFromServer\(t\("sidebar\.addProjectPrompt"\)\);\s*if \(picked\) \{\s*activateProject\(picked\);\s*return;\s*\}\s*setProjectPickerOpen\(true\);/,
-    "the web Add project button uses the Finder pick, and the in-app picker is the fallback");
+  assert.match(sidebar, /const picked = await pickProjectDirectoryFromServer\(t\("sidebar\.addProjectPrompt"\)\);\s*if \(picked\.status === "picked"\) \{\s*activateProject\(picked\.cwd\);\s*return;\s*\}\s*if \(picked\.status === "unavailable"\) setProjectPickerOpen\(true\);/,
+    "the web Add project button uses the Finder pick; Cancel ends the flow, and only a server that cannot show a panel falls back to the typed picker");
 });

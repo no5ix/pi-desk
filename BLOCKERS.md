@@ -29,3 +29,22 @@
 - **`next build` must not run while a dev server holds `.next/dev/lock`** (AGENTS.md),
   and the desktop shell's `__NEXT_PRIVATE_*` env vars break builds — verified env before
   any build.
+
+---
+
+## Environment notes found in Phase C2
+
+- The worktree's Playwright had no browser download. `npx playwright install chromium`
+  (Playwright 1.63 → chromium-headless-shell v1243) is needed before `e2e/*.mjs` runs.
+  Recorded so a fresh worktree does not read an e2e failure as a code failure.
+
+## Fixed in Phase C2 (kept for the record)
+
+- **`Send Test Notice` failed with a ByteString error** — the ntfy `Title` header carried
+  the em dash of `Pi Agent Desktop — test`; header values are one byte per character, so
+  `fetch` threw before the request. `ntfyHeaderValue()` sends the UTF-8 bytes ntfy decodes.
+- **Cancel in the Finder panel opened the in-app typed picker** — the pick result now
+  distinguishes `picked` / `cancelled` / `unavailable`.
+- **The project fold jumped** — it animated `clip-path`/`opacity` and an `auto` height
+  behind `@supports (interpolate-size)`; a paint change does not move the layout. The fold
+  is a measured height transition now (`node e2e/sidebar-fold.mjs` measures it).

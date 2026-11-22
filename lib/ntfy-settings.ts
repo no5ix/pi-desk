@@ -47,6 +47,28 @@ export function ntfyText(value: unknown, maxChars: number): string {
 }
 
 /**
+ * A header value the HTTP layer can carry.
+ *
+ * A header value is a ByteString — one byte per character — so a title with an em dash
+ * (`Pi Agent Desktop — test`) or a Chinese session name throws
+ * `Cannot convert argument to a ByteString …` before the request is sent. Expressing the
+ * UTF-8 bytes as latin-1 characters puts exactly those bytes on the wire, and ntfy decodes
+ * header values as UTF-8, so the title arrives as written.
+ */
+export function ntfyHeaderValue(value: string): string {
+  // A long non-ASCII title can outgrow the header budget, and cutting bytes would split a
+  // character: shorten by characters until the bytes fit.
+  let text = value;
+  for (;;) {
+    const bytes = Buffer.from(text, "utf8");
+    if (bytes.length <= 1000) return bytes.toString("latin1");
+    const shorter = text.slice(0, Math.max(1, Math.ceil(text.length / 2)));
+    if (shorter === text) return "";
+    text = shorter;
+  }
+}
+
+/**
  * Normalize the `Server url`. An empty value is the default; a self-hosted server under
  * a path (`https://ntfy.example.com/ntfy`) keeps its path. Rejects anything a browser
  * would let a settings field turn into: another scheme, credentials in the URL, a query.
@@ -165,7 +187,9 @@ export function buildNtfyRequest(
     init: {
       method: "POST",
       headers: {
-        ...(title ? { Title: title } : {}),
+        // Header values go through the ByteString encoder: the title is the session's name
+        // and is routinely non-ASCII. See ntfyHeaderValue.
+        ...(title ? { Title: ntfyHeaderValue(title) } : {}),
         Priority: priority,
         Tags: "pi",
         "Content-Type": "text/plain; charset=utf-8",

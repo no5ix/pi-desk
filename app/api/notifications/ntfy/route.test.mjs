@@ -126,6 +126,36 @@ test("a published message is the title and the sentence on the topic", async () 
   }
 });
 
+test("a non-ASCII title survives the header, and the request is sent", async () => {
+  // The header value must be a ByteString. A title with an em dash — the Settings test
+  // notice — threw `Cannot convert argument to a ByteString because the character at
+  // index 17 has a value of 8212` before the request went out, while a plain ASCII session
+  // name worked. The bytes on the wire are the UTF-8 of the title, which is what ntfy
+  // decodes, so a Chinese session name arrives as written.
+  await configure({ enabled: true, serverUrl: "https://ntfy.sh", topic: "pi-mac" });
+  const savedFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = (url, init) => {
+    calls.push({ url: String(url), init });
+    return Promise.resolve({ ok: true, status: 200, text: async () => "" });
+  };
+  try {
+    for (const title of ["Pi Agent Desktop \u2014 test", "\u4fee\u590d\u89e3\u6790\u5668: \u4f1a\u8bdd"]) {
+      const response = await call(POST, { title, body: "The task lasted 0h0m9s." });
+      assert.deepEqual(await response.json(), { sent: true }, `the notice for ${title} was published`);
+    }
+    assert.equal(calls.length, 2);
+    for (const [index, title] of ["Pi Agent Desktop \u2014 test", "\u4fee\u590d\u89e3\u6790\u5668: \u4f1a\u8bdd"].entries()) {
+      const value = calls[index].init.headers.Title;
+      assert.ok([...value].every((character) => character.charCodeAt(0) <= 255),
+        "the header is a ByteString the HTTP layer can encode");
+      assert.equal(Buffer.from(value, "latin1").toString("utf8"), title, "the bytes decode back to the title");
+    }
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
+});
+
 test("an unreachable topic is a 502 with the reason, never a crash", async () => {
   await configure({ enabled: true, serverUrl: "https://ntfy.example.invalid", topic: "pi-mac" });
   const savedFetch = globalThis.fetch;

@@ -6,3 +6,34 @@
 - **Local notification is server-side `osascript`** (not Safari Web Push): the user does not use Safari's Add-to-Dock web app, and a plain Safari tab has no system-notification API. Attributed to the process that owns the server; the settings row says so.
 - **Tailscale Serve stays fire-and-forget** in `registerNodeInstrumentation()` (Next's `Ready` line gates the browser opener), macOS-only, `PI_WEB_DISABLE_TAILSCALE_SERVE=1` off switch, set in the e2e env.
 - **ntfy config lives server-side** (a settings file, like the other `lib/*-settings.ts`), not localStorage, because the topic is a property of the Pi installation and the completion sender is the browser: any device that opens Pi must publish to the same topic.
+
+---
+
+# Phase C2 decisions (2026-11-22)
+
+- **A native pick answers with a status, not a path.** `picked` / `cancelled` /
+  `unavailable`. A dismissed Finder panel is a decision the user made and ends the flow;
+  only a server that cannot show a panel (non-macOS, remote page, Finder failure) is a
+  reason to open the in-app typed picker. Returning `null` for both made Cancel open a
+  panel over the chat.
+- **HTTP header values go through `ntfyHeaderValue()`.** A header is a ByteString: one byte
+  per character. `fetch` throws for an em dash (index 17 of `Pi Agent Desktop — test`)
+  before the request leaves. The rule is UTF-8 bytes carried as latin-1 characters, which
+  is what ntfy decodes; trimming goes by characters so a long CJK title cannot split a
+  byte. The message body needs none of this.
+- **A sidebar fold animates the element's height, measured in JS.** `clip-path`/`opacity`
+  paint without changing layout, and an `auto` height is not transitionable everywhere
+  (`interpolate-size` is opt-in and newer than the target Safari). The JS measures
+  `offsetHeight`/`scrollHeight`, writes a pixel start in the first commit and the end on
+  the next frame, and unmounts closing rows on `transitionend` (with a safety timer). The
+  siblings below then move continuously, which is the whole requirement.
+- **The fold's animation state lives on the element (`data-fold-applied`).** React state
+  would unmount the element mid-transition on a rapid click; a WeakMap of active listeners
+  lets a new click replace the transition from the height reached.
+- **`useProjectFold().opening` is computed during render.** An element's `ref` runs before
+  any effect, so an effect-computed "just opened" is classified as a page load and the
+  opening never plays (measured in the browser test, while collapsing worked).
+- **`e2e/sidebar-fold.mjs` measures the fold in frames, not screenshots.** The complaint
+  was geometric (where the rows below are, frame by frame), so the test samples
+  `getBoundingClientRect().top` of the group below every frame and asserts the movement
+  starts in the first frames, is spread across frames, and equals the content height.

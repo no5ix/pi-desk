@@ -1129,6 +1129,10 @@
   /* Motion: fast = hover and press feedback, base = panels, reveals and fades. */
   --dur-fast: 120ms;
   --dur-base: 180ms;
+  /* fold = the sidebar's project expansion. It is a height the eye follows, so it runs
+     longer than a fade and eases out like the native macOS sidebar. */
+  --dur-fold: 240ms;
+  --ease-fold: cubic-bezier(0.32, 0.72, 0, 1);
   /* Stacking layers, lowest first. Single-digit z-index orders siblings inside
      one component and stays literal; anything that floats over other UI takes
      a layer. upstream globals.css keeps its own 220–250 for the mobile drawer. */
@@ -2673,46 +2677,28 @@ html.dark .sidebar-view-switcher-thumb {
   padding: 0 0 4px;
 }
 
-/* The project fold animates in both directions (components/SessionSidebar.tsx, the
-   `data-fold` attribute). Opening is a mount, so it starts from the closed state with
-   @starting-style; closing keeps the rows mounted for one animation length
-   (lib/sidebar-fold-motion.ts) and then they unmount, as before. A browser that knows
-   neither keeps the old instant fold. */
-@keyframes sidebar-project-fold-open {
-  from { opacity: 0; clip-path: inset(0 0 100% 0); transform: translateY(-3px); }
-  to { opacity: 1; clip-path: inset(0 0 0 0); transform: none; }
-}
-@keyframes sidebar-project-fold-close {
-  from { opacity: 1; clip-path: inset(0 0 0 0); transform: none; }
-  to { opacity: 0; clip-path: inset(0 0 100% 0); transform: translateY(-3px); }
-}
-.sidebar-project-tree-children[data-fold="open"] {
-  animation: sidebar-project-fold-open var(--dur-base) var(--ease-native) both;
+/* The project fold animates in both directions (components/SessionSidebar.tsx).
+   The element's own height is what changes — measured in pixels and set by
+   lib/sidebar-fold-motion.ts, which also keeps a closing fold's rows mounted until the
+   height reaches zero. A height transition is the only thing that moves the projects and
+   sessions below it *with* the content, from the first frame: keyframes on
+   clip-path/opacity leave the layout height alone, so the rows below sit still and then
+   jump when the content is removed. The engine has a numeric start and end here, so no
+   `interpolate-size` support is needed. */
+.sidebar-project-tree-children[data-fold="opening"],
+.sidebar-project-tree-children[data-fold="closing"] {
+  overflow: hidden;
+  transition:
+    height var(--dur-fold) var(--ease-fold),
+    padding-bottom var(--dur-fold) var(--ease-fold),
+    opacity var(--dur-fold) var(--ease-fold);
 }
 .sidebar-project-tree-children[data-fold="closing"] {
-  animation: sidebar-project-fold-close var(--dur-base) var(--ease-native) both;
-  overflow: hidden;
   pointer-events: none;
 }
-/* Where the platform can animate an `auto` height, the fold also moves the rows below
-   it smoothly instead of only revealing them. */
-@supports (interpolate-size: allow-keywords) {
-  .sidebar-project-tree-group { interpolate-size: allow-keywords; }
-  .sidebar-project-tree-children[data-fold] {
-    height: auto;
-    transition: height var(--dur-base) var(--ease-native), opacity var(--dur-base) var(--ease-native);
-  }
-  @starting-style {
-    .sidebar-project-tree-children[data-fold="open"] { height: 0; opacity: 0; }
-  }
-  .sidebar-project-tree-children[data-fold="closing"] {
-    height: 0;
-    opacity: 0;
-    animation: none;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .sidebar-project-tree-children[data-fold] { animation: none; transition: none; }
+  /* The module jumps to the end state and unmounts the closing rows at once. */
+  .sidebar-project-tree-children[data-fold] { transition: none; }
 }
 
 
@@ -10776,6 +10762,16 @@ html.dark .artifacts-thumb[data-tone="data"] { --tone: #4fc1d6; }
 
 /* CJK units ("17小时") are wider than "17h"; keep them off the title's ellipsis. */
 .session-item-time { margin-left: 6px; }
+
+/* Settings › General › ntfy notification (components/NtfyNotificationSection.tsx).
+   The fields stack, the status line belongs to the switch row, and the two buttons get
+   their own row: in one flex row the status text was squeezed to a word per line. */
+.ntfy-notification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 14px 12px;
+}
 
 /* Settings › General › Remote access (components/RemoteAccessSection.tsx) */
 .remote-access-step {

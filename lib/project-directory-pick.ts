@@ -9,31 +9,56 @@
  * the chosen path through /api/cwd/validate exactly like the native Tauri path does,
  * so the folder lands in the file allow-list.
  *
- * Resolves null for every non-result — cancelled panel, non-macOS server, remote
- * request, network failure — so callers keep their existing fallback (the typed-path
- * picker) without branching on the reason.
+ * The answer is a status, not a path-or-null: pressing **Cancel** in the Finder panel is
+ * a finished decision and must end the flow, while a panel this server cannot show
+ * (non-macOS, a remote page, a network failure) is the reason to fall back to the
+ * in-app typed-path picker. Collapsing the two made Cancel open the typed picker over
+ * the chat, which reads as a stray window.
  */
-export async function pickProjectDirectoryFromServer(prompt?: string): Promise<string | null> {
-  if (typeof window === "undefined") return null;
+
+export type ProjectDirectoryPick =
+  /** A folder the server picked and /api/cwd/validate accepted. */
+  | { status: "picked"; cwd: string }
+  /** The user dismissed the panel, or a panel is already open. Nothing further to do. */
+  | { status: "cancelled" }
+  /** No native panel here, or the chosen folder was refused: offer the typed picker. */
+  | { status: "unavailable"; reason: string };
+
+export async function pickProjectDirectoryFromServer(prompt?: string): Promise<ProjectDirectoryPick> {
+  if (typeof window === "undefined") return { status: "unavailable", reason: "no browser" };
+  let response: Response;
   try {
-    const picked = await fetch("/api/cwd/pick", {
+    response = await fetch("/api/cwd/pick", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(prompt ? { prompt } : {}),
     });
-    if (!picked.ok) return null;
-    const data = await picked.json().catch(() => ({})) as { cwd?: unknown; cancelled?: unknown };
-    if (data.cancelled === true || typeof data.cwd !== "string" || !data.cwd) return null;
-
+  } catch (error: unknown) {
+    return { status: "unavailable", reason: error instanceof Error ? error.message : String(error) };
+  }
+  const data = await response.json().catch(() => ({}) as unknown) as { cwd?: unknown; cancelled?: unknown };
+  if (!response.ok) {
+    // 409 is "a panel is already open": the user is looking at it, so add nothing.
+    if (response.status === 409) return { status: "cancelled" };
+    return { status: "unavailable", reason: `the folder panel answered ${response.status}` };
+  }
+  if (data.cancelled === true) return { status: "cancelled" };
+  if (typeof data.cwd !== "string" || !data.cwd) {
+    return { status: "unavailable", reason: "the folder panel returned no path" };
+  }
+  const chosen = data.cwd;
+  try {
     const validated = await fetch("/api/cwd/validate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cwd: data.cwd }),
+      body: JSON.stringify({ cwd: chosen }),
     });
-    const result = await validated.json().catch(() => ({})) as { cwd?: string; error?: string };
-    if (!validated.ok || result.error) return null;
-    return result.cwd ?? data.cwd;
-  } catch {
-    return null;
+    const result = await validated.json().catch(() => ({}) as unknown) as { cwd?: string; error?: string };
+    if (!validated.ok || result.error) {
+      return { status: "unavailable", reason: result.error || `the folder was refused (${validated.status})` };
+    }
+    return { status: "picked", cwd: result.cwd ?? chosen };
+  } catch (error: unknown) {
+    return { status: "unavailable", reason: error instanceof Error ? error.message : String(error) };
   }
 }

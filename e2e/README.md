@@ -32,6 +32,11 @@ Coverage:
   on rows near the bottom of the window and checks that they flip upward, stay
   inside the viewport and keep their last entry reachable, in both themes and
   languages.
+- `node e2e/sidebar-fold.mjs` collapses and expands a project in the real sidebar CSS
+  and samples the group below on every animation frame: the movement starts in the first
+  frames, is continuous (no frame carries a third of the distance), equals the content
+  height, unmounts the rows only when the height has arrived, and ends in the last
+  requested state under rapid clicking.
 - `node e2e/title-feedback.mjs` exercises the real AppShell with isolated sessions
   and synthetic title responses: progress after menu dismissal, duplicate guards,
   persistent 401 feedback, Models navigation, retry, successful header/sidebar

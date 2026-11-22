@@ -55,7 +55,7 @@ import { useWindowDrag } from "./desktop";
 import { ChatConfirmDialog } from "./ChatConfirmDialog";
 import { SessionSearch } from "./SessionSearch";
 import { ProjectViewMenu, type ProjectViewMode } from "./ProjectViewMenu";
-import { useCollapseExit } from "@/lib/sidebar-fold-motion";
+import { applySidebarFold, useProjectFold } from "@/lib/sidebar-fold-motion";
 import { ChatsSectionMenu } from "./ChatsSectionMenu";
 import { orderChatFamilies, toggleId, pinnedFirst } from "@/lib/chat-groups";
 import { ArchivedProjectsSection } from "./ArchivedProjectsSection";
@@ -645,7 +645,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // length of the animation. lib/sidebar-fold-motion.ts keeps them mounted for exactly
   // that: the keyboard row walk, the project counts and the flat-list virtualization all
   // treat a folded project as having no rows, so nothing longer may stay mounted.
-  const closingProjects = useCollapseExit(collapsedProjects);
+  const projectFold = useProjectFold(collapsedProjects);
 
   useEffect(() => {
     if (pinnedChats.size === 0) removePref(APP_PREF_KEYS.pinnedChats);
@@ -1241,14 +1241,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       // A browser tab cannot return a folder path (Safari has no showDirectoryPicker,
       // a directory file input reports names only), so the local server shows the
       // native macOS panel — the same Finder dialog the desktop app gets from the
-      // Tauri plugin. Null means cancelled/non-macOS/remote/refused, and the in-app
-      // picker stays as the fallback for a typed path.
+      // Tauri plugin. Cancel ends the flow: opening the typed picker afterwards put a
+      // stray panel over the chat. Only a server that cannot show a panel at all
+      // (non-macOS, a remote page, a refused folder) falls back to the typed picker.
       const picked = await pickProjectDirectoryFromServer(t("sidebar.addProjectPrompt"));
-      if (picked) {
-        activateProject(picked);
+      if (picked.status === "picked") {
+        activateProject(picked.cwd);
         return;
       }
-      setProjectPickerOpen(true);
+      if (picked.status === "unavailable") setProjectPickerOpen(true);
       return;
     }
 
@@ -1751,10 +1752,21 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             </button>
           </div>
         </div>
-        {!isCollapsed || closingProjects.has(group.projectRoot) ? (
+        {!isCollapsed || projectFold.closing.has(group.projectRoot) ? (
           <div
             className="sidebar-project-tree-children"
-            data-fold={isCollapsed ? "closing" : "open"}
+            data-fold={isCollapsed ? "closing" : "opening"}
+            // The fold's height is measured and animated here (lib/sidebar-fold-motion.ts):
+            // a height transition is what moves the projects below continuously, and the
+            // closing rows unmount when the height reaches zero, not on a timer.
+            ref={(element) => {
+              if (!element) return;
+              applySidebarFold(element, {
+                closed: isCollapsed,
+                animateOpen: projectFold.opening.has(group.projectRoot),
+                onSettled: () => projectFold.settle(group.projectRoot),
+              });
+            }}
           >
             {visibleGroupTree.map((node) => {
               const nodeFamily = sessionFamilies.find(

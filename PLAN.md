@@ -22,3 +22,14 @@ Tests to add (repo style: `node --experimental-strip-types --test`, `*.test.mjs`
 
 ## Phase C
 Run `npm test` (+ i18n registry parity, fork-extractions, ui-menu-consistency where relevant), `tsc --noEmit`, `eslint`, review `git diff`, commit.
+
+---
+
+# Phase C2 — the manual-test fixes (2026-11-22)
+
+- [x] 1 · Add project: Cancel in Finder must not open the in-app picker
+- [x] 2 · ntfy: `Send Test Notice` (ByteString header, em dash) + the panel layout
+- [x] 3 · Project fold: a real 200–300 ms height animation, siblings moving from frame one
+- [x] Tests: `lib/project-directory-pick.test.mjs`, `lib/ntfy-settings.test.mjs`,
+      `app/api/notifications/ntfy/route.test.mjs`, `components/NtfyNotificationSection.test.mjs`,
+      `lib/sidebar-fold-motion.test.mjs`, `e2e/sidebar-fold.mjs`
