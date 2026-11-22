@@ -3020,14 +3020,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {!compact && <div className="chat-composer-controls" style={{
           marginTop: 6,
           display: isNarrow ? "grid" : "flex",
-          gridTemplateColumns: isNarrow ? "auto minmax(0, 1fr) auto" : undefined,
+          // A phone renders exactly two children here (the wide spacer below is
+          // skipped), so the controls block needs its own `auto` track. The
+          // first track must be `minmax(0, 1fr)`: an `auto` track sizes to the
+          // model chip's untruncated max-content, which pushed the trailing
+          // cell out of the row, and its More button (squeezed to 16px in a
+          // zero-width track) landed on top of the context ring on an iPhone.
+          gridTemplateColumns: isNarrow ? "minmax(0, 1fr) auto" : undefined,
           alignItems: "center",
           gap: 6,
         }}>
 
           {/* LEFT: project context + model selector (idle) or steer/followup toggle (streaming) */}
 
-          <div style={{ flex: isNarrow ? "1 1 auto" : "0 0 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
+          <div style={{ flex: isNarrow ? "1 1 auto" : "0 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
             {projectLabel && (
               <ComposerProjectChip
                 menuRef={projectDropdownRef}
@@ -3096,6 +3102,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   justifyContent: "center",
                   width: "var(--control-h-lg)",
                   height: "var(--control-h-lg)",
+                  flexShrink: 0,
                   padding: 0,
                   borderRadius: "var(--radius-md)",
                   cursor: controlsMenuOpen ? "default" : "pointer",

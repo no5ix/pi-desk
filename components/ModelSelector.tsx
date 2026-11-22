@@ -141,7 +141,11 @@ export function ModelSelector({
         justifyContent: isMobile ? "flex-start" : undefined,
         gap: 6,
         width: isMobile ? "100%" : undefined,
-        maxWidth: isMobile ? "100%" : 220,
+        // Never wider than the row that holds it. A plain `220` cap is not a
+        // shrink: on a narrow desktop composer (the workspace panel open, a
+        // phone-sized window) the trigger kept its 220px box past the shrunken
+        // root and painted over the context-usage ring beside it.
+        maxWidth: isMobile ? "100%" : "min(220px, 100%)",
         height: 32,
         padding: isMobile ? "8px 10px" : "8px 12px",
         overflow: "hidden",

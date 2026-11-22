@@ -81,6 +81,29 @@ history or modify the outbox. A clear-generation guard rejects late attachment
 read/conversion results and revokes discarded image preview URLs. Cancel remains
 a separate, non-destructive action that only leaves history-edit mode.
 
+## Composer session row: project, model, context, controls
+
+The row under the input card (`className="chat-composer-controls"`) carries the
+project chip, the model chip, the context-usage ring and — on a phone — the More
+controls button. On a phone it is a grid with exactly TWO children (the wide
+spacer is rendered only on the flex tier), so its template is
+`minmax(0, 1fr) auto`: the left cell takes the free width and shrinks, the
+controls keep their own `auto` track. With an `auto` first track the grid sizes
+that column to the model chip's untruncated max-content, the controls cell
+collapses to `0px`, and its button (squeezed to 16px in a zero-width track)
+paints on top of the context ring — the reported iPhone 16 Pro Max overlap.
+Both tiers keep the left cell shrinkable (`flex: "1 1 auto"` narrow,
+`"0 1 auto"` wide, `minWidth: 0`), so a squeezed desktop window (workspace panel
+open) truncates the model label instead of pushing the controls out of the row.
+
+The model trigger's cap must be a shrink, not only a ceiling: the toolbar variant
+uses `max-width: min(220px, 100%)`. A bare `220px` left a 220px box past the
+shrunken 207px root and onto the ring. The label span (`flex: 1`, `minWidth: 0`,
+ellipsis) is the part that gives way; the ring and the More button keep
+`flexShrink: 0`. Pinned by `components/ChatInput.composer-row.test.mjs`. Verify
+on a real session with a long model id and a live context ring, at 320–640px and
+at desktop widths with the workspace panel open, in Chromium and WebKit.
+
 ## Conversation find
 
 `ConversationFind` is mounted by `ChatWindow`. Ctrl+F / Cmd+F searches the current
@@ -121,6 +144,15 @@ is inset by the shared 4px choice gap on all sides, with the same 4px clearance
 to the row's trailing edge. Keep the row/slot/button dimensions in CSS; do not
 restore the old 24px inline slot and separate 7px row padding. The glyph and
 highlight share a center in hover, keyboard-focus and open-menu states.
+
+The topbar's More trigger is icon-only, and two rules make its box wider than
+its glyph: the coarse-pointer 44px minimum for topbar buttons and the 1120px
+padding trim. `.app-topbar-more-trigger` in `app/native-theme.css` sets
+`justify-content: center`, and the trigger's inline style must not set
+`justify-content` — the default flex-start left the three dots ~8px left of the
+box's centre on a phone and on a coarse-pointer desktop. Keep the glyph an SVG
+of three circles: text dots ride the text baseline and read high in a 44px box
+on iOS. Pinned by `components/AppShell.more-menu.test.mjs`.
 
 Session deletion uses the shared `ChatConfirmDialog`; do not swap the 28px session
 row for inline Delete/Cancel buttons. Keep the row and title visible, show the full

@@ -3563,6 +3563,16 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   height: 100%;
 }
 
+/* The trigger is an icon-only flex row: the coarse-pointer rule gives topbar
+   buttons a 44px minimum and the 1120px query trims its padding to 7px, so the
+   box is wider than the three dots and the default flex-start left them ~8px
+   left of the box's centre on a phone (and on a coarse-pointer desktop).
+   Centred on both axes in every window width; the icon-only button has no
+   label to keep flush. */
+.app-topbar-more-trigger {
+  justify-content: center;
+}
+
 .app-topbar-more-menu {
   position: absolute;
   top: calc(100% + 7px);
