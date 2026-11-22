@@ -144,3 +144,6 @@
   it (`skillCollision.linkedToGlobal`) and the note says the switches share one file; the next
   on/off in this project replaces the link with a copy, so the state stops being shared. `isLinkedSkillEntry()`
   treats symlinks and Windows junctions alike.
+- **A row put back is a global row.** The supplement's twin is read with pi's `user` source, because
+  the sidebar groups are built from pi's scope and any other source label puts the row under a PATH
+  heading. The skills.sh badge is the install lock's business, not the reader's.

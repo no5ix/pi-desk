@@ -33,7 +33,7 @@ export interface ShadowedSkillsOptions {
   cwd: string;
   agentDir?: string;
   /** Skill folders the user's own skills live in; defaults to pi's two roots. */
-  globalDirs?: Array<{ dir: string; source: "user" | "skills.sh" }>;
+  globalDirs?: Array<{ dir: string; source: "user" }>;
   /** The project's own skill folders; defaults to the ones that exist. */
   projectDirs?: string[];
 }
@@ -66,7 +66,7 @@ export function addShadowedSkills<T extends ShadowableSkill>(loaded: T[], option
   const globalDirs = options.globalDirs ?? globalSkillDirs(options.agentDir ?? getAgentDir());
   const projectDirs = options.projectDirs ?? existingProjectSkillDirs(options.cwd);
   const cache = new Map<string, T[]>();
-  const skillsIn = (dir: string, source: "user" | "skills.sh" | "project"): T[] => {
+  const skillsIn = (dir: string, source: "user" | "project"): T[] => {
     const cached = cache.get(dir);
     if (cached) return cached;
     // pi's own reader, so the copy back carries its parsing, name rules and

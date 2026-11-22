@@ -52,11 +52,18 @@ export function findProjectSkill(cwd: string, name: string): ProjectSkillPaths |
   return null;
 }
 
-/** The folders the user's own skills come from, in pi's own order. */
-export function globalSkillDirs(agentDir = getAgentDir()): Array<{ dir: string; source: "user" | "skills.sh" }> {
-  const dirs: Array<{ dir: string; source: "user" | "skills.sh" }> = [{ dir: path.join(agentDir, "skills"), source: "user" }];
+/**
+ * The folders the user's own skills come from, in pi's own order.
+ *
+ * Both are *user* skills to pi (`~/.agents/skills` is the Agent Skills folder
+ * skills.sh installs into), so a row read from either one belongs to the
+ * panel's global group. The skills.sh badge on a row comes from the install
+ * lock, not from this list.
+ */
+export function globalSkillDirs(agentDir = getAgentDir()): Array<{ dir: string; source: "user" }> {
+  const dirs: Array<{ dir: string; source: "user" }> = [{ dir: path.join(agentDir, "skills"), source: "user" }];
   const agentsSkills = path.join(userHome(), ".agents", "skills");
-  if (fs.existsSync(agentsSkills)) dirs.push({ dir: agentsSkills, source: "skills.sh" });
+  if (fs.existsSync(agentsSkills)) dirs.push({ dir: agentsSkills, source: "user" });
   return dirs;
 }
 

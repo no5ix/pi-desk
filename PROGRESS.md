@@ -406,3 +406,13 @@ is shared and that turning it on or off in this project makes it the project's o
 `lib/project-skills.test.mjs` "a project skill left as a link becomes the project's own copy on the
 next switch", `lib/skill-shadowing.test.mjs` the pair. `isLinkedSkillEntry()` covers symlinks and
 Windows junctions.
+
+**The rows put back belonged to the global group, not a new "PATH" one.** `SkillDetail`'s sidebar
+groups come from pi's scope (`project` / `user` / everything else = `path`), and the twin read from
+`~/.agents/skills` carried the source label `skills.sh`, which pi answers as scope `temporary` — so
+every twin the supplement added landed under a **PATH** heading the panel had never shown. Both user
+skill folders are pi `user` sources (`globalSkillDirs()` now says so); the skills.sh badge on a row
+comes from the install lock (`install.skillsShUrl`), as it always did. Checked on the real folders:
+`pi-desk` answers project 1, global / skills.sh 17, global 11, path 0 — `modern-web-guidance` reads
+PROJECT on and GLOBAL / SKILLS.SH off, its state the user set; `stock-pet-go` shows only the global
+row, no PATH rows. `lib/skill-shadowing.test.mjs` covers it.

@@ -63,10 +63,10 @@ export function copySkillTree(source: string, target: string): number {
  * global entry, so the global file is missing from the list exactly when a
  * re-install needs to read it.
  */
-export function findGlobalSkillByName(name: string, opts: { dirs?: Array<{ dir: string; source: "user" | "skills.sh" }> } = {}): Skill | null {
+export function findGlobalSkillByName(name: string, opts: { dirs?: Array<{ dir: string; source?: string }> } = {}): Skill | null {
   if (!isSafeSkillName(name)) return null;
   for (const { dir, source } of opts.dirs ?? globalSkillDirs()) {
-    const { skills } = loadSkillsFromDir({ dir, source });
+    const { skills } = loadSkillsFromDir({ dir, source: source ?? "user" });
     const hit = skills.find((skill) => skill.name === name);
     if (hit) return hit;
   }
