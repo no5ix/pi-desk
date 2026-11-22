@@ -50,7 +50,10 @@ function loadProjectBranch(cwd: string): Promise<string | null> {
 }
 
 export function useProjectBranch(cwd: string | null | undefined): string | null {
-  const [branch, setBranch] = useState<string | null>(() => (cwd ? cache.get(cwd)?.branch ?? null : null));
+  // First render matches the server, always. The client-side cache is warm only after a
+  // fetch, and the server never ran one, so seeding from it would make a hydration render
+  // show a branch the HTML does not contain — React then throws the whole subtree away.
+  const [branch, setBranch] = useState<string | null>(null);
 
   useEffect(() => {
     if (!cwd) {

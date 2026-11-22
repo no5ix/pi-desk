@@ -54,3 +54,17 @@ test("the branch endpoint and the client cache behind it", () => {
   assert.match(hook, /const CLIENT_CACHE_TTL_MS = 60_000;/, "the server caches the project for the same window");
   assert.match(hook, /export function invalidateProjectBranch\(cwd: string\)/, "a branch switch can drop the cached value");
 });
+
+test("the hydration render shows no branch, so React keeps the tree", () => {
+  // The server has no session state and the client's first render must not have one
+  // either: a warm module cache read during the first render paints a branch the HTML
+  // does not contain, and React throws the topbar subtree away (the same class of failure
+  // hooks/useResizablePanel.ts and hooks/useI18n.tsx guard with a mounted flag).
+  assert.match(hook, /const \[branch, setBranch\] = useState<string \| null>\(null\);/);
+  assert.ok(!/useState<string \| null>\(\(\) =>/.test(hook), "the first render reads no cache");
+  assert.match(hook, /const fresh = cache\.get\(cwd\);\n\s*if \(fresh && Date\.now\(\) - fresh\.at < CLIENT_CACHE_TTL_MS\) \{\n\s*setBranch\(fresh\.branch\);/,
+    "the cache is still served, from the effect");
+  assert.match(appShell, /<div className="app-topbar-title" title=\{topBarTitle\}>\n\s*<span>\{topBarTitle\}<\/span>/,
+    "the title stays the first child: e2e/title-feedback reads it");
+  assert.match(appShell, /<span className="app-topbar-subtitle-row">\n\s*<small className="app-topbar-project">/);
+});

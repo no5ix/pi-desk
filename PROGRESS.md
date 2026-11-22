@@ -26,6 +26,23 @@
 - Dev-server smoke test (`next dev -p 30151`, `PI_WEB_DISABLE_TAILSCALE_SERVE=1`): Ready in 163 ms; `/api/notifications/local` → `{supported:true,local:true}`; POST → `{sent:true}` (a macOS notification appeared); `/api/notifications/ntfy` → the defaults; `/api/worktrees?cwd=` → the project payload with `branch`.
 - Tailscale Serve startup, on the real machine: `startTailscaleServeAtStartup()` found no serve config, ran `tailscale serve --bg 30141`, and printed one green-wrapped `tailscale serve status` block naming `https://macb00kpr0m4.taila0e40f.ts.net` with `/ proxy http://127.0.0.1:30141`. That also restored the tailnet listener this machine had lost (see BLOCKERS.md).
 
+## Fixed after the user ran the branch (`npm run dev`)
+- **The dev page showed none of the new code, with a hydration mismatch.** A service worker
+  registered by a production run on the same origin (`npm start`, the packaged app, port
+  30141) answers `/_next/static/**` cache-first, and development chunk URLs are not
+  content-hashed — so the browser kept the previous build's bundles under the fresh HTML.
+  `components/PwaRegistration.tsx` already skipped registering in development, but skipped
+  without removing the worker that was left; it now drops the worker *and* its `pi-web-*`
+  caches there, as the desktop branch of the same effect has always done. The worker itself
+  is unchanged: production chunks are hashed and cache-first is right.
+- `hooks/useProjectBranch.ts` seeded its first render from a module-level cache the server
+  never fills; that paints a branch the HTML has not got and React discards the subtree.
+  The first render is now `null` and the effect serves the cache, the pattern
+  `hooks/useResizablePanel.ts` and `hooks/useI18n.tsx` use.
+- Tests: `components/PwaRegistration.test.mjs` (4) and a hydration assertion in
+  `components/AppShell.topbar-branch.test.mjs`. Suite: 4366 tests, 4362 pass, 1 pre-existing
+  failure, 3 skipped. `tsc --noEmit` and `eslint` clean.
+
 ## Next
 1. Runtime checks the suite cannot make, in Safari (the user's browser): the Finder panel from **Add project** on `http://localhost:30141`, the header's branch label, the sidebar fold animation, the completion notification sentence, ntfy's **Send Test Notice** on a real topic.
 2. Decide the two open questions in BLOCKERS.md (the local gate for Finder picking over the tailnet hostname; the pre-existing Chat-only integration failure).
