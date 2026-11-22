@@ -4470,8 +4470,28 @@ html.dark {
   background: var(--bg);
 }
 
+/* The folder list is the window's scroll pane. A project folder holds far more rows than
+   the window shows, and the panel clips (its rounded corners), so a list left to overflow
+   puts the folders below the fold out of reach — no wheel, no keyboard, no way in. The list
+   owns the scroll, and the keyboard keeps its row visible (components/DirectoryPicker.tsx). */
 .directory-picker-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
   outline: none;
+}
+
+.directory-picker-list::-webkit-scrollbar {
+  width: 7px;
+}
+
+.directory-picker-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-md);
 }
 
 .directory-picker-list:focus-visible {

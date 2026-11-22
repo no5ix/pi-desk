@@ -261,6 +261,9 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
     setLoadError(null);
     setFilter("");
     setActiveIndex(0);
+    // A folder opens at its first row: the list is the window's scroll pane, and a
+    // subfolder must not open scrolled to where its parent was left.
+    if (listRef.current) listRef.current.scrollTop = 0;
     try {
       const data = await loadDirectories(directory);
       const nextPath = data.path ?? directory ?? "/";
@@ -316,6 +319,15 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
   // A filter that empties the list, or a hidden toggle, must not leave the caret
   // past the last row.
   const activeRow = visibleDirectories.length > 0 ? Math.min(activeIndex, visibleDirectories.length - 1) : 0;
+
+  // The list scrolls, so a keyboard move keeps its row in view, as a native listbox does.
+  // Only while the list itself has the keys: a mouse crossing the edge of the last visible
+  // row must not shove the list around.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || document.activeElement !== list) return;
+    list.querySelector(`#directory-row-${activeRow}`)?.scrollIntoView({ block: "nearest" });
+  }, [activeRow]);
 
   const handlePathSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

@@ -130,3 +130,21 @@ test("a phone folds the rail above the list, and the blocks are told apart by co
   assert.match(css, /\.directory-picker-rail-row:hover \.directory-picker-forget,[\s\S]*?opacity: 1;/, "and appears on hover or focus");
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.directory-picker-panel,[\s\S]*?animation: none;/, "the fade stays optional");
 });
+
+test("the folder list is the window's scroll pane, and the keyboard keeps its row in view", () => {
+  // A project's folder holds far more rows than the window shows, and the panel clips for
+  // its rounded corners: a list left to overflow hides the folders below the fold with no
+  // wheel, no keyboard and no way in.
+  const list = rule(".directory-picker-list");
+  assert.match(list, /flex: 1 1 auto;/, "the list takes the room between the toolbar and the footer");
+  assert.match(list, /min-height: 0;/, "a flex child needs the floor to shrink below its own content");
+  assert.match(list, /overflow-y: auto;/, "the list scrolls, so every folder stays reachable");
+  assert.match(list, /overscroll-behavior: contain;/, "scrolling past the last row does not scroll the page behind the window");
+  assert.match(list, /padding-bottom: 8px;/, "the last row keeps a margin over the footer band");
+
+  // A scrollable listbox has to keep its caret visible, and open at the top.
+  assert.match(picker, /listRef\.current\.scrollTop = 0;/, "a folder opens at its first row, not where its parent was left");
+  assert.ok(picker.includes('.scrollIntoView({ block: "nearest" })'),
+    "arrows, Page keys, Home, End and type-ahead keep the caret's row on screen");
+  assert.match(picker, /document\.activeElement !== list/, "a mouse crossing the edge of the last visible row leaves the list where it is");
+});
