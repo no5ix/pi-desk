@@ -225,3 +225,74 @@ with the panel and a hidden tab has the same badge.
 page at 15 s in every run, and the offline page arrives in 10–11 ms with the server killed.
 The 0%-pass portfolio reported by one verification run was executed against the
 pre-fix version of the test file; its own confirmation run on the fixed file passed.
+
+## Option chords, the phone's keyboard, the installed app's notch (2026-11-23)
+
+Three reports, one branch (`fix/fzf-web-app-keyboard`), three separate causes.
+
+**Option+E wrote `´´´´´` at the prompt; Option+Left wrote `DDDD`; Option+R worked.**
+xterm 6's `macOptionIsMeta` is one condition in the `keydown` handler
+(`isMac && macOptionIsMeta && altKey`) and its translation reads the legacy
+`keyCode`: the printable chords land in the `default:` arm (`keyCode` 82 is `R`,
+so `^[r`), a chord whose `key` is the layout's accent (`Dead` on a Portuguese
+layout) reaches no case, and an arrow is answered by its own case *above* the Alt
+branch, so it leaves as the modified CSI `ESC [ 1 ; 3 D`. The fix is
+`macOptionSequence()` (`lib/terminal-input.ts`): rebuild only what xterm cannot
+produce, from `key` and the physical `code` — letters under the finger, arrows as
+Terminal.app's word jumps `ESC b/f/p/n`, `Backspace` as `ESC DEL` — and consume
+it in `attachCustomKeyEventHandler` only for a keydown inside the panel, with
+`preventDefault()` so the browser stops composing the accent behind the panel.
+`keyCode` is not read (Chromium reports 0 for it under Playwright's keyboard
+layer); a one-character chord is left to xterm so nothing is sent twice.
+
+**A tap on the phone's terminal put a cursor on screen and no keyboard.** xterm
+focuses on `mousedown`, which iOS synthesizes after the tap, and the field it
+focuses (`.xterm-helper-textarea`, `tabIndex = 0`, `readOnly` mirrors
+`disableStdin`) is `opacity: 0` with zero width. The panel focuses from
+`pointerdown` / `touchend` in the capture phase (xterm's `mousedown` is
+`preventDefault`-ed, and the key listeners sit on the textarea in capture, so a
+chord typed into another field never reaches the panel's handler) and
+`app/native-theme.css` gives that field `opacity: 0.01` and `font-size: 16px` —
+16px is the composer's own floor, under which Safari zooms the page on focus. The
+CSS deliberately sets no geometry: xterm's `_syncTextArea` writes `left`, `top`,
+`width`, `height` and `line-height` inline to sit on the cursor (upstream #1182,
+IME anchoring), and a CSS width of `1px` was measured at 5.39px, one cell.
+
+**The home-screen app sat under the notch; mobile Safari looked right.** In a tab
+the shell's inline `env(safe-area-inset-*)` padding is the whole story. Installed,
+WebKit draws the status bar over the page, reports the top inset as 0, and the
+fork's `.app-topbar { height: 48px !important }` beat AppShell's inline
+`calc(36px + env(safe-area-inset-top))` (`components/AppShell.tsx`), leaving one
+48px row at the window's top edge; the fixed `.right-panel-toggle-button`
+(`top: 10px`) and the `.app-notice-shelf` (`top: calc(60px + env(...))`) sit in the
+same strip. `hooks/useStandaloneSafeArea.ts` marks `<html data-standalone-safe-area>`
+for a standalone display on a machine with `maxTouchPoints > 0` — a floor is
+needed (59px, the one `app/settings.css` already uses for the settings dialog) and
+it must not reach the Tauri window, where 0 is honest. The rules pad boxes, not
+heights (box-sizing is border-box app-wide, so padding alone spends the bar's
+48px), and cover the two fixed overlays a phone's shell cannot pad. The manifest
+carries `viewport: "width=device-width, initial-scale=1, viewport-fit=cover"`:
+iOS 16.4+ installs from the manifest and takes the installed app's viewport from
+its `viewport` member, not the page's meta tag.
+
+## Verification of that branch
+
+`npm test` 4566 tests / 0 failures; `npm run lint` clean; `tsc --noEmit` clean.
+A live pass against the dev server (`next dev` on 30141) with Playwright:
+`cat -v` on a real PTY shows `^[e ^[r` for the printable chords, `^[b ^[f` for
+Option+arrows, `^[c` for a synthesized WebKit dead-key chord
+(`key: "Dead"`, `code: "KeyC"`), each arriving exactly once; a tap on a touch
+viewport leaves the caret in `.xterm-helper-textarea` (5.39×16px, opacity 0.01,
+font 16px) and text typed after the tap reaches the PTY; fullscreen — Chromium
+cannot emulate `display-mode: standalone`, and fullscreen is one of the modes the
+hook matches — marks the shell and moves the topbar to 107px with its title at
+75px and the panel toggle at 69px, where a browser tab keeps 48px and no mark.
+
+`e2e/terminal.mjs` carries these checks (macOS-gated, skipped elsewhere, as the
+existing `^[e` / `^[r` assertion is). Its own session-terminal section is broken
+on this fork before this change and is recorded in `BLOCKERS.md`.
+
+Not verified on real hardware: an iPhone's Safari keyboard and a home-screen
+install. Both fixes rest on the same source-verified behavior (WebKit's touch
+focus rule, the 0 inset + 48px bar in an installed app) and on the emulation
+above, not on a device.
