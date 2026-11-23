@@ -43,8 +43,12 @@ custom message (`lib/subagent-runtime.ts`: a fresh `Date.now()` per delivery, on
 `AgentMessage` per queued report, no timestamps of its own in the text).
 `components/MessageView.tsx` renders custom messages in `CustomMessageView`, and a report
 opens **collapsed**, exactly like the compaction note: a chevron, the label, the delivery
-time, nothing else. The header is the toggle (`aria-expanded`, one click expands in place);
-folded, the card shows no body and no Copy row, because both belong to the text they report.
+time, nothing else. Its label is the `chat.subagentReportTitle` message (`subagent report`),
+not the raw `pi-web:subagent-notification` string the card printed — `formatCustomType` is a
+passthrough and stays that way for extension types. The header is the toggle
+(`aria-expanded`, one click expands in place); folded, the card shows no body, no Copy row,
+and no divider under its header (a line over nothing reads as an empty card), because all of
+it belongs to the text the report carries.
 A background report has no tool call to hang a card on, so its type is checked in
 `CustomMessageView` — the `AgentToolCard`'s `details.toolCallId` is null for a notification
 and only a synchronous `Agent` call carries the run in tool details.

@@ -35,6 +35,8 @@ test("a subagent report is collapsed by default, and its header is the toggle", 
   assert.match(card, /onClick=\{\(\) => setContentExpanded\(\(value\) => !value\)\}/, "and one click toggles it");
   assert.match(card, /className="compaction-card-chevron"\s*\n\s*data-expanded=\{contentExpanded \? "true" : "false"\}/,
     "the same chevron the compaction card turns, so the two collapsed notes read alike");
+  assert.match(card, /borderBottom: contentExpanded \? "var\(--hairline\) solid var\(--border\)" : "none",/,
+    "folded, there is no divider under the header: a line over nothing reads as an empty card");
   assert.match(card, /title=\{t\(contentExpanded \? "chat\.collapseSubagentReport" : "chat\.expandSubagentReport"\)\}/);
   // Folded, the card is its header alone: no body, no Copy row.
   assert.match(card, /\{contentExpanded \? \(\s*<div style=\{\{ padding: "6px 9px" \}\}>[\s\S]*?\) : isHiddenDisplay \? \(/,
@@ -60,6 +62,15 @@ test("every model line in a run is dated", () => {
   assert.ok(nameAt > 0 && timeAt > nameAt, "the time follows the model name, as `model  [clock] 11:46 PM`");
   assert.match(line, /<ClockIcon size=\{10\} \/>/);
   assert.match(css, /\.message-assistant-model-time \{[\s\S]*?font-variant-numeric: tabular-nums;/);
+});
+
+test("a folded report is labelled, not printed as its type string", () => {
+  assert.match(card, /const title = collapsesByDefault[\s\S]{0,240}\? t\("chat\.subagentReportTitle"\)[\s\S]{0,80}: formatCustomType\(message\.customType\);/,
+    "the row reads `subagent report`, like the compaction row reads `compaction`; the raw type stays in the message the model reads");
+  assert.match(card, /\{title\}/, "the label is what the header shows");
+  for (const locale of getSupportedLocales()) {
+    assert.equal(typeof getLocalePlugin(locale).messages["chat.subagentReportTitle"], "string", `${locale} has chat.subagentReportTitle`);
+  }
 });
 
 test("the words are in every locale", () => {

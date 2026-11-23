@@ -2081,7 +2081,12 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
   const images = getMessageImages(message.content);
   const hasDetails = message.details !== undefined;
   const detailsText = hasDetails ? safeJson(message.details) : "";
-  const title = formatCustomType(message.customType);
+  const title = collapsesByDefault
+    // The compaction row reads `compaction`, not a type string; a folded report has
+    // to read as the same kind of note, and the raw `pi-web:subagent-notification`
+    // stays in the message the model reads.
+    ? t("chat.subagentReportTitle")
+    : formatCustomType(message.customType);
   const time = formatTime(message.timestamp, locale);
 
   const copyContent = () => {
@@ -2116,7 +2121,10 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
               width: "100%",
               padding: "7px 10px",
               border: "none",
-              borderBottom: "var(--hairline) solid var(--border)",
+              // Only a card with a body gets the divider under its header, exactly
+              // as the compaction card does: folded, a line under the header alone
+              // reads as a strip of an empty card.
+              borderBottom: contentExpanded ? "var(--hairline) solid var(--border)" : "none",
               background: "var(--bg-panel)",
               color: "var(--text-muted)",
               textAlign: "left",
