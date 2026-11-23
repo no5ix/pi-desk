@@ -58,7 +58,10 @@ try {
   }
   browser = await chromium.launch();
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
-    const context = await browser.newContext({ viewport, locale: "en-US" });
+    // The phone pass is a real touch machine: `(pointer: coarse)` and the touch
+    // events the terminal's keyboard handling is written for.
+    const touch = viewport.width < 500;
+    const context = await browser.newContext({ viewport, locale: "en-US", hasTouch: touch, isMobile: touch });
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
     const errors = [];
@@ -92,8 +95,13 @@ try {
       const backdrop = page.locator(".sidebar-overlay-backdrop:visible");
       if (await backdrop.count()) await backdrop.click({ position: { x: 380, y: 400 } });
       // Desktop: topbar toggle. Mobile: the fixed floating toggle outside the topbar.
-      const showPanel = page.locator('button[aria-label="Show workspace"]:visible').first();
-      if (await showPanel.count()) await showPanel.click();
+      // Both are JS-clicked: a phone's viewport emulation puts the topbar chip off
+      // screen, and a fresh desktop profile restores a panel the width of a border,
+      // so the visible hit target is not the one that opens the panel.
+      await page.evaluate(() => {
+        (document.querySelector("button.right-panel-toggle-button")
+          ?? document.querySelector('button[aria-label="Show workspace"]'))?.click();
+      });
       await page.locator("#file-panel").getByRole("button", { name: "New terminal", exact: true }).click();
     };
 
@@ -130,12 +138,56 @@ try {
       // the browser sends the accented character and the chord never arrives.
       if (process.platform === "darwin") {
         await run("cat -v");
-        await page.locator(".terminal-panel:visible .xterm-helper-textarea").focus();
+        const textarea = page.locator(".terminal-panel:visible .xterm-helper-textarea");
+        await textarea.focus();
         await page.keyboard.press("Alt+e");
         await page.keyboard.press("Alt+r");
         await waitOutput("\\^\\[e");
+        // Option+arrows: xterm's own arrow cases send the modified CSI
+        // `ESC [ 1 ; 3 D`, which no macOS shell binds, so the panel sends
+        // Terminal.app's word jumps (`^[b` / `^[f`) itself.
+        await page.keyboard.press("Alt+ArrowLeft");
+        await page.keyboard.press("Alt+ArrowRight");
+        await waitOutput("\\^\\[b\\^\\[f");
+        // A dead-key Option chord (Option+E on a Portuguese layout is `Dead`):
+        // the layout gives no character and the browser no keyCode, so the
+        // letter comes from `code`. Chromium reports a real keyCode for the
+        // printable path, so this chord is synthesized as WebKit sends it.
+        await page.evaluate(() => {
+          const field = document.querySelector(".terminal-panel:visible .xterm-helper-textarea");
+          field.focus();
+          field.dispatchEvent(new KeyboardEvent("keydown", { key: "Dead", code: "KeyC", altKey: true, bubbles: true, cancelable: true }));
+        });
+        await waitOutput("\\^\\[c");
+        // One chord per press: the panel must not send its chord and let xterm
+        // send one too.
+        assert.equal(((await text()).match(/\^\[e/g))?.length, 1, "a printable chord is sent once");
         await page.keyboard.press("Control+c");
         await waitOutput("\\^C");
+      }
+      if (touch) {
+        // iOS opens the software keyboard only for a focus raised by a touch and
+        // on a field it renders (upstream pi-web #1702): xterm focuses on
+        // `mousedown`, which iOS synthesizes after the tap. A tap must land the
+        // caret in xterm's helper field, sized and styled as a field Safari will
+        // accept — 16px, or focusing it zooms the whole page.
+        await page.locator(".terminal-panel:visible .xterm-screen").tap();
+        const field = await page.evaluate(() => {
+          const active = document.activeElement;
+          const box = active?.getBoundingClientRect();
+          const style = active ? getComputedStyle(active) : null;
+          return {
+            className: active?.className ?? "",
+            width: box?.width ?? 0,
+            height: box?.height ?? 0,
+            opacity: Number(style?.opacity ?? 0),
+            fontSize: style?.fontSize ?? "0px",
+          };
+        });
+        assert.match(field.className, /xterm-helper-textarea/, "a tap focuses the terminal's input field");
+        assert.ok(field.width > 0 && field.height > 0, `the field has a box: ${JSON.stringify(field)}`);
+        assert.ok(field.opacity > 0, `the field is rendered: ${JSON.stringify(field)}`);
+        assert.equal(field.fontSize, "16px", "16px keeps Safari from zooming the page on focus");
       }
       await run("export PR695_TOKEN=alive; printf '\\nTOKEN:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput("TOKEN:alive:[0-9]+");

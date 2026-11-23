@@ -40,6 +40,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
 import { APP_PREF_KEYS, getPrefBool, getPrefJson, setPref } from "@/lib/app-prefs";
 import { useViewportHeight } from "@/hooks/useViewportHeight";
+import { useStandaloneSafeArea } from "@/hooks/useStandaloneSafeArea";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useDesktopConnection } from "@/lib/desktop-connection";
 import { isTauriDesktop, setCloseQuitsNative } from "@/lib/desktop-native";
@@ -163,6 +164,10 @@ export function AppShell() {
   const { locale, t: translate } = useI18n();
   const isMobile = useIsMobile();
   useViewportHeight();
+  // An installed iPhone app draws the status bar over the page and reports the
+  // top inset as 0; the attribute this sets is what native-theme.css's shell
+  // insets hang on.
+  useStandaloneSafeArea();
 
   // Once the user has granted notification permission, register a Web Push
   // subscription so the server can notify backgrounded PWAs (notably iOS,

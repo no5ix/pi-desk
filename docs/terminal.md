@@ -70,13 +70,50 @@ word jumps — never fire. With it the PTY receives ESC + letter. xterm reads th
 option only on macOS, so Windows and Linux keep Alt as Alt, and the phone's
 CTRL / ALT latch (`lib/terminal-extra-keys.ts`) stays a separate path.
 
+The option covers only part of the chord set, so the panel's
+`attachCustomKeyEventHandler` completes it (`macOptionSequence()` in
+`lib/terminal-input.ts`):
+
+- xterm's Meta path translates from the legacy `keyCode`, in the `default:` arm
+  of that switch. A printable chord works (`keyCode` 82 is `R`, so `^[r`), while
+  a chord whose `key` is the layout's accent maps to nothing — Option+E on a
+  Portuguese layout is a dead key, and five presses reached the prompt as
+  `´´´´´` — and a chord the browser reports no `keyCode` for maps to nothing
+  either. The panel rebuilds it from `key` and the physical `code`.
+- The arrows are handled in their own cases, above the Alt branch, so Option+Left
+  went out as the modified CSI `ESC [ 1 ; 3 D`, which no macOS shell binds. The
+  panel sends Terminal.app's word jumps, ESC + `b` / `f` / `p` / `n`.
+- The handler consumes only what xterm cannot produce: a one-character chord is
+  left to xterm, so it is never sent twice, and it acts only on a keydown whose
+  target is inside the panel, so the composer keeps typing its accents.
+  `preventDefault()` is what stops the browser composing the accent behind the
+  panel's back.
+
+A phone opens the software keyboard only for a focus raised by a touch, on an
+editable field it renders. xterm focuses on `mousedown`, which iOS synthesizes
+after the tap, so a tap on the panel left a blinking cursor and no keyboard
+(upstream pi-web #1702). `TerminalPanel.tsx` focuses from `pointerdown` /
+`touchend` in the capture phase (xterm cancels the event it is built from), and
+`app/native-theme.css` gives xterm's helper textarea the `opacity` and 16px font
+Safari needs to treat it as a field — 16px is the same floor the composer's
+inputs use, below it Safari zooms the page on focus. xterm's `_syncTextArea`
+writes the field's left / top / width / height / line-height inline to follow
+the cursor, so the CSS must not set geometry: that is what anchors an IME. The
+field is read-only while `disableStdin` is on, which is why a tap while the panel
+still says "connecting" cannot raise a keyboard.
+
 ## Verification
 
 Run `npm test` for native PTY, lease, output cursor, input queue, and storage
-checks, and `components/TerminalPanel.options.test.mjs` for the glyph size and
-the Option-as-Meta option. `npm run test:terminal` starts an isolated development
-server and runs desktop/mobile browser checks using generated session fixtures;
-it also asserts the 9px glyph size and, on macOS, that Option+E / Option+R reach
-the shell as `^[e` / `^[r` (`cat -v` makes the bytes visible). Install the
-Playwright Chromium browser first with `npx playwright install chromium`.
+checks, and `components/TerminalPanel.options.test.mjs` for the glyph size, the
+Option-as-Meta option, the chords that complete it, and the phone's tap-to-focus.
+`npm run test:terminal` starts an isolated development server and runs
+desktop/mobile browser checks using generated session fixtures; it also asserts
+the 9px glyph size and, on macOS, that Option+E / Option+R reach the shell as
+`^[e` / `^[r`, Option+Left / Option+Right as `^[b` / `^[f`, and a synthesized
+dead-key chord (`key: "Dead"`, `code: "KeyC"`, as WebKit reports it) as `^[c` —
+`cat -v` makes the bytes visible — and that a printable chord arrives once. On
+the touch viewport it taps the screen and asserts the caret landed in xterm's
+helper field, sized and styled as a field iOS accepts. Install the Playwright
+Chromium browser first with `npx playwright install chromium`.
 The browser check prints the temporary location of its screenshots and log.

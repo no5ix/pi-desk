@@ -52,6 +52,12 @@ manual merge, run it yourself.
 3. **Component sections**, roughly in DOM order: sidebar, topbar, popovers/modals, settings,
    composer, messages/markdown, file workbench, responsive shell. The file ends with a "final
    workbench pass" that must stay after the responsive rules.
+4. **Installed web app and phone terminal** (appended, after the workbench pass): the
+   `html[data-standalone-safe-area]` block that insets the shell's chrome for a home-screen
+   install, and the `(pointer: coarse)` rule for xterm's input field. Both key off a machine,
+   not a width, so they must stay after the responsive rules that set the chrome they move.
+   Why they exist: [agents/client-platform.md](agents/client-platform.md) and
+   [terminal.md](terminal.md).
 
 Where a new rule goes: a fork-only class goes in the matching component section. An override
 of an upstream rule goes in the component section when it is cosmetic. It goes in the base

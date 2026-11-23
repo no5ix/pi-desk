@@ -10,6 +10,8 @@ const appShellSource = await readFile(new URL("./AppShell.tsx", import.meta.url)
 const chatWindowSource = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const chatInputSource = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const viewportHookSource = await readFile(new URL("../hooks/useViewportHeight.ts", import.meta.url), "utf8");
+const standaloneHookSource = await readFile(new URL("../hooks/useStandaloneSafeArea.ts", import.meta.url), "utf8");
+const manifestSource = await readFile(new URL("../app/manifest.webmanifest/route.ts", import.meta.url), "utf8");
 const mcpConfigSource = await readFile(new URL("./McpConfig.tsx", import.meta.url), "utf8");
 const mcpSignInSource = await readFile(new URL("./McpSignIn.tsx", import.meta.url), "utf8");
 const mcpAddSource = await readFile(new URL("./McpAddServer.tsx", import.meta.url), "utf8");
@@ -69,6 +71,41 @@ test("keeps modal dialogs clear of the iOS status bar in standalone mode", () =>
   assert.match(settingsCssSource, /padding-top: max\(59px, env\(safe-area-inset-top\)\);[\s\S]*?padding-right: max\(8px, env\(safe-area-inset-right\)\);[\s\S]*?padding-bottom: max\(24px, env\(safe-area-inset-bottom\)\);[\s\S]*?padding-left: max\(8px, env\(safe-area-inset-left\)\);/);
   assert.match(settingsCssSource, /@media \(display-mode: standalone\) and \(orientation: landscape\) \{[\s\S]*?padding-top: max\(8px, env\(safe-area-inset-top\)\);[\s\S]*?padding-right: max\(59px, env\(safe-area-inset-right\)\);[\s\S]*?padding-bottom: max\(8px, env\(safe-area-inset-bottom\)\);[\s\S]*?padding-left: max\(59px, env\(safe-area-inset-left\)\);/);
   assert.match(settingsCssSource, /\.settings-dialog-surface,[\s\S]*?\.config-panel-root\.is-modal > \.config-panel-surface \{[\s\S]*?max-width: 100%;[\s\S]*?max-height: 100%;/);
+});
+
+test("keeps the installed web app's chrome clear of the notch", () => {
+  // In a browser tab the inline env() padding is the whole inset story. In the
+  // home-screen app WebKit draws the status bar over the page and reports the
+  // top inset as 0, and the fork's `.app-topbar { height: 48px !important }`
+  // overrides AppShell's inline `calc(36px + env(safe-area-inset-top))`, so the
+  // bar lands under the notch. Only the installed touch app gets the floor.
+  assert.match(appShellSource, /useStandaloneSafeArea\(\)/);
+  assert.match(standaloneHookSource, /export const STANDALONE_SAFE_AREA_ATTRIBUTE = "data-standalone-safe-area"/);
+  assert.match(standaloneHookSource, /media\("\(display-mode: standalone\)"\)\.matches/);
+  assert.match(standaloneHookSource, /\(navigator as Navigator & \{ standalone\?: boolean \}\)\.standalone === true/);
+  assert.match(standaloneHookSource, /navigator\.maxTouchPoints > 0/);
+  assert.match(standaloneHookSource, /addEventListener\("change", update\)/);
+  // A bar that grows by the inset, so its own padding never spends its 48px.
+  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] \{[\s\S]*?--app-safe-area-top: max\(59px, env\(safe-area-inset-top, 0px\)\);[\s\S]*?--app-safe-area-bottom: max\(20px, env\(safe-area-inset-bottom, 0px\)\);/);
+  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] \.app-topbar \{[\s\S]*?height: calc\(48px \+ var\(--app-safe-area-top\)\) !important;[\s\S]*?padding-top: var\(--app-safe-area-top\) !important;/);
+  // The sidebar and the right panel are fixed overlays on a phone: the shell's
+  // padding never reaches them, and the app's bottom inset must not be 0.
+  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] :is\(\.sidebar-container, \.right-panel-container\) \{[\s\S]*?padding-top: var\(--app-safe-area-top\);/);
+  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] \.app-shell \{[\s\S]*?padding-bottom: var\(--app-safe-area-bottom\) !important;/);
+  // Landscape: the notch is on a side, as in settings.css's own landscape block.
+  assert.match(nativeThemeSource, /@media \(orientation: landscape\) \{[\s\S]*?html\[data-standalone-safe-area\] \.app-shell \{[\s\S]*?padding-left: max\(59px, env\(safe-area-inset-left, 0px\)\) !important;[\s\S]*?padding-right: max\(59px, env\(safe-area-inset-right, 0px\)\) !important;/);
+  // Fixed chrome pinned to a viewport edge: the phone's floating workspace
+  // toggle and the notice shelf are pinned to the top, and the shell's padding
+  // (and the bar's new height) never reaches them.
+  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] \.right-panel-toggle-button \{[\s\S]*?top: calc\(10px \+ var\(--app-safe-area-top\)\);/);
+  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] \.app-notice-shelf \{[\s\S]*?top: calc\(60px \+ var\(--app-safe-area-top\)\);/);
+  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] \.image-preview-dialog \{[\s\S]*?padding-top: var\(--app-safe-area-top\);/);
+  // The terminal's extra-keys row already pads by env(); in the app that is 0.
+  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\]:not\(\[data-keyboard-open\]\) \.terminal-extra-keys \{[\s\S]*?padding-bottom: var\(--app-safe-area-bottom\);/);
+  // iOS 16.4+ takes the installed app's viewport from the manifest, not from the
+  // page's meta tag: without cover there, the app has neither the full-bleed
+  // viewport nor the insets the shell's padding is written for.
+  assert.match(manifestSource, /viewport: "width=device-width, initial-scale=1, viewport-fit=cover"/);
 });
 
 test("collapses secondary composer chrome while the mobile keyboard is open", () => {

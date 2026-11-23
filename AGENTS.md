@@ -80,6 +80,27 @@ have been satisfied and verified.
 Your goal is to finish the task, even if it requires
 multiple context compactions and many execution cycles.
 
+### 6. Commit and push the verified work
+
+Verification is not the end of a task. Once the relevant
+suite passes:
+
+- `git add` the files this task changed, and only those.
+  Never stage a file the task did not touch (a user's own
+  uncommitted edits, generated `.next/`, screenshots), and
+  never `git add -A` in a tree you did not author fully.
+- Commit with a message that names the behavior fixed and
+  the cause, in the repo's `fix: …` style.
+- Push the branch the task named:
+  `git push -u origin <branch>`. Push after every
+  verification pass, so a compaction or a closed window
+  never leaves the work uncommitted.
+- Never force-push over a branch you did not author, and
+  never push `main` / `master` directly.
+- Report the commit and the pushed ref, with the working
+  tree clean (`git status --short` empty apart from files
+  that were already dirty).
+
 ## Quick Start
 
 ```bash
@@ -309,7 +330,7 @@ Read the doc for the area you touch before changing it. Upstream docs (no prefix
 - [scheduled-tasks.md](docs/agents/scheduled-tasks.md): scheduled tasks (the Scheduled page): server-side scheduler and its lease, catch-up and overlap rules, read-only default, the run index that hides runs from the project tree, why shared state is on `globalThis`. Files: `lib/scheduled-tasks/**`, `app/api/scheduled-tasks/**`, `instrumentation-node.ts`, `hooks/useScheduledTasks.ts`, `components/scheduled/**`, the Scheduled row in `components/SessionSidebar.tsx`, the page overlay in `components/AppShell.tsx`.
 - [artifacts.md](docs/agents/artifacts.md): inline HTML/SVG/React previews and `:::artifact` blocks, output vs process files on the Artifacts page: what renders where, the sandbox rules and the desktop `about:srcdoc` allowance, the auto-run rule for scripted pages, the bundled React runtime (inlined, because sandboxed frames cannot reach localhost; `npm run preview-runtime` regenerates it), the fix flow and the prompt switch, the cross-session Artifacts page. Files: `lib/artifacts.ts`, `lib/artifact-store.ts`, `lib/artifact-index.ts`, `lib/file-output-role.ts`, `lib/artifact-file-roles.ts`, `lib/artifact-favorites.ts`, `components/artifacts/**`, `lib/html-preview.ts`, `lib/html-preview-stream.ts`, `lib/preview-theme-kit.ts`, `lib/artifact-settings.ts`, `lib/artifact-guide-extension.ts`, `hooks/useArtifactPublisher.ts`, `hooks/useHtmlPreviewFrame.ts`, `lib/preview-runtime.ts`, `scripts/build-preview-runtime.mjs`, `public/preview-runtime/`, `components/Artifact*.tsx`, `components/HtmlPreview*.tsx`, `components/artifact-tabs.ts`, `app/api/artifacts/**`, `is_inline_frame_document` in `src-tauri/src/lib.rs`.
 - [remote-relay.md](docs/remote-relay.md): the end-to-end encrypted relay (Noise IK over a dumb relay, phone shell + tunnel service worker, pairing, request mark). Files: `lib/relay/**`, `relay/` (server, Docker), `relay-shell/` (`npm run relay:shell`), `app/api/relay/**`, `components/RelaySection.tsx`, `e2e/relay.mjs`; deploying: [remote-relay-deploy.md](docs/remote-relay-deploy.md). A request carrying the relay mark comes from a paired phone: it is never local (`isLocalRequest`), and local-only routes must ask `isLocalRequest()`, never a loopback Host.
-- [client-platform.md](docs/agents/client-platform.md): mobile software keyboard and viewport height, completion sound, the production page's service worker (the offline/unavailable fallback pages and their self-heal, the navigation budget, the browser's connection budget and the streams shared across tabs), production `--keepAliveTimeout`. Files: `hooks/useViewportHeight.ts`, `hooks/useAudio.ts`, the keyboard-open CSS, `public/sw.js`, `public/offline.html`, `public/unavailable.html`, `public/offline-recovery.js`, `components/PwaRegistration.tsx`, `bin/keep-alive.js`, `lib/file-watch-stream.ts`, `lib/file-watch-channel.ts`, `lib/running-sessions-stream.ts`, `lib/scheduled-tasks/shared-stream.ts`, `e2e/offline-navigation.mjs`.
+- [client-platform.md](docs/agents/client-platform.md): mobile software keyboard and viewport height, the installed web app's notch and home indicator (`data-standalone-safe-area`), completion sound, the production page's service worker (the offline/unavailable fallback pages and their self-heal, the navigation budget, the browser's connection budget and the streams shared across tabs), production `--keepAliveTimeout`. Files: `hooks/useViewportHeight.ts`, `hooks/useStandaloneSafeArea.ts`, the keyboard-open CSS, the installed-app inset block and the phone terminal's input field in `app/native-theme.css`, `public/sw.js`, `public/offline.html`, `public/unavailable.html`, `public/offline-recovery.js`, `components/PwaRegistration.tsx`, `bin/keep-alive.js`, `lib/file-watch-stream.ts`, `lib/file-watch-channel.ts`, `lib/running-sessions-stream.ts`, `lib/scheduled-tasks/shared-stream.ts`, `e2e/offline-navigation.mjs`.
 
 Fork notes:
 - [fork-sessions.md](docs/agents/fork-sessions.md): branch summaries, the not-yet-flushed new session, the SDK → wire → client event pipeline, the incremental session scanner, `useAgentSession` guards (request ids, load deadline, streaming seed, render-phase scroll save), compaction / retry / 0.86 events, `isRunning()` and `isIdle`, running-state propagation and reconciliation, session automation, the single-shot composer send, `!command` output, stats, transcript system messages, extension command session actions, the Process details collapse rule and a running turn's live tail, one Edited files card per turn with the live card above the composer, a long prompt's scroll box and its Expand, a file's diff as one session made it (`lib/session-file-diff.ts`), and why an assistant reply's content list stays dense (`lib/assistant-content.ts`).
@@ -327,6 +348,9 @@ Fork notes:
 
 ### Hard rules
 Each one undid a real regression; the linked note has the reasoning.
+- Never stage a file the task did not touch; never push `main`.
+  Section 6 of the notes above is the rule: commit the verified
+  work and `git push -u origin <branch>` after every pass.
 - An assistant reply's content list stays dense. The chat walks it with `for…of`/`.some`/spread, which do not skip holes, so one empty slot throws `undefined is not an object (evaluating 'block.type')`. `normalizeToolCalls` fills every message entering client state and `updateContentBlock` keeps the streaming entry dense; the collectors guard with `fillContentGaps` (`lib/assistant-content.ts`). Never write `content[i] =` on a reply and never iterate raw content in a new consumer. ([fork-sessions](docs/agents/fork-sessions.md))
 - `AgentSessionWrapper.isRunning()` ORs in `inner.isIdle === false`; dropping it evicts wrappers mid-retry. ([fork-sessions](docs/agents/fork-sessions.md))
 - Never assign `agent.state.systemPrompt` (a getter since pi 0.86). Exact prompts go only through `lib/exact-system-prompt.ts`; do not add a second path. ([fork-tools-subagents](docs/agents/fork-tools-subagents.md))
