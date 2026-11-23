@@ -72,6 +72,7 @@ import {
 } from "./side-session";
 import { SIDE_SESSION_NAME, sideChatNameFrom } from "./session-family";
 import { createSubagentController, getLiveSubagentStatus, hasUnsettledSubagentRun } from "./subagent-runtime";
+import { takeSubagentReportRun } from "./subagent-report-runs";
 import { isBuiltInSubagentsEnabled } from "./subagent-settings";
 import { generateSessionTitle } from "./session-title";
 import { isAutoTitleEnabled } from "./session-title-settings";
@@ -4049,6 +4050,11 @@ export async function startRpcSession(
       onAgentRunComplete: (completedSessionId, outcome) => {
         // The live session knows its own name; no need to scan every session file.
         const sessionName = inner.sessionManager.getSessionName() ?? null;
+        // A run started by a subagent's report is that subagent's ending, and a subagent
+        // finishing announces nothing: the user asked for no notice when one ends. The mark
+        // is set at the delivery and consumed here, so a run of a prompt the user typed is
+        // announced as usual (lib/subagent-runtime.ts).
+        if (takeSubagentReportRun(completedSessionId)) return;
         // One sender for every channel that needs no page: the phone push, the ntfy
         // message, the Mac's Notification Center row. Announced once per run, and never
         // for a run this process is only catching up on, nor for a run the user stopped

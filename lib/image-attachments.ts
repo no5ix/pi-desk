@@ -1,5 +1,12 @@
 export const MAX_ATTACHED_IMAGE_BYTES = 10 * 1024 * 1024;
-export const MAX_ATTACHED_IMAGES = 10;
+/**
+ * How many images one message may carry. No count stops a person any more: the composer
+ * used to stop a message at 10 images, which made a long screenshot paste a chore of
+ * splitting it up. What bounds a message is each image's own size cap and the request's
+ * byte budget. The number stays finite because the desktop file picker's count and the
+ * read-images route's payload guard derive from it (app/api/desktop/read-images/route.ts).
+ */
+export const MAX_ATTACHED_IMAGES = 1000;
 
 export interface Base64ImageAttachment {
   data: string;

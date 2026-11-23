@@ -364,3 +364,57 @@ Not verified on real hardware: an iPhone's Safari keyboard. The fix rests on Web
 focus rule, the emulation above (a tap that moves focus, on a rendered 16px editable field),
 and the user's own report that the tap worked after a restart — the fresh-field case that
 this branch turns into the normal case.
+
+# The second pass on the same seven (seconds, silence at the right moments, no 10-image wall)
+
+Recorded 2026-11-23 on `fix/keyboard-msg-time-subagent`, after the user's screenshots.
+
+## What changed and why
+- **Header clock**: the running count now shows its seconds and its days
+  (`1h50m32s`, `12d0h54m32s`) — `formatTurnDurationCompact(ms, { withSeconds: true })`.
+  A label that changes once a minute reads as frozen. The assistant footer keeps the
+  short `1h50m`. New test: "a clock that counts shows its seconds and its days".
+- **The clock is gone when the task ends**: `AppShell` renders `TopbarElapsed` only while
+  the selected session is in `runningSessionIds`. The user's pic5/pic6 were a finished main
+  session and a finished subagent session whose clocks kept ticking. A count that outlives
+  its run is a reading of the wall, not a clock.
+- **A failed run notifies nothing** (`announceRunEnd` → `skipped: "failed"`): the sentence
+  the phone, the topic and Notification Center would carry is the provider's own failure
+  text. The user's pic3 ("Run failed / synthetic API error (400): Offline interception,
+  type fixture") is exactly that, and much of it came from *tests* running real sessions in
+  this checkout. The failure stays in the chat and in the session file; the failed payload
+  builder in `lib/web-push.ts` stays for scheduled runs, which report their own failures.
+- **A subagent ending notifies nothing**: the report's delivery marks the parent
+  (`lib/subagent-report-runs.ts`), `lib/rpc-manager.ts` consumes the mark at the run's end,
+  and the page reaches the same conclusion from its transcript
+  (`finishedRunFacts` in `lib/finished-run-facts.ts`, carried on `AgentEndInfo`). One mark
+  per run, so the run of a prompt the user typed is announced as usual.
+- **No 10-image wall**: `MAX_ATTACHED_IMAGES` is 1000. The composer, the draft store and the
+  read-images route read the one constant; each image keeps its 10MB cap. The number stays
+  finite because the desktop picker's count and the route's payload guard derive from it.
+- **`git status` vs the Edited files card (pic1/pic4): no fix, as agreed.** The card lists
+  the files *one turn's* `write`/`edit`/`apply_patch` tool calls touched
+  (`lib/turn-written-files.ts`). Files the agent changed through the shell — heredocs,
+  scripts, `git mv` — are recorded as bash calls, not as file edits, so they cannot appear.
+  In the recorded turn that is all the session file holds: 8 file-edit records out of the
+  24 files that commit moved.
+
+## The lesson about stubs (the suite taught this, twice)
+`lib/rpc-manager*.test.mjs` and `lib/chat-protected-sends.test.mjs` stub `./subagent-runtime`
+when they load the manager. A helper added to that module and called from the manager is
+`undefined` under those stubs: the listener throws into its own `try`, the announcement
+never happens, and 12 integration tests fail while passing standalone. Small helpers the
+manager calls live in their **own** module (`lib/subagent-report-runs.ts`), which nobody
+stubs. The registry module is where the marks live; `lib/subagent-runtime.ts` imports it.
+
+## Verified
+- `npm test`: 4591 pass, 0 fail, 1 skipped.
+- `tsc --noEmit` clean; `eslint` 0 errors (7 pre-existing warnings in files this pass did not touch).
+- `node --experimental-strip-types --test e2e/terminal.mjs`: PASS (168s).
+- `npm run test:e2e` (production build in `.next-desktop`, `E2E_SERVER_MODE=start`): 39
+  files PASS. The one failure is the recorded pre-existing `e2e/terminal.mjs:338`
+  ("The terminal area is not visible") in the start-mode chain, where the dev server holds
+  `.next/dev/lock` — see the note above.
+- Build note for this shell: `next build` needs `TURBOPACK`, `NODE_ENV`,
+  `__NEXT_PRIVATE_ORIGIN` and `__NEXT_PRIVATE_STANDALONE_CONFIG` unset
+  (`Multiple bundler flags set: TURBOPACK=1, --webpack`).

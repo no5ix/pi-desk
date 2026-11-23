@@ -55,3 +55,12 @@ and only a synchronous `Agent` call carries the run in tool details.
 An ordinary extension message keeps its shape exactly: it starts open, its header stays a
 label, and a `display: false` message keeps its collapsed preview line.
 Pinned by `components/MessageView.subagent-report.test.mjs`.
+
+**A subagent ending notifies nothing.** A background report is delivered into the parent as
+a custom message that starts a turn, and the parent's run that answers it announces no
+completion on any channel: `lib/subagent-report-runs.ts` marks the parent at the delivery,
+`lib/rpc-manager.ts` consumes the mark at the run's end, and the page decides the same way
+from its own transcript (`finishedRunFacts` in `lib/finished-run-facts.ts`). One mark is
+spent per run, so the run of a prompt the user typed is announced as usual, and the child
+session itself was already silent (`suppressCompletionNotifications` in `lib/rpc-manager.ts`).
+The report card in the chat is the notice.

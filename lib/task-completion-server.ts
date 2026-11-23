@@ -57,7 +57,7 @@ export interface AttentionAnnounceRequest {
   requestId?: string;
 }
 
-export type AnnounceSkip = "aborted" | "stale" | "announced" | "cooldown";
+export type AnnounceSkip = "aborted" | "failed" | "stale" | "announced" | "cooldown";
 
 export interface AnnounceOutcome {
   skipped?: AnnounceSkip;
@@ -209,6 +209,11 @@ export async function announceRunEnd(
   const sent = { push: false, ntfy: false, local: false };
   const now = env.now();
   if (request.outcome.status === "aborted") return { skipped: "aborted", key: `${sessionId}|aborted`, sent };
+  // A run that ended in an error says nothing out loud. The sentence the phone, the topic
+  // and Notification Center would carry is the provider's own failure text (a 400, a
+  // quota, an offline proxy), and the user asked not to be shown it: the failure is in
+  // the chat, and it stays in the session file. Only a run that finished is announced.
+  if (request.outcome.status === "failed") return { skipped: "failed", key: `${sessionId}|failed`, sent };
 
   // A run this process has no numbers for asks the session's own file, so the phone and
   // the Mac read "the task lasted 0h18m13s …" instead of the short sentence. Best effort:

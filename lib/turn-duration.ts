@@ -87,18 +87,31 @@ export function getTurnDurationMs(messages: AgentMessage[], anchorIdx: number, e
 }
 
 /**
- * The same length in the header's and a footer's compact shape: `45s`, `12m30s`,
- * `1h50m`. Units a shorter turn has are left out, so a long task reads at a glance
+ * The same length in the compact shape a label reads at a glance: `45s`, `12m30s`,
+ * `1h50m`, `12d3h4m`. Units a shorter turn has are left out, so a long task reads
  * in the width a topbar label has.
+ *
+ * `withSeconds` keeps the seconds a ticking header needs: without them a running
+ * clock changes once a minute and looks frozen. A footer that states a finished
+ * length has no use for them, and `1h50m` is what fits beside Copy.
  */
-export function formatTurnDurationCompact(ms: number): string {
+export function formatTurnDurationCompact(ms: number, options: { withSeconds?: boolean } = {}): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   if (totalSeconds < 60) return `${totalSeconds}s`;
-  const minutes = Math.floor(totalSeconds / 60);
-  if (minutes < 60) return `${minutes}m${totalSeconds % 60}s`;
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest > 0 ? `${hours}h${rest}m` : `${hours}h`;
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) return `${totalMinutes}m${seconds}s`;
+  const totalHours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const withSeconds = options.withSeconds === true;
+  if (totalHours < 24) {
+    if (withSeconds) return `${totalHours}h${minutes}m${seconds}s`;
+    return minutes > 0 ? `${totalHours}h${minutes}m` : `${totalHours}h`;
+  }
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  if (withSeconds) return `${days}d${hours}h${minutes}m${seconds}s`;
+  return minutes > 0 ? `${days}d${hours}h${minutes}m` : `${days}d${hours}h`;
 }
 
 /** A turn's length as the chat shows it, in whole seconds: 14s, then 3m 5s, then 1h 2m 5s. */

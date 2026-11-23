@@ -235,20 +235,27 @@ The topbar renders exactly ONE toolbar group (`app-topbar-actions`: history/bran
 
 The title block (`app-topbar-title`) is the session title and, under it, one
 context row (`app-topbar-subtitle-row`): `[folder] project`, `[branch] branch`,
-`[clock] 1h50m`. The row replaced the old one-line `<small>` subtitle, which stays
+`[clock] 1h50m32s`. The row replaced the old one-line `<small>` subtitle, which stays
 `display: none`. The clock (`components/TopbarElapsed.tsx`, ticking in
 `hooks/useElapsedSince.ts`) counts from the conversation's last prompt, which
 `ChatWindow` reports up (`onLastPromptChange`, from `getUserInputText` scanning
 back): a background subagent's report, a compaction summary, and the side-chat
-boundary are custom messages, so they run the clock and never restart it. The
-label is `formatTurnDurationCompact` (`1h50m`) with `tabular-nums`, and the chip is
-a component of its own on purpose — a per-second render inside AppShell would
-re-render the shell, the sidebar and the chat column every second. The row is
-**visible on a phone** (`@media (max-width: 900px)` hides only the old `<small>`;
-`@media (max-width: 640px)` widens `.app-topbar-title` to `min(64vw, 340px)`): the
-header is the only place a phone sees the project, the branch and the elapsed
-time. Pinned by `components/AppShell.topbar-elapsed.test.mjs`, and the row's shape
-and the branch's contract by `components/AppShell.topbar-branch.test.mjs`.
+boundary are custom messages, so they run the clock and never restart it. It is
+rendered **only while the session runs** (`runningSessionIds.has(selectedSession.id)`):
+a count that keeps ticking after its task ended is not a clock, so the chip is gone
+the moment the run is over — on a main session and on a subagent's own session page
+alike. The label is `formatTurnDurationCompact(elapsed, { withSeconds: true })` —
+`1h50m32s`, `12d0h54m32s` — with `tabular-nums`; the seconds stay because a running
+clock that changes once a minute reads as frozen, while a finished turn's length in
+an assistant footer keeps the short `1h50m` (no options). The chip is a component of
+its own on purpose — a per-second render inside AppShell would re-render the shell,
+the sidebar and the chat column every second. The row is **visible on a phone**
+(`@media (max-width: 900px)` hides only the old `<small>`; `@media (max-width: 640px)`
+widens `.app-topbar-title` to `min(64vw, 340px)`): the header is the only place a
+phone sees the project, the branch and the elapsed time. The clock never wraps
+(`flex: 0 0 auto`); on the narrowest phones it is the *branch* that ellipsizes.
+Pinned by `components/AppShell.topbar-elapsed.test.mjs`, and the row's shape and the
+branch's contract by `components/AppShell.topbar-branch.test.mjs`.
 
 ## The right panel opens on a terminal
 

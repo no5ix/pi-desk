@@ -1510,6 +1510,12 @@ export function AppShell() {
 
     // A stopped run did not finish a task: refresh, but announce nothing.
     if (end?.aborted) return;
+    // Two endings announce nothing to this browser. A run that only answered a subagent's
+    // report is that subagent's ending, and a subagent finishing must stay quiet; a run that
+    // ended in an error has the provider's failure text, which belongs in the chat and not
+    // in a notification. The server's announcer skips the same two (lib/rpc-manager.ts,
+    // lib/task-completion-server.ts), so no channel says what this page would say.
+    if (end?.answeredSubagentReport || end?.failed) return;
     if (isHiddenRelation(selectedSession?.relation)) return;
 
     // The page's own banner: the one channel no server can raise. The finished task
@@ -2474,10 +2480,13 @@ export function AppShell() {
                     <span>{topBarBranch}</span>
                   </small>
                 )}
-                {/* The live clock after the branch: how long the task has been
-                    running since the last prompt. It ticks in its own component,
-                    so a second passing re-renders this label and not the shell. */}
-                {showChat && !pageOpen && <TopbarElapsed since={lastPromptAt} />}
+                {/* The live clock after the branch: how long the running task has
+                    taken since its prompt. Only a running session has one — a count
+                    that keeps ticking after its task ended is not a clock, it is a
+                    reading of the wall. It ticks in its own component, so a second
+                    passing re-renders this label and not the shell. */}
+                {showChat && !pageOpen && selectedSession !== null && runningSessionIds.has(selectedSession.id)
+                  && <TopbarElapsed since={lastPromptAt} />}
               </span>
             )}
           </div>

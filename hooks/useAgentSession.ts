@@ -203,6 +203,14 @@ export interface AgentEndInfo {
   startedAt?: number;
   /** When the run settled. */
   endedAt?: number;
+  /**
+   * The run answered a subagent's report, so its end is that subagent's ending and not the
+   * end of a task the user is waiting on. ChatWindow sets it from the transcript: the page's
+   * own banner skips such a run, as the server's announcer does (lib/subagent-runtime.ts).
+   */
+  answeredSubagentReport?: boolean;
+  /** The run's last reply carries an error. A failure is read in the chat, not announced. */
+  failed?: boolean;
 }
 
 export interface UseAgentSessionOptions {

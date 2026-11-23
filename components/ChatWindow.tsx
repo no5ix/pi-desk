@@ -34,6 +34,7 @@ import { useDragDrop } from "@/hooks/useDragDrop";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { useArtifactPublisher } from "@/hooks/useArtifactPublisher";
 import type { SessionStatsInfo } from "@/lib/pi-types";
+import { finishedRunFacts } from "@/lib/finished-run-facts";
 import { importDroppedProjectFiles, partitionChatDroppedFiles } from "@/lib/chat-file-drop";
 import { formatAttachmentSize } from "@/lib/chat-attachments";
 import type { ToolEntry } from "@/lib/tool-presets";
@@ -316,12 +317,16 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   const soundEnabledRef = useRef(soundEnabled);
   soundEnabledRef.current = soundEnabled;
   const extensionDialogShownRef = useRef(false);
+  const messagesRef = useRef<AgentMessage[]>([]);
   const wrappedOnAgentEnd = useCallback((end: AgentEndInfo) => {
     // A stopped run did not finish anything: no completion sound (pi's `agent_settled.aborted`).
     if (!end.aborted && completionNotificationsEnabled && soundEnabledRef.current) {
       playDoneSoundRef.current();
     }
-    onAgentEnd?.(end);
+    // The transcript says what kind of run just ended, and the notification rules read that:
+    // a run that answered a subagent's report, and a run that ended in an error, announce
+    // nothing (AppShell keeps the page's banner to a finished task).
+    onAgentEnd?.({ ...end, ...finishedRunFacts(messagesRef.current) });
   }, [completionNotificationsEnabled, onAgentEnd]);
 
   const initialScrollPositionRef = useRef(searchTarget ? null : initialScrollPosition ?? null);
@@ -366,6 +371,10 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     deferInitialScroll: Boolean(pendingScrollRestore),
     onScrollPositionChange,
   });
+  // The wrapper around a run's end reads the transcript through a ref: it stays a stable
+  // callback for useAgentSession (the hook re-syncs it every render) while still seeing the
+  // messages that just settled, which is what the notification rules read.
+  messagesRef.current = messages;
   const sessionBusy = agentRunning || bashRunning;
   // A refused thinking level's error opens Settings › Models on that model.
   const openModelSettings = useCallback((provider: string, modelId: string) => {

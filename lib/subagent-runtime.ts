@@ -43,6 +43,7 @@ import type { McpHost } from "./mcp-host";
 import { createSubagentMcpPolicyExtension } from "./mcp-read-only-policy";
 import { resolveShellTools } from "./powershell-settings";
 import { isBuiltInSubagentsEnabled, readSubagentSettings } from "./subagent-settings";
+import { markSubagentReportRun } from "./subagent-report-runs";
 import { SubagentQueue } from "./subagent-queue";
 import { addWorktree, removeWorktree } from "./worktree";
 import { randomUUID } from "node:crypto";
@@ -1023,6 +1024,9 @@ export function createSubagentController(
     }
     if (takeResultConsumed(run)) return;
     if (!parent.isAlive()) throw new Error(`Parent session is no longer available: ${run.parentSessionId}`);
+    // This delivery starts the parent's next run, and that run's end is this subagent's
+    // ending. Marked here so the announcement of that run is skipped (see `takeSubagentReportRun`).
+    markSubagentReportRun(run.parentSessionId);
     const delivery = parent.inner.sendCustomMessage({
       customType: "pi-web:subagent-notification",
       content: subagentNotificationText(run),

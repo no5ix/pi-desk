@@ -258,6 +258,7 @@ lib/
   session-file-diff.ts  a file's diff rebuilt from one session's write/edit/apply_patch records
   session-last-run.ts   a session file's last run: its start, end, and how long (the notification's numbers)
   task-completion-notice.ts  this browser's own banner for a finished task (the server announces the rest)
+  finished-run-facts.ts  what a finished run was (a subagent's report, an error) — the page's notification rules
   task-completion-server.ts  the one announcer of a finished run: push + ntfy + macOS notification, once per run
   notification-tags.ts  the notification tag and the windows every channel shares (public/sw.js mirrors it)
   local-notification.ts  the macOS notification the server raises, and the installation's switch

@@ -29,8 +29,8 @@ test("the clock chip sits after the branch, in the project row", () => {
   const branchAt = row.indexOf('className="app-topbar-branch"');
   assert.ok(projectAt > 0 && branchAt > 0, "the project and the branch render in the same row");
   assert.ok(projectAt < branchAt, "[folder] project, then [branch] branch, then the clock");
-  assert.match(appShell, /\{showChat && !pageOpen && <TopbarElapsed since=\{lastPromptAt\} \/>\}/,
-    "a page (Tasks, Calendar, Artifacts) has no conversation, so it shows no clock");
+  assert.match(appShell, /\{showChat && !pageOpen && selectedSession !== null && runningSessionIds\.has\(selectedSession\.id\)\s*&&\s*<TopbarElapsed since=\{lastPromptAt\} \/>/,
+    "a page (Tasks, Calendar, Artifacts) has no conversation, and a session whose task has ended has no running clock: a count that outlives its run is a reading of the wall");
 });
 
 test("the value comes from the chat, and a session switch clears it", () => {
@@ -54,7 +54,8 @@ test("the count ticks, and only the chip re-renders", () => {
   assert.match(topbarElapsed, /if \(elapsed === null\) return null;/, "no prompt, no chip: the hydration render has no session");
   assert.match(topbarElapsed, /<small className="app-topbar-elapsed"/);
   assert.match(topbarElapsed, /<ClockIcon size=\{11\} \/>/);
-  assert.match(topbarElapsed, /\{formatTurnDurationCompact\(elapsed\)\}/, "1h50m, not 1h 50m 12s");
+  assert.match(topbarElapsed, /\{formatTurnDurationCompact\(elapsed, \{ withSeconds: true \}\)\}/,
+    "a running clock shows its seconds; without them it changes once a minute and reads as frozen");
   assert.match(topbarElapsed, /title=\{t\("chat\.elapsedSincePrompt", \{ duration: formatTurnDuration\(elapsed\) \}\)\}/,
     "the tooltip carries the exact length the label rounds away");
   assert.match(hook, /const tick = \(\) => setElapsed\(Math\.max\(0, Date\.now\(\) - since\)\);/);
