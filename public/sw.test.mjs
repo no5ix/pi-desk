@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test, { mock } from "node:test";
+import { pathToFileURL } from "node:url";
 
 const listeners = new Map();
 globalThis.self = {
@@ -521,3 +525,90 @@ test("a response that arrives in time is not cut off mid-stream", async () => {
     mock.timers.reset();
   }
 });
+
+test("the development worker is push-only: no precache, no fetch handling, a clean cache", async () => {
+  // Development registers this same script as `?v=dev` so a phone added to the Home Screen
+  // can subscribe to notifications while the Mac runs `npm run dev`. It must stay out of the
+  // page's requests: development chunk URLs are not content-hashed and the dev server is the
+  // thing being edited, so a cache-first asset pins the previous build and the user sees
+  // none of their change. The offline fallback pages are production's job as well.
+  const dev = new Map();
+  const savedSelf = globalThis.self;
+  const savedCaches = globalThis.caches;
+  const opened = [];
+  const deleted = [];
+  globalThis.self = {
+    location: { href: "https://pi.test/sw.js?v=dev", origin: "https://pi.test" },
+    addEventListener: (type, listener) => dev.set(type, listener),
+    clients: { claim: async () => {} },
+    skipWaiting: async () => {},
+  };
+  globalThis.caches = {
+    keys: async () => ["pi-web-static-9.9.9", "pi-web-runtime", "someone-elses-cache"],
+    open: async () => { opened.push("static"); return { addAll: async () => {} }; },
+    delete: async (key) => { deleted.push(key); return true; },
+  };
+
+  let installPending;
+  let devScript;
+  let dir;
+  try {
+    // A second instance of the same script, so it reads the development location. Node
+    // caches a module by its resolved file, so the script is copied to run again.
+    dir = await mkdtemp(join(tmpdir(), "pi-sw-"));
+    devScript = join(dir, "sw-development.js");
+    await copyFile(new URL("./sw.js", import.meta.url), devScript);
+    await import(pathToFileURL(devScript).href);
+
+      dev.get("install")({ waitUntil: (promise) => { installPending = promise; } });
+      await installPending;
+      assert.deepEqual(opened, [], "nothing is precached in development");
+
+      let activatePending;
+      dev.get("activate")({ waitUntil: (promise) => { activatePending = promise; } });
+      await activatePending;
+      assert.deepEqual(deleted, ["pi-web-static-9.9.9", "pi-web-runtime"],
+        "the caches a production run on this origin left behind go, and only those");
+
+      let responded = false;
+      dev.get("fetch")({
+        request: { method: "GET", url: "https://pi.test/_next/static/chunk.js", mode: "navigate" },
+        respondWith: () => { responded = true; },
+      });
+      await flushMicrotasks();
+      assert.equal(responded, false, "every development request goes to the dev server untouched");
+
+      // Push is the reason the development worker exists at all.
+      const shown = [];
+      globalThis.self.registration = {
+        showNotification: async (title, options) => { shown.push({ title, options }); },
+        getNotifications: async () => [],
+      };
+      globalThis.self.clients = {
+        matchAll: async () => [],
+        openWindow: async () => assert.fail("push must not open windows"),
+      };
+      let pushPending;
+      dev.get("push")({
+        data: {
+          json: () => ({
+            title: "don't modify anything, just say hi to me.",
+            body: "The task lasted 0h1m49s, started at 08:13:02, and ended at 08:14:51. This notification pops up at 08:14:51.",
+            url: "/chat?session=s-1",
+            tag: "pi-agent-desktop",
+            kind: "complete",
+          }),
+        },
+        waitUntil: (promise) => { pushPending = promise; },
+      });
+      await pushPending;
+
+      assert.equal(shown.length, 1, "a phone on `npm run dev` gets its notification");
+      assert.equal(shown[0].title, "don't modify anything, just say hi to me.");
+    } finally {
+      if (dir) await rm(dir, { recursive: true, force: true });
+      globalThis.self = savedSelf;
+      if (savedCaches === undefined) delete globalThis.caches;
+      else globalThis.caches = savedCaches;
+    }
+  });

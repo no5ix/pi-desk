@@ -1,5 +1,12 @@
 const CACHE_PREFIX = "pi-web";
 const CACHE_VERSION = new URL(self.location.href).searchParams.get("v") || "dev";
+// The version query also says what this worker is *for*. Development registers the same
+// script as `?v=dev` for one job: web push, so a phone added to the Home Screen and pointed
+// at `npm run dev` over Tailscale can subscribe and get its notification. Development gets
+// no offline machinery at all: its chunk URLs are not content-hashed and the server is the
+// thing being edited, so a cache-first asset or a worker-answered navigation pins the
+// previous build and the user sees none of their change.
+const OFFLINE_MODE = CACHE_VERSION !== "dev";
 const STATIC_CACHE = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
 // The two fallback pages split the two failures. A port that refuses the connection has no
@@ -29,6 +36,11 @@ const NAVIGATION_TIMEOUT_MS = 15000;
 const ASSET_TIMEOUT_MS = 8000;
 
 self.addEventListener("install", (event) => {
+  if (!OFFLINE_MODE) {
+    // Push only: precaching the offline pages and the icons is the offline build's work.
+    event.waitUntil(self.skipWaiting());
+    return;
+  }
   event.waitUntil(
     caches
       .open(STATIC_CACHE)
@@ -38,6 +50,25 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
+  if (!OFFLINE_MODE) {
+    // A production run on this same origin (`npm start`, the packaged app) filled
+    // `pi-web-*` caches, and a worker that served them cache-first is scoped to the origin,
+    // not to the server. Delete every one: this worker never reads them, and leaving them
+    // behind is how a dev page ends up running a previous build's JavaScript.
+    event.waitUntil(
+      Promise.resolve()
+        .then(() => caches.keys())
+        .then((keys) =>
+          Promise.all(
+            keys
+              .filter((key) => key.startsWith(`${CACHE_PREFIX}-`))
+              .map((key) => caches.delete(key)),
+          ),
+        )
+        .then(() => self.clients.claim()),
+    );
+    return;
+  }
   event.waitUntil(
     caches
       .keys()
@@ -53,6 +84,8 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  // Development: the dev server answers every request, so the page runs the code on disk.
+  if (!OFFLINE_MODE) return;
   const { request } = event;
   if (request.method !== "GET") return;
 

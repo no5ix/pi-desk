@@ -66,9 +66,11 @@ test("a finished run announces the session name and the sentence on every channe
   assert.match(serverNotice, /status: "done" \| "failed" \| "aborted"/);
   assert.match(serverNotice, /env\.publishNtfy\(\{ title: message\.title, body: message\.body, priority: NTFY_PRIORITY \}\)/);
   assert.match(serverNotice, /env\.raiseLocal\(\{ title: message\.title, body: message\.body \}\)/);
-  assert.match(serverNotice, /env\.notifyPush\(sessionId, event, sessionName\)/);
-  assert.match(serverNotice, /sessionPushPayload\(sessionId, sessionName \?\? undefined, event, settings\.locale\)/,
-    "one payload builder, so the phone, the topic and Notification Center say the same sentence");
+  assert.match(serverNotice, /env\.notifyPush\(sessionId, event, parts\.title\)/);
+  assert.match(serverNotice, /sessionPushPayload\(sessionId, parts\.title, event, settings\.locale\)/,
+    "one payload builder, so the phone, the topic and Notification Center say the same sentence under the same title");
+  assert.match(serverNotice, /const title = sessionName\?\.trim\(\)\s*\|\|\s*\(await env\.sessionTitle\(sessionId\)/,
+    "the title is the live session's name, and a session with none is titled by its first prompt (lib/session-prompt-title.ts)");
   assert.match(client, /if \(response\.ok\) return \{ sent: true \};/, "the completion path is fire-and-forget");
 });
 

@@ -3,6 +3,7 @@ import { raiseMacNotification, readLocalNotificationSettings } from "./local-not
 import { publishNtfyMessage, type NtfyPublishResult } from "./ntfy-publish";
 import { resolveSessionPath } from "./session-reader";
 import { readLastRunTimes } from "./session-last-run";
+import { readPromptTitle } from "./session-prompt-title";
 import {
   completionAnnouncement,
   notifySessionEvent,
@@ -91,6 +92,12 @@ export interface CompletionAnnounceEnv {
    * (a queued prompt, a wrapper restored mid-run, a run started from another device).
    */
   lastRun: (sessionId: string) => Promise<{ startedAt: number; endedAt: number } | null>;
+  /**
+   * The session's own title for a run whose live session carries no name: its first prompt,
+   * the way the sidebar names the row (`lib/session-prompt-title.ts`). Null when the file has
+   * no prompt in it, which leaves the run with no title and therefore no announcement.
+   */
+  sessionTitle: (sessionId: string) => Promise<string | null>;
 }
 
 /** At most one "waiting for you" push per session in this window. */
@@ -192,6 +199,11 @@ const ENV_DEFAULTS: CompletionAnnounceEnv = {
     }
     return { startedAt: last.startedAt, endedAt: last.endedAt };
   },
+  sessionTitle: async (sessionId) => {
+    const filePath = await resolveSessionPath(sessionId).catch(() => null);
+    if (!filePath) return null;
+    return readPromptTitle(filePath).catch(() => null);
+  },
 };
 
 /**
@@ -238,13 +250,21 @@ export async function announceRunEnd(
   }
   // The format is fixed, on every channel: the **title** is the session's name, and the
   // **content** is the run's one sentence ("The task lasted 0h18m13s, started at 10:04:34,
-  // and ended at 10:22:47. This notification pops up at 10:22:47."). A run whose name or
-  // span is missing could only be sent as "Session complete" / "Task finished.", which
-  // cannot say which task ended or how long it took — the user asked never to see that
-  // format, so such a run announces nothing at all. A session gets its name from
-  // auto-naming; the span comes from the run, or from its own file (`lastRun`).
-  if (!completionAnnouncement(sessionName, outcome)) {
-    const skipped: AnnounceSkip = sessionName?.trim() ? "no-span" : "unnamed";
+  // and ended at 10:22:47. This notification pops up at 10:22:47.").
+  //
+  // The title is the session's name, and a session that has none yet (nobody renamed it and
+  // auto-naming has not named it) is titled the way the sidebar titles its row: its first
+  // prompt. "Session complete" is the wrong format — it cannot say which task ended — and
+  // silence for every session with auto-naming off is not a better answer. A session with no
+  // prompt at all in its file is the only one left untitled, and it announces nothing.
+  const title = sessionName?.trim()
+    || (await env.sessionTitle(sessionId).catch(() => null))?.trim()
+    || null;
+  // The span is the other half: a run with no numbers can only say "Task finished.", which
+  // is the same wrong format, so it is skipped too (`withSpan` already asked the file).
+  const parts = completionAnnouncement(title, outcome);
+  if (!parts) {
+    const skipped: AnnounceSkip = title ? "no-span" : "unnamed";
     return { skipped, key, sent };
   }
   const book = ledger();
@@ -254,10 +274,10 @@ export async function announceRunEnd(
   const settings = env.localSettings();
   // One payload builder for every channel, so the phone, the topic and Notification
   // Center read exactly the same sentence about one finished task.
-  const message = sessionPushPayload(sessionId, sessionName ?? undefined, event, settings.locale);
+  const message = sessionPushPayload(sessionId, parts.title, event, settings.locale);
 
   const [push, ntfy, local] = await Promise.all([
-    env.notifyPush(sessionId, event, sessionName).then(() => true, () => false),
+    env.notifyPush(sessionId, event, parts.title).then(() => true, () => false),
     env.publishNtfy({ title: message.title, body: message.body, priority: NTFY_PRIORITY })
       .then((result) => result.sent, () => false),
     // The Mac's own row is the installation's switch; the push has none, because a

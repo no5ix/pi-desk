@@ -99,7 +99,7 @@ export function NtfyNotificationSection() {
       if (result.sent) setNote(t("ntfyNotify.testSent"));
       else setError(result.error ? t("ntfyNotify.testFailedWithError", { error: result.error }) : t("ntfyNotify.testFailed"));
     });
-  }, [locale, translate]);
+  }, [locale, t, translate]);
 
   const editable = settings?.local === true;
   const hint = settings === null

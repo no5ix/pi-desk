@@ -13,6 +13,11 @@ import { isTauriDesktop } from "@/lib/desktop-updater";
  * the previous build's bundles. The page then renders HTML from the current server with
  * JavaScript from the old one, which React reports as a hydration mismatch and the user
  * sees as "my changes are not there".
+ *
+ * The desktop shell needs this outright: it has no offline requirement and no reason to
+ * keep a worker between installs. A browser that mixes a production run and `npm run dev`
+ * on one origin is handled by the dev worker itself, whose activate deletes every
+ * `pi-web-*` cache.
  */
 function forgetWorkers(): void {
   if (!("serviceWorker" in navigator)) return;
@@ -41,15 +46,6 @@ export function PwaRegistration() {
       forgetWorkers();
       return;
     }
-    // Development has no offline requirement either, and its chunk URLs are not
-    // content-hashed: a cache-first worker would pin the previous build. A worker left
-    // from a production run (`npm start`, the packaged app) on this same host and port
-    // keeps intercepting the dev page, so remove it — this is what made a dev server's
-    // changes invisible in a browser that had opened the built app.
-    if (process.env.NODE_ENV !== "production") {
-      forgetWorkers();
-      return;
-    }
     if (!("serviceWorker" in navigator)) {
       return;
     }
@@ -57,9 +53,16 @@ export function PwaRegistration() {
     // entry host, and registering ours would replace it and cut the connection.
     if (window.self !== window.top) return;
 
+    // Development registers the same worker as `?v=dev`, and that worker does one thing:
+    // web push. It precaches nothing, answers no navigation, and clears the caches a
+    // production run left on this origin, so the dev page still runs the code on disk while
+    // a phone added to the Home Screen can subscribe through Tailscale and get its
+    // notification — which is how the phone path gets tested at all.
+    const appVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? "dev";
+    const version = process.env.NODE_ENV !== "production" ? "dev" : appVersion;
+
     const register = () => {
-      const appVersion = process.env.NEXT_PUBLIC_APP_VERSION ?? "dev";
-      const scriptUrl = `/sw.js?v=${encodeURIComponent(appVersion)}`;
+      const scriptUrl = `/sw.js?v=${encodeURIComponent(version)}`;
 
       void navigator.serviceWorker.register(scriptUrl, {
         scope: "/",

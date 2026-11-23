@@ -30,9 +30,16 @@ Branch: `fix/notification-double-and-missing` (from `pi-desk-main`).
 * `COMPLETION_NOTICE_MAX_AGE_MS` (5 min) drops a run the page learned about late —
   correct for a reconnect, and also the reason a long task in a background tab can go
   unannounced.
-* In `npm run dev` the service worker is unregistered (`components/PwaRegistration.tsx`),
-  so there is no push subscription at all and the banner falls back to the page
-  `Notification` constructor (Chrome yes, plain Safari tab no).
+* Development registers the worker as `?v=dev` (`components/PwaRegistration.tsx`): the
+  push-only build, which precaches nothing, answers no request, and deletes every
+  `pi-web-*` cache a production run left on the origin. A phone added to the Home Screen can
+  therefore subscribe while the Mac runs `npm run dev` — the switch in Settings › General
+  reads "This browser can't receive notifications" only with no registration (a plain Safari
+  tab: iOS exposes push to installed web apps, not to the browser).
+* The announcement's title is the session's name; a session the live session cannot name is
+  titled by its first prompt, the sidebar's own rule (`lib/session-prompt-title.ts`). Silence for
+  an unnamed session was the reason a finished run said nothing at all with "name sessions
+  automatically" switched off.
 
 ### Why the phone buzzes with nothing running
 

@@ -506,3 +506,67 @@ cannot be said that way is never sent.
 - Real Chromium at 1240 px, dark and light: `Save` computed `236,236,236` fill + dark bold
   label, `Send Test Notice` transparent with `1px` border — the Network proxy pair.
 - `tsc --noEmit` clean; `eslint` 0 errors (5 pre-existing warnings in untouched files).
+
+---
+
+# Fix: a finished run announced nothing, and the phone's switch was dead (2026-02-02)
+
+## The reports
+* *"I ran a task and got no local notification and no ntfy notification"* (pic1: a 15 s run
+  in a **brand new** session, answered normally in the chat).
+* *"On the iPhone, added to the Home Screen, `Notify this device` is grey with 'This browser
+  can't receive notifications. On iPhone, add Pi to the Home Screen…' — I should be able to
+  turn it on"* (pic2, phone pointed at `npm run dev` over Tailscale Serve).
+
+## Cause 1 — the announcement demanded a name that a fresh session cannot have
+`lib/task-completion-server.ts` takes the title from `lib/rpc-manager.ts`'s
+`sessionManager.getSessionName()`, which is **null for the first run of a new session**
+(auto-naming answers after the turn, and the switch can be off entirely). The format judge of
+the last commit then returned `skipped: "unnamed"`, and all three channels — phone push, ntfy,
+Notification Center — went silent together. The rule was right ("Session complete" is the wrong
+format); the name lookup was too narrow.
+
+* `lib/session-prompt-title.ts` (new): the title the **sidebar** gives a row with no name — the
+  session's first prompt, one line, capped at the same 80 characters a generated name gets
+  (`MAX_TITLE_LENGTH` in `lib/session-title.ts`). A head read of 256 KB, never throws.
+* `lib/task-completion-server.ts`: the env gained `sessionTitle(sessionId)`, asked **only** when
+  the live name is missing (a named session never touches its file). Order: live name → first
+  prompt → `skipped: "unnamed"`. A read that throws is swallowed into silence, never into a
+  fallback title.
+* Near-miss worth remembering: this module nearly shipped **as** `lib/session-title.ts`, which is
+  auto-naming (asks a model for a summary; `app/api/sessions/[id]/auto-name`, `lib/rpc-manager.ts`
+  import it). `tsc` caught the overwrite; the file and its test were restored from HEAD.
+
+## Cause 2 — development had no service worker, and push needs one
+`components/PwaRegistration.tsx` **unregistered** every worker outside production, so
+`lib/push-client.ts:getPushDeviceState()` found no registration and reported `unsupported`,
+which is the grey switch. An iPhone can only subscribe through a registration in the installed
+web app, so a phone on `npm run dev` never had a way to turn notifications on — and `npm run dev`
+over Tailscale is how the phone path gets exercised at all.
+
+* Development registers the same worker as **`?v=dev`**, and `public/sw.js` reads that query as
+  `OFFLINE_MODE = CACHE_VERSION !== "dev"`:
+  - dev `install` precaches nothing (only `skipWaiting`),
+  - dev `activate` deletes every `pi-web-*` cache a production run left on the origin (a worker
+    is scoped to the origin and outlives the server that installed it — that was the reason for
+    the old `forgetWorkers()`), and claims clients,
+  - dev `fetch` returns immediately: every request goes to the dev server, so the page runs the
+    code on disk and no unhashed chunk URL is ever cache-first.
+* The desktop shell keeps `forgetWorkers()`; a plain iOS Safari tab (not installed) still reports
+  the hint, which is true: iOS exposes push to installed web apps, not to the browser.
+
+## Verified
+- `lib/session-prompt-title.test.mjs` (new), `lib/task-completion-server.test.mjs` (the first
+  prompt titles a nameless session; the live name wins and the file is not read; a throwing read
+  is silence), `components/NtfyNotificationSection.test.mjs` (the announcer's title line).
+- `public/sw.test.mjs`: a **second instance** of the worker loaded from a temp copy with
+  `?v=dev` (Node caches a module by its resolved file, so the script is copied): no precache, no
+  answered request, `pi-web-*` caches deleted, and a push still shows a notification.
+  `components/PwaRegistration.test.mjs` pins the dev registration and the removal of the
+  dev-side unregister.
+- Full suite `4584` tests: 0 failures in the code (one `lib/relay/connector.test.mjs` timing test
+  flaked under `--test-concurrency=4` and passes alone). `tsc --noEmit` clean. `eslint` 0 errors,
+  5 pre-existing warnings (the ntfy `test` callback's missing `t` dependency, added by this
+  branch, is fixed).
+- Deploy note for the user: restart the dev server (the worker script changes), reload the
+  Home Screen app, then turn "Notify this device" on; iOS asks for permission on the tap.

@@ -70,9 +70,11 @@ export async function setupPushSubscription(locale: string): Promise<boolean> {
 export type PushDeviceState = "unsupported" | "denied" | "off" | "on";
 
 /**
- * The page's service worker, or undefined when there is none: it registers only
- * in production builds and never inside the desktop shell, where `ready` would
- * wait forever. A first load may still be registering, so `ready` gets a moment.
+ * The page's service worker, or undefined when there is none: the desktop shell registers
+ * none at all, and a web page registers the production build (offline) or the development
+ * build (`?v=dev`, push only) — a browser with no registration cannot subscribe, which is
+ * what the "Notify this device" switch reports. A first load may still be registering, so
+ * `ready` gets a moment.
  */
 async function pushRegistration(): Promise<ServiceWorkerRegistration | undefined> {
   const existing = await navigator.serviceWorker.getRegistration();
