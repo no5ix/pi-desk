@@ -395,7 +395,7 @@ export function createSubagentExtension(
       pi.registerTool(defineTool({
         name: "get_subagent_result",
         label: "Get agent result",
-        description: "Retrieve a subagent session's latest result, such as a report no longer in the conversation. A background run's report arrives on its own when it completes.",
+        description: "Retrieve a subagent session's latest result, such as a report no longer in the conversation. Take the id create_subagent returned, never this session's own id. A background run's report arrives on its own when it completes.",
         exposure: SUBAGENT_TOOL_EXPOSURE,
         parameters: Type.Object({
           agent_id: Type.String({ description: "Subagent session ID." }),
@@ -423,7 +423,15 @@ export function createSubagentExtension(
           } else {
             run = await runtime.get(params.agent_id);
           }
-          if (!run) return { content: [{ type: "text", text: withSubagentCandidates(`Subagent not found: ${params.agent_id}`, ctx?.sessionManager) }], details: undefined, isError: true };
+          if (!run) {
+            // A steered report is delivered into the parent's own run, so the parent's id is the
+            // one an agent reaches for when its child's report is not in the transcript (#1727).
+            const ownId = ctx?.sessionManager?.getSessionId?.();
+            const own = params.agent_id === ownId
+              ? " That is this session's own id: a report steered into a running parent is delivered into the parent's own transcript, not into a run record. Poll the id create_subagent returned."
+              : "";
+            return { content: [{ type: "text", text: withSubagentCandidates(`Subagent not found: ${params.agent_id}${own}`, ctx?.sessionManager) }], details: undefined, isError: true };
+          }
           // A foreground call that hit its wait limit also owes a completion notification.
           // Mark every collected terminal run so either notification path can suppress duplicates.
           if (TERMINAL_SUBAGENT_STATUSES.has(run.status)) runtime.markResultConsumed(run);

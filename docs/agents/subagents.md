@@ -88,7 +88,10 @@ the report then wakes the parent as a follow-up as it always did, when the paren
 holds input typed in its chat (in `one-at-a-time` steering that input is read first), after a turn
 whose response errored or was aborted, once Stop aborted the run, and for a parent that is itself
 a subagent that has used its turns (`turnsUsed` / `turnLimitReached` in the run map). An idle
-parent is woken at once, unchanged.
+parent is woken at once, unchanged. `get_subagent_result` refuses an id that resolves to no run,
+and when that id is the calling session's own it says so: the steered report is in the parent's
+transcript, not in a run record, and the ids to poll are the ones `create_subagent` returned
+(`withSubagentCandidates` lists this session's latest subagents).
 
 **A subagent ending notifies nothing.** A background report that *wakes* the parent is delivered
 as a custom message that starts a run, and that run announces no completion on any channel:
