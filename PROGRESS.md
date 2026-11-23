@@ -302,3 +302,65 @@ Not verified on real hardware: an iPhone's Safari keyboard and a home-screen
 install. Both fixes rest on the same source-verified behavior (WebKit's touch
 focus rule, the 0 inset + 48px bar in an installed app) and on the emulation
 above, not on a device.
+
+## The panel's default tab, a phone's terminal keyboard, the running clock
+
+Branch `fix/keyboard-msg-time-subagent` (from `pi-desk-main`), commit `1168a6ff`.
+
+- **The right panel opens on a shell, not the file list.** `handleRightPanelToggle`
+  activates a live terminal tab, or calls `handleOpenTerminal(visibleProjectCwd)` when
+  the project has none; the tree is behind its own header button and stays the fallback
+  only where no shell exists (a chat, whose `visibleProjectCwd` is null). The toggle is
+  declared after `handleOpenTerminal` — a `useCallback` dependency array is read during
+  render, so declaring it first reads an uninitialized `const`.
+- **A phone's terminal keyboard.** WebKit opens the keyboard when focus *arrives* at an
+  editable field during the touch. The panel focuses xterm's helper field when the PTY
+  connects, so every tap found it already focused: no focus event, no keyboard, however
+  many taps — while a tap after *Restart terminal* worked, because a restart builds a
+  fresh, unfocused field. `TerminalPanel.tsx` now blurs a focused field before focusing
+  it, clears `disableStdin` on the first SSE message (a `readOnly` field never raises a
+  keyboard; EventSource's `open` is not guaranteed on WebKit), and publishes its field to
+  `lib/terminal-focus.ts`, a module registry, because the panel is `dynamic()`-loaded and
+  `AppShell` owns the panel toggle and the Explorer's terminal action. A terminal created
+  by the same tap that opens the panel has no field during the gesture, so its keyboard
+  arrives with the next tap.
+- **The header's `[folder] project  [branch] branch  [clock] 1h50m`.** `ChatWindow`
+  reports the last prompt (`onLastPromptChange`), `AppShell` holds it, `TopbarElapsed`
+  ticks it — a per-second render inside `AppShell` would re-render the shell, the sidebar
+  and the chat every second. A *user* entry carries no timestamp in a session file, so the
+  clock starts at the first time the transcript records for that prompt, and a context
+  that opens after a compaction (no prompt inside) counts from its first recorded time.
+  The row is visible on a phone, where the header is the only place project, branch and
+  elapsed time appear; the project label keeps `min-width` so the long branch name is what
+  ellipsizes.
+- **A turn's length beside Copy.** It was gated by `showTimestamp`, so it appeared on a
+  third of finished turns, and `getTurnDurationMs` read the anchor's own timestamp — which
+  a user entry never has — so on real data the footer was empty for every turn. The length
+  now starts at the first time recorded inside the turn (bounded by the turn's end), shows
+  on every finished turn in the compact `1h50m` shape with a clock glyph, and treats a
+  background subagent's report as the task working, not an idle wait. Every reply's model
+  line carries its own time.
+- **A subagent report opens collapsed**, like the compaction note, its header the toggle
+  (`aria-expanded`, the same chevron), with no Copy row while folded.
+
+## Verification of that branch
+
+`npm test` 4584 tests / 0 failures / 1 skipped; `npm run lint` 0 errors (7 pre-existing
+warnings in files this branch did not touch); `tsc --noEmit` clean. Live passes against the
+running server on 30141 with Playwright: desktop 1280px and phone 390/320px render the row
+as `pi-desk · fix/keyboard-msg-time-subagent · 1h11m` under the session title (chip
+`tabular-nums`, one clock glyph, no overflow; the clock read 14m21s → 14m24s → 14m26s across
+loads, so it ticks); the footer shows `1h11m` with the tooltip `The task lasted 1h11m11s`;
+model lines read `…IQ3_S(Splash) 04:00 PM`; the four subagent report cards in a real session
+start at 34px with one button and expand to 2006px with seven on a header click; opening the
+panel from closed yields one terminal tab (`terminalWidth` 538, `treeWidth` 0,
+`terminal-status-dot is-ready`). On a 390×844 touch context: the panel opens on a ready
+terminal, the helper field is editable (5×16px, opacity 0.01, font 16px), a tap while it is
+*already* the active element produced **2** focus events (the blur-then-focus, i.e. the
+keyboard's precondition), and `printf OK-$((40+2))` typed after the tap printed `OK-42` on
+the PTY.
+
+Not verified on real hardware: an iPhone's Safari keyboard. The fix rests on WebKit's touch
+focus rule, the emulation above (a tap that moves focus, on a rendered 16px editable field),
+and the user's own report that the tap worked after a restart — the fresh-field case that
+this branch turns into the normal case.
