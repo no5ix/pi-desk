@@ -4,11 +4,14 @@ export const dynamic = "force-dynamic";
 
 export function GET() {
   const appName = process.env.PI_WEB_APP_NAME?.trim() || "Pi Web";
-  // `viewport` is the manifest member iOS 16.4+ reads for the *installed* app:
-  // a home-screen install takes its viewport from the manifest, not from the
-  // page's meta tag, so without `viewport-fit=cover` here the installed app
-  // never gets the full-bleed viewport the shell's safe-area padding is written
-  // for. Next's `MetadataRoute.Manifest` type predates the member.
+  // Every env(safe-area-inset-*) is 0 without `viewport-fit=cover`, so the
+  // installed app needs it on its own viewport source: Safari reads that only
+  // from the page's meta tag (app/layout.tsx sets `viewportFit: "cover"`, and no
+  // Safari version supports the manifest's `viewport` member), while Chromium
+  // 124+ reads it from the manifest for an installed app. The same string in
+  // both keeps an installed app full-bleed on either engine, which is what the
+  // shell's inset padding is written for. Next's `MetadataRoute.Manifest` type
+  // predates the member.
   const manifest: MetadataRoute.Manifest & { viewport: string } = {
     id: "/",
     name: appName,
