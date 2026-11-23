@@ -59,9 +59,13 @@ try {
   browser = await chromium.launch();
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     // The phone pass is a real touch machine: `(pointer: coarse)` and the touch
-    // events the terminal's keyboard handling is written for.
+    // events the terminal's keyboard handling is written for. Touch emulation
+    // alone is enough for that (`(pointer: coarse)`, `(hover: none)`,
+    // maxTouchPoints); Chromium's mobile *viewport* emulation is left off — it
+    // shrinks the visual viewport under the app's own width checks and the
+    // fixed-position clicks this flow already makes.
     const touch = viewport.width < 500;
-    const context = await browser.newContext({ viewport, locale: "en-US", hasTouch: touch, isMobile: touch });
+    const context = await browser.newContext({ viewport, locale: "en-US", hasTouch: touch });
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
     const errors = [];
@@ -87,7 +91,12 @@ try {
       const button = page.getByRole("button", { name: "Show sidebar", exact: true });
       if (await button.count()) await button.click();
     };
-    const showPanel = () => page.getByRole("button", { name: "Show file panel", exact: true }).click();
+    // The fork has no dedicated "Show file panel" button: the panel opens from the
+    // topbar chip on desktop and the fixed floating button on a phone.
+    const showPanel = () => page.evaluate(() => {
+      (document.querySelector("button.right-panel-toggle-button")
+        ?? document.querySelector('button[aria-label="Show workspace"]'))?.click();
+    });
     // The fork opens terminals from the file panel's "+" (the sidebar's project menu
     // offers "Open terminal here"); upstream's dedicated topbar button is gone.
     const openWorkspaceTerminal = async () => {
@@ -154,7 +163,8 @@ try {
         // letter comes from `code`. Chromium reports a real keyCode for the
         // printable path, so this chord is synthesized as WebKit sends it.
         await page.evaluate(() => {
-          const field = document.querySelector(".terminal-panel:visible .xterm-helper-textarea");
+          // `:visible` is a Playwright pseudo-class, not CSS: this runs in the page.
+          const field = document.querySelector(".terminal-panel .xterm-helper-textarea");
           field.focus();
           field.dispatchEvent(new KeyboardEvent("keydown", { key: "Dead", code: "KeyC", altKey: true, bubbles: true, cancelable: true }));
         });

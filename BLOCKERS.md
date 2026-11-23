@@ -103,3 +103,32 @@ entry wins) even though the panel lists the copy and its own switch. For skills.
 pi-web can give a project an off-switch for a global skill without a second file, so the panel says
 which file a session follows (`skills.inProject.winnerGlobal`). Fixing the general case needs an
 upstream skill override (project wins by name).
+
+## `e2e/terminal.mjs` breaks before its keyboard section (2026-11-23, branch `fix/fzf-web-app-keyboard`)
+
+`node e2e/terminal.mjs` on `pi-desk-main` (reproduced on a detached worktree of
+HEAD, so not caused by this branch): the desktop pass dies in `showPanel()`,
+waiting for `getByRole("button", { name: "Show file panel" })` — this fork has no
+such button (the panel opens from the topbar `.main-file-toggle`, titled
+"Show workspace", and on a phone from the fixed `.right-panel-toggle-button`).
+With that one call repaired, the same pass dies one step later at `ready()`
+(`.terminal-panel:visible .is-ready`) after
+`page.getByText("Terminal session two").click()` + `showPanel()`: the failure
+screenshot shows the second session selected, its chat rendered, and the right
+panel closed — the flow's assumption about what selecting a session leaves open
+no longer matches `handleSelectSession`.
+
+This branch repairs the `showPanel()` locator and leaves the session-terminal
+step alone; the terminal's keyboard checks (desktop chords, phone tap-focus) run
+before that section and pass. `npm run test:terminal` therefore stays red on this
+fork for a reason that predates it. Needs a device-free repair of the session
+switch step: what a session row click does to `rightPanelOpen` and the per-session
+`pi-web:terminal-tabs:<id>` restore, at 1440×900.
+
+## Not checked on a device
+
+The installed-app inset and the phone keyboard fixes were checked in Chromium
+(`hasTouch`, and `(display-mode: fullscreen)` driving the standalone hook). A real
+iPhone (Safari's keyboard on xterm's field, the notch in an Add-to-Home-Screen
+install with `viewport-fit=cover` read from the manifest) has not been tested; the
+claim rests on WebKit's documented focus rule and the fork's own 59px notch floor.
