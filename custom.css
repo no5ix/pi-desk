@@ -15,16 +15,10 @@
  * .markdown-body { font-size: 15px; }
  */
 
-/* .directory-picker-path {
- border: 0 !important;
-} */
 
 
-.sidebar-search-input {
- border: 0;
-} 
 
-
+/* ------------------  chat-composer START ------------------ */
 .chat-composer {
   border: 0 !important;
 }
@@ -38,8 +32,11 @@ html.dark {
 :root {
     --shadow-composer: 0 0px 0px #0a0a0a47, 0 0px 36px #a57f7f4d !important;
 }
+/* ------------------  chat-composer END ------------------ */
 
 
+
+/* ------------------  conversation body START ------------------ */
 /* .process-details-trigger {
   border: 0 !important;
 }
@@ -61,11 +58,6 @@ html.dark {
 .app-topbar {
   border-bottom: 0 !important;
   box-shadow: var(--shadow-composer) !important;
-}
-
-/* sidebar */
-.app-sidebar {
-  border-right: 0 !important;
 }
 
 /* .markdown-code-header {
@@ -109,9 +101,11 @@ html.dark {
 
 /* extension status line: such as LSP, Background running tasks */
 .extension-status-line {
-  min-height: 22px !important;
-  max-height: min(22px, 18vh) !important;
+  min-height: 17px !important;
+  max-height: min(17px, 18vh) !important;
 }
+/* ------------------  conversation body END ------------------ */
+
 
 /* button[aria-label="Change model"] {
   width: 50% !important;
@@ -128,6 +122,47 @@ html.dark {
 } */
 
 
-.directory-picker-footer, .directory-picker-sheet-header {
-  padding: 6px 18px !important;
+/* ------------------  directory picker START ------------------ */
+.directory-picker-entry {
+  border-radius: 0 !important;
 }
+
+.directory-picker-path:focus-visible {
+  box-shadow: none !important;
+  border: var(--hairline) solid var(--border) !important;
+}
+
+.directory-picker-filter:focus-visible {
+  border: var(--hairline) solid var(--border) !important;
+}
+
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
+  outline: none !important;
+}
+
+/* mobile browser directory picker buttons */
+@media (max-width: 640px) {
+  .directory-picker-back, .directory-picker-entry, .directory-picker-action {
+    min-height: 0 !important;
+  }
+}
+
+/* put the right side panel's upper-right `x` button to rightmost */
+@media (max-width: 640px) {
+  .right-panel-tab-strip {
+    padding-right: 10px !important;
+  }
+}
+/* ------------------  directory picker END ------------------ */
+
+
+/* ------------------  left sidebar START ------------------ */
+/* left sidebar */
+.app-sidebar {
+  border-right: 0 !important;
+}
+
+.sidebar-search-input {
+ border: 0;
+} 
+/* ------------------  left sidebar END ------------------ */
