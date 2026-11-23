@@ -199,3 +199,44 @@
   stay silent; a dialog pushes once per dialog and at most once per session per ten
   minutes, because the MCP trust prompts at session start are the buzzes people hear with
   nothing running.
+
+## Selective pi-web backport (#1730, #1731, #1739, #1742, pi 1.6.0)
+- **A PR is not one thing, and a fork without the half is not a failed port.**
+  #1730's payload is client batching in `lib/agent-switcher.ts` /
+  `components/AgentStatusBar.tsx`; this fork has neither, so the port is the lib
+  half (`MAX_SESSION_STATS_IDS` out of the route and into `lib/session-stats.ts`,
+  where a caller can batch by it) plus the cap tests, and the client half is
+  recorded as N/A rather than invented. Inventing an agent switcher to host
+  upstream's caller would be the fork adopting upstream's UI, which the merge
+  rules already decline.
+- **A steered report stays a custom message.** Upstream delivers the report
+  through its `subagent-ui.ts` into `AgentStatusBar`; the fork's surface is the
+  report card that renders a `pi-web:subagent-notification` message. The fork's
+  `sendCustomMessage(message, { deliverAs, triggerTurn })` takes the same custom
+  payload with `deliverAs: "steer"`, so the delivery channel changes and the
+  rendering does not, and the fork's completion notice keeps owning the announcement.
+- **A steered report marks no run.** `markSubagentReportRun()` exists so a run a
+  report *starts* announces with the report's sentence. A report steered into the
+  user's own run starts nothing: marking that run would replace the user's own
+  completion sentence with the child's. The follow-up path keeps the mark.
+- **The run boundary is an entry index, not a clock reading.** #1739's first
+  shape (upstream 61695daf) filtered assistant entries by `timestamp >= dispatchedAt`;
+  the fork's real-SDK integration test resumes a child in the same millisecond as
+  the run it follows, and the resumed run reported `FIRST_RESULT\n\nRESUMED_RESULT`.
+  Upstream's follow-up (3fbbe2f4) already made it `entries.slice(startedAt)`;
+  entries are append-only, so an index is exact and has no clock to skew.
+- **Read the transcript the way pi projects it.** pi omits a message with a
+  `context_edit` carrying no replacement (its recovery before a provider retry, and
+  a `length`-truncated draft before a compaction retry) and rewrites one with a
+  replacement. Joining raw entries joined a draft pi had thrown away in front of
+  the retried report, so `runResultText()` applies the edits (latest wins) first.
+- **The SDK's data is not the fork's assertion.** pi 1.6.0 moved
+  `qwen-token-plan-cn` from `token-plan.cn-beijing.maas.aliyuncs.com` to
+  `token-plan.maas.qianwenaiapi.com` and dropped `supportsDeveloperRole` from the
+  model entry. The fork's `builtin-match` test failed because it pinned 1.5.2's
+  endpoint; the fix follows the SDK (new endpoint, and the compat field 1.6.0
+  does report), not a weakened assertion.
+- **Drift is a sync's job.** `npm run drift` names 6 files past
+  `scripts/fork-ownership.json`. Measured on `pi-desk-main`, the same 6 disagree,
+  so the registry update belongs to the next upstream sync; a backport that
+  rewrites the registry hides its own divergence.

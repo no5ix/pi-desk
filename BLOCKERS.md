@@ -132,3 +132,22 @@ The installed-app inset and the phone keyboard fixes were checked in Chromium
 iPhone (Safari's keyboard on xterm's field, the notch in an Add-to-Home-Screen
 install with `viewport-fit=cover` read from the manifest) has not been tested; the
 claim rests on WebKit's documented focus rule and the fork's own 59px notch floor.
+
+## Selective pi-web backport: the halves this fork has nowhere to put them
+- **#1730's client batching.** `fetchAgentUsage()` batches the family's usage
+  reads by `MAX_SESSION_STATS_IDS` in upstream's `lib/agent-switcher.ts`, fed by
+  `components/AgentStatusBar.tsx`. This fork has neither file (the merge rules
+  declined the upstream status bar; the fork's is `ExtensionStatusLine`) and its
+  session stats read is one session per request from the sidebar's own list, so
+  there is no fan-out to batch. The port is the lib half only.
+- **#1742's live report surface.** Upstream shows a running subagent's report in
+  `AgentStatusBar`, which is where a steered report becomes visible with no new
+  turn. Here the report is a custom message the parent's turn renders as a report
+  card, so a steered report first appears inside the parent's running turn. That
+  is the fork's intended shape (fork-ui), not a gap in the port, but a parity
+  claim would need an `AgentStatusBar`-shaped surface the fork does not have.
+- **Drift registry.** 6 files exceed their recorded risk in
+  `scripts/fork-ownership.json` (`FileExplorer.tsx`, `MarkdownBody.tsx`,
+  `web-push.ts`, `request-security.ts`, `PwaRegistration.tsx`,
+  `directory-browser.ts`), verified identical on `pi-desk-main`. Update them with
+  the next upstream sync's `npm run drift`, not on a feature branch.
