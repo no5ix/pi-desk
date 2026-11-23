@@ -12161,19 +12161,29 @@ html[data-standalone-safe-area] :is(.sidebar-container, .right-panel-container) 
   padding-top: var(--app-safe-area-top);
 }
 
+/* Both are fixed overlays on a phone (`top: 0; bottom: 0` / `inset: 0 …`, at
+   `height: var(--app-viewport-height, 100dvh)`), so they end at the window's
+   bottom edge, where the shell's padding cannot reach them, and their inline
+   `paddingBottom: env(safe-area-inset-bottom)` is 0 here. */
+html[data-standalone-safe-area] :is(.sidebar-container, .right-panel-container) {
+  padding-bottom: var(--app-safe-area-bottom);
+}
+
 html[data-standalone-safe-area] .app-shell {
   padding-bottom: var(--app-safe-area-bottom) !important;
 }
 
 /* Fixed chrome the shell's padding cannot reach, all of it pinned to a viewport
-   edge: the phone's floating workspace toggle (top: 10px) and the notice shelf
-   (top: calc(60px + env(safe-area-inset-top)), which is 60px here) sit under the
-   notch, and the full-screen image dialog and the calendar's bottom sheet sit on
-   the home indicator. The settings dialog needs none of this: settings.css
-   already floors its own padding at 59px for the same reason. */
+   edge: the phone's floating workspace toggle (the coarse-pointer block pins it
+   to `top: 2px; right: 6px`) and the notice shelf (`top: calc(60px +
+   env(safe-area-inset-top))`, so 60px here) sit under the notch, and the
+   full-screen image dialog and the calendar's bottom sheet sit on the home
+   indicator. The offsets below repeat each rule's own offset, so the installed
+   app sits exactly where the tab does, one inset lower. The settings dialog
+   needs none of this: settings.css already floors its own padding at 59px. */
 html[data-standalone-safe-area] .right-panel-toggle-button {
-  top: calc(10px + var(--app-safe-area-top));
-  right: calc(10px + env(safe-area-inset-right, 0px));
+  top: calc(2px + var(--app-safe-area-top));
+  right: calc(6px + env(safe-area-inset-right, 0px));
 }
 
 html[data-standalone-safe-area] .app-notice-shelf {

@@ -270,10 +270,16 @@ for a standalone display on a machine with `maxTouchPoints > 0` — a floor is
 needed (59px, the one `app/settings.css` already uses for the settings dialog) and
 it must not reach the Tauri window, where 0 is honest. The rules pad boxes, not
 heights (box-sizing is border-box app-wide, so padding alone spends the bar's
-48px), and cover the two fixed overlays a phone's shell cannot pad. The manifest
-carries `viewport: "width=device-width, initial-scale=1, viewport-fit=cover"`:
-iOS 16.4+ installs from the manifest and takes the installed app's viewport from
-its `viewport` member, not the page's meta tag.
+48px), and cover the two fixed overlays a phone's shell cannot pad, top and
+bottom (both are `top: 0; bottom: 0` at `height: var(--app-viewport-height,
+100dvh)`, so the sidebar's settings row and the panel's body sit on the home
+indicator). Every `env()` is 0 without `viewport-fit=cover`, so the installed
+app's viewport source needs it: the page's meta tag has it (`layout.tsx`'s
+`viewportFit`), Safari reads only that — no Safari version supports the
+manifest's `viewport` member — and `/manifest.webmanifest` now says the same for
+a Chromium 124+ install, which does read the manifest member. My first pass
+documented the reverse (that iOS reads the manifest); the MDN compatibility
+table says it does not, and the iOS path is the meta tag.
 
 ## Verification of that branch
 

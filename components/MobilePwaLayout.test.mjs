@@ -97,14 +97,21 @@ test("keeps the installed web app's chrome clear of the notch", () => {
   // Fixed chrome pinned to a viewport edge: the phone's floating workspace
   // toggle and the notice shelf are pinned to the top, and the shell's padding
   // (and the bar's new height) never reaches them.
-  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] \.right-panel-toggle-button \{[\s\S]*?top: calc\(10px \+ var\(--app-safe-area-top\)\);/);
+  // Each rule repeats the offset of the rule it moves, so the installed app
+  // keeps a tab's placement, one inset lower.
+  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] \.right-panel-toggle-button \{[\s\S]*?top: calc\(2px \+ var\(--app-safe-area-top\)\);[\s\S]*?right: calc\(6px \+ env\(safe-area-inset-right, 0px\)\);/);
   assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] \.app-notice-shelf \{[\s\S]*?top: calc\(60px \+ var\(--app-safe-area-top\)\);/);
   assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] \.image-preview-dialog \{[\s\S]*?padding-top: var\(--app-safe-area-top\);/);
+  // The two fixed overlays end at the window's bottom edge, where the shell's
+  // padding cannot reach them: the sidebar's settings row and the panel's body
+  // (a file tree, a terminal) sit on the home indicator.
+  assert.match(nativeThemeSource, /html\[data-standalone-safe-area\] :is\(\.sidebar-container, \.right-panel-container\) \{[\s\S]*?padding-bottom: var\(--app-safe-area-bottom\);/);
   // The terminal's extra-keys row already pads by env(); in the app that is 0.
   assert.match(nativeThemeSource, /html\[data-standalone-safe-area\]:not\(\[data-keyboard-open\]\) \.terminal-extra-keys \{[\s\S]*?padding-bottom: var\(--app-safe-area-bottom\);/);
-  // iOS 16.4+ takes the installed app's viewport from the manifest, not from the
-  // page's meta tag: without cover there, the app has neither the full-bleed
-  // viewport nor the insets the shell's padding is written for.
+  // The installed app's viewport comes from the manifest in Chromium, and from
+  // the page's meta tag in Safari (no Safari version reads the manifest's
+  // `viewport`). Both must say viewport-fit=cover: without it every safe-area
+  // inset is 0, which is how the installed app ended up under the notch.
   assert.match(manifestSource, /viewport: "width=device-width, initial-scale=1, viewport-fit=cover"/);
 });
 
