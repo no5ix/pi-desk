@@ -16,8 +16,9 @@ import {
   type TerminalModifiers,
 } from "@/lib/terminal-extra-keys";
 import { macOptionSequence } from "@/lib/terminal-input";
-import { registerTerminalInputField } from "@/lib/terminal-focus";
+import { isTouchFocusDevice, registerTerminalInputField } from "@/lib/terminal-focus";
 import type { TerminalEvent } from "@/lib/terminal-manager";
+import { TerminalComposer, useTerminalComposerVisible } from "./TerminalComposer";
 import { TerminalExtraKeys, useTerminalExtraKeysVisible } from "./TerminalExtraKeys";
 import type { TerminalTab } from "./terminal-tab-state";
 
@@ -59,7 +60,11 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
   // for the next key, typed or tapped.
   const [modifiers, setModifiers] = useState<TerminalModifiers>(NO_TERMINAL_MODIFIERS);
   const modifiersRef = useRef(modifiers);
+  // Whether the shell is there to take input, for the command line's Send: a send into a
+  // terminal that has not connected would be dropped, and the row keeps the text instead.
+  const connectedRef = useRef(false);
   const showExtraKeys = useTerminalExtraKeysVisible();
+  const showComposer = useTerminalComposerVisible();
 
   const consumeModifiers = useCallback(() => {
     const current = modifiersRef.current;
@@ -75,6 +80,19 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     const sequence = terminalExtraKeySequence(key, consumeModifiers(), terminal.modes.applicationCursorKeysMode);
     terminal.input(sequence, true);
   };
+  /**
+   * The command line's Send: the text as typed, then Enter. Returns whether the shell took it,
+   * so the row can keep a command typed while the shell was still connecting. A latched CTRL /
+   * ALT applies to a single character — latching CTRL and sending "c" is `^C` — and a whole line
+   * goes out as typed, which is what a command line means.
+   */
+  const sendComposerText = useCallback((text: string) => {
+    const terminal = terminalRef.current;
+    if (!terminal || !connectedRef.current) return false;
+    terminal.input(applyTerminalModifiers(text, consumeModifiers()), true);
+    terminal.input("\n", true);
+    return true;
+  }, [consumeModifiers]);
   const toggleModifier = (modifier: TerminalModifier) => {
     const next = { ...modifiersRef.current, [modifier]: !modifiersRef.current[modifier] };
     modifiersRef.current = next;
@@ -88,6 +106,11 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     let events: EventSource | null = null;
     let offset: number | undefined;
     let connected = false;
+    // The command line asks this before sending, from outside the effect's closure.
+    const setConnected = (value: boolean) => {
+      connected = value;
+      connectedRef.current = value;
+    };
     let exited = false;
     let inputFailed = false;
     setStatus("connecting");
@@ -118,31 +141,49 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(container);
-    // iOS opens the software keyboard only for a focus raised by a touch: xterm
-    // focuses on `mousedown`, which iOS synthesizes after the tap, so tapping the
-    // panel on a phone left a blinking cursor and no keyboard (upstream pi-web
-    // #1702). Raise the focus from the touch itself, in the capture phase: xterm's
-    // own handler cancels the event it is built from. The field is xterm's helper
-    // textarea — writable from the moment the session connects (xterm mirrors its
-    // `readOnly` on `disableStdin`, which is why a tap while the panel still says
-    // "connecting" cannot raise a keyboard), and app/native-theme.css gives it the
-    // font size and the opacity Safari needs to treat it as a visible field.
-    const focusFromTouch = (event: PointerEvent | TouchEvent) => {
-      if (event instanceof PointerEvent && event.pointerType === "mouse") return;
-      // Safari opens the keyboard only for a focus that *moves* to an editable
-      // field during the touch. The panel focuses this field itself — when the
-      // PTY connects, when the tab becomes active — so by the time a finger
-      // lands, the field is already the active element: a plain `focus()` fires
-      // no focus event and the keyboard stays hidden, however many times you
-      // tap. Restarting the terminal builds a fresh, unfocused field, which is
-      // why the first tap after a restart opened the keyboard. Blur first, so
-      // the tap is a focus change.
+    // iOS opens the software keyboard only for a focus raised by a touch: xterm focuses on
+    // `mousedown`, which iOS synthesizes after the tap, so tapping the panel on a phone left a
+    // blinking cursor and no keyboard (upstream pi-web #1702). Two of Safari's rules decide this
+    // whole flow, and the second is why an earlier fix — blur, then focus, in one handler — did
+    // not work:
+    //  - The focus must *move*. The panel focuses the field on connect, on tab activation and
+    //    after a keystroke, so by the time a finger lands the field is already the active
+    //    element and `focus()` fires no focus event: no keyboard, however many taps. Restarting
+    //    the terminal builds a fresh, never-focused field, and its first tap opens the keyboard
+    //    — the clue that named the cause. So on a touch device the panel never focuses the field
+    //    by itself (`isTouchFocusDevice` in lib/terminal-focus.ts).
+    //  - Blur and focus inside one gesture read as no net change. So the tap releases the field
+    //    when the finger lands and focuses it when the finger lifts: two gestures, and the lift
+    //    is a focus that moves from the page into the field.
+    // The field is xterm's helper textarea — writable from the moment the session connects
+    // (xterm mirrors its `readOnly` on `disableStdin`, which is why a tap while the panel still
+    // says "connecting" cannot raise a keyboard), and app/native-theme.css gives it the opacity
+    // and the 16px Safari needs to treat it as a field on screen. The command line
+    // (`TerminalComposer`) is the way in that depends on none of this.
+    let raisedOnLift = false;
+    const isTouchPointer = (event: PointerEvent | TouchEvent) =>
+      !(event instanceof PointerEvent) || event.pointerType === "touch";
+    const releaseOnTouch = (event: PointerEvent | TouchEvent) => {
+      if (!isTouchPointer(event)) return;
+      raisedOnLift = false;
+      // A finger on the terminal: the field lets go, so the lift is a focus change.
       const field = terminal.textarea;
       if (field && field.ownerDocument.activeElement === field) field.blur();
+    };
+    const raiseOnTouch = (event: PointerEvent | TouchEvent, fromLift: boolean) => {
+      if (!isTouchPointer(event)) return;
+      if (fromLift) raisedOnLift = true;
+      // A browser that fires `pointerup` after `touchend` would focus twice; the pointer's lift
+      // stands down when the touch's lift already raised the keyboard.
+      else if (raisedOnLift) { raisedOnLift = false; return; }
       terminal.focus();
     };
-    container.addEventListener("pointerdown", focusFromTouch, true);
-    container.addEventListener("touchend", focusFromTouch, true);
+    const liftFromTouch = (event: TouchEvent) => raiseOnTouch(event, true);
+    const liftFromPointer = (event: PointerEvent) => raiseOnTouch(event, false);
+    container.addEventListener("pointerdown", releaseOnTouch, true);
+    container.addEventListener("touchstart", releaseOnTouch, true);
+    container.addEventListener("touchend", liftFromTouch, true);
+    container.addEventListener("pointerup", liftFromPointer, true);
     // The panel toggle and the Explorer's terminal action raise the phone's
     // keyboard from the tap that opens the panel (see lib/terminal-focus.ts).
     registerTerminalInputField(id, terminal.textarea ?? null);
@@ -219,7 +260,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
         // gives no guarantee that EventSource's `open` fires, and xterm mirrors
         // `disableStdin` onto its helper field's `readOnly` — a read-only field
         // opens no keyboard on iOS — so the first message opens input too.
-        connected = true;
+        setConnected(true);
         if (!exited && !inputFailed) terminal.options.disableStdin = false;
         const event = JSON.parse(message.data) as TerminalEvent;
         if (event.type === "output") {
@@ -229,7 +270,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
           offset = event.offset;
         } else {
           exited = true;
-          connected = false;
+          setConnected(false);
           terminal.options.disableStdin = true;
           events?.close();
           setExitCode(event.type === "exit" ? event.exitCode : null);
@@ -237,17 +278,20 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
         }
       };
       events.onopen = () => {
-        connected = true;
+        setConnected(true);
         if (inputFailed) return;
         terminal.options.disableStdin = false;
         setStatus("ready");
         fitAndResize();
         writer.resize(terminal.cols, terminal.rows);
-        if (container.offsetWidth && container.offsetHeight) terminal.focus();
+        // A phone gets no focus here: focusing the field on connect leaves it the active
+        // element, and every later tap is then a focus that does not move — no keyboard, the
+        // reported bug. The tap raises the keyboard itself, and the command line is always there.
+        if (container.offsetWidth && container.offsetHeight && !isTouchFocusDevice()) terminal.focus();
       };
       events.onerror = () => {
         if (disposed || exited) return;
-        connected = false;
+        setConnected(false);
         terminal.options.disableStdin = true;
         setStatus(events?.readyState === EventSource.CLOSED ? "error" : "connecting");
       };
@@ -273,7 +317,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     });
 
     const pageHide = () => {
-      connected = false;
+      setConnected(false);
       terminal.options.disableStdin = true;
       events?.close();
       if (!exited && !inputFailed) setStatus("connecting");
@@ -290,8 +334,10 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       resizeObserver.disconnect();
       themeObserver.disconnect();
       registerTerminalInputField(id, null);
-      container.removeEventListener("pointerdown", focusFromTouch, true);
-      container.removeEventListener("touchend", focusFromTouch, true);
+      container.removeEventListener("pointerdown", releaseOnTouch, true);
+      container.removeEventListener("touchstart", releaseOnTouch, true);
+      container.removeEventListener("touchend", liftFromTouch, true);
+      container.removeEventListener("pointerup", liftFromPointer, true);
       cancelAnimationFrame(fontFrame);
       window.removeEventListener(FONT_CHANGE_EVENT, updateFont);
       document.fonts.removeEventListener("loadingdone", updateFont);
@@ -307,7 +353,9 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
   }, [id, cwd, restored, reconnectKey, consumeModifiers]);
 
   useEffect(() => {
-    if (active) terminalRef.current?.focus();
+    // A phone keeps the field unfocused, so the tap that opens the keyboard is a real focus
+    // move (see the touch handlers above and lib/terminal-focus.ts).
+    if (active && !isTouchFocusDevice()) terminalRef.current?.focus();
   }, [active]);
 
   useEffect(() => {
@@ -353,6 +401,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
         {status === "exited" && <div className="terminal-panel-exit" role="status">{exitCode === null ? t("terminal.exited") : t("terminal.exitCode", { code: exitCode })}</div>}
       </div>
       <div className="terminal-xterm"><div ref={containerRef} className="terminal-xterm-host" /></div>
+      {showComposer && <TerminalComposer onSend={sendComposerText} />}
       {showExtraKeys && <TerminalExtraKeys modifiers={modifiers} onKey={sendExtraKey} onToggleModifier={toggleModifier} />}
     </section>
   );

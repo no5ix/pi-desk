@@ -570,3 +570,67 @@ over Tailscale is how the phone path gets exercised at all.
   branch, is fixed).
 - Deploy note for the user: restart the dev server (the worker script changes), reload the
   Home Screen app, then turn "Notify this device" on; iOS asks for permission on the tap.
+
+# iPhone: the terminal's keyboard never opened, however many taps (iOS Safari)
+
+## Report
+- 手机 Safari：打开 workspace 终端后面板里没有光标，点终端区域多次也不弹出系统键盘；
+  点 “Restart terminal” 之后，第一次点终端就弹键盘。（“the on-screen keyboard does not
+  pop out … clicking the terminal input repeatedly … after clicking the Restart terminal
+  button, tapping the terminal input field now makes the keyboard pop out”）
+
+## Cause
+iOS opens a software keyboard only for a focus that **moves** to an **editable, rendered**
+field during a user gesture, and opens nothing for the field that is already the active
+element. The panel focused xterm's helper textarea on `events.onopen` and again when the
+tab became active, so every tap in the panel found it focused: no focus event, no keyboard.
+`Restart terminal` builds a fresh `Terminal` whose field nobody has focused, so the next
+tap moved the focus and the keyboard appeared — the user's own diagnosis.
+
+The first fix for this bug (the previous commit on the branch) blurred the field and
+focused it **inside one gesture**; on the user's iPhone that reads as no net change, so
+the report stayed exactly as it was.
+
+## Changes
+- `lib/terminal-focus.ts`: `isTouchFocusDevice()` (`(pointer: coarse)`).
+  `focusTerminalInputFromTouch()` — the panel-toggle/Explorer path, one gesture that
+  cannot be split — declines on a touch device: a focus it leaves behind is the state the
+  following taps inherit, and the field is usually still read-only as the shell connects.
+  The registry still serves pointers, blurs a focused field first, and refuses
+  `readOnly`/detached fields.
+- `components/TerminalPanel.tsx`:
+  - connect (`events.onopen`) and tab activation focus the field **only on a mouse**
+    (`!isTouchFocusDevice()`);
+  - a tap is split across the gesture: `pointerdown`/`touchstart` → `releaseOnTouch`
+    (blur when the field is the active element), `touchend`/`pointerup` → `raiseOnTouch`
+    (focus). Capture phase, named listeners (the cleanup removes them), `pointerup` stands
+    down when `touchend` focused, and a mouse pointerType does none of it.
+- `components/TerminalComposer.tsx` (new): the path that depends on no focus rule. On
+  `(pointer: coarse)` the panel shows a real `<input>` + Send in grid row 5, under the
+  extra-keys strip. Never `readOnly` (not while the shell connects), `enterKeyHint="send"`,
+  16px, `useId()`-bound label, Send prevents `pointerdown`/`mousedown` so the keyboard
+  stays between commands, and a send into a shell that is not there is refused
+  (`connectedRef`) so the row keeps the typed command. Panel CSS in `app/native-theme.css`
+  (`.terminal-composer`, safe-area/keyboard rules like the extra keys); i18n keys
+  `terminal.commandLabel` / `.commandPlaceholder` / `.commandSend`.
+- Docs: `docs/terminal.md` (the three contracts + verification), `AGENTS.md` (the
+  `terminal-focus.ts` line).
+- Tests: `lib/terminal-focus.test.mjs` (the touch decline), `components/TerminalPanel.options.test.mjs`
+  (the split handlers, mouse-only focus, composer wiring, the row's CSS),
+  `components/TerminalComposer.test.mjs` (new), `e2e/terminal.mjs` (the touch pass:
+  connect leaves the field unfocused; a tap focuses a 16px editable rendered field with a
+  `focus` event; a **second** tap yields `blur` → `focus`; the command line takes the tap,
+  reaches the shell, keeps the focus after Send).
+
+## Verified
+- Live Chromium, touch machine (`hasTouch`, 390×844), against the running dev server:
+  after connect the active element is a button, not the xterm field; the first tap on the
+  screen → activeElement `textarea.xterm-helper-textarea`, box 5×16, opacity 0.01, 16px,
+  editable, events `["focus"]`; the **second** tap → events `["blur","focus"]`, same field.
+  The command line: tap → `input` 316×34, opacity 1, 16px, editable; `echo
+  KEYBOARD_CHECK_$((40+2))` and `printf 'A%sB\n' -z` reached the shell (the rows show
+  `KEYBOARD_CHECK_42`, `A-zB`); after Send the focus is still the input. No page errors.
+  Screenshots `/tmp/terminal-phone.png`, `/tmp/terminal-phone-keys.png` (light and dark,
+  extra-keys row plus the command line).
+- Not run: `npm run test:terminal` itself — it refuses a checkout whose `.next/dev/lock` is
+  held by the user's dev server. Its assertions are the ones verified live above.

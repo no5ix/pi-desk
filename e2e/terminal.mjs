@@ -176,26 +176,13 @@ try {
         await waitOutput("\\^C");
       }
       if (touch) {
-        // iOS opens the software keyboard only for a focus raised by a touch and
-        // on a field it renders (upstream pi-web #1702): xterm focuses on
-        // `mousedown`, which iOS synthesizes after the tap. A tap must land the
-        // caret in xterm's helper field, sized and styled as a field Safari will
-        // accept — 16px, or focusing it zooms the whole page.
-        //
-        // The field is also already the active element here, because the panel
-        // focuses it when the PTY connects. A tap that finds it focused fires no
-        // focus event, and Safari opens no keyboard for it — that is the bug the
-        // restart button used to work around (a restart builds a fresh, unfocused
-        // field, and the next tap moved the focus). So count focus events: the
-        // tap must produce one, blurring the focused field before focusing it.
-        await page.evaluate(() => {
-          const field = document.querySelector(".terminal-panel .xterm-helper-textarea");
-          window.__focusEvents = 0;
-          field?.addEventListener("focus", () => { window.__focusEvents += 1; });
-          field?.focus();
-        });
-        await page.locator(".terminal-panel:visible .xterm-screen").tap();
-        const field = await page.evaluate(() => {
+        // A phone's keyboard opens for a focus that *moves* to an editable field during a
+        // gesture, opens nothing for a field that is already the active element, and opens
+        // nothing for a read-only field. The report said it exactly: "tapping the terminal never
+        // opens the keyboard, and the first tap after a Restart does" — the panel focused the
+        // field on connect, so every tap was a focus that did not move, while a restarted
+        // terminal's fresh field moved it. Three contracts follow.
+        const state = () => page.evaluate(() => {
           const active = document.activeElement;
           const box = active?.getBoundingClientRect();
           const style = active ? getComputedStyle(active) : null;
@@ -205,14 +192,56 @@ try {
             height: box?.height ?? 0,
             opacity: Number(style?.opacity ?? 0),
             fontSize: style?.fontSize ?? "0px",
-            focusEvents: window.__focusEvents ?? 0,
+            readOnly: active ? Boolean(active.readOnly) : true,
+            events: window.__focusLog ?? [],
           };
         });
-        assert.match(field.className, /xterm-helper-textarea/, "a tap focuses the terminal's input field");
-        assert.ok(field.width > 0 && field.height > 0, `the field has a box: ${JSON.stringify(field)}`);
-        assert.ok(field.opacity > 0, `the field is rendered: ${JSON.stringify(field)}`);
-        assert.equal(field.fontSize, "16px", "16px keeps Safari from zooming the page on focus");
-        assert.ok(field.focusEvents >= 1, `the tap moved the focus, which is what opens the keyboard: ${JSON.stringify(field)}`);
+        await page.evaluate(() => {
+          const field = document.querySelector(".terminal-panel .xterm-helper-textarea");
+          window.__focusLog = [];
+          field?.addEventListener("focus", () => window.__focusLog.push("focus"));
+          field?.addEventListener("blur", () => window.__focusLog.push("blur"));
+        });
+        // 1. Connect leaves the phone's field unfocused: a caret the keyboard never followed is
+        //    the state that swallows every tap that comes after it.
+        assert.doesNotMatch(await page.evaluate(() => document.activeElement?.className ?? ""), /xterm-helper-textarea/,
+          "connect does not park the caret in the field on a phone");
+        // 2. A tap focuses the field it renders: on screen at cell size, 16px (the size Safari
+        //    needs so focusing does not zoom the page) and editable.
+        await page.locator(".terminal-panel:visible .xterm-screen").tap();
+        const firstTap = await state();
+        assert.match(firstTap.className, /xterm-helper-textarea/, "a tap focuses the terminal's input field");
+        assert.ok(firstTap.width > 0 && firstTap.height > 0, `the field has a box: ${JSON.stringify(firstTap)}`);
+        assert.ok(firstTap.opacity > 0, `the field is rendered: ${JSON.stringify(firstTap)}`);
+        assert.equal(firstTap.fontSize, "16px", "16px keeps Safari from zooming the page on focus");
+        assert.equal(firstTap.readOnly, false, "a read-only field opens no keyboard");
+        assert.deepEqual(firstTap.events, ["focus"], `the tap moved the focus: ${JSON.stringify(firstTap)}`);
+        //    The reported case: the field is already the active element, and the tap still opens
+        //    a keyboard because the finger-down releases the field and the finger-up focuses it.
+        //    Blur and focus inside one gesture read as no net change, which is why the first fix
+        //    for this bug (blur, then focus, in a single handler) did nothing.
+        await page.evaluate(() => { window.__focusLog = []; });
+        await page.locator(".terminal-panel:visible .xterm-screen").tap();
+        const secondTap = await state();
+        assert.match(secondTap.className, /xterm-helper-textarea/, "the field takes the focus again");
+        assert.deepEqual(secondTap.events, ["blur", "focus"],
+          `every tap moves the focus, on the second tap too: ${JSON.stringify(secondTap)}`);
+        // 3. The command line is the way in that depends on none of this: a real, visible,
+        //    always-editable input. The tap focuses it, the keyboard follows, and Send reaches
+        //    the shell without taking the focus, so the keyboard stays for the next command.
+        const composer = page.locator(".terminal-composer:visible input");
+        await composer.waitFor({ state: "visible" });
+        await composer.tap();
+        const composerState = await state();
+        assert.equal(composerState.className, "", "a real input took the tap");
+        assert.equal(composerState.readOnly, false, "editable at every status, including while the shell connects");
+        assert.equal(composerState.fontSize, "16px", "the app's input floor, so focusing does not zoom");
+        assert.ok(composerState.width > 200, `the row spans the panel: ${JSON.stringify(composerState)}`);
+        await page.keyboard.type("printf '\\nKEYBOARD:%s\\n' \"$((40+2))\"");
+        await page.locator(".terminal-composer:visible button").tap();
+        await waitOutput("KEYBOARD:42");
+        assert.equal(await page.evaluate(() => document.activeElement?.tagName?.toLowerCase()), "input",
+          "Send never takes the focus, so the keyboard stays open between commands");
       }
       await run("export PR695_TOKEN=alive; printf '\\nTOKEN:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput("TOKEN:alive:[0-9]+");

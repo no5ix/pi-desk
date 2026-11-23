@@ -89,56 +89,86 @@ The option covers only part of the chord set, so the panel's
   `preventDefault()` is what stops the browser composing the accent behind the
   panel's back.
 
-A phone opens the software keyboard only for a focus raised by a touch, on an
-editable field it renders. xterm focuses on `mousedown`, which iOS synthesizes
-after the tap, so a tap on the panel left a blinking cursor and no keyboard
-(upstream pi-web #1702). `TerminalPanel.tsx` focuses from `pointerdown` /
-`touchend` in the capture phase (xterm cancels the event it is built from), and
-`app/native-theme.css` gives xterm's helper textarea the `opacity` and 16px font
-Safari needs to treat it as a field — 16px is the same floor the composer's
-inputs use, below it Safari zooms the page on focus. xterm's `_syncTextArea`
-writes the field's left / top / width / height / line-height inline to follow
-the cursor, so the CSS must not set geometry: that is what anchors an IME. The
-field is read-only while `disableStdin` is on, which is why a tap while the panel
-still says "connecting" cannot raise a keyboard.
+A phone's keyboard opens for a focus that **moves** to an editable field during
+a user gesture, opens nothing for a field that is already the active element, and
+opens nothing for a **read-only** field. The report this answers is exact:
+"tapping the terminal never opens the keyboard, however many times I tap; the
+first tap after `Restart terminal` does." A restart builds a fresh `Terminal`
+whose helper textarea nobody has focused, so its first tap moves the focus; the
+panel had focused the field on connect (`events.onopen`) and on tab activation,
+so every other tap found it focused, fired no focus event, and opened nothing
+(upstream pi-web #1702). Three contracts, each pinned by a test:
 
-The focus must also *move*. Safari opens the keyboard when focus arrives at an
-editable field during the touch; re-focusing the field that is already the active
-element fires no focus event, so no keyboard opens, however many times you tap.
-The panel focuses the field itself when the PTY connects (`events.onopen`) and
-when the tab becomes active, so every tap found it focused and did nothing —
-while a tap after *Restart terminal* worked, because a restart builds a fresh
-`Terminal` whose field nobody has focused yet. That is the whole difference, and
-the fix: `focusFromTouch` blurs a focused field before focusing it, so the tap is
-a focus change. Two more keys turn the same lock: a `readOnly` field never raises
-a keyboard, and WebKit gives no guarantee EventSource's `open` fires, so the
-first SSE message opens input (`disableStdin = false`) as well as `onopen`.
+- **Connect does not focus the field on a touch device** — `isTouchFocusDevice()`
+  in `lib/terminal-focus.ts`, checked at `onopen` and in the tab-activation
+  effect. A caret the keyboard never followed is precisely the state that
+  swallows the taps that come after it.
+- **A tap releases the field on finger-down and focuses it on finger-up.** Blur
+  and focus *inside one gesture* read as no net change, which is why the first
+  fix for this bug — blur, then focus, in a single `focusFromTouch` handler — did
+  nothing on the user's iPhone. `pointerdown` / `touchstart` call
+  `releaseOnTouch` (blur the field when it is the active element) and `touchend`
+  / `pointerup` call `raiseOnTouch`, through named listeners so the cleanup
+  removes them. The capture phase is required (xterm cancels the event its own
+  handler is built from) and `pointerup` stands down when `touchend` already
+  focused, so a browser that fires both focuses once.
+- **The panel grows a visible, always-editable command line**
+  (`components/TerminalComposer.tsx`, shown on `(pointer: coarse)`, in row 5 of
+  the panel grid under the extra-keys strip). It depends on no focus rule: the
+  tap focuses a field Safari renders. It is never `readOnly` — not while the
+  shell connects — `enterKeyHint="send"` makes the phone's own return key send,
+  16px is the app's zoom floor, the label is `useId()`-bound, and the button
+  prevents `pointerdown` / `mousedown` so it never takes the focus and the
+  keyboard stays between commands. Send is the panel's `sendComposerText`: the
+  text as typed, then Enter; a latched CTRL / ALT applies to a single character
+  like a typed key. It answers `false` when the shell is not there to take input
+  (`connectedRef`), and the row keeps the command the user typed.
 
-A tap that *opens* the panel can raise the keyboard too, since the tap is the
-gesture: the panel publishes its field to `lib/terminal-focus.ts` (a module, not
-a ref, because the panel is `dynamic()`-loaded while `components/AppShell.tsx`
-owns the panel toggle and the Explorer's terminal action), and `handleOpenTerminal`
-/ `handleRightPanelToggle` call `focusTerminalInputFromTouch()` from the click.
-A terminal tab created by that same tap has no field yet — its panel mounts after
-the gesture ended — so the keyboard arrives with the next tap.
+The helper field still has to be a field Safari renders, so
+`app/native-theme.css` gives it `opacity: 0.01` and 16px and sets no geometry:
+xterm's `_syncTextArea` writes left / top / width / height / line-height inline
+to follow the cursor, and that is what anchors an IME. The field is read-only
+while `disableStdin` is on, which is why a tap on a panel that still says
+"connecting" cannot raise a keyboard, and WebKit gives no guarantee
+EventSource's `open` fires, so the first SSE message opens input as well.
+
+A tap that *opens* the panel declines to focus the field on a touch device
+(`focusTerminalInputFromTouch()` returns false when `isTouchFocusDevice()`): the
+toggle is one gesture, and one gesture cannot be split into release and lift,
+while the field is usually still read-only as the shell connects — so all that
+focus would leave behind is the state the following taps inherit. The registry
+(a module, not a ref, because the panel is `dynamic()`-loaded while
+`components/AppShell.tsx` owns the panel toggle and the Explorer's terminal
+action, and a plain module keeps the import free of xterm) keeps serving the
+pointers where the caret belongs; on a phone the keyboard comes from the taps
+inside the panel and from the command line.
 
 ## Verification
 
 Run `npm test` for native PTY, lease, output cursor, input queue, and storage
 checks, and `components/TerminalPanel.options.test.mjs` for the glyph size, the
-Option-as-Meta option, the chords that complete it, and the phone's tap-to-focus
-(the blur-then-focus, and the field the panel publishes for the panel toggle).
-`lib/terminal-focus.test.mjs` covers the registry: a focused field is blurred
-first, and a `readOnly` or detached field never takes the focus.
+Option-as-Meta option, the chords that complete it, and the phone's keyboard
+path: the split handlers (the landing releases and the lift focuses, in both
+event families, as removable named listeners), the panel focusing the field on a
+mouse only, and the command line's wiring. `lib/terminal-focus.test.mjs` covers
+the registry — a focused field is blurred first, a `readOnly` or detached field
+never takes the focus, and on a touch device the panel toggle declines, because
+the focus it would leave is the one that swallows the taps after it.
+`components/TerminalComposer.test.mjs` pins the row: coarse pointers only, a
+real input with `enterKeyHint="send"` and no `readOnly`, a `useId()`-bound
+label, a Send button that keeps the focus, and a refused send that keeps the
+text.
 `npm run test:terminal` starts an isolated development server and runs
 desktop/mobile browser checks using generated session fixtures; it also asserts
 the 9px glyph size and, on macOS, that Option+E / Option+R reach the shell as
 `^[e` / `^[r`, Option+Left / Option+Right as `^[b` / `^[f`, and a synthesized
 dead-key chord (`key: "Dead"`, `code: "KeyC"`, as WebKit reports it) as `^[c` —
 `cat -v` makes the bytes visible — and that a printable chord arrives once. On
-the touch viewport it taps the screen and asserts the caret landed in xterm's
-helper field, sized and styled as a field iOS accepts, and that the tap produced
-a focus *event* (the field was already focused, and moving the focus is the
-keyboard's precondition). Install the Playwright Chromium browser first with
-`npx playwright install chromium`.
+the touch viewport it asserts connect left xterm's field unfocused; that a tap
+lands the caret in a field iOS accepts (a box, rendered, 16px, editable) with a
+focus *event*; that a **second** tap on the already-focused field produces the
+`blur` → `focus` pair, which is the reported case; and that the command line
+takes a tap as a real 16px input, carries a `printf` line to the shell, and
+still holds the focus after Send. Install the Playwright Chromium browser first
+with `npx playwright install chromium`.
 The browser check prints the temporary location of its screenshots and log.

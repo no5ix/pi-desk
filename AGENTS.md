@@ -266,7 +266,7 @@ lib/
   skill-shadowing.ts  the twin file pi's one-name loader hides, back on the Skills list
   session-prompts.ts  every user prompt with its time and reply, read on demand for the Tasks calendar (fingerprint cache)
   tool-presets.ts     PRESET_NONE/DEFAULT/FULL + getPresetFromTools()
-  terminal-focus.ts   the mounted terminals' input fields, so a tap that opens the panel moves the focus into one (iOS opens its keyboard only for a focus that moves)
+  terminal-focus.ts   the terminals' input fields and a phone's keyboard rules: the focus must *move*, one gesture cannot blur-then-focus, a read-only field opens nothing (the always-editable way in is `components/TerminalComposer.tsx`)
   types.ts            shared TypeScript types
   normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
   workspace-state.ts  persisted session/cwd/file-tab restore for desktop cold starts

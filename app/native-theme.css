@@ -10954,6 +10954,75 @@ html.dark .terminal-panel {
 .terminal-extra-keys button.is-active {
   color: var(--accent);
 }
+/* The phone terminal's command line (`components/TerminalComposer.tsx`): the keyboard's way
+   in. A phone opens its keyboard for a tap on a visible, editable field, and the terminal's
+   own field is xterm's one-cell helper textarea — `readOnly` until the shell connects, and
+   focused by the panel on connect and on tab activation — so a tap on it is a focus that does
+   not move and iOS opens nothing. This row is a real input, so it never depends on that rule.
+   `grid-row: 5` puts it under the extra keys, which globals.css pins at row 4; 16px is the
+   font size Safari needs so focusing the field does not zoom the page, the floor the chat
+   composer's inputs use. The safe-area and keyboard-open handling follows the extra-keys strip
+   (globals.css keeps the last word while a field is focused). */
+.terminal-composer {
+  grid-row: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  padding-bottom: env(safe-area-inset-bottom);
+  border-top: var(--hairline) solid var(--border);
+  background: var(--surface);
+}
+html[data-keyboard-open] .terminal-composer {
+  padding-bottom: 6px;
+}
+html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
+  padding-bottom: var(--app-safe-area-bottom);
+}
+.terminal-composer-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.terminal-composer input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  line-height: 1.25;
+}
+.terminal-composer input::placeholder {
+  color: var(--text-dim);
+}
+.terminal-composer input:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.terminal-composer button {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-caption);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.terminal-composer button:active {
+  background: var(--bg-hover);
+}
+.terminal-composer button:disabled {
+  color: var(--text-dim);
+}
 .terminal-panel-header {
   background: var(--surface);
   border-color: var(--border);
