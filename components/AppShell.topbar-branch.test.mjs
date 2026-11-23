@@ -42,7 +42,11 @@ test("the branch line is styled in the fork CSS, like the sidebar's branch meta"
   assert.match(css, /\.app-topbar-subtitle-row \{[\s\S]*?display: flex;/);
   assert.match(css, /\.app-topbar-branch \{[\s\S]*?font-family: var\(--font-mono\);/);
   assert.match(css, /\.app-topbar-title > small \{[\s\S]*?font-size: var\(--fs-caption\);/);
-  assert.match(css, /\.app-topbar-subtitle-row \{\s*display: none;/, "the mobile query hides the whole row, as it hid <small>");
+  const narrow = css.match(/@media \(max-width: 900px\) \{[\s\S]*?\n\}/);
+  assert.ok(narrow, "the narrow-screen block exists");
+  assert.match(narrow[0], /\.app-topbar-title > small \{\s*display: none;/, "the one-line subtitle the row replaced stays hidden");
+  assert.doesNotMatch(narrow[0], /\.app-topbar-subtitle-row \{\s*display: none;/,
+    "the row shows on a phone: it carries the project, the branch and the running clock under the session name");
 });
 
 test("the branch endpoint and the client cache behind it", () => {

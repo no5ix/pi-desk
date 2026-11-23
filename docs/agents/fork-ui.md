@@ -230,6 +230,39 @@ Upstream segment D (0e36743) restructured `AppShell.tsx`'s main region in ways t
 3. Since 2026-09-24 the topbar sits inside a main column that follows the sidebar as a child of the outer row: `.app-shell` (column) → offline banner → outer row → [backdrop, sidebar (full height), sidebar handle, main column → [topbar, inner row → [center chat]], panel block]. The sidebar runs the full window height (its header hosts the macOS traffic lights via `session-sidebar-header--mac-inset`), and the topbar spans only the center column. Since 2026-10-14 the file panel block is a full-height sibling of the main column, drawn as an inset card (`--right-panel-gutter`, rules at the end of `app/native-theme.css`) that reaches the window top, like Claude Desktop's side panel; the card is one plain surface (no horizontal rules, the file tree white on its left, a × close in its header) on a canvas the topbar no longer tints or underlines, and its header row is a window drag region. `WindowControls` render in the topbar while the panel is closed and in the panel's header row while it is open, so they stay at the window's top-right corner. There is deliberately no `paddingLeft: sidebarResizer.width` on the topbar anymore — that was the old full-width-topbar hack that left a blank strip above the sidebar; re-adding it on a merge regresses the layout. `app-topbar--mac-inset` (72px) is only for the sidebar-closed/mobile case where the traffic lights land on the topbar itself.
 
 The topbar renders exactly ONE toolbar group (`app-topbar-actions`: history/branches/more), pushed to the right edge by `margin-left: auto` — right-aligned since 2026-09-24 (a user request; an earlier experiment had it left of the title via `order: -1`, removed). The inline session-stats button (`renderSessionStatsButton`, ↑in ↓out ↻cache $cost) was removed the same day — session info opens from the More menu entry instead; `sessionStats`/`contextUsage` state stays (auto-name guards + More-menu labels). Segment D also left a second desktop group (`renderChatToolbarActions(false)` — history/generate-title/system/tools) next to it; the duplicate is removed, its unique entries (Sub-agents, Tools) live in the More menu via `handleSystemInfoToggle` (keeping the lazy dormant-session start), and its generate-title guards (persisted-stats counting + `selectedSession.transient` check) were merged into the group-A button — pinned by `AppShell.auto-name.test.mjs`. JSX indentation in AppShell.tsx is unreliable; verify structure with the TS AST or the DOM, not by counting whitespace. `fileContentBlock()` in `AppShell.file-viewer-state.test.mjs` slices source by the panel's closing-div sequence — keep in sync.
+
+## Conversation header: project, branch, and the running clock
+
+The title block (`app-topbar-title`) is the session title and, under it, one
+context row (`app-topbar-subtitle-row`): `[folder] project`, `[branch] branch`,
+`[clock] 1h50m`. The row replaced the old one-line `<small>` subtitle, which stays
+`display: none`. The clock (`components/TopbarElapsed.tsx`, ticking in
+`hooks/useElapsedSince.ts`) counts from the conversation's last prompt, which
+`ChatWindow` reports up (`onLastPromptChange`, from `getUserInputText` scanning
+back): a background subagent's report, a compaction summary, and the side-chat
+boundary are custom messages, so they run the clock and never restart it. The
+label is `formatTurnDurationCompact` (`1h50m`) with `tabular-nums`, and the chip is
+a component of its own on purpose — a per-second render inside AppShell would
+re-render the shell, the sidebar and the chat column every second. The row is
+**visible on a phone** (`@media (max-width: 900px)` hides only the old `<small>`;
+`@media (max-width: 640px)` widens `.app-topbar-title` to `min(64vw, 340px)`): the
+header is the only place a phone sees the project, the branch and the elapsed
+time. Pinned by `components/AppShell.topbar-elapsed.test.mjs`, and the row's shape
+and the branch's contract by `components/AppShell.topbar-branch.test.mjs`.
+
+## The right panel opens on a terminal
+
+`handleRightPanelToggle` opens a project panel onto its shell: with a live terminal
+tab it activates that tab when nothing is shown, and with none it calls
+`handleOpenTerminal(visibleProjectCwd)` — it no longer opens the file list, which is
+behind its own header button (`handleFileTreeToggle`, `fileTreeOpen`). A chat has no
+shell (`isChatWorkspaceActive`), so a chat panel with no tabs still falls back to the
+tree, and a chat's hidden cwd is never a terminal cwd. Because the panel's open path
+calls `handleOpenTerminal`, the toggle is declared *after* it in `AppShell.tsx` (a
+`useCallback` dependency array is evaluated during render: declaring it first reads an
+uninitialized `const`). The toggle also raises a phone's keyboard through
+`lib/terminal-focus.ts` — see [../terminal.md](../terminal.md).
+
 # 本地定制与桌面上游同步
 
 单选菜单（Config、推理级别、模型、表单选择与项目/分支/worktree）与设置导航共用左侧蓝色短条和选中底色，不使用对号。默认值星标保持独立：空心星直接可点，保存成功后显示点亮的实心星，无底色、边框或阴影；保存时菜单保持打开。保留键盘焦点提示与 4px 行间距。

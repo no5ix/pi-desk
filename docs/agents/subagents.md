@@ -36,3 +36,18 @@
 - One session has one chat: opening a child in the main chat closes its tab, and its row's tab button is then greyed (`AppShell`).
 - A tab is a real view of the session, so opening one on a finished child starts a wrapper through the events route, as opening it in the main chat does; the idle timer releases it. While a child just dispatched has no session to read yet, the panel retries. Only the active tab is mounted. Subagent tabs are not persisted and are dropped on every project switch (`changeFileWorkspace()`), while the file tabs are parked; an active subagent tab hands the panel to the restored project's file tabs.
 
+
+## The report a finished subagent leaves
+A finished subagent's report reaches the main session as a `pi-web:subagent-notification`
+custom message (`lib/subagent-runtime.ts`: a fresh `Date.now()` per delivery, one
+`AgentMessage` per queued report, no timestamps of its own in the text).
+`components/MessageView.tsx` renders custom messages in `CustomMessageView`, and a report
+opens **collapsed**, exactly like the compaction note: a chevron, the label, the delivery
+time, nothing else. The header is the toggle (`aria-expanded`, one click expands in place);
+folded, the card shows no body and no Copy row, because both belong to the text they report.
+A background report has no tool call to hang a card on, so its type is checked in
+`CustomMessageView` — the `AgentToolCard`'s `details.toolCallId` is null for a notification
+and only a synchronous `Agent` call carries the run in tool details.
+An ordinary extension message keeps its shape exactly: it starts open, its header stays a
+label, and a `display: false` message keeps its collapsed preview line.
+Pinned by `components/MessageView.subagent-report.test.mjs`.

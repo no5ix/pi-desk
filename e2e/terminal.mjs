@@ -181,6 +181,19 @@ try {
         // `mousedown`, which iOS synthesizes after the tap. A tap must land the
         // caret in xterm's helper field, sized and styled as a field Safari will
         // accept — 16px, or focusing it zooms the whole page.
+        //
+        // The field is also already the active element here, because the panel
+        // focuses it when the PTY connects. A tap that finds it focused fires no
+        // focus event, and Safari opens no keyboard for it — that is the bug the
+        // restart button used to work around (a restart builds a fresh, unfocused
+        // field, and the next tap moved the focus). So count focus events: the
+        // tap must produce one, blurring the focused field before focusing it.
+        await page.evaluate(() => {
+          const field = document.querySelector(".terminal-panel .xterm-helper-textarea");
+          window.__focusEvents = 0;
+          field?.addEventListener("focus", () => { window.__focusEvents += 1; });
+          field?.focus();
+        });
         await page.locator(".terminal-panel:visible .xterm-screen").tap();
         const field = await page.evaluate(() => {
           const active = document.activeElement;
@@ -192,12 +205,14 @@ try {
             height: box?.height ?? 0,
             opacity: Number(style?.opacity ?? 0),
             fontSize: style?.fontSize ?? "0px",
+            focusEvents: window.__focusEvents ?? 0,
           };
         });
         assert.match(field.className, /xterm-helper-textarea/, "a tap focuses the terminal's input field");
         assert.ok(field.width > 0 && field.height > 0, `the field has a box: ${JSON.stringify(field)}`);
         assert.ok(field.opacity > 0, `the field is rendered: ${JSON.stringify(field)}`);
         assert.equal(field.fontSize, "16px", "16px keeps Safari from zooming the page on focus");
+        assert.ok(field.focusEvents >= 1, `the tap moved the focus, which is what opens the keyboard: ${JSON.stringify(field)}`);
       }
       await run("export PR695_TOKEN=alive; printf '\\nTOKEN:%s:%s\\n' \"$PR695_TOKEN\" \"$$\"");
       await waitOutput("TOKEN:alive:[0-9]+");

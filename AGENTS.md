@@ -267,6 +267,7 @@ lib/
   skill-shadowing.ts  the twin file pi's one-name loader hides, back on the Skills list
   session-prompts.ts  every user prompt with its time and reply, read on demand for the Tasks calendar (fingerprint cache)
   tool-presets.ts     PRESET_NONE/DEFAULT/FULL + getPresetFromTools()
+  terminal-focus.ts   the mounted terminals' input fields, so a tap that opens the panel moves the focus into one (iOS opens its keyboard only for a focus that moves)
   types.ts            shared TypeScript types
   normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
   workspace-state.ts  persisted session/cwd/file-tab restore for desktop cold starts
@@ -276,6 +277,8 @@ components/
   AppShell.tsx        layout + URL state + tab management
   SessionSidebar.tsx  session tree + FileExplorer
   ChatWindow.tsx      chat composition + completion sound wrapper
+  TopbarElapsed.tsx   the header's live clock since the last prompt; its own component so a 1s tick re-renders the chip, not the shell
+  ClockIcon.tsx       the clock glyph every duration label shares
   ChatInput.tsx       input bar + model/thinking/tools/compact controls
   MessageView.tsx     renders one message (user/assistant/toolCall/toolResult)
   BranchNavigator.tsx in-session branch switcher
@@ -309,6 +312,7 @@ hooks/
   useKeyboardShortcuts.ts  Esc stops the running agent unless a field or nearer handler took it; Ctrl+Alt+N
   useResizablePanel.ts     drag/keyboard panel size kept per key; persistClamp: false never saves a short window's clamp
   useTheme.ts              theme state
+  useElapsedSince.ts       milliseconds since a timestamp, re-read every second; null on the first render so hydration matches
 ```
 
 ---
@@ -326,7 +330,7 @@ Read the doc for the area you touch before changing it. Upstream docs (no prefix
 - [models.md](docs/agents/models.md): default model and reasoning level, providers registered at session_start, mid-run reasoning changes, remote provider catalogs, `enabledModels` scoping and minimal edits, provider auth listing and credentials. Files: `app/api/models/**`, `app/api/models-config/**`, `app/api/auth/**`, `lib/default-preferences.ts`, `lib/model-scope.ts`, `lib/enabled-models*.ts`, `lib/model-catalog-refresh.ts`, `lib/deferred-provider-models.ts`, `lib/provider-listing*.ts`, `components/ModelsConfig.tsx`, `components/EnabledModelsSection.tsx`, `components/ModelSelector.tsx`, `components/SelectorRow.tsx`.
 - [files-and-access.md](docs/agents/files-and-access.md): worktrees and project grouping, the file access allow-list (the `/api/files` security boundary), file tree visibility, the app's folder window (its places rail, filter, name/date order, hidden switch, keyboard), uploads and chat file drops, web password throttling. Files: `app/api/files/**`, `app/api/cwd/**`, `app/api/worktrees/**`, `app/api/file-index/**`, `app/api/web-auth/**`, `proxy.ts`, `lib/path-security.ts`, `lib/file-access.ts`, `lib/linked-directory.ts`, `lib/session-file-references*.ts`, `lib/file-tree-visibility.ts`, `lib/file-upload-client.ts`, `lib/worktree.ts`, `lib/paths.ts`, `lib/directory-browser.ts`, `lib/directory-places.ts`, `lib/auth-throttle.ts`, `components/ProjectWorktreePicker.tsx`, `components/DirectoryPicker.tsx`, `components/NewSessionContextBar.tsx`, `components/FileExplorer.tsx`, `hooks/useDragDrop.ts`.
 - [settings-ui.md](docs/agents/settings-ui.md): Plugins and Skills routes, sidebar group switches, project-level skills (`.pi/skills`), the shared `SettingsUi` blocks every settings panel and add pane uses. Files: `app/api/plugins/**`, `app/api/skills/**`, `lib/project-skills.ts`, `lib/skill-roots.ts`, `lib/skill-shadowing.ts`, `components/SettingsUi.tsx`, `components/settings-ui-helpers.ts`, `components/SkillsConfig.tsx`, `components/PluginsConfig.tsx`; also before adding a settings section or add pane.
-- [subagents.md](docs/agents/subagents.md): the built-in subagent setting, profiles and their files, run status, completion notifications. Files: `lib/subagent*.ts`, `app/api/subagents/**`, `components/AgentsConfig.tsx`.
+- [subagents.md](docs/agents/subagents.md): the built-in subagent setting, profiles and their files, run status, completion notifications, the report card that opens collapsed. Files: `lib/subagent*.ts`, `app/api/subagents/**`, `components/AgentsConfig.tsx`, `CustomMessageView` in `components/MessageView.tsx`.
 - [scheduled-tasks.md](docs/agents/scheduled-tasks.md): scheduled tasks (the Scheduled page): server-side scheduler and its lease, catch-up and overlap rules, read-only default, the run index that hides runs from the project tree, why shared state is on `globalThis`. Files: `lib/scheduled-tasks/**`, `app/api/scheduled-tasks/**`, `instrumentation-node.ts`, `hooks/useScheduledTasks.ts`, `components/scheduled/**`, the Scheduled row in `components/SessionSidebar.tsx`, the page overlay in `components/AppShell.tsx`.
 - [artifacts.md](docs/agents/artifacts.md): inline HTML/SVG/React previews and `:::artifact` blocks, output vs process files on the Artifacts page: what renders where, the sandbox rules and the desktop `about:srcdoc` allowance, the auto-run rule for scripted pages, the bundled React runtime (inlined, because sandboxed frames cannot reach localhost; `npm run preview-runtime` regenerates it), the fix flow and the prompt switch, the cross-session Artifacts page. Files: `lib/artifacts.ts`, `lib/artifact-store.ts`, `lib/artifact-index.ts`, `lib/file-output-role.ts`, `lib/artifact-file-roles.ts`, `lib/artifact-favorites.ts`, `components/artifacts/**`, `lib/html-preview.ts`, `lib/html-preview-stream.ts`, `lib/preview-theme-kit.ts`, `lib/artifact-settings.ts`, `lib/artifact-guide-extension.ts`, `hooks/useArtifactPublisher.ts`, `hooks/useHtmlPreviewFrame.ts`, `lib/preview-runtime.ts`, `scripts/build-preview-runtime.mjs`, `public/preview-runtime/`, `components/Artifact*.tsx`, `components/HtmlPreview*.tsx`, `components/artifact-tabs.ts`, `app/api/artifacts/**`, `is_inline_frame_document` in `src-tauri/src/lib.rs`.
 - [remote-relay.md](docs/remote-relay.md): the end-to-end encrypted relay (Noise IK over a dumb relay, phone shell + tunnel service worker, pairing, request mark). Files: `lib/relay/**`, `relay/` (server, Docker), `relay-shell/` (`npm run relay:shell`), `app/api/relay/**`, `components/RelaySection.tsx`, `e2e/relay.mjs`; deploying: [remote-relay-deploy.md](docs/remote-relay-deploy.md). A request carrying the relay mark comes from a paired phone: it is never local (`isLocalRequest`), and local-only routes must ask `isLocalRequest()`, never a loopback Host.
@@ -338,7 +342,7 @@ Fork notes:
 - [fork-tools-subagents.md](docs/agents/fork-tools-subagents.md): new-session tool presets and Chat only, exact system prompts through `before_agent_start`, built-in subagents (setting, disabled built-ins, profile files, notifications).
 - [fork-files-security.md](docs/agents/fork-files-security.md): security posture (web password, OAuth tokens, preview sandboxes), worktrees and branch switching, the file access allow-list, web password throttling, the one sentence a finished task is announced with (the server: `lib/task-completion-server.ts`, the page's banner: `lib/task-completion-notice.ts`, shared tag and windows: `lib/notification-tags.ts`) and the phone pushes.
 - [fork-desktop.md](docs/agents/fork-desktop.md): the Tauri shell (desktop token, native menus in Rust, file context menu, window state, tauri plugin version pairing), workspace terminals and node-pty / quickjs staging, Windows overwrite installs, and the payload credential scan that keeps `.pi/mcp.json` out of an installer.
-- [fork-ui.md](docs/agents/fork-ui.md): who contains whom in the topbar / chat column / right panel, the settings dialog tabs, touch affordances, completion sound, plugins and skills.
+- [fork-ui.md](docs/agents/fork-ui.md): who contains whom in the topbar / chat column / right panel, the header's `[folder] project  [branch] branch  [clock] time` row (desktop and phone), the right panel opening on a terminal, the settings dialog tabs, touch affordances, completion sound, plugins and skills.
 - [fork-chat-workspace.md](docs/agents/fork-chat-workspace.md): the non-project Chats section, the hidden `chat-workspace` cwd and `workspaceKind` identity, project-workbench suppression, and the server-enforced chat policy (skills and MCP yes; no file, shell or other extension tools; no context files), text attachments, and continuing a chat in a project.
 
 ### AgentSession lifecycle (`lib/rpc-manager.ts`)

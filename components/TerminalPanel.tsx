@@ -16,6 +16,7 @@ import {
   type TerminalModifiers,
 } from "@/lib/terminal-extra-keys";
 import { macOptionSequence } from "@/lib/terminal-input";
+import { registerTerminalInputField } from "@/lib/terminal-focus";
 import type { TerminalEvent } from "@/lib/terminal-manager";
 import { TerminalExtraKeys, useTerminalExtraKeysVisible } from "./TerminalExtraKeys";
 import type { TerminalTab } from "./terminal-tab-state";
@@ -128,10 +129,23 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     // font size and the opacity Safari needs to treat it as a visible field.
     const focusFromTouch = (event: PointerEvent | TouchEvent) => {
       if (event instanceof PointerEvent && event.pointerType === "mouse") return;
+      // Safari opens the keyboard only for a focus that *moves* to an editable
+      // field during the touch. The panel focuses this field itself — when the
+      // PTY connects, when the tab becomes active — so by the time a finger
+      // lands, the field is already the active element: a plain `focus()` fires
+      // no focus event and the keyboard stays hidden, however many times you
+      // tap. Restarting the terminal builds a fresh, unfocused field, which is
+      // why the first tap after a restart opened the keyboard. Blur first, so
+      // the tap is a focus change.
+      const field = terminal.textarea;
+      if (field && field.ownerDocument.activeElement === field) field.blur();
       terminal.focus();
     };
     container.addEventListener("pointerdown", focusFromTouch, true);
     container.addEventListener("touchend", focusFromTouch, true);
+    // The panel toggle and the Explorer's terminal action raise the phone's
+    // keyboard from the tap that opens the panel (see lib/terminal-focus.ts).
+    registerTerminalInputField(id, terminal.textarea ?? null);
     // Update the existing renderer, never restart the PTY on a theme change.
     const themeObserver = new MutationObserver(() => {
       terminal.options.theme = terminalTheme(container);
@@ -201,6 +215,12 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       events?.close();
       events = new EventSource(`/api/terminal/${encodeURIComponent(id)}/events${offset === undefined ? "" : `?after=${offset}`}`);
       events.onmessage = (message) => {
+        // The stream is delivering, so the shell is there to take input. WebKit
+        // gives no guarantee that EventSource's `open` fires, and xterm mirrors
+        // `disableStdin` onto its helper field's `readOnly` — a read-only field
+        // opens no keyboard on iOS — so the first message opens input too.
+        connected = true;
+        if (!exited && !inputFailed) terminal.options.disableStdin = false;
         const event = JSON.parse(message.data) as TerminalEvent;
         if (event.type === "output") {
           if (event.reset) terminal.reset();
@@ -269,6 +289,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       void writer.stop();
       resizeObserver.disconnect();
       themeObserver.disconnect();
+      registerTerminalInputField(id, null);
       container.removeEventListener("pointerdown", focusFromTouch, true);
       container.removeEventListener("touchend", focusFromTouch, true);
       cancelAnimationFrame(fontFrame);

@@ -56,6 +56,21 @@ test("a tap on a phone's terminal opens the software keyboard", () => {
   assert.match(source, /event instanceof PointerEvent && event\.pointerType === "mouse"\) return;/);
   assert.match(source, /container\.removeEventListener\("pointerdown", focusFromTouch, true\)/);
   assert.match(source, /container\.removeEventListener\("touchend", focusFromTouch, true\)/);
+  // ...and the focus has to *move*. The panel focuses this field on its own — when
+  // the PTY connects (onopen) and when the tab becomes active — so by the time a
+  // finger lands the field is the active element: a plain `focus()` fires no focus
+  // event and Safari opens no keyboard, however many times you tap. A restart built
+  // a fresh, unfocused field, which is why the tap after a restart opened one. The
+  // tap blurs a focused field, then focuses it, in the same gesture.
+  assert.match(source, /const field = terminal\.textarea;\n\s*if \(field && field\.ownerDocument\.activeElement === field\) field\.blur\(\);/);
+  // A read-only field opens no keyboard either, and WebKit gives no guarantee that
+  // EventSource's `open` fires, so the first message opens input as well.
+  const stream = source.slice(source.indexOf("events.onmessage"), source.indexOf("events.onopen"));
+  assert.match(stream, /terminal\.options\.disableStdin = false;/);
+  // The panel publishes its field, so the tap that opens the panel can raise the
+  // keyboard (lib/terminal-focus.ts).
+  assert.match(source, /registerTerminalInputField\(id, terminal\.textarea \?\? null\);/);
+  assert.match(source, /registerTerminalInputField\(id, null\);/, "and retires it when the tab closes");
   // ...and for a field it renders. xterm's `_syncTextArea` writes left / top /
   // width / height / line-height inline to follow the cursor, so the only
   // property that can hide the field is its stylesheet's `opacity: 0`; 16px is

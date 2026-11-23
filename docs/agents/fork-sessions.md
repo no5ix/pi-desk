@@ -224,3 +224,25 @@ the requirement, and `npm run dev` dying with "Error evaluating Node.js code" is
 this guard prevents. When the installed tree resolves a newer 2.x than the lockfile's 2.0.1,
 the loader follows the package, not the lockfile — check the package's lookbehinds, do not
 pin the loader to one version's text.
+
+## A turn's length, and the time on each reply
+`lib/turn-duration.ts` measures a finished turn from its anchor (the user's message, a
+compaction summary, a subagent completion) to the last response or tool result in it, and
+`ChatWindow` keys the result to the reply that closes the turn (`turnDurationByIndex`);
+`MessageView` shows it in the footer between Copy and the timestamp as
+`[clock] 1h50m` (`formatTurnDurationCompact` — the compact shape a footer is read at;
+the tooltip keeps the notification's full `0h50m12s`, `formatDurationHms`). Two rules
+keep it honest and always present:
+- A background subagent's report is the task working, **not** an idle wait. A custom
+  message from an extension that started a later run (`triggerTurn`) is a gap and is
+  subtracted; `pi-web:subagent-notification` is not, and it extends the turn. A turn that
+  spent an hour waiting for a subagent reports the hour.
+- The anchor's timestamp is all a turn needs. A reply with no `durationMs` (a provider
+  that reports none, a session written before pi 1.1) ends where it started — the honest
+  floor, so the footer carries the task's length instead of nothing. Only an anchor with
+  no time leaves the footer blank.
+Every assistant reply also carries its own time next to its model name
+(`.message-assistant-model-time`, `formatTime`), so a run read in Process details is dated
+line by line; the footer's sparser `showTimestamp` rule is unchanged.
+Pinned by `lib/turn-duration.test.mjs`, `components/MessageView.turn-duration.test.mjs`
+and `components/MessageView.subagent-report.test.mjs`.

@@ -11,6 +11,8 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { formatDurationHms } from "@/lib/completion-notification";
+import { formatTurnDurationCompact } from "@/lib/turn-duration";
+import { ClockIcon } from "./ClockIcon";
 import { ProcessDetailsContext } from "./process-details-context";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
 import { fillContentGaps } from "@/lib/assistant-content";
@@ -721,6 +723,10 @@ function AssistantMessageView({
 }) {
   const { t, locale } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp, locale) : null;
+  // The model line carries the reply's own time: the Process details card runs one
+  // model line per reply, and a finished run with no times on them reads as one
+  // undated block. The footer keeps its own, sparser timestamp rules.
+  const modelTime = formatTime(message.timestamp, locale);
   const blockItems = useMemo(() => (message.content ?? [])
     .map((block, originalIndex) => ({ block, originalIndex }))
     .filter(({ block }) => !isEmptyThinkingBlock(block, { isStreaming })), [message.content, isStreaming]);
@@ -869,6 +875,12 @@ function AssistantMessageView({
       >
         {message.provider && (
           <span>{getModelDisplayName(message.provider, message.model, modelNames)}</span>
+        )}
+        {modelTime && (
+          <span className="message-assistant-model-time">
+            <ClockIcon size={10} />
+            {modelTime}
+          </span>
         )}
         {isStreaming && (() => {
           const est = Math.round(estimatedTokens);
@@ -1030,14 +1042,16 @@ function AssistantMessageView({
           </button>
         )}
         {/* How long this turn took, between Copy and the timestamp: the task is over
-            when the reply is, so it appears with the finished footer. Same shape as the
-            completion notification (0h31m10s), not the spaced `3m 5s` of Process details. */}
+            when the reply is, so it appears with the finished footer. The compact
+            `1h50m` shape a glance at the footer needs, with a clock to say what the
+            number is; the completion notification keeps its own full `0h50m12s`. */}
         {turnDurationMs !== undefined && !isStreaming && (
           <span
             className="message-turn-duration"
             title={t("chat.turnDurationHint", { duration: formatDurationHms(turnDurationMs) })}
           >
-            {formatDurationHms(turnDurationMs)}
+            <ClockIcon size={11} />
+            {formatTurnDurationCompact(turnDurationMs)}
           </span>
         )}
         {time && !isStreaming && (
@@ -2054,7 +2068,13 @@ function CompactionFileList({ title, files }: { title: string; files: string[] }
 function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessage; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void }) {
   const { t, locale } = useI18n();
   const isHiddenDisplay = message.display === false;
-  const [contentExpanded, setContentExpanded] = useState(!isHiddenDisplay);
+  // A background subagent's report is a wall of text the main agent has already
+  // read. Like the compaction note, the card opens collapsed with its header as
+  // the toggle: opening a finished session (or watching one finish) lands on the
+  // conversation, not on the last report, and one click expands it in place.
+  const collapsesByDefault = message.customType === "pi-web:subagent-notification"
+    || message.customType === "subagent-notification";
+  const [contentExpanded, setContentExpanded] = useState(!isHiddenDisplay && !collapsesByDefault);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const text = getMessageText(message.content);
@@ -2082,6 +2102,51 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
           opacity: isHiddenDisplay && !contentExpanded ? 0.82 : 1,
         }}
       >
+        {collapsesByDefault ? (
+          <button
+            type="button"
+            className="custom-message-header"
+            aria-expanded={contentExpanded}
+            onClick={() => setContentExpanded((value) => !value)}
+            title={t(contentExpanded ? "chat.collapseSubagentReport" : "chat.expandSubagentReport")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              width: "100%",
+              padding: "7px 10px",
+              border: "none",
+              borderBottom: "var(--hairline) solid var(--border)",
+              background: "var(--bg-panel)",
+              color: "var(--text-muted)",
+              textAlign: "left",
+              fontSize: "var(--fs-caption)",
+              cursor: "pointer",
+            }}
+          >
+            {/* The same chevron the compaction card turns, so a collapsed note
+                and a collapsed report read as the same object. */}
+            <svg
+              className="compaction-card-chevron"
+              data-expanded={contentExpanded ? "true" : "false"}
+              width="11"
+              height="11"
+              viewBox="0 0 15 15"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="4 2.5 7.5 6 4 9.5" />
+            </svg>
+            <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)", fontWeight: "var(--fw-semibold)" }}>
+              {title}
+            </span>
+            {time && <span className="message-meta" style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{time}</span>}
+          </button>
+        ) : (
         <div
           style={{
             display: "flex",
@@ -2100,6 +2165,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
           {isHiddenDisplay && <span style={{ color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{t("i18n.hiddenExtensionMessage")}</span>}
           {time && <span className="message-meta" style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{time}</span>}
         </div>
+        )}
 
         {contentExpanded ? (
           <div style={{ padding: "6px 9px" }}>
@@ -2123,7 +2189,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             )}
              {text ? <MarkdownBody className="markdown-custom-message" keepTextLayout cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody> : <span style={{ color: "var(--text-dim)", fontSize: "var(--fs-caption)" }}>{t("i18n.noMessage")}</span>}
           </div>
-        ) : (
+        ) : isHiddenDisplay ? (
           <button
             onClick={() => setContentExpanded(true)}
             style={{
@@ -2140,8 +2206,11 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
           >
              {text ? previewText(text) : t("i18n.showExtensionMessage")}
           </button>
-        )}
+        ) : null}
 
+        {/* A collapsed report shows nothing but its header, as the compaction
+            card does: the Copy and details row belongs to the text it reports. */}
+        {(contentExpanded || !collapsesByDefault) && (
         <div
           style={{
             display: "flex",
@@ -2189,6 +2258,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             </button>
           )}
         </div>
+        )}
 
         {hasDetails && ((isHiddenDisplay && contentExpanded) || (!isHiddenDisplay && detailsExpanded)) && (
           <pre

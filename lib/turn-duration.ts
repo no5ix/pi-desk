@@ -8,8 +8,21 @@ function recordedMs(value: unknown): number | undefined {
 function responseEnd(message: AgentMessage): number | undefined {
   if (message.role !== "assistant") return undefined;
   const start = recordedMs(message.timestamp);
+  if (start === undefined) return undefined;
   const duration = recordedMs(message.durationMs);
-  return start !== undefined && duration !== undefined ? start + duration : undefined;
+  // A reply with no recorded length (a provider that reports none, a session
+  // written before pi 1.1) ends where it started. That is the honest floor of
+  // the turn, and it keeps the footer's length on the task instead of blank.
+  return duration === undefined ? start : start + duration;
+}
+
+/** A background subagent's report, delivered as a custom message (lib/subagent-runtime.ts). */
+const SUBAGENT_REPORT_TYPES = new Set(["pi-web:subagent-notification", "subagent-notification"]);
+
+function isSubagentReport(message: AgentMessage): boolean {
+  if (message.role !== "custom") return false;
+  const customType = (message as { customType?: unknown }).customType;
+  return typeof customType === "string" && SUBAGENT_REPORT_TYPES.has(customType);
 }
 
 /** A reply that answered the turn: a run that follows it was started later, e.g. by an extension's message. */
@@ -18,17 +31,32 @@ function answersTurn(message: AgentMessage): boolean {
 }
 
 /**
+ * When the turn began. The anchor is usually the user's message, and a user entry
+ * carries no time of its own, so the turn starts at the first time the transcript
+ * records inside it — its own timestamp if the writer set one, else the moment its
+ * first reply (or a tool) began. The scan stops at the turn's end, so a later turn's
+ * time is never read as this turn's start.
+ */
+function turnStart(messages: AgentMessage[], anchorIdx: number, endIdx: number): number | undefined {
+  for (let idx = anchorIdx; idx < endIdx; idx++) {
+    const at = recordedMs(messages[idx].timestamp);
+    if (at !== undefined) return at;
+  }
+  return undefined;
+}
+
+/**
  * How long a finished turn took: from its anchor (the user's message, a compaction summary,
  * a subagent completion) until the last response or tool result in `messages[anchorIdx + 1, endIdx)`
  * ended, less the waits between an answer and a run an extension started after it (its message,
- * e.g. pi's `triggerTurn`, is no anchor). Undefined when the anchor has no time, or when the turn's
- * last response predates `durationMs`: its timestamp is when it started, so the turn's end is unknown.
+ * e.g. pi's `triggerTurn`, is no anchor). Undefined when nothing in the turn carries a time: a
+ * turn whose replies report no length is measured to the last thing that happened in it, because
+ * the task ran at least that long.
  */
 export function getTurnDurationMs(messages: AgentMessage[], anchorIdx: number, endIdx: number): number | undefined {
-  const start = recordedMs(messages[anchorIdx]?.timestamp);
+  const start = turnStart(messages, anchorIdx, endIdx);
   if (start === undefined) return undefined;
   let end: number | undefined;
-  let lastResponseTimed = false;
   let idle = 0;
   let answeredAt: number | undefined;
   let nextRunAt: number | undefined;
@@ -38,19 +66,39 @@ export function getTurnDurationMs(messages: AgentMessage[], anchorIdx: number, e
       if (answeredAt !== undefined && nextRunAt !== undefined) idle += Math.max(0, nextRunAt - answeredAt);
       answeredAt = nextRunAt = undefined;
       const ended = responseEnd(message);
-      lastResponseTimed = ended !== undefined;
       if (ended !== undefined) end = Math.max(end ?? ended, ended);
       if (ended !== undefined && answersTurn(message)) answeredAt = end;
     } else if (message.role === "toolResult") {
       const ended = recordedMs(message.timestamp);
       if (ended !== undefined) end = Math.max(end ?? ended, ended);
+    } else if (isSubagentReport(message)) {
+      // A background subagent's report is the task working, not a wait: the time
+      // between an answer and the report is the run it delivers, so the report
+      // ends the turn no further and takes nothing off it.
+      const at = recordedMs(message.timestamp);
+      if (at !== undefined) end = Math.max(end ?? at, at);
     } else if (answeredAt !== undefined) {
       const at = recordedMs(message.timestamp);
       if (at !== undefined) nextRunAt = Math.max(nextRunAt ?? at, at);
     }
   }
-  if (!lastResponseTimed || end === undefined) return undefined;
+  if (end === undefined) return undefined;
   return Math.max(0, end - start - idle);
+}
+
+/**
+ * The same length in the header's and a footer's compact shape: `45s`, `12m30s`,
+ * `1h50m`. Units a shorter turn has are left out, so a long task reads at a glance
+ * in the width a topbar label has.
+ */
+export function formatTurnDurationCompact(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  if (minutes < 60) return `${minutes}m${totalSeconds % 60}s`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest > 0 ? `${hours}h${rest}m` : `${hours}h`;
 }
 
 /** A turn's length as the chat shows it, in whole seconds: 14s, then 3m 5s, then 1h 2m 5s. */

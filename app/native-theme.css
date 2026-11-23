@@ -3417,10 +3417,14 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   font-weight: var(--fw-medium);
 }
 .app-topbar-project {
+  /* The project is the line's identity: it keeps a few characters and its icon
+     even on a phone, so the long branch name is the one that ellipsizes. */
   flex: 0 1 auto;
+  min-width: 5.5em;
 }
 .app-topbar-branch {
-  flex: 0 1 auto;
+  flex: 1 1 0;
+  min-width: 0;
   color: var(--text-dim);
   font-family: var(--font-mono);
 }
@@ -3435,6 +3439,27 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The live clock after the branch: how long the task has been running since the
+   last prompt. It re-reads itself every second, so `tabular-nums` keeps the
+   ticking label from re-flowing the row around it, and it never shrinks — the
+   project name is the one that ellipsizes. */
+.app-topbar-elapsed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+.app-topbar-elapsed svg {
+  flex: 0 0 auto;
+  color: var(--text-dim);
 }
 .native-icon-button,
 .native-toolbar-button {
@@ -5762,13 +5787,30 @@ html.dark {
    Copy button, and monospace like the other footer meta. The timestamp keeps its own
    `margin-left: auto`, so this does not move the two existing controls. */
 .message-turn-duration {
+  /* The length sits beside a clock glyph, between Copy and the footer time. */
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
   font-weight: var(--fw-regular);
   white-space: nowrap;
   cursor: default;
   user-select: none;
+}
+
+/* The time a reply was made, next to the model that made it. The Process
+   details card runs one model line per reply: with no time on the lines, a
+   finished subagent's work reads as one undated block. */
+.message-assistant-model-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* The compaction / branch-summary card. Its header row is the toggle, and the card
@@ -5936,9 +5978,39 @@ html.dark {
     max-width: 160px;
   }
 
-  .app-topbar-title > small,
-  .app-topbar-subtitle-row {
+  /* The one-line subtitle the project row replaced stays hidden. The row itself
+     does not: on a phone the header is the only place the project, the branch
+     and the running clock appear, so it shows below the session name. */
+  .app-topbar-title > small {
     display: none;
+  }
+
+  .app-topbar-subtitle-row {
+    gap: 6px;
+    margin-top: 1px;
+  }
+}
+
+@media (max-width: 640px) {
+  /* A phone's header carries the project line — `[folder] project  [branch] branch
+     [clock] 1h50m` — under the session name. The bar's buttons are small, so the
+     title takes the room it needs, and the project name is the part that ellipsizes.
+     The row is the title block's own second line, so it never lands on the title. */
+  .app-topbar-title {
+    max-width: min(64vw, 340px);
+  }
+
+  .app-topbar-subtitle-row {
+    gap: 5px;
+  }
+
+  .app-topbar-project {
+    /* A phone's row is short: the project keeps its icon and ~5 characters. */
+    min-width: 5em;
+  }
+
+  .app-topbar-elapsed {
+    gap: 3px;
   }
 }
 

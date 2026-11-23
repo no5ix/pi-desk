@@ -85,6 +85,14 @@ interface Props {
   /** Opens Settings on a section: a bare `/mcp` that pi's built-in MCP extension owns opens Settings › MCP. */
   onOpenSettings?: (section: SettingsSection) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
+  /**
+   * When the conversation's last prompt was sent, for the header's live clock
+   * (TopbarElapsed). The user's own message starts the count — a background
+   * subagent's report and the side-chat boundary are custom messages, and a
+   * compaction summary is no prompt. `null` when the chat has none, and on
+   * unmount, so the header never keeps a clock from another session.
+   */
+  onLastPromptChange?: (timestamp: number | null) => void;
   onSelectProject?: () => void;
   projectOptions?: string[];
   onProjectChange?: (projectRoot: string) => void;
@@ -292,7 +300,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatOnly = workspaceKind === "chat" || session?.workspaceKind === "chat";
@@ -884,6 +892,34 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     onContextUsageChange?.(contextUsageRef.current);
   }, [ctxKey, onContextUsageChange]);
   useEffect(() => () => { onContextUsageChange?.(null); }, [onContextUsageChange]);
+
+  // The header's clock runs from the user's own prompt: the newest message the
+  // user (or a `/skill` command they sent) put in the conversation. A user entry
+  // carries no time of its own, so the clock starts at the first time the
+  // transcript records for that prompt — its own timestamp if the writer set one,
+  // else the moment its reply (or a tool) began. A context that opens after a
+  // compaction holds no prompt at all, and then the clock counts from the oldest
+  // time the visible transcript records. Same rule as the turn's length.
+  const lastPromptAt = useMemo(() => {
+    let promptIdx = -1;
+    for (let idx = messages.length - 1; idx >= 0; idx--) {
+      if (getUserInputText(messages[idx]) !== null) {
+        promptIdx = idx;
+        break;
+      }
+    }
+    for (let idx = Math.max(0, promptIdx); idx < messages.length; idx++) {
+      const time = (messages[idx] as { timestamp?: number }).timestamp;
+      if (typeof time === "number") return time;
+    }
+    return null;
+  }, [messages]);
+  const lastPromptRef = useRef(lastPromptAt);
+  lastPromptRef.current = lastPromptAt;
+  useEffect(() => {
+    onLastPromptChange?.(lastPromptRef.current);
+  }, [lastPromptAt, onLastPromptChange]);
+  useEffect(() => () => { onLastPromptChange?.(null); }, [onLastPromptChange]);
 
   const cwd = chatOnly ? undefined : session?.cwd ?? newSessionCwd;
   // A chat with its own folder opens what it made in the right panel; a legacy
@@ -1541,7 +1577,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                     onCancelEdit={cancelEdit}
                     isEditing={editEntryId === entryIds[idx]}
                     showTimestamp={showTimestamp}
-                    turnDurationMs={showTimestamp ? turnDurationByIndex.get(idx) : undefined}
+                    turnDurationMs={turnDurationByIndex.get(idx)}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
                     sessionId={session?.id ?? sessionIdRef.current ?? undefined}
                     writtenFiles={options.writtenFiles}

@@ -102,11 +102,34 @@ the cursor, so the CSS must not set geometry: that is what anchors an IME. The
 field is read-only while `disableStdin` is on, which is why a tap while the panel
 still says "connecting" cannot raise a keyboard.
 
+The focus must also *move*. Safari opens the keyboard when focus arrives at an
+editable field during the touch; re-focusing the field that is already the active
+element fires no focus event, so no keyboard opens, however many times you tap.
+The panel focuses the field itself when the PTY connects (`events.onopen`) and
+when the tab becomes active, so every tap found it focused and did nothing —
+while a tap after *Restart terminal* worked, because a restart builds a fresh
+`Terminal` whose field nobody has focused yet. That is the whole difference, and
+the fix: `focusFromTouch` blurs a focused field before focusing it, so the tap is
+a focus change. Two more keys turn the same lock: a `readOnly` field never raises
+a keyboard, and WebKit gives no guarantee EventSource's `open` fires, so the
+first SSE message opens input (`disableStdin = false`) as well as `onopen`.
+
+A tap that *opens* the panel can raise the keyboard too, since the tap is the
+gesture: the panel publishes its field to `lib/terminal-focus.ts` (a module, not
+a ref, because the panel is `dynamic()`-loaded while `components/AppShell.tsx`
+owns the panel toggle and the Explorer's terminal action), and `handleOpenTerminal`
+/ `handleRightPanelToggle` call `focusTerminalInputFromTouch()` from the click.
+A terminal tab created by that same tap has no field yet — its panel mounts after
+the gesture ended — so the keyboard arrives with the next tap.
+
 ## Verification
 
 Run `npm test` for native PTY, lease, output cursor, input queue, and storage
 checks, and `components/TerminalPanel.options.test.mjs` for the glyph size, the
-Option-as-Meta option, the chords that complete it, and the phone's tap-to-focus.
+Option-as-Meta option, the chords that complete it, and the phone's tap-to-focus
+(the blur-then-focus, and the field the panel publishes for the panel toggle).
+`lib/terminal-focus.test.mjs` covers the registry: a focused field is blurred
+first, and a `readOnly` or detached field never takes the focus.
 `npm run test:terminal` starts an isolated development server and runs
 desktop/mobile browser checks using generated session fixtures; it also asserts
 the 9px glyph size and, on macOS, that Option+E / Option+R reach the shell as
@@ -114,6 +137,8 @@ the 9px glyph size and, on macOS, that Option+E / Option+R reach the shell as
 dead-key chord (`key: "Dead"`, `code: "KeyC"`, as WebKit reports it) as `^[c` —
 `cat -v` makes the bytes visible — and that a printable chord arrives once. On
 the touch viewport it taps the screen and asserts the caret landed in xterm's
-helper field, sized and styled as a field iOS accepts. Install the Playwright
-Chromium browser first with `npx playwright install chromium`.
+helper field, sized and styled as a field iOS accepts, and that the tap produced
+a focus *event* (the field was already focused, and moving the focus is the
+keyboard's precondition). Install the Playwright Chromium browser first with
+`npx playwright install chromium`.
 The browser check prints the temporary location of its screenshots and log.

@@ -32,6 +32,7 @@ import { SettingsPanel } from "./SettingsPanel";
 import { keepDocumentTitle } from "@/lib/document-title";
 import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
+import { TopbarElapsed } from "./TopbarElapsed";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useFonts } from "@/hooks/useFonts";
@@ -64,6 +65,7 @@ import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
 import { AgentSessionPanel } from "./AgentSessionPanel";
 import { SessionChatPanel } from "./SessionChatPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
+import { focusTerminalInputFromTouch } from "@/lib/terminal-focus";
 import { artifactPanelTab, artifactTabId, artifactTabsForSession, upsertArtifactTab, type ArtifactTab } from "./artifact-tabs";
 import { ArtifactPanel } from "./ArtifactPanel";
 import { ArtifactsView } from "./artifacts/ArtifactsView";
@@ -546,6 +548,15 @@ export function AppShell() {
     setContextUsage(usage);
   }, []);
 
+  // When the open conversation's last prompt was sent — populated by ChatWindow,
+  // and the header's live clock (TopbarElapsed) counts from it. The chat reports
+  // null as it unmounts, so a session switch never leaves the clock running from
+  // the session that was left.
+  const [lastPromptAt, setLastPromptAt] = useState<number | null>(null);
+  const handleLastPromptChange = useCallback((timestamp: number | null) => {
+    setLastPromptAt(timestamp);
+  }, []);
+
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -781,21 +792,8 @@ export function AppShell() {
     setPanelTabOrder((order) => order.every((id) => open.has(id)) ? order : order.filter((id) => open.has(id)));
   }, [panelTabIds]);
   const activeArtifactTab = artifactTabs.find((tab) => tab.id === activeFileTabId) ?? null;
-  const handleRightPanelToggle = useCallback(() => {
-    if (isMobile) {
-      setSidebarOpen(false);
-      setActiveTopPanel(null);
-    }
-    setTopMoreOpen(false);
-    setRightPanelOpen((open) => {
-      // A manual open with no tab lands on the project file tree, not a mostly
-      // empty "No file open" state.
-      if (!open && panelTabs.length === 0) setFileTreeOpen(true);
-      if (open) setRightPanelExpanded(false);
-      return !open;
-    });
-  }, [isMobile, panelTabs]);
-
+  // The panel's open path lives below handleOpenTerminal: opening the panel
+  // opens a terminal, so the toggle has to be able to call it.
   useEffect(() => {
     try {
       const saved = restoreTerminalTabs(window.sessionStorage.getItem(TERMINAL_TABS_KEY));
@@ -1762,7 +1760,46 @@ export function AppShell() {
     setActiveFileTabId(tab.id);
     setRightPanelOpen(true);
     if (isMobile) setSidebarOpen(false);
+    // A tab that is already mounted has an input field to take the focus, and
+    // this tap is the gesture iOS demands for the phone's keyboard. A tab created
+    // here has none yet: its panel mounts after the gesture ended.
+    if (existing) focusTerminalInputFromTouch(existing.id);
   }, [isChatWorkspaceActive, terminalTabs, isMobile]);
+  // Opening the panel opens the project's shell, not the file list. The tree is
+  // behind its own button in the panel header, and the old default landed a
+  // manual open there, one tap away from a mostly empty "No file open" panel.
+  // A chat has no shell, so a chat panel keeps the tree as its content.
+  const handleRightPanelToggle = useCallback(() => {
+    if (isMobile) {
+      setSidebarOpen(false);
+      setActiveTopPanel(null);
+    }
+    setTopMoreOpen(false);
+    if (rightPanelOpen) {
+      setRightPanelExpanded(false);
+      setRightPanelOpen(false);
+      return;
+    }
+    const liveTerminal = terminalTabs.find((tab) => !tab.closing);
+    if (liveTerminal) {
+      // The tap that opens the panel is the gesture; a mounted terminal has a
+      // field to focus, so a phone gets its keyboard with the panel.
+      focusTerminalInputFromTouch(liveTerminal.id);
+      // Only a panel with nothing shown falls back to the terminal: a file, an
+      // artifact or a side chat the user was reading keeps its tab.
+      if (!activeFileTabId || !panelTabs.some((tab) => tab.id === activeFileTabId)) {
+        setActiveFileTabId(liveTerminal.id);
+      }
+      setRightPanelOpen(true);
+      return;
+    }
+    if (visibleProjectCwd) {
+      handleOpenTerminal(visibleProjectCwd);
+      return;
+    }
+    if (panelTabs.length === 0) setFileTreeOpen(true);
+    setRightPanelOpen(true);
+  }, [activeFileTabId, isMobile, panelTabs, rightPanelOpen, terminalTabs, visibleProjectCwd, handleOpenTerminal]);
 
   // Message cards open artifacts through lib/artifact-store. An automatic open
   // (a streamed artifact just finished) is skipped on mobile, where the panel
@@ -2437,6 +2474,10 @@ export function AppShell() {
                     <span>{topBarBranch}</span>
                   </small>
                 )}
+                {/* The live clock after the branch: how long the task has been
+                    running since the last prompt. It ticks in its own component,
+                    so a second passing re-renders this label and not the shell. */}
+                {showChat && !pageOpen && <TopbarElapsed since={lastPromptAt} />}
               </span>
             )}
           </div>
@@ -3099,6 +3140,7 @@ export function AppShell() {
               onSessionStatsPanelOpen={openSessionStatsPanel}
               onOpenSettings={openSettingsSection}
               onContextUsageChange={handleContextUsageChange}
+              onLastPromptChange={handleLastPromptChange}
               onSelectProject={desktopMode && !isChatWorkspaceActive
                 ? () => void handleSelectProjectFromComposer()
                 : undefined}
