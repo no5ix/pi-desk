@@ -102,6 +102,12 @@ test("the fields stack, the status line belongs to the switch, the buttons get t
   assert.match(actions, /\{t\("ntfyNotify\.save"\)\}/);
   assert.match(actions, /\{canTest && \(\n\s*<ConfigButton/);
   assert.match(actions, /\{t\("ntfyNotify\.test"\)\}/, "Send Test Notice stays reachable beside Save");
+  // The styles are the Network proxy row's pair: the write is filled (primary), the probe is
+  // the bordered secondary button. Two ghost labels read as text, not as controls.
+  assert.match(actions, /<ConfigButton[\s\S]*?variant="primary"[\s\S]*?\{t\("ntfyNotify\.save"\)\}/,
+    "Save is the primary button, like Settings › General › Network proxy");
+  assert.match(actions, /<ConfigButton[\s\S]*?variant="secondary"[\s\S]*?\{t\("ntfyNotify\.test"\)\}/,
+    "Send Test Notice is the bordered secondary button, like Test connection");
   assert.match(css, /\.ntfy-notification-actions \{\n\s*display: flex;\n\s*flex-wrap: wrap;\n\s*gap: 8px;\n\s*padding: 0 14px 12px;\n\}/,
     "the row keeps the inset of the settings rows around it");
 });

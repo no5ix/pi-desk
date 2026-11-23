@@ -162,9 +162,11 @@ export function NtfyNotificationSection() {
           />
         </div>
         <div className="ntfy-notification-actions">
+          {/* The same pair the Network proxy row uses: the write is the primary button, the
+              probe is the bordered secondary one. */}
           <ConfigButton
             className="settings-option-action"
-            variant="ghost"
+            variant="primary"
             disabled={!editable || busy || !serverUrl.trim()}
             onClick={saveFields}
           >
@@ -173,7 +175,7 @@ export function NtfyNotificationSection() {
           {canTest && (
             <ConfigButton
               className="settings-option-action"
-              variant="ghost"
+              variant="secondary"
               disabled={busy}
               onClick={test}
             >

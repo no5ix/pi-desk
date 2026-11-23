@@ -54,8 +54,12 @@ export interface WebPushNotifier {
   addSubscription: (subscription: PushSubscriptionRecord) => void;
   removeSubscription: (endpoint: string) => boolean;
   hasSubscription: (endpoint: string) => boolean;
-  notifySessionComplete: (sessionId: string) => Promise<void>;
-  /** `sessionName`: the caller's copy of the title (null = untitled); omitted, it is looked up. */
+  /**
+   * One session's news. `sessionName`: the caller's copy of the title (null = untitled);
+   * omitted, it is looked up. A `complete` event is only worth sending when it can speak
+   * the format — the session's name and a span (`completionAnnouncement`); `announceRunEnd`
+   * is the sender and it refuses the rest.
+   */
   notifySessionEvent: (sessionId: string, event: SessionPushEvent, sessionName?: string | null) => Promise<void>;
   /** Send a test notification to one subscription; false when it is not registered. */
   sendTest: (endpoint: string) => Promise<boolean>;
@@ -209,10 +213,32 @@ function shortDetail(detail: string | undefined): string {
 }
 
 /**
+ * The finished-task format, in one place: the title is the session's name, the content is
+ * the one spanned sentence (`safariNotify.summary`). This returns the parts a notification
+ * may carry, or `null` when a run cannot be said in that format — a session with no name,
+ * or a run with no span. The old fallbacks ("Session complete", "Task finished.") are the
+ * wrong format: they cannot say which task ended or how long it took, so such a run
+ * announces nothing on any channel.
+ */
+export function completionAnnouncement(
+  sessionName: string | null | undefined,
+  event: { startedAt?: number; endedAt?: number },
+): { title: string; startedAt: number; endedAt: number } | null {
+  const title = sessionName?.trim();
+  if (!title) return null;
+  const { startedAt, endedAt } = event;
+  if (typeof startedAt !== "number" || typeof endedAt !== "number") return null;
+  if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt) || endedAt < startedAt) return null;
+  return { title, startedAt, endedAt };
+}
+
+/**
  * The completion body: the same sentence the app's other notifications carry, so a
  * phone and a desktop window say the same thing about one finished task, and the
  * session name is never repeated in the content. Without a span (an older build, a
- * run whose start the server never saw) it falls back to the short phrase.
+ * run whose start the server never saw) it falls back to the short phrase — the
+ * announcer refuses to send that (`completionAnnouncement`); the fallback stays so a
+ * payload built by an older caller still reads as a sentence.
  */
 function completionBody(locale: string, startedAt: number | undefined, endedAt: number | undefined): string {
   if (typeof startedAt !== "number" || typeof endedAt !== "number" || endedAt < startedAt) {
@@ -236,10 +262,14 @@ export function sessionPushPayload(
 ): { title: string; body: string; url: string; tag: string; sentAt: number } {
   const url = `/?session=${encodeURIComponent(sessionId)}`;
   if (event.kind === "complete") {
+    // The session's name is the title, and the content is only the run's sentence. A run
+    // that cannot be said that way keeps the plain text below: `announceRunEnd` refuses to
+    // send it (`completionAnnouncement`), so no channel shows the wrong format.
+    const name = sessionName?.trim();
+    const span = completionAnnouncement(sessionName, event);
     return {
-      // The session's name is the title, and the content is only the run's sentence.
-      title: sessionName ?? localeText(locale, "sessionComplete"),
-      body: completionBody(locale, event.startedAt, event.endedAt),
+      title: name || localeText(locale, "sessionComplete"),
+      body: completionBody(locale, span?.startedAt, span?.endedAt),
       url,
       // One notification per session, replaced by the next finished task. The page's own
       // banner carries the same tag (lib/notification-tags.ts), so the pair is one banner
@@ -331,9 +361,6 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
     hasSubscription(endpoint) {
       return state.subscriptions.some((s) => s.endpoint === endpoint);
     },
-    notifySessionComplete(sessionId) {
-      return notifySessionEvent(sessionId, { kind: "complete" });
-    },
     notifySessionEvent,
     async sendTest(endpoint) {
       const subscription = state.subscriptions.find((s) => s.endpoint === endpoint);
@@ -362,11 +389,6 @@ export function getVapidPublicKey(): Promise<string> {
 
 export function addSubscription(subscription: PushSubscriptionRecord): Promise<void> {
   return getNotifier().then((notifier) => notifier.addSubscription(subscription));
-}
-
-export async function notifySessionComplete(sessionId: string): Promise<void> {
-  const notifier = await getNotifier();
-  await notifier.notifySessionComplete(sessionId);
 }
 
 export async function notifySessionEvent(

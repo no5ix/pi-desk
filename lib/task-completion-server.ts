@@ -4,6 +4,7 @@ import { publishNtfyMessage, type NtfyPublishResult } from "./ntfy-publish";
 import { resolveSessionPath } from "./session-reader";
 import { readLastRunTimes } from "./session-last-run";
 import {
+  completionAnnouncement,
   notifySessionEvent,
   sessionPushPayload,
   type SessionPushEvent,
@@ -26,6 +27,12 @@ import {
  *    a wrapper re-created mid-run, a restart that settles a restored run) cannot repeat
  *    it, and a run that ended while this process was not watching is dropped rather than
  *    announced as breaking news.
+ *  - *a notification must name its task.* Every channel speaks the same format: the title
+ *    is the session's name, and the content is the run's one sentence ("The task lasted
+ *    0h18m13s, started at 10:04:34, and ended at 10:22:47. This notification pops up at
+ *    10:22:47."). A run with no name, or with no span, is silent: "Session complete" and
+ *    "Task finished." say nothing about which task finished, and the user asked never to
+ *    be shown that format. `completionAnnouncement` in lib/web-push.ts is the one judge.
  *
  * The page raises no notification for a finished run any more. It used to show its own
  * banner next to these channels (the Notification API, a per-browser switch), and a task
@@ -60,7 +67,7 @@ export interface AttentionAnnounceRequest {
   requestId?: string;
 }
 
-export type AnnounceSkip = "aborted" | "failed" | "stale" | "announced" | "cooldown";
+export type AnnounceSkip = "aborted" | "failed" | "stale" | "announced" | "cooldown" | "unnamed" | "no-span";
 
 export interface AnnounceOutcome {
   skipped?: AnnounceSkip;
@@ -228,6 +235,17 @@ export async function announceRunEnd(
   // (a wrapper restored mid-run, a restart that settles what had already finished).
   if (typeof outcome.endedAt === "number" && now - outcome.endedAt > COMPLETION_NOTICE_MAX_AGE_MS) {
     return { skipped: "stale", key, sent };
+  }
+  // The format is fixed, on every channel: the **title** is the session's name, and the
+  // **content** is the run's one sentence ("The task lasted 0h18m13s, started at 10:04:34,
+  // and ended at 10:22:47. This notification pops up at 10:22:47."). A run whose name or
+  // span is missing could only be sent as "Session complete" / "Task finished.", which
+  // cannot say which task ended or how long it took — the user asked never to see that
+  // format, so such a run announces nothing at all. A session gets its name from
+  // auto-naming; the span comes from the run, or from its own file (`lastRun`).
+  if (!completionAnnouncement(sessionName, outcome)) {
+    const skipped: AnnounceSkip = sessionName?.trim() ? "no-span" : "unnamed";
+    return { skipped, key, sent };
   }
   const book = ledger();
   if (!claim(book, key, now)) return { skipped: "announced", key, sent };

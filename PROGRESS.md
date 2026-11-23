@@ -467,3 +467,42 @@ keep sending the duplicate notice.
   dark and light: heading "Local notification", the description under it, one row,
   one switch, `Test` computed border `1px solid` in both themes; the two notification
   sections read alike in the same column.
+
+# The notification format, and the ntfy buttons (branch `fix/keyboard-msg-time-subagent`)
+
+Screenshots: the ntfy row's **Save** / **Send Test Notice** were two ghost labels; the ntfy
+topic and Notification Center had rows titled "Session complete" with the body "Task
+finished.", and rows titled "Session complete" carrying the real sentence. The agreed format
+is fixed: **title = the session's name**, **content = "The task lasted `*h*m*s`, started at
+hh:mm:ss, and ended at hh:mm:ss. This notification pops up at hh:mm:ss."** — and a run that
+cannot be said that way is never sent.
+
+## What changed and why
+* `lib/web-push.ts`: `completionAnnouncement(sessionName, event)` is the one judge — the
+  trimmed name and a real span, or `null`. `sessionPushPayload` keeps the name whenever the
+  session has one (it lost it once, and two tests caught it) and keeps the plain fallback
+  texts so the builder never throws.
+* `lib/task-completion-server.ts`: `announceRunEnd` asks the judge after the span lookup and
+  returns `skipped: "unnamed"` / `"no-span"` before the ledger claim, so the phone push, the
+  ntfy message and the Mac's row all go silent together — and a run that gets its name a
+  moment later is announced by the path that finds it (the skip spends no key). "a run with
+  no span still speaks" is dead: the short "Task finished." is exactly the format the user
+  refused.
+* `notifySessionComplete` is **deleted** (interface, notifier, wrapper): the only API that
+  could build a completion payload with no name and no span, i.e. the format the user asked
+  never to see. `notifySessionEvent` is the sender, and the announcer is the only caller.
+* `components/NtfyNotificationSection.tsx`: **Save** is `variant="primary"` and **Send Test
+  Notice** is `variant="secondary"`, the pair `components/NetworkProxySection.tsx` uses
+  (pic2). Ghost labels read as text.
+* Docs: `docs/agents/fork-files-security.md` (the format is a rule, not a fallback),
+  `docs/agents/client-platform.md` (the #1515 paragraph and the two "Task finished push"
+  lines still described the page notification deleted in the last commit),
+  `docs/agents/settings-ui.md` (the button pair).
+
+## Verified
+- `lib/web-push.test.mjs` + `lib/task-completion-server.test.mjs`: the format judge, the
+  three channels saying the same sentence with the session's name as title, and the silence
+  of `unnamed` / `no-span` (no channel gets the old text).
+- Real Chromium at 1240 px, dark and light: `Save` computed `236,236,236` fill + dark bold
+  label, `Send Test Notice` transparent with `1px` border — the Network proxy pair.
+- `tsc --noEmit` clean; `eslint` 0 errors (5 pre-existing warnings in untouched files).
