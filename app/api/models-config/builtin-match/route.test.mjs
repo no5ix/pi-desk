@@ -16,18 +16,18 @@ async function match(baseUrl, modelId = "") {
   return response.json();
 }
 
-test("Aliyun Token Plan's Beijing endpoint is pi's qwen-token-plan-cn, with GLM-5.3's settings", async () => {
-  const result = await match("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/", "glm-5.3");
+test("Qwen Token Plan's endpoint is pi's qwen-token-plan-cn, with GLM-5.3's settings", async () => {
+  const result = await match("https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1/", "glm-5.3");
   assert.ok(result.providers.some((p) => p.id === "qwen-token-plan-cn"));
   assert.ok(result.model, "glm-5.3 is in the built-in catalog");
   assert.equal(result.model.reasoning, true);
   assert.equal(result.model.thinkingLevelMap.medium, null);
   assert.equal(result.model.thinkingLevelMap.max, "max");
-  assert.equal(result.model.compat.supportsDeveloperRole, false);
+  assert.equal(result.model.compat.thinkingFormat, "qwen");
 });
 
 test("An unknown model at a built-in endpoint still names the provider", async () => {
-  const result = await match("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", "not-a-real-model");
+  const result = await match("https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1", "not-a-real-model");
   assert.ok(result.providers.length > 0);
   assert.equal(result.model, null);
 });

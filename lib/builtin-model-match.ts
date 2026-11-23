@@ -1,8 +1,8 @@
 /**
  * Matching a custom models.json provider/model against pi's built-in catalog.
  *
- * A custom provider that points at an endpoint pi already ships (Aliyun Token Plan's
- * `token-plan.cn-beijing…` is `qwen-token-plan-cn`) gets none of the per-model
+ * A custom provider that points at an endpoint pi already ships (Qwen Token Plan's
+ * `token-plan.maas.qianwenaiapi.com` is `qwen-token-plan-cn`) gets none of the per-model
  * settings pi maintains for it: the thinking level map and the request compat. The
  * same model then fails at levels the endpoint refuses (GLM-5.3 takes low/high/max
  * only). Settings › Models uses this to point at the built-in provider and to offer
