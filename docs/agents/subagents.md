@@ -56,11 +56,29 @@ An ordinary extension message keeps its shape exactly: it starts open, its heade
 label, and a `display: false` message keeps its collapsed preview line.
 Pinned by `components/MessageView.subagent-report.test.mjs`.
 
-**A subagent ending notifies nothing.** A background report is delivered into the parent as
-a custom message that starts a turn, and the parent's run that answers it announces no
-completion on any channel: `lib/subagent-report-runs.ts` marks the parent at the delivery, and
+**A running parent reads the report inside its own run (#1727).** A background report that
+arrives while the parent is mid-run is steered into that run: `steerIntoRun()`
+(`lib/subagent-runtime.ts`) queues it as a custom message at the parent's next `turn_end`,
+after the tool batch, so the parent's next model call in the run it is already in takes it and
+nothing extra wakes the parent. Queueing at that boundary is the point: pi polls steering right
+there, a `get_subagent_result` in the batch has returned and marked the result consumed by then,
+so the report never arrives twice, and no Stop or `clear_queue` can drop it unseen. It stays a
+custom message, which pi keeps out of the composer's queue rows (they list steer texts), so it is
+never recalled as the user's text. *Delivered* is pi's `message_end` for that very report — the
+details carry the child's session id and the run's `completedAt` — never the promise of the send,
+which pi settles when the message is appended on the next model request. A steer is refused, and
+the report then wakes the parent as a follow-up as it always did, when the parent's queue already
+holds input typed in its chat (in `one-at-a-time` steering that input is read first), after a turn
+whose response errored or was aborted, once Stop aborted the run, and for a parent that is itself
+a subagent that has used its turns (`turnsUsed` / `turnLimitReached` in the run map). An idle
+parent is woken at once, unchanged.
+
+**A subagent ending notifies nothing.** A background report that *wakes* the parent is delivered
+as a custom message that starts a run, and that run announces no completion on any channel:
+`lib/subagent-report-runs.ts` marks the parent at the delivery, and
 `lib/rpc-manager.ts` consumes the mark at the run's end, which is where the one announcer
 (`lib/task-completion-server.ts`) decides to stay quiet. One mark is spent per run, so the run
 of a prompt the user typed is announced as usual, and the child session itself was already
-silent (`suppressCompletionNotifications` in `lib/rpc-manager.ts`). The report card in the
-chat is the notice.
+silent (`suppressCompletionNotifications` in `lib/rpc-manager.ts`). A report steered into a run
+that was already going marks nothing: that run is the user's own, and its end announces as
+usual. The report card in the chat is the notice.

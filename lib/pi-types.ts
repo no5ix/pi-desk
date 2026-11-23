@@ -189,6 +189,10 @@ export interface AgentSessionLike {
       /** The declared tools, with the descriptions `prepareLoadout` hooks set for the model. */
       readonly tools?: readonly { readonly name: string; readonly description: string }[];
     };
+    /** The abort signal of the run in flight; aborted once Stop ended it. */
+    readonly signal?: AbortSignal;
+    /** Whether the run's queue already holds a steer or a follow-up. */
+    hasQueuedMessages?(): boolean;
   };
   readonly extensionRunner: ExtensionRunnerLike;
   readonly promptTemplates: readonly PromptTemplateLike[];
