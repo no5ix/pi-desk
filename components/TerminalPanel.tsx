@@ -15,6 +15,7 @@ import {
   type TerminalModifier,
   type TerminalModifiers,
 } from "@/lib/terminal-extra-keys";
+import { macOptionSequence } from "@/lib/terminal-input";
 import type { TerminalEvent } from "@/lib/terminal-manager";
 import { TerminalExtraKeys, useTerminalExtraKeysVisible } from "./TerminalExtraKeys";
 import type { TerminalTab } from "./terminal-tab-state";
@@ -32,6 +33,13 @@ interface Props {
 // same text 30% smaller (13 -> 9.1, kept whole so the canvas grid stays crisp).
 // The family follows the app's mono choice; the size has no setting of its own.
 const TERMINAL_FONT_SIZE = 9;
+// xterm reads `macOptionIsMeta` only on macOS (its own Browser.isMac), so the
+// Option chords added below are for the same machines: a Mac's keyboard and an
+// iOS keyboard (iPadOS reports MacIntel). Windows and Linux keep Alt as Alt,
+// where readline binds the modified CSI xterm already sends.
+const APPLE_OPTION_IS_META = /^(?:Mac|iPhone|iPad|iPod)/.test(
+  typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent,
+);
 
 export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }: Props) {
   const { t } = useI18n();
@@ -96,6 +104,8 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       // text, so fzf's Option+E / Option+R and readline's Option+F / Option+B
       // word jumps never fire. xterm only reads this on macOS, so Windows and
       // Linux keep sending Alt as Alt; the phone's ALT latch is unaffected.
+      // xterm's own translation covers part of the chord set — the handler below
+      // completes it from `key` and `code`.
       macOptionIsMeta: true,
       scrollback: 8000,
       screenReaderMode: true,
@@ -107,6 +117,21 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(container);
+    // iOS opens the software keyboard only for a focus raised by a touch: xterm
+    // focuses on `mousedown`, which iOS synthesizes after the tap, so tapping the
+    // panel on a phone left a blinking cursor and no keyboard (upstream pi-web
+    // #1702). Raise the focus from the touch itself, in the capture phase: xterm's
+    // own handler cancels the event it is built from. The field is xterm's helper
+    // textarea — writable from the moment the session connects (xterm mirrors its
+    // `readOnly` on `disableStdin`, which is why a tap while the panel still says
+    // "connecting" cannot raise a keyboard), and app/native-theme.css gives it the
+    // font size and the opacity Safari needs to treat it as a visible field.
+    const focusFromTouch = (event: PointerEvent | TouchEvent) => {
+      if (event instanceof PointerEvent && event.pointerType === "mouse") return;
+      terminal.focus();
+    };
+    container.addEventListener("pointerdown", focusFromTouch, true);
+    container.addEventListener("touchend", focusFromTouch, true);
     // Update the existing renderer, never restart the PTY on a theme change.
     const themeObserver = new MutationObserver(() => {
       terminal.options.theme = terminalTheme(container);
@@ -117,6 +142,25 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       const key = event.key.toLowerCase();
       if ((event.ctrlKey || event.metaKey) && key === "v") return false;
       if ((event.ctrlKey || event.metaKey) && key === "c" && terminal.hasSelection()) return false;
+      // xterm's Meta path translates from the legacy `keyCode`, in the `default:`
+      // arm of that switch, so a printable chord works (Option+R is "®" with
+      // `keyCode` 82, and the PTY gets `^[r`) while the rest does not: a dead-key
+      // chord (Option+E is "Dead" on a Portuguese layout) leaves its accent for
+      // the keypress path, and the arrows — handled in their own cases, above the
+      // Alt branch — go out as the modified CSI `ESC [ 1 ; 3 D`, which no macOS
+      // shell binds. Fill exactly that gap, and only for a keystroke inside the
+      // terminal: the composer keeps typing its accents.
+      if (APPLE_OPTION_IS_META && event.altKey && container.contains(event.target as Node | null)) {
+        const chord = macOptionSequence(event);
+        if (chord) {
+          // Cancelling the keydown is what keeps the browser from composing the
+          // accent behind our back: the dead key would land in the shell as `´`.
+          event.preventDefault();
+          event.stopPropagation();
+          terminal.input(chord, true);
+          return false;
+        }
+      }
       return true;
     });
 
@@ -225,6 +269,8 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       void writer.stop();
       resizeObserver.disconnect();
       themeObserver.disconnect();
+      container.removeEventListener("pointerdown", focusFromTouch, true);
+      container.removeEventListener("touchend", focusFromTouch, true);
       cancelAnimationFrame(fontFrame);
       window.removeEventListener(FONT_CHANGE_EVENT, updateFont);
       document.fonts.removeEventListener("loadingdone", updateFont);

@@ -12120,3 +12120,107 @@ html.dark .artifacts-thumb[data-tone="data"] { --tone: #4fc1d6; }
   color: var(--text-muted);
   max-width: 42ch;
 }
+
+/* ==========================================================================
+   Installed web app (iOS "Add to Home Screen") and the phone's terminal
+   ========================================================================== */
+
+/* In a mobile browser tab the shell's inline `env(safe-area-inset-*)` padding
+   and the topbar's inline `padding-top: env(safe-area-inset-top)` are the whole
+   inset story, and they work — which is why the same build looks right in
+   mobile Safari. In the home-screen app WebKit draws the status bar over the
+   page and reports the top inset as 0, and the fork's own
+   `.app-topbar { height: 48px !important }` overrides the inline
+   `calc(36px + env(safe-area-inset-top))`, so the bar becomes one 48px row at
+   the window's top edge with the notch on its title and the file tabs behind
+   it. `hooks/useStandaloneSafeArea.ts` marks that one machine, so the floor
+   below never reaches a desktop browser or the Tauri window, where 0 is the
+   honest value. 59px is settings.css's own floor for the settings dialog's top
+   padding, and a real inset — a landscape notch, a taller future device — wins
+   over it. */
+html[data-standalone-safe-area] {
+  --app-safe-area-top: max(59px, env(safe-area-inset-top, 0px));
+  --app-safe-area-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+}
+
+html[data-standalone-safe-area] .app-topbar {
+  /* box-sizing is border-box app-wide, so the bar grows by the inset instead of
+     spending its 48px on padding and spilling its title into the chat. The
+     !important beats AppShell.tsx's inline height and padding, as every other
+     fork rule here does. */
+  height: calc(48px + var(--app-safe-area-top)) !important;
+  min-height: calc(48px + var(--app-safe-area-top)) !important;
+  padding-top: var(--app-safe-area-top) !important;
+}
+
+/* The sidebar and the right panel run the full window height, and on a phone
+   both are fixed overlays, so the shell's padding never reaches them: pad the
+   boxes, which keeps their headers (the sidebar's rows, the panel's tab strip,
+   a terminal's path row) below the notch without touching their heights. */
+html[data-standalone-safe-area] :is(.sidebar-container, .right-panel-container) {
+  padding-top: var(--app-safe-area-top);
+}
+
+html[data-standalone-safe-area] .app-shell {
+  padding-bottom: var(--app-safe-area-bottom) !important;
+}
+
+/* Fixed chrome the shell's padding cannot reach, all of it pinned to a viewport
+   edge: the phone's floating workspace toggle (top: 10px) and the notice shelf
+   (top: calc(60px + env(safe-area-inset-top)), which is 60px here) sit under the
+   notch, and the full-screen image dialog and the calendar's bottom sheet sit on
+   the home indicator. The settings dialog needs none of this: settings.css
+   already floors its own padding at 59px for the same reason. */
+html[data-standalone-safe-area] .right-panel-toggle-button {
+  top: calc(10px + var(--app-safe-area-top));
+  right: calc(10px + env(safe-area-inset-right, 0px));
+}
+
+html[data-standalone-safe-area] .app-notice-shelf {
+  top: calc(60px + var(--app-safe-area-top));
+}
+
+html[data-standalone-safe-area] .image-preview-dialog {
+  padding-top: var(--app-safe-area-top);
+}
+
+html[data-standalone-safe-area] .task-cal-preview {
+  padding-bottom: var(--app-safe-area-bottom);
+}
+
+/* Landscape puts the notch on a side, and the shell's inline side padding reads
+   0 in the app, so the topbar's buttons sit under it. Mirrors settings.css's
+   landscape block. */
+@media (orientation: landscape) {
+  html[data-standalone-safe-area] .app-shell {
+    padding-left: max(59px, env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(59px, env(safe-area-inset-right, 0px)) !important;
+  }
+}
+
+/* The phone terminal's extra-keys strip already drops itself by
+   `env(safe-area-inset-bottom)`; in the installed app that reads 0 and the keys
+   land on the home indicator. `:not([data-keyboard-open])` keeps upstream's
+   keyboard rule (globals.css, same specificity) the last word while a field is
+   focused, exactly as it is in a browser tab. */
+html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-extra-keys {
+  padding-bottom: var(--app-safe-area-bottom);
+}
+
+/* A phone's terminal: iOS opens the software keyboard only for a focus raised
+   by a touch, on an editable field it renders. xterm focuses on `mousedown`,
+   which iOS synthesizes after the tap, so tapping the panel left the cursor
+   blinking with no keyboard (upstream pi-web #1702); `TerminalPanel.tsx` raises
+   the focus from the touch itself. xterm's `_syncTextArea` writes left / top /
+   width / height / line-height inline to follow the cursor, so the field is
+   already on screen at cell size — the one property that hides it is the
+   stylesheet's own `opacity: 0`, and 16px is the font size Safari needs so
+   focusing a field does not zoom the page, the same floor the composer's
+   inputs use. Only the two properties xterm leaves alone: its inline geometry
+   keeps the IME anchored at the cursor. */
+@media (pointer: coarse) {
+  .terminal-xterm .xterm .xterm-helper-textarea {
+    opacity: 0.01;
+    font-size: 16px;
+  }
+}
