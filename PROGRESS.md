@@ -75,3 +75,30 @@ Nothing outstanding for these five items. If the branch is merged, the follow-up
 this work exposed (BLOCKERS.md): the fork's `AgentStatusBar`-shaped live report
 surface does not exist, so a steered report shows up only as the custom message
 the parent's turn renders.
+
+## Tailscale Serve: an OS-assigned port hijacked the tailnet URL (fixed)
+
+- **Report:** `npm start` on 30141, but `tailscale serve status` printed
+  `/ proxy http://127.0.0.1:55530`, so `https://macb00kpr0m4.taila0e40f.ts.net`
+  opened nothing.
+- **Cause:** the startup registration runs `tailscale serve --bg <port>` for any
+  resolved port, and `PORT` is a candidate in `resolveServePort()`. A launch that got
+  an OS-assigned port — the packaged app's last-resort `choose_port`
+  (`src-tauri/src/lib.rs`) or `npm run desktop:verify`, which boots the staged server
+  on `freePort()` — rewrote the machine's single `/` serve handler onto a port that
+  stops listening with that process. `npm start` is not the writer: its `-p 30141`
+  beats `PORT`.
+- **Fix:** `isAutoServePort()` refuses the IANA ephemeral range (≥ 49152), as the first
+  statement of `ensureTailscaleServe()`, so such a launch reads and writes no Tailscale
+  state and never starts the app; the outcome state is `"ephemeral"` and startup logs
+  one dim line why. `scripts/verify-packaged-codemode.mjs` sets
+  `PI_WEB_DISABLE_TAILSCALE_SERVE=1` in its spawn env, like `scripts/e2e-server-env.mjs`.
+- **Verified here:** `ensureTailscaleServe(55530)` → `state=ephemeral`, `status=""`,
+  config unchanged; `ensureTailscaleServe(30141)` → `state=served`; `tailscale serve
+  status` reads `/ proxy http://127.0.0.1:30141`; `curl
+  https://macb00kpr0m4.taila0e40f.ts.net/api/home` → 200.
+  `node --test lib/tailscale-serve.test.mjs` 11/11 green.
+- **Next:** nothing for this fix. A second Pi on the machine (the packaged app on
+  38471) still takes over the one `/` handler when it starts — the tailnet can only
+  carry one port per machine, so that is a product decision, not a bug. Two stray
+  `npm start` processes (the second failed to bind 30141) were left running.

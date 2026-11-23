@@ -19,6 +19,12 @@ import {
  * `register()` must stay fast (lib/browser-open.js waits for Next's `Ready` line), so
  * every caller here is fire-and-forget: startTailscaleServeAtStartup() never awaits.
  *
+ * Only a port the user launched Pi on is registered. `tailscale serve` keeps one `/`
+ * handler per machine, so a server started on an OS-assigned port (the packaged app's
+ * last-resort `choose_port`, `scripts/verify-packaged-codemode.mjs`, any `PORT=<free
+ * port>` launch) must leave the config alone: writing it moves the tailnet URL onto a
+ * port that stops listening the moment that process exits.
+ *
  * macOS only (the Tailscale app is what the fork supports, and the packaged app runs
  * the same server). `PI_WEB_DISABLE_TAILSCALE_SERVE=1` turns it off; the e2e harness
  * sets it so tests never touch a real tailnet.
@@ -26,6 +32,13 @@ import {
 
 /** Pi's default port: `npm run dev/start` pass `-p 30141`, the bin falls back to PORT. */
 export const DEFAULT_SERVE_PORT = 30141;
+
+/**
+ * Start of the IANA ephemeral range, which is what macOS hands out for a bind on port
+ * 0 (`net.inet.ip.portrange.first` is 49152). A port from here belongs to one process
+ * for one run, so it is never the address a phone opens.
+ */
+export const EPHEMERAL_PORT_MIN = 49_152;
 
 const CLI_TIMEOUT_MS = 10_000;
 const DAEMON_WAIT_MS = 15_000;
@@ -36,7 +49,22 @@ const ANSI_GREEN = "\x1b[32m";
 const ANSI_DIM = "\x1b[2m";
 const ANSI_RESET = "\x1b[0m";
 
-export type TailscaleServeState = "served" | "added" | "missing" | "stopped" | "failed";
+/**
+ * A port worth the machine's serve config: a real port, and not one the OS assigned
+ * to a bind on 0. The user can always register an ephemeral port by hand — Settings ›
+ * Remote access copies exactly that command for the port the page is served on.
+ */
+export function isAutoServePort(port: number): boolean {
+  return Number.isInteger(port) && port > 0 && port < 65_536 && port < EPHEMERAL_PORT_MIN;
+}
+
+export type TailscaleServeState =
+  | "served"
+  | "added"
+  | "ephemeral"
+  | "missing"
+  | "stopped"
+  | "failed";
 
 export interface TailscaleServeOutcome {
   state: TailscaleServeState;
@@ -143,6 +171,19 @@ function statusDetail(status: TailscaleStatus): string {
  * as a state the caller logs.
  */
 export async function ensureTailscaleServe(port = resolveServePort()): Promise<TailscaleServeOutcome> {
+  if (!isAutoServePort(port)) {
+    // First and unconditional: read nothing, write nothing, and never start the
+    // Tailscale app for a port that dies with this process. The tailnet mapping the
+    // user set — for the Pi they actually open — stays exactly as it is.
+    return {
+      state: "ephemeral",
+      port,
+      status: "",
+      detail:
+        `${port} is an OS-assigned (ephemeral) port, so the tailnet config is left as it is. `
+        + `Run \`tailscale serve --bg ${port}\` yourself if this launch is the one you open.`,
+    };
+  }
   const binaries = serveBinaryCandidates();
   const binary = binaries[0];
   if (!binary) return { state: "missing", port, status: "", detail: statusDetail({ state: "missing" }) };
@@ -197,7 +238,7 @@ export function startTailscaleServeAtStartup(
       if (outcome.status) {
         log(`[tailscale] tailscale serve status (port ${outcome.port})\n${formatServeLog(outcome.status)}`);
       }
-      if (outcome.state === "stopped" || outcome.state === "missing" || outcome.state === "failed") {
+      if (outcome.state === "ephemeral" || outcome.state === "stopped" || outcome.state === "missing" || outcome.state === "failed") {
         log(`${ANSI_DIM}[tailscale] not serving ${outcome.port}: ${outcome.detail ?? outcome.state}${ANSI_RESET}`);
       }
     })

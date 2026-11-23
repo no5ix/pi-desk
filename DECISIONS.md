@@ -240,3 +240,26 @@
   `scripts/fork-ownership.json`. Measured on `pi-desk-main`, the same 6 disagree,
   so the registry update belongs to the next upstream sync; a backport that
   rewrites the registry hides its own divergence.
+
+## Tailscale Serve: the tailnet URL belongs to the port the user opens
+- **The machine's serve config is not this process's to own.** `tailscale serve`
+  keeps one `/` handler per machine, so the startup registration is a global write.
+  A process may only make that write when its port is one the user launched Pi on
+  and will keep: `isAutoServePort()` refuses the IANA ephemeral range (≥ 49152),
+  which is what macOS hands a bind on port 0 — the packaged app's last-resort
+  `choose_port` and `verify-packaged-codemode.mjs`'s `freePort()`. A refusal
+  touches nothing: no `serve status`, no `serve --bg`, no Tailscale app launch.
+- **Fix the writer, and keep the feature.** The report blamed `npm start`, but
+  `-p 30141` beats `PORT` in `resolveServePort()`, so that launch could not have
+  written 55530; the offenders are the ephemeral-port launches. So the fix
+  classifies ports, it does not disable the startup registration (the packaged app
+  on 38471 and `pi-web --port` keep working), and the verify script also gets
+  `PI_WEB_DISABLE_TAILSCALE_SERVE=1` — belt and braces, the same env the e2e
+  harness uses.
+- **A stable port self-heals, so no cleanup pass.** `tailscale serve --bg <port>`
+  replaces the `/` handler, so the next `npm run dev/start` on 30141 repaired the
+  hijacked mapping by itself; deleting "stale" mappings the code did not write
+  (paths the user configured by hand) is not ours to do.
+- **A deliberate `PORT=<ephemeral>` launch is the user's call.** Settings ›
+  Remote access keeps copying `tailscale serve --bg <the page's port>`; that
+  remains the way to register a port the app refuses to register for you.

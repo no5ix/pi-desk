@@ -146,6 +146,9 @@ async function main() {
       NODE_ENV: "production",
       NEXT_TELEMETRY_DISABLED: "1",
       PI_WEB_PARENT_PID: String(process.pid),
+      // This run listens on a free port: it must not rewrite the machine's
+      // `tailscale serve` config onto it (lib/tailscale-serve.ts).
+      PI_WEB_DISABLE_TAILSCALE_SERVE: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
