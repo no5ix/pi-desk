@@ -229,15 +229,27 @@ test("notification click opens a window and rejects cross-origin targets", async
 // A reachable port backed by a dead upstream answers nothing at all, so these
 // tests drive fetch() with a stub that only settles once the worker aborts it.
 function installOfflineStub() {
-  const offline = new Response("<!doctype html><title>Pi Web is offline</title>", {
-    status: 200,
-    headers: { "Content-Type": "text/html" },
-  });
+  const pages = {
+    "/offline.html": "<!doctype html><title>Pi Web is offline</title>",
+    "/unavailable.html": "<!doctype html><title>Pi Web is not answering</title>",
+  };
+  const cacheReads = [];
   globalThis.caches = {
-    match: async (request) => ((typeof request === "string" ? request : request.url).endsWith("/offline.html")
-      ? offline
-      : undefined),
-    open: async () => ({ put: async () => {} }),
+    match: async (request) => {
+      const key = typeof request === "string" ? request : request.url;
+      cacheReads.push(key);
+      const hit = Object.entries(pages).find(([name]) => key.endsWith(name));
+      return hit ? new Response(hit[1], { status: 200, headers: { "Content-Type": "text/html" } }) : undefined;
+    },
+    open: async () => ({ put: async () => {}, addAll: async () => {} }),
+  };
+  return cacheReads;
+}
+
+/** fetch() that rejects the way a refused port does: no response, no wait. */
+function installRefusedNetwork() {
+  globalThis.fetch = async () => {
+    throw new TypeError("Failed to fetch: connection refused");
   };
 }
 
@@ -267,11 +279,28 @@ test("install precaches offline assets but not the runtime manifest", async () =
 
   assert.deepEqual(precached, [
     "/offline.html",
+    "/unavailable.html",
+    "/offline-recovery.js",
     "/icons/icon-192.png",
     "/icons/icon-512.png",
     "/icons/apple-touch-icon.png",
   ]);
   assert.equal(skipped, true);
+});
+
+test("every fallback page and its recovery script is precached", async () => {
+  // The fallbacks are what a user sees with a dead server, so they must be in the cache
+  // before the server is ever needed: an entry the worker has to fetch from the network
+  // is exactly the entry that cannot be served offline.
+  const files = [
+    ["/offline.html", /Pi Web is offline/],
+    ["/unavailable.html", /Pi Web is not answering/],
+    ["/offline-recovery.js", /piWebOfflineRecovery/],
+  ];
+  const { readFile } = await import("node:fs/promises");
+  for (const [file, pattern] of files) {
+    assert.match(await readFile(new URL(`.${file}`, import.meta.url), "utf8"), pattern, file);
+  }
 });
 
 test("manifest requests bypass the worker even with query strings and old cached entries", async () => {
@@ -321,22 +350,73 @@ function installHungNetwork() {
  */
 const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
 
-test("a stalled navigation falls back to offline.html", async () => {
-  installOfflineStub();
+test("a stalled navigation is bounded, and says the server is not answering", async () => {
+  const cacheReads = installOfflineStub();
   const wasAborted = installHungNetwork();
 
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const { pending } = dispatchFetch("https://pi.test/", { mode: "navigate" });
     await flushMicrotasks();
-    mock.timers.tick(8000);
+    // The budget is a time-to-first-byte ceiling. A production server that is mid-task,
+    // or a refresh queued behind the page's own event streams in the browser's six
+    // connections, needs the room; 8s answered both with a fallback page it did not
+    // deserve, and the user read that as "the app is offline".
+    mock.timers.tick(14_000);
+    assert.equal(wasAborted(), false, "the budget is 15s");
+    mock.timers.tick(1_000);
     const response = await pending;
 
     assert.equal(wasAborted(), true, "a hung upstream must be aborted, not awaited forever");
-    assert.match(await response.text(), /Pi Web is offline/);
+    assert.match(await response.text(), /Pi Web is not answering/);
+    assert.deepEqual(cacheReads, ["/unavailable.html"], "a silent server is not an offline server");
   } finally {
     mock.timers.reset();
   }
+});
+
+test("a refused port is the offline page, at once", async () => {
+  const cacheReads = installOfflineStub();
+  installRefusedNetwork();
+
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const { pending } = dispatchFetch("https://pi.test/", { mode: "navigate" });
+    const response = await pending;
+
+    // Nothing is listening: say so, and do not spend the navigation budget first.
+    assert.match(await response.text(), /Pi Web is offline/);
+    assert.deepEqual(cacheReads, ["/offline.html"]);
+    mock.timers.tick(20_000);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("a browser that reports no network is answered from the cache", async () => {
+  const cacheReads = installOfflineStub();
+  globalThis.fetch = async () => assert.fail("the network is not worth trying with no network");
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+  Object.defineProperty(globalThis, "navigator", { value: { onLine: false }, configurable: true, writable: true });
+  try {
+    const { pending } = dispatchFetch("https://pi.test/", { mode: "navigate" });
+    assert.match(await (await pending).text(), /Pi Web is offline/);
+    assert.deepEqual(cacheReads, ["/offline.html"]);
+  } finally {
+    if (navigatorDescriptor) Object.defineProperty(globalThis, "navigator", navigatorDescriptor);
+  }
+});
+
+test("a navigation the server answers is passed through untouched", async () => {
+  const cacheReads = installOfflineStub();
+  globalThis.fetch = async () => new Response("<!doctype html><title>Pi Web</title>", {
+    status: 200,
+    headers: { "Content-Type": "text/html" },
+  });
+
+  const { pending } = dispatchFetch("https://pi.test/?session=one", { mode: "navigate" });
+  assert.match(await (await pending).text(), /<title>Pi Web<\/title>/);
+  assert.deepEqual(cacheReads, []);
 });
 
 test("a stalled static asset request is bounded as well", async () => {
@@ -355,6 +435,24 @@ test("a stalled static asset request is bounded as well", async () => {
   } finally {
     mock.timers.reset();
   }
+});
+
+test("a fallback page's recovery poll is not answered by the worker", async () => {
+  // Both pages poll their own URL to learn the server is back. If the worker answered
+  // that request out of the cache, the page would reload in a loop against a dead server.
+  installOfflineStub();
+  let reachedNetwork = 0;
+  globalThis.fetch = async () => {
+    reachedNetwork += 1;
+    return new Response("<!doctype html><title>Pi Web</title>", { headers: { "Content-Type": "text/html" } });
+  };
+
+  for (const mode of ["cors", "no-cors", "same-origin"]) {
+    const { pending } = dispatchFetch("https://pi.test/?session=one", { mode });
+    assert.equal(pending, undefined, `${mode}: the poll is left to the network`);
+  }
+  await fetch(new Request("https://pi.test/"));
+  assert.equal(reachedNetwork, 1);
 });
 
 test("a cache miss responds before the cache write finishes", async () => {

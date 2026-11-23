@@ -69,6 +69,15 @@ Coverage:
   collapse/expand draft preservation, countdown display, and server-side expiry.
 - The MCP manager renders configured servers in a master-detail layout and
   never shows credential-bearing HTTP query strings.
+- `node e2e/offline-navigation.mjs` starts its own **production** server (`.next-desktop`,
+  so `PI_WEB_DESKTOP_BUILD=1 node_modules/next/dist/bin/next build --webpack` first) and
+  drives real Chromium through the service worker: a refresh starved of a socket must show
+  the "server is not answering" page after 15 s and reload itself when the pool frees; a
+  killed server must show the offline page in under a second and reload itself when it
+  returns; six refreshes spaced across Next's old 5 s keep-alive window must all load the
+  app; four open file tabs must cost one file-watch connection on the server
+  (`/api/agent/debug`), with a change to one of them delivered to its viewer over that one
+  stream; and three refreshes with those tabs open must load the app.
 
 Model prompts, live model streaming, and agent execution are outside this suite.
 Failures save a screenshot, Playwright trace, and server log under

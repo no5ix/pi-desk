@@ -27,6 +27,8 @@ const { checkNetworkExposure } = require("./network-exposure-warning");
 const { attachReadyHandoff, shouldOpenBrowser } = require("../lib/browser-open");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { rotatePreviewSecrets, getRotationWarning } = require("./rotate-preview-secrets");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { keepAliveArgs } = require("./keep-alive");
 
 let launchOptions;
 try {
@@ -84,6 +86,10 @@ if (!rotation.ok) {
 
 const nextArgs = ["start", "-p", port];
 nextArgs.push("-H", hostname);
+// The published app is served by this line, so the keep-alive window that keeps a
+// browser's reused socket from being refused (and the worker from calling that offline)
+// is set here too. See bin/keep-alive.js.
+nextArgs.push(...keepAliveArgs(process.env));
 
 // Always run next's JS entry with node directly — avoids .bin symlink issues
 // and path-with-spaces problems on Windows when shell: true is used.

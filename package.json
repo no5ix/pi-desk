@@ -40,7 +40,7 @@
     "web": "node scripts/web-dev.mjs",
     "dev:lan": "node scripts/lan-server.mjs dev",
     "build": "next build --webpack",
-    "start": "next start -H 127.0.0.1 -p 30141",
+    "start": "next start -H 127.0.0.1 -p 30141 --keepAliveTimeout 65000",
     "start:lan": "node scripts/lan-server.mjs start",
     "desktop:dev": "node scripts/desktop-dev.mjs --config src-tauri/tauri.dev.conf.json",
     "desktop:prepare": "node scripts/prepare-desktop.mjs",

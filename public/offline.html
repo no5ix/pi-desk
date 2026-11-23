@@ -50,6 +50,13 @@
         line-height: 1.6;
       }
 
+      p[data-offline-status] {
+        margin-top: 12px;
+        color: #6b7280;
+        font-size: 13px;
+        font-variant-numeric: tabular-nums;
+      }
+
       button {
         margin-top: 24px;
         min-height: 40px;
@@ -76,8 +83,13 @@
     <main>
       <img src="/icons/icon-192.png" alt="" />
       <h1>Pi Web is offline</h1>
-      <p>Reconnect to the local Pi Web server, then try again.</p>
+      <p>
+        Nothing is answering on this address. Check that the Pi Web server is running
+        (<code>npm start</code>) and that this is its port.
+      </p>
+      <p data-offline-status>Reconnecting…</p>
       <button type="button" onclick="location.reload()">Try again</button>
     </main>
+    <script src="/offline-recovery.js"></script>
   </body>
 </html>

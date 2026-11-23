@@ -38,10 +38,18 @@ test("the sidebar tree supports row-level keyboard navigation", () => {
 });
 
 test("streams running sessions and reconnects after visibility or network changes", () => {
-  assert.match(source, /new EventSource\("\/api\/agent\/running\/events"\)/);
+  // One stream for the whole browser, not one per tab: the browser's handful of HTTP/1.1
+  // connections per host is what a page load competes with (e2e/offline-navigation.mjs).
+  assert.match(source, /openSharedEventStreamHandle<RunningFrame>\(\{\s*url: "\/api\/agent\/running\/events",\s*name: RUNNING_SESSIONS_STREAM_NAME,/);
+  assert.doesNotMatch(source, /new EventSource\("\/api\/agent\/running\/events"\)/);
   assert.match(source, /document\.addEventListener\("visibilitychange", onVisible\)/);
-  assert.match(source, /window\.addEventListener\("online", connect\)/);
-  assert.match(source, /source\?\.close\(\)/);
+  assert.match(source, /window\.addEventListener\("online", onOnline\)/);
+  assert.match(source, /const onVisible = \(\) => \{\n\s*if \(document\.visibilityState === "visible"\) stream\.reconnect\(\);/);
+  assert.match(source, /stream\.stop\(\);/);
+  // The frames drive the running set and the cross-window list invalidation, as before.
+  assert.match(source, /sseAuthoritativeRef\.current = true;/);
+  assert.match(source, /setRunningSessionIds\(new Set\(data\.runningSessionIds \?\? \[\]\)\)/);
+  assert.match(source, /await loadSessions\(\);/);
 });
 
 test("re-adding an archived project restores it to the list", () => {

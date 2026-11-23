@@ -95,3 +95,30 @@ lib/task-completion-server.test.mjs lib/notification-tags.test.mjs public/sw.tes
 app/api/notifications/local/route.test.mjs app/api/notifications/ntfy/route.test.mjs
 components/SafariNotificationSection.test.mjs components/NtfyNotificationSection.test.mjs
 components/fork-extractions.test.mjs` · `tsc --noEmit` · `npm run lint` · full `node --test`.
+
+---
+
+# PLAN — production refresh answered "Pi Web is offline"
+
+Status: complete, verified (see PROGRESS.md).
+
+Phases, as executed:
+
+1. **Reproduce before fixing.** `e2e/offline-navigation.mjs`: a production `next start`
+   (from `.next-desktop`, `PI_WEB_DESKTOP_BUILD=1`) and real Chromium. Saturate the
+   browser's six HTTP/1.1 connections with long-lived streams, refresh, demand the fallback
+   page; kill the server, refresh, demand the offline page in under a second.
+2. **Tell the truth on the fallback page.** A refused connection and a silent connection
+   are different news: `offline.html` at once, `unavailable.html` after the (raised)
+   budget; no cached HTML as an answer to a navigation.
+3. **Make the fallback page heal itself**, with a reload budget in `localStorage`, so an
+   unattended browser recovers and a wedged server cannot make it flash forever.
+4. **Stop lying about the socket.** `--keepAliveTimeout 65000` on every production entry.
+5. **Stop spending the pool.** Every page-wide stream through one leader per browser
+   (running sessions, file watchers), file watchers fanned into one SSE per page, the
+   per-tab streams (an open session, a terminal) left alone and documented.
+6. **Guard it in tests**: the fallback pages' contract, the server flags, the fan-in's
+   access rules and connection counts, the leader's reconnect, and the e2e above.
+
+Deliberately out of scope: HTTP/2 (needs TLS and a custom server), service-worker
+navigation racing with a cached document, merging the agent/terminal streams.

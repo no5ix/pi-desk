@@ -2,8 +2,16 @@ const CACHE_PREFIX = "pi-web";
 const CACHE_VERSION = new URL(self.location.href).searchParams.get("v") || "dev";
 const STATIC_CACHE = `${CACHE_PREFIX}-static-${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
+// The two fallback pages split the two failures. A port that refuses the connection has no
+// server; a port that accepts it and never answers has a server that is starting, busy, or
+// shut out of the browser's six connections to this origin. Telling them apart matters: the
+// second heals itself in a second, and "reconnect to the local server" is the wrong advice.
+const UNAVAILABLE_URL = "/unavailable.html";
+const RECOVERY_SCRIPT_URL = "/offline-recovery.js";
 const PRECACHE_URLS = [
   OFFLINE_URL,
+  UNAVAILABLE_URL,
+  RECOVERY_SCRIPT_URL,
   "/icons/icon-192.png",
   "/icons/icon-512.png",
   "/icons/apple-touch-icon.png",
@@ -11,7 +19,13 @@ const PRECACHE_URLS = [
 // A reachable port backed by a dead upstream accepts the connection and then
 // never answers: fetch() neither resolves nor rejects, so the navigation hangs
 // forever instead of falling back to offline.html. Bound every network wait.
-const NAVIGATION_TIMEOUT_MS = 8000;
+// The budget is a time-to-first-byte ceiling, and it is deliberately generous: a
+// production server that is mid-task (a session starting, a big session opening) answers
+// a document in a few seconds, and the browser's connection pool can queue a refresh
+// behind the page's own event streams. Eight seconds turned both into a fallback page a
+// healthy server never deserved; the fallback pages reload themselves now, so a long
+// budget only delays the honest message, never the recovery.
+const NAVIGATION_TIMEOUT_MS = 15000;
 const ASSET_TIMEOUT_MS = 8000;
 
 self.addEventListener("install", (event) => {
@@ -53,12 +67,7 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname === "/manifest.webmanifest") return;
 
   if (request.mode === "navigate") {
-    event.respondWith(
-      fetchWithTimeout(request, NAVIGATION_TIMEOUT_MS).catch(async () => {
-        const fallback = await caches.match(OFFLINE_URL);
-        return fallback ?? Response.error();
-      }),
-    );
+    event.respondWith(answerNavigation(request));
     return;
   }
 
@@ -180,6 +189,37 @@ async function focusOrOpenWindow(targetUrl) {
   }
 
   await self.clients.openWindow(targetUrl);
+}
+
+/**
+ * A navigation is answered by the server whenever it answers in time. The fallback page
+ * is picked by the kind of failure: no connection at all (offline.html) or a connection
+ * that stays silent past the budget (unavailable.html). Both pages poll the server and
+ * reload themselves, so a refresh that lost a race with the browser's connection pool
+ * recovers without a second refresh.
+ */
+async function answerNavigation(request) {
+  // The browser already knows this machine has no network: do not spend the budget.
+  if (navigator?.onLine === false) return fallbackPage(OFFLINE_URL);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), NAVIGATION_TIMEOUT_MS);
+  try {
+    return await fetch(request, { signal: controller.signal });
+  } catch {
+    // Our abort is the timeout; anything else (connection refused, reset, DNS) means the
+    // server is not there to answer.
+    return fallbackPage(controller.signal.aborted ? UNAVAILABLE_URL : OFFLINE_URL);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fallbackPage(url) {
+  const cached = await caches.match(url);
+  // A cold cache (the first load ever, or Cache Storage cleared) has nothing to show, and
+  // the browser's own error page is the honest answer.
+  return cached ?? Response.error();
 }
 
 /**

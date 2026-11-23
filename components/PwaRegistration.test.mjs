@@ -38,8 +38,12 @@ test("production still installs the offline worker", () => {
 test("the worker keeps /api/ and its own script off the cache", () => {
   const sw = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.match(sw, /if \(url\.pathname\.startsWith\("\/api\/"\) \|\| url\.pathname === "\/sw\.js"\) return;/);
-  assert.match(sw, /if \(request\.mode === "navigate"\) \{[\s\S]*?fetchWithTimeout\(request, NAVIGATION_TIMEOUT_MS\)/,
-    "navigations are network-first with a bounded wait, so the HTML is the server's current render");
+  assert.match(sw, /if \(request\.mode === "navigate"\) \{\n\s*event\.respondWith\(answerNavigation\(request\)\);/,
+    "navigations are answered by the worker, never from the cache");
+  assert.match(sw, /async function answerNavigation[\s\S]*?setTimeout\(\(\) => controller\.abort\(\), NAVIGATION_TIMEOUT_MS\)[\s\S]*?fetch\(request, \{ signal: controller\.signal \}\)/,
+    "network-first with a bounded wait, so the HTML is the server's current render");
+  assert.match(sw, /fallbackPage\(controller\.signal\.aborted \? UNAVAILABLE_URL : OFFLINE_URL\)/,
+    "a server that is silent and a server that is missing are different news, and both pages reload themselves");
   assert.match(sw, /url\.pathname\.startsWith\("\/_next\/static\/"\)/);
   assert.match(sw, /event\.respondWith\(cacheFirst\(request, event\)\);/,
     "content-hashed production chunks are cache-first; development registers no worker at all");

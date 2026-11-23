@@ -17,6 +17,8 @@ import {
   subscribeExpandedSubagentRows,
 } from "@/lib/sidebar-subagent-expansion";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
+import { openSharedEventStreamHandle } from "@/lib/scheduled-tasks/shared-stream";
+import { RUNNING_SESSIONS_STREAM_NAME } from "@/lib/running-sessions-stream";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
 import { useI18n } from "@/hooks/useI18n";
@@ -692,56 +694,45 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [projectSessionPages]);
 
   useEffect(() => {
-    // Live running status via SSE — no polling. The server pushes the current
-    // set of running session ids whenever any session starts/stops working.
-    let source: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let closed = false;
-
-    const connect = () => {
-      if (closed) return;
-      source?.close();
-      source = new EventSource("/api/agent/running/events");
-      source.onmessage = async (e) => {
-        try {
-          const data = JSON.parse(e.data) as { type?: string; runningSessionIds?: string[]; sessionListVersion?: number };
-          if (data.type === "running") {
-            sseAuthoritativeRef.current = true;
-            setRunningSessionIds(new Set(data.runningSessionIds ?? []));
-          }
-          if (typeof data.sessionListVersion === "number"
-            && data.sessionListVersion !== sessionListVersionRef.current) {
-            // Another window/process changed the list; reuse the invalidated
-            // server cache instead of forcing a fresh scan.
-            await loadSessions();
-          }
-        } catch {
-          // ignore malformed frames
-        }
-      };
-      source.onerror = () => {
-        // Force a fresh connection after prolonged failures; EventSource alone
-        // can stall after local server restarts in the desktop shell.
-        if (source?.readyState === EventSource.CLOSED) {
-          if (reconnectTimer) clearTimeout(reconnectTimer);
-          reconnectTimer = setTimeout(connect, 1_500);
-        }
-      };
+    // Live running status via SSE — no polling. The server pushes the current set of
+    // running session ids whenever any session starts/stops working, and the whole browser
+    // reads it from ONE stream: the tabs elect a leader
+    // (lib/scheduled-tasks/shared-stream.ts), because the browser's handful of HTTP/1.1
+    // connections per host is what a page load competes with (e2e/offline-navigation.mjs).
+    type RunningFrame = { type?: string; runningSessionIds?: string[]; sessionListVersion?: number };
+    const applyFrame = async (data: RunningFrame) => {
+      if (data.type === "running") {
+        sseAuthoritativeRef.current = true;
+        setRunningSessionIds(new Set(data.runningSessionIds ?? []));
+      }
+      if (typeof data.sessionListVersion === "number"
+        && data.sessionListVersion !== sessionListVersionRef.current) {
+        // Another window/process changed the list; reuse the invalidated
+        // server cache instead of forcing a fresh scan.
+        await loadSessions();
+      }
     };
 
-    connect();
+    const stream = openSharedEventStreamHandle<RunningFrame>({
+      url: "/api/agent/running/events",
+      name: RUNNING_SESSIONS_STREAM_NAME,
+      onEvent: (data) => { void applyFrame(data); },
+    });
+
+    // Force a fresh connection after prolonged failures: an EventSource alone can stall
+    // after local server restarts in the desktop shell. Only the leader has a connection
+    // to reopen; a stalled leader is retried by the shared stream itself.
     const onVisible = () => {
-      if (document.visibilityState === "visible") connect();
+      if (document.visibilityState === "visible") stream.reconnect();
     };
+    const onOnline = () => stream.reconnect();
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("online", connect);
+    window.addEventListener("online", onOnline);
 
     return () => {
-      closed = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("online", connect);
-      source?.close();
+      window.removeEventListener("online", onOnline);
+      stream.stop();
     };
   }, [loadSessions]);
 

@@ -39,6 +39,7 @@ import { isDesktopApiRequestAllowed } from "@/lib/desktop-api-auth";
 import { filePathFromApiSegments, isWindowsAbsolutePath, samePath } from "@/lib/paths";
 import { hasParentDirectorySegment } from "@/lib/path-security";
 import { registerFileWatch } from "@/lib/file-watch-registry";
+import { createFileWatchStream, MAX_WATCHED_FILES_PER_STREAM, type FileWatchEntry } from "@/lib/file-watch-stream";
 import { pageStreamLabel, registerPageStream } from "@/lib/page-stream-registry";
 
 const IGNORED_NAMES = new Set([
@@ -49,7 +50,7 @@ const IGNORED_NAMES = new Set([
 
 const IGNORED_SUFFIXES = [".pyc"];
 
-const FILE_REQUEST_TYPES = ["list", "read", "download", "meta", "preview", "serve", "watch", "watch-dir"] as const;
+const FILE_REQUEST_TYPES = ["list", "read", "download", "meta", "preview", "serve", "watch", "watch-dir", "watch-all"] as const;
 type FileRequestType = typeof FILE_REQUEST_TYPES[number];
 const FILE_REQUEST_TYPE_SET = new Set<string>(FILE_REQUEST_TYPES);
 const MAX_UPLOAD_FILE_BYTES = 25 * 1024 * 1024;
@@ -623,6 +624,43 @@ ${bodyHtml}
 </html>`;
 }
 
+// `?type=watch-all&paths=[{"filePath":"…","sessionId":…},…]`: the file watchers of one
+// page over one connection. A malformed list is a 400, a list of nothing authorized is a
+// 403; a path that is merely not allowed is dropped, so one stale tab cannot break the
+// stream of the files the page may read.
+const MAX_WATCH_ALL_QUERY_CHARS = 32 * 1024;
+const MAX_SESSION_ID_IN_WATCH_LIST = 512;
+
+function parseWatchAllEntries(raw: string | null): FileWatchEntry[] | null {
+  if (raw === null || raw.length === 0 || raw.length > MAX_WATCH_ALL_QUERY_CHARS) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > MAX_WATCHED_FILES_PER_STREAM) {
+    return null;
+  }
+  const entries: FileWatchEntry[] = [];
+  const seen = new Set<string>();
+  for (const item of parsed) {
+    if (typeof item !== "object" || item === null) return null;
+    const filePath = (item as { filePath?: unknown }).filePath;
+    const sessionId = (item as { sessionId?: unknown }).sessionId;
+    if (typeof filePath !== "string" || filePath.length === 0 || filePath.length > 4096) return null;
+    if (!path.isAbsolute(filePath) && !isWindowsAbsolutePath(filePath)) return null;
+    if (sessionId !== null && sessionId !== undefined && typeof sessionId !== "string") return null;
+    if (typeof sessionId === "string" && sessionId.length > MAX_SESSION_ID_IN_WATCH_LIST) return null;
+    const session = typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
+    const key = `${session ?? ""}\u0000${filePath}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    entries.push({ filePath, sessionId: session });
+  }
+  return entries.length > 0 ? entries : null;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
@@ -648,6 +686,40 @@ export async function GET(
     const sessionId = request.nextUrl.searchParams.get("sessionId");
 
     const allowedRoots = await getAllowedFileRoots();
+
+    // One stream for every file the page watches, so open file tabs do not spend the
+    // browser's six connections (lib/file-watch-stream.ts). Each path is authorized here
+    // by the same rules as a single file request; the stream module decides nothing.
+    if (type === "watch-all") {
+      const requestedEntries = parseWatchAllEntries(request.nextUrl.searchParams.get("paths"));
+      if (requestedEntries === null) {
+        return NextResponse.json({ error: "Invalid watch list" }, { status: 400 });
+      }
+      const watched: FileWatchEntry[] = [];
+      for (const entry of requestedEntries) {
+        if (hasParentDirectorySegment(entry.filePath) || isCredentialPath(entry.filePath)) continue;
+        const allowedByRoot = isFilePathAllowed(entry.filePath, allowedRoots);
+        const allowedBySessionReference = !allowedByRoot
+          && entry.sessionId !== null
+          && await isFilePathReferencedBySession(entry.filePath, entry.sessionId);
+        if (!allowedByRoot && !allowedBySessionReference) continue;
+        const authorizationPath = fs.existsSync(entry.filePath)
+          ? entry.filePath
+          : path.dirname(entry.filePath);
+        if (
+          !allowedBySessionReference
+          && !isExistingFilePathAllowed(authorizationPath, allowedRoots)
+        ) {
+          continue;
+        }
+        watched.push(entry);
+      }
+      if (watched.length === 0) {
+        return NextResponse.json({ error: "Access denied" }, { status: 403 });
+      }
+      return createFileWatchStream(watched, request);
+    }
+
     const allowedByRoot = isFilePathAllowed(filePath, allowedRoots);
     const allowedBySessionReference =
       !allowedByRoot &&

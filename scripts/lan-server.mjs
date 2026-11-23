@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { checkNetworkExposure } = require("../bin/network-exposure-warning.js");
+const { keepAliveArgs } = require("../bin/keep-alive.js");
 const { wireChildProcessLifecycle } = require("../bin/process-lifecycle.js");
 
 const HOSTNAME = "0.0.0.0";
@@ -23,7 +24,12 @@ if (exposure?.fatal) process.exit(1);
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nextBin = path.join(root, "node_modules", "next", "dist", "bin", "next");
-const child = spawn(process.execPath, [nextBin, mode, "-H", HOSTNAME, "-p", "30141"], {
+// Next's production server retires an idle keep-alive connection after five seconds, and a
+// browser happily reuses a socket the server closed at the same moment: the request is
+// refused, and the service worker answers that with a fallback page (e2e/offline-navigation.mjs).
+// The server's window has to outlast the browser's reuse window. See bin/keep-alive.js.
+const keepAlive = mode === "start" ? keepAliveArgs(process.env) : [];
+const child = spawn(process.execPath, [nextBin, mode, "-H", HOSTNAME, "-p", "30141", ...keepAlive], {
   cwd: root,
   stdio: "inherit",
   env: { ...process.env, PI_WEB_HOSTNAME: HOSTNAME },

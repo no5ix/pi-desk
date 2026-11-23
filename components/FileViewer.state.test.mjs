@@ -24,18 +24,36 @@ for (const [name, nextName] of [
   ["DocumentViewer", "FileViewer"],
   ["TextFileViewer", null],
 ]) {
-  test(`${name} pauses its watcher and synchronizes after connecting`, () => {
+  test(`${name} watches through the page's shared stream and synchronizes after connecting`, () => {
     const block = functionBlock(name, nextName);
-    const guard = block.indexOf("if (!watchEnabled) return;");
-    const eventSource = block.indexOf("new EventSource", guard);
-    const synchronize = block.indexOf("synchronize();", eventSource);
+    const watch = block.indexOf("useFileWatch(");
+    const connected = block.indexOf("onConnected:", watch);
+    const synchronize = block.indexOf("synchronize();", connected);
 
-    assert.ok(guard >= 0, "watchEnabled guard missing");
-    assert.ok(eventSource > guard, "EventSource created before watchEnabled guard");
-    assert.ok(synchronize > eventSource, "connected synchronization missing");
-    assert.match(block, /\}, \[[^\]]*watchEnabled[^\]]*\]\);/);
+    assert.ok(watch >= 0, "the shared watcher is missing");
+    assert.match(block, /useFileWatch\(filePath, sourceSessionId, watchEnabled, \{/);
+    assert.ok(synchronize > connected, "the connected synchronization is missing");
+    assert.match(block, /onDisconnected: \(\) => setWatching\(false\)/);
   });
 }
+
+test("no viewer opens a file-watch connection of its own", () => {
+  // A browser allows about six open connections to one host over HTTP/1.1. One EventSource
+  // per open file tab used to spend them all, and a refresh's document request then queued
+  // behind watchers of files nobody was looking at: the service worker answered the starved
+  // navigation with a fallback page on a healthy server (e2e/offline-navigation.mjs).
+  assert.doesNotMatch(source, /new EventSource/, "the watcher must go through lib/file-watch-channel.ts");
+  assert.doesNotMatch(source, /getFileApiUrl\(filePath, "watch"/);
+});
+
+test("the shared watcher subscribes through the channel, and reports a removed file as a change", () => {
+  const block = functionBlock("useFileWatch", "DownloadLink");
+  assert.match(block, /subscribeFileWatch\(/);
+  assert.match(block, /onRemoved: \(\) => handlersRef\.current\.onChange\(\{ size: 0 \}\)/);
+  assert.match(block, /onDisconnect: \(\) => handlersRef\.current\.onDisconnected\(\)/);
+  // The handlers are read through a ref, so a re-render does not resubscribe the file.
+  assert.match(block, /\}, \[filePath, sourceSessionId, enabled\]\);/);
+});
 
 test("FileViewer forwards watcher state to every viewer implementation", () => {
   const block = functionBlock("FileViewer", "TextFileViewer");

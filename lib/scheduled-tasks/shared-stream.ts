@@ -49,6 +49,11 @@ export interface SharedStreamOptions<T> {
   onEvent: (event: T) => void;
   /** The stream (re)connected, so anything missed meanwhile should be reloaded. Leader only. */
   onOpen?: () => void;
+  /**
+   * The stream reported an error, so a viewer may show a disconnected state. Leader only:
+   * a follower hears nothing until the leader reconnects and forwards what it missed.
+   */
+  onError?: (event: unknown) => void;
   env?: SharedStreamEnv;
 }
 
@@ -64,10 +69,28 @@ function browserEnv(): SharedStreamEnv | null {
   };
 }
 
+/** What the viewer of a shared stream can do with it. */
+export interface SharedStreamHandle {
+  /** Stop receiving, and release leadership if this tab holds it. */
+  stop(): void;
+  /**
+   * Open the stream again. A browser's `EventSource` can sit in `CONNECTING` forever after
+   * the local server restarts, so a page that learns the server came back (it becomes
+   * visible, the network comes back) asks for a new connection. A tab that does not lead
+   * asks for nothing: its leader owns the connection and reconnects on its own.
+   */
+  reconnect(): void;
+}
+
 /** Start receiving events; the returned function stops, and releases leadership if held. */
 export function openSharedEventStream<T>(options: SharedStreamOptions<T>): () => void {
+  return openSharedEventStreamHandle(options).stop;
+}
+
+/** The same, with the handle a viewer needs to force a fresh connection. */
+export function openSharedEventStreamHandle<T>(options: SharedStreamOptions<T>): SharedStreamHandle {
   const env = options.env ?? browserEnv();
-  if (!env) return () => undefined;
+  if (!env) return { stop: () => undefined, reconnect: () => undefined };
   const retryMs = env.retryMs ?? 3000;
 
   let closed = false;
@@ -86,7 +109,10 @@ export function openSharedEventStream<T>(options: SharedStreamOptions<T>): () =>
       options.onEvent(event);
       channel?.postMessage(event);
     };
-    stream.onerror = () => {
+    stream.onerror = (event) => {
+      // A hiccup is a hiccup for the viewer of this stream: the browser reconnects, and
+      // the onOpen that follows tells the page to reload what it missed.
+      if (!closed) options.onError?.(event);
       // EventSource retries by itself unless the browser gave up on it for good.
       if (stream.readyState !== (env.closedState ?? 2) || closed) return;
       stream.close();
@@ -104,7 +130,11 @@ export function openSharedEventStream<T>(options: SharedStreamOptions<T>): () =>
 
   if (!env.locks || !env.createChannel) {
     openSource();
-    return () => { closed = true; closeSource(); };
+    // No locks: this tab owns its stream, and so it is the one to reopen it.
+    return {
+      stop: () => { closed = true; closeSource(); },
+      reconnect: () => { if (!closed) { closeSource(); openSource(); } },
+    };
   }
 
   channel = env.createChannel(options.name);
@@ -123,12 +153,21 @@ export function openSharedEventStream<T>(options: SharedStreamOptions<T>): () =>
     }))
     .catch(() => undefined); // an AbortError when we stopped while still waiting
 
-  return () => {
-    closed = true;
-    abort.abort();
-    closeSource();
-    releaseLeadership?.();
-    channel?.close();
-    channel = null;
+  return {
+    stop: () => {
+      closed = true;
+      abort.abort();
+      closeSource();
+      releaseLeadership?.();
+      channel?.close();
+      channel = null;
+    },
+    reconnect: () => {
+      // Only the leader has a connection to reopen; a follower's frames come from the
+      // leader over the channel, and the leader reconnects on its own.
+      if (closed || !releaseLeadership) return;
+      closeSource();
+      openSource();
+    },
   };
 }

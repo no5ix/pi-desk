@@ -18,6 +18,7 @@ import {
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { DelimitedTable } from "./DelimitedTable";
+import { subscribeFileWatch } from "@/lib/file-watch-channel";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
 import { parsePdfPageFragment, resolveLocalFileHref, shouldOpenLocalFileInApp } from "@/lib/file-links";
 import { parseFrontmatter } from "@/lib/frontmatter";
@@ -257,6 +258,44 @@ function getFileApiUrl(
     if (value !== undefined) searchParams.set(key, String(value));
   }
   return `/api/files/${encoded}?${searchParams.toString()}`;
+}
+
+/**
+ * A file's live watch, through the page's one shared stream (lib/file-watch-channel.ts).
+ *
+ * A browser allows about six open connections to one host over HTTP/1.1. Every open file
+ * tab used to take one of them for its own EventSource, on top of the open session, the
+ * running-session stream and any terminal, and a refresh's document request queued behind
+ * watchers of files nobody was looking at: the service worker answered that starved
+ * navigation with a fallback page on a healthy server (e2e/offline-navigation.mjs). The
+ * handlers are read through a ref, so a subscription is not rebuilt on every render.
+ */
+function useFileWatch(
+  filePath: string,
+  sourceSessionId: string | null | undefined,
+  enabled: boolean,
+  handlers: {
+    onConnected: () => void;
+    onChange: (info: { mtime?: string; size?: number }) => void;
+    onDisconnected: () => void;
+  },
+) {
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
+
+  useEffect(() => {
+    if (!enabled) return;
+    return subscribeFileWatch(
+      { filePath, sourceSessionId },
+      {
+        onConnected: () => handlersRef.current.onConnected(),
+        onChange: (info) => handlersRef.current.onChange(info),
+        // A file that is gone is a change to nothing: the viewer's own read reports it.
+        onRemoved: () => handlersRef.current.onChange({ size: 0 }),
+        onDisconnect: () => handlersRef.current.onDisconnected(),
+      },
+    );
+  }, [filePath, sourceSessionId, enabled]);
 }
 
 function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceSessionId?: string | null }) {
@@ -594,7 +633,6 @@ function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
   const [size, setSize] = useState<number | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const esRef = useRef<EventSource | null>(null);
   const syncRequestRef = useRef(0);
 
   const ext = getFileName(filePath).toLowerCase().split(".").pop() ?? "";
@@ -607,66 +645,40 @@ function ImageViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
     setWatching(false);
   }, [filePath, sourceSessionId]);
 
-  useEffect(() => {
-    setWatching(false);
+  const synchronize = () => {
+    const requestId = ++syncRequestRef.current;
+    fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      .then((response) => response.json())
+      .then((next: { size?: number; error?: string }) => {
+        if (requestId !== syncRequestRef.current) return;
+        if (next.error) {
+          setError(next.error);
+          return;
+        }
+        if (typeof next.size === "number") setSize(next.size);
+        setNaturalSize(null);
+        setError(null);
+        setBust((value) => value + 1);
+      })
+      .catch((nextError) => {
+        if (requestId === syncRequestRef.current) setError(String(nextError));
+      });
+  };
 
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-
-    if (!watchEnabled) return;
-
-    let active = true;
-    const synchronize = () => {
-      const requestId = ++syncRequestRef.current;
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
-        .then((response) => response.json())
-        .then((next: { size?: number; error?: string }) => {
-          if (!active || requestId !== syncRequestRef.current) return;
-          if (next.error) {
-            setError(next.error);
-            return;
-          }
-          if (typeof next.size === "number") setSize(next.size);
-          setNaturalSize(null);
-          setError(null);
-          setBust((value) => value + 1);
-        })
-        .catch((nextError) => {
-          if (active && requestId === syncRequestRef.current) setError(String(nextError));
-        });
-    };
-
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
-    esRef.current = es;
-
-    es.addEventListener("connected", () => {
+  useFileWatch(filePath, sourceSessionId, watchEnabled, {
+    onConnected: () => {
       setWatching(true);
       synchronize();
-    });
-    es.addEventListener("change", (e) => {
+    },
+    onChange: (info) => {
       syncRequestRef.current += 1;
-      try {
-        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
-        if (typeof d.size === "number") setSize(d.size);
-      } catch { /* ignore */ }
+      if (typeof info.size === "number") setSize(info.size);
       setNaturalSize(null);
       setError(null);
-      setBust((b) => b + 1);
-    });
-    const markDisconnected = () => {
-      setWatching(false);
-    };
-    es.addEventListener("error", markDisconnected);
-    es.onerror = markDisconnected;
-
-    return () => {
-      active = false;
-      es.close();
-      if (esRef.current === es) esRef.current = null;
-    };
-  }, [filePath, sourceSessionId, watchEnabled]);
+      setBust((value) => value + 1);
+    },
+    onDisconnected: () => setWatching(false),
+  });
 
   const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
 
@@ -729,9 +741,24 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
   const [size, setSize] = useState<number | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const esRef = useRef<EventSource | null>(null);
-
   const ext = getFileName(filePath).toLowerCase().split(".").pop() ?? "";
+
+  const synchronize = () => {
+    fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      .then((response) => response.json())
+      .then((next: { size?: number; error?: string }) => {
+        if (next.error) {
+          setError(next.error);
+          return;
+        }
+        if (typeof next.size === "number") setSize(next.size);
+      })
+      .catch((nextError) => setError(String(nextError)));
+  };
+  // The mount snapshot is a fresh read of the current file, not a dependency of the effect
+  // that takes it; the shared stream's `connected` frame calls the same function directly.
+  const synchronizeRef = useRef(synchronize);
+  synchronizeRef.current = synchronize;
 
   useEffect(() => {
     if (!watchEnabled) return;
@@ -740,49 +767,25 @@ function AudioViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
     setDuration(null);
     setError(null);
     setWatching(false);
+    // The snapshot the open stream would have taken, for the case where watching is
+    // enabled for this file and the stream is already open for it. Read through a ref: the
+    // snapshot is a fresh fetch of the current file, not this effect's dependency.
+    void synchronizeRef.current();
+  }, [filePath, sourceSessionId, watchEnabled]);
 
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-
-    const synchronize = () => {
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
-        .then((response) => response.json())
-        .then((next: { size?: number; error?: string }) => {
-          if (next.error) {
-            setError(next.error);
-            return;
-          }
-          if (typeof next.size === "number") setSize(next.size);
-        })
-        .catch((nextError) => setError(String(nextError)));
-    };
-
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
-    esRef.current = es;
-
-    es.addEventListener("connected", () => {
+  useFileWatch(filePath, sourceSessionId, watchEnabled, {
+    onConnected: () => {
       setWatching(true);
       synchronize();
-    });
-    es.addEventListener("change", (e) => {
-      try {
-        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
-        if (typeof d.size === "number") setSize(d.size);
-      } catch { /* ignore */ }
+    },
+    onChange: (info) => {
+      if (typeof info.size === "number") setSize(info.size);
       setDuration(null);
       setError(null);
       setBust((b) => b + 1);
-    });
-    es.addEventListener("error", () => setWatching(false));
-    es.onerror = () => setWatching(false);
-
-    return () => {
-      es.close();
-      esRef.current = null;
-    };
-  }, [filePath, sourceSessionId, watchEnabled]);
+    },
+    onDisconnected: () => setWatching(false),
+  });
 
   const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
   const metadata = [
@@ -831,7 +834,6 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
   const [size, setSize] = useState<number | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const esRef = useRef<EventSource | null>(null);
   const syncRequestRef = useRef(0);
 
   const ext = getFileName(filePath).toLowerCase().split(".").pop() ?? "";
@@ -844,66 +846,40 @@ function VideoViewer({ filePath, cwd, sourceSessionId, watchEnabled = true }: Pr
     setWatching(false);
   }, [filePath, sourceSessionId]);
 
-  useEffect(() => {
-    setWatching(false);
+  const synchronize = () => {
+    const requestId = ++syncRequestRef.current;
+    fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      .then((response) => response.json())
+      .then((next: { size?: number; error?: string }) => {
+        if (requestId !== syncRequestRef.current) return;
+        if (next.error) {
+          setError(next.error);
+          return;
+        }
+        if (typeof next.size === "number") setSize(next.size);
+        setDuration(null);
+        setError(null);
+        setBust((value) => value + 1);
+      })
+      .catch((nextError) => {
+        if (requestId === syncRequestRef.current) setError(String(nextError));
+      });
+  };
 
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-
-    if (!watchEnabled) return;
-
-    let active = true;
-    const synchronize = () => {
-      const requestId = ++syncRequestRef.current;
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
-        .then((response) => response.json())
-        .then((next: { size?: number; error?: string }) => {
-          if (!active || requestId !== syncRequestRef.current) return;
-          if (next.error) {
-            setError(next.error);
-            return;
-          }
-          if (typeof next.size === "number") setSize(next.size);
-          setDuration(null);
-          setError(null);
-          setBust((value) => value + 1);
-        })
-        .catch((nextError) => {
-          if (active && requestId === syncRequestRef.current) setError(String(nextError));
-        });
-    };
-
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
-    esRef.current = es;
-
-    es.addEventListener("connected", () => {
+  useFileWatch(filePath, sourceSessionId, watchEnabled, {
+    onConnected: () => {
       setWatching(true);
       synchronize();
-    });
-    es.addEventListener("change", (e) => {
+    },
+    onChange: (info) => {
       syncRequestRef.current += 1;
-      try {
-        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
-        if (typeof d.size === "number") setSize(d.size);
-      } catch { /* ignore */ }
+      if (typeof info.size === "number") setSize(info.size);
       setDuration(null);
       setError(null);
       setBust((b) => b + 1);
-    });
-    const markDisconnected = () => {
-      setWatching(false);
-    };
-    es.addEventListener("error", markDisconnected);
-    es.onerror = markDisconnected;
-
-    return () => {
-      active = false;
-      es.close();
-      if (esRef.current === es) esRef.current = null;
-    };
-  }, [filePath, sourceSessionId, watchEnabled]);
+    },
+    onDisconnected: () => setWatching(false),
+  });
 
   const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
 
@@ -985,7 +961,6 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnab
   const [bust, setBust] = useState(0);
   const [size, setSize] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const esRef = useRef<EventSource | null>(null);
 
   const ext = getFileExt(filePath);
   const isPdf = ext === "pdf";
@@ -994,63 +969,50 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, initialPage, watchEnab
     ? `${getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined)}${pageFragment}`
     : getFileApiUrl(filePath, "preview", sourceSessionId, bust ? { v: bust } : undefined);
 
+  const synchronize = () => {
+    fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
+      .then((r) => r.json())
+      .then((d: { size?: number; error?: string }) => {
+        if (d.error) setError(d.error);
+        if (typeof d.size === "number") {
+          setSize(d.size);
+          if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
+            setError("DOCX too large for preview (>10MB)");
+          }
+        }
+      })
+      .catch((e) => setError(String(e)));
+  };
+
   useEffect(() => {
     if (!watchEnabled) return;
     setBust(0);
     setSize(null);
     setError(null);
     setWatching(false);
-
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-
-    const synchronize = () => {
-      fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
-        .then((r) => r.json())
-        .then((d: { size?: number; error?: string }) => {
-          if (d.error) setError(d.error);
-          if (typeof d.size === "number") {
-            setSize(d.size);
-            if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
-              setError("DOCX too large for preview (>10MB)");
-            }
-          }
-        })
-        .catch((e) => setError(String(e)));
-    };
+    // The snapshot the open stream would have taken on `connected`.
     synchronize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filePath, isPdf, sourceSessionId, watchEnabled]);
 
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
-    esRef.current = es;
-
-    es.addEventListener("connected", () => {
+  useFileWatch(filePath, sourceSessionId, watchEnabled, {
+    onConnected: () => {
       setWatching(true);
       synchronize();
-    });
-    es.addEventListener("change", (e) => {
-      try {
-        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
-        if (typeof d.size === "number") {
-          setSize(d.size);
-          if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
-            setError("DOCX too large for preview (>10MB)");
-            return;
-          }
+    },
+    onChange: (info) => {
+      if (typeof info.size === "number") {
+        setSize(info.size);
+        if (!isPdf && info.size > DOCX_PREVIEW_MAX_BYTES) {
+          setError("DOCX too large for preview (>10MB)");
+          return;
         }
-      } catch { /* ignore */ }
+      }
       setError(null);
       setBust((b) => b + 1);
-    });
-    es.addEventListener("error", () => setWatching(false));
-    es.onerror = () => setWatching(false);
-
-    return () => {
-      es.close();
-      esRef.current = null;
-    };
-  }, [filePath, isPdf, sourceSessionId, watchEnabled]);
+    },
+    onDisconnected: () => setWatching(false),
+  });
 
   const metadata = [
     ext === "docx" ? "DOCX preview" : "PDF",
@@ -1161,7 +1123,6 @@ function TextFileViewer({
   // isolated srcDoc sandbox instead, where scripts run but local files don't load.
   const [htmlScriptsEnabled, setHtmlScriptsEnabled] = useState(false);
   const [htmlPreviewRevision, setHtmlPreviewRevision] = useState(0);
-  const esRef = useRef<EventSource | null>(null);
   const contentRequestRef = useRef(0);
   const gitDiffRequestRef = useRef(0);
   const sessionDiffRequestRef = useRef(0);
@@ -1312,50 +1273,27 @@ function TextFileViewer({
     };
   }, [filePath, fetchContent, sourceSessionId, diffSessionId]);
 
-  useEffect(() => {
-    setWatching(false);
+  const synchronize = () => {
+    void fetchContent(filePath);
+    void fetchGitDiff(filePath);
+    if (diffSessionId) void fetchSessionDiff(filePath, diffSessionId);
+  };
 
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-
-    if (!watchEnabled) return;
-
-    const synchronize = () => {
-      void fetchContent(filePath);
-      void fetchGitDiff(filePath);
-      if (diffSessionId) void fetchSessionDiff(filePath, diffSessionId);
-    };
-
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
-    esRef.current = es;
-
-    es.addEventListener("connected", () => {
+  useFileWatch(filePath, sourceSessionId, watchEnabled, {
+    onConnected: () => {
       setWatching(true);
-      // The server emits connected only after its watcher exists. Reading now
-      // closes the gap between the last snapshot and live events.
+      // The stream opens only after the server's watchers exist. Reading now closes the
+      // gap between the last snapshot and live events.
       synchronize();
-    });
-
-    es.addEventListener("change", () => {
+    },
+    onChange: () => {
       synchronize();
       // The served preview reads from disk itself; reload it on real changes
       // only (not on "connected", which would wipe what the user typed into it).
       setHtmlPreviewRevision((revision) => revision + 1);
-    });
-
-    const markDisconnected = () => {
-      setWatching(false);
-    };
-    es.addEventListener("error", markDisconnected);
-    es.onerror = markDisconnected;
-
-    return () => {
-      es.close();
-      if (esRef.current === es) esRef.current = null;
-    };
-  }, [filePath, fetchContent, fetchGitDiff, fetchSessionDiff, sourceSessionId, watchEnabled, diffSessionId]);
+    },
+    onDisconnected: () => setWatching(false),
+  });
 
   // The session's record of this file, asked for only when a card named the
   // session. The file watcher refreshes it alongside the git diff.
