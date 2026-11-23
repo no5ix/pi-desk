@@ -11,6 +11,7 @@ const jiti = createJiti(import.meta.url, {
   moduleCache: false,
 });
 const { POST: sessionStatsRoute } = await jiti.import("./stats/route.ts");
+const { MAX_SESSION_STATS_IDS } = await jiti.import("../../../lib/session-stats.ts");
 const { invalidateSessionListCache, invalidateSessionPathCache } = await jiti.import("../../../lib/session-reader.ts");
 const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 
@@ -151,7 +152,11 @@ test("reads a live manager's selected branch and refreshes settings when only it
 test("refuses malformed requests", async () => {
   assert.equal((await post({ ids: [] })).status, 400);
   assert.equal((await post({ ids: ["../etc"] })).status, 400);
-  assert.equal((await post({ ids: Array.from({ length: 201 }, (_, i) => `s${i}`) })).status, 400);
+  // The cap a caller must batch by is the exported constant, and the refusal names it (#1728).
+  assert.equal(MAX_SESSION_STATS_IDS, 200);
+  const overCap = await post({ ids: Array.from({ length: MAX_SESSION_STATS_IDS + 1 }, (_, i) => `s${i}`) });
+  assert.equal(overCap.status, 400);
+  assert.match((await overCap.json()).error, new RegExp(String(MAX_SESSION_STATS_IDS)));
   assert.equal((await post("{")).status, 400);
   assert.equal((await post({ ids: ["a"] }, { host: "localhost", "Content-Type": "text/plain" })).status, 415);
 });

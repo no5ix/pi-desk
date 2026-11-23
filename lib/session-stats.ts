@@ -19,6 +19,9 @@ export interface SessionFileStats {
   costBreakdown?: UsageCostBreakdownEntry[];
 }
 
+/** Most session ids one POST /api/sessions/stats takes; a larger family goes in batches. */
+export const MAX_SESSION_STATS_IDS = 200;
+
 /** One session's totals for the agent switcher (POST /api/sessions/stats). */
 export interface SessionUsageSummary {
   tokens: SessionFileStats["tokens"];
