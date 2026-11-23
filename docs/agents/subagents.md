@@ -56,6 +56,23 @@ An ordinary extension message keeps its shape exactly: it starts open, its heade
 label, and a `display: false` message keeps its collapsed preview line.
 Pinned by `components/MessageView.subagent-report.test.mjs`.
 
+**A run's result is the text its own turns wrote (#1726).** A steer that arrives while the child
+is writing its report ends that report's turn and leaves it in the transcript: pi finishes the
+answer, sees no tool call, and runs one more turn for the steer, whose short acknowledgement is the
+session's last assistant message. `runResultText()` (`lib/subagent-runtime.ts`) reads the child's
+entries from the count recorded at dispatch (`stored.entryBase` — an index, not a clock reading, so
+a resume in the same millisecond as the run it follows reads only its own answers) and joins every
+assistant text that ended a turn with no tool call, oldest first: the report, then the answer to the
+steer. Messages are read as pi projects them for the model: a `context_edit` with no replacement
+drops one (pi omits a provider error before its retry, and a `length`-truncated draft before its
+compaction retry), and one with a replacement rewrites it, the latest edit winning. The last message
+counts however it ended, so a stopped, failed or limited run keeps its partial output. Every record
+site — start, resume, success and catch — reports that text as `SubagentRunInfo.result`, which is
+what the notification, the report card and `get_subagent_result` show. A run with no recorded
+boundary (a run stored before a hot reload) or a window with no answer falls back to
+`getLastAssistantText()`; a direct turn in a child's own chat keeps `getLastAssistantText()`
+altogether, since no run boundary frames it.
+
 **A running parent reads the report inside its own run (#1727).** A background report that
 arrives while the parent is mid-run is steered into that run: `steerIntoRun()`
 (`lib/subagent-runtime.ts`) queues it as a custom message at the parent's next `turn_end`,

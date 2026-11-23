@@ -96,6 +96,11 @@ type StoredSubagentExecution = {
   /** Ends the wait for the child's MCP servers before its prompt (`prepareChildMcp()`). */
   mcpWait?: AbortController;
   /**
+   * The child's entry count when this run was dispatched: the boundary `runResultText()` reads the
+   * run's own answers from (#1726). Absent on a run stored before a hot reload.
+   */
+  entryBase?: number;
+  /**
    * When this run (or resume) entered the run map, for the debug panel: a resumed run keeps the
    * first run's `createdAt`. Absent on a run stored before a hot reload.
    */
@@ -161,6 +166,72 @@ function turnLimitError(turnLimit: number, undelivered: readonly string[]): stri
   const error = `Subagent reached its turn limit (${turnLimit}) without completing the task.`;
   if (undelivered.length === 0) return error;
   return `${error} These queued messages were not delivered:\n${undelivered.map((text) => `- ${text}`).join("\n")}`;
+}
+
+type RunEntry = { type?: unknown; id?: unknown; targetId?: unknown; replacement?: { content?: unknown } | null; message?: RunMessage };
+type RunMessage = { role?: unknown; content?: unknown; stopReason?: unknown };
+
+/** The text of an assistant message, as the parent is told it. */
+function messageText(message: RunMessage): string {
+  if (!Array.isArray(message.content)) return typeof message.content === "string" ? message.content.trim() : "";
+  return (message.content as { type?: unknown; text?: unknown }[])
+    .map((block) => (block?.type === "text" && typeof block.text === "string" ? block.text : ""))
+    .join("")
+    .trim();
+}
+
+/**
+ * A run's report: the text of every assistant message the run appended (the entries from `from`
+ * on) that ended its turn without tool calls, in order. A steer that reaches the child while it
+ * writes its answer starts another turn after it, and that turn's reply (often a short
+ * acknowledgement) alone would replace the report (#1726). Messages are read as pi projects them
+ * for the model: a `context_edit` with no replacement drops one (pi's own recovery omits a provider
+ * error before its retry and a `length`-truncated draft before its compaction retry), and one with
+ * a replacement rewrites its content, the latest edit winning. The run's last message counts
+ * however it ended, as `getLastAssistantText()` reads it, so a stopped or limited run keeps its
+ * partial output. The session's entries are append-only, so compaction during the run keeps earlier
+ * answers, and a resumed run never reports an earlier run's text — `from` is an entry index, not a
+ * clock reading, because a resume in the same millisecond as the run it follows is not rare.
+ */
+export function runResultText(sessionManager: { getEntries?: () => unknown }, from: number): string | undefined {
+  const entries = sessionManager.getEntries?.();
+  if (!Array.isArray(entries)) return undefined;
+  const runEntries = (entries as RunEntry[]).slice(from);
+  // An edit always follows its target, so the run's own range holds every edit of its messages.
+  const edits = new Map<unknown, RunEntry["replacement"]>();
+  for (const entry of runEntries) if (entry?.type === "context_edit") edits.set(entry.targetId, entry.replacement);
+  const messages = runEntries.flatMap((entry): RunMessage[] => {
+    if (entry?.type !== "message" || entry.message?.role !== "assistant") return [];
+    if (!edits.has(entry.id)) return [entry.message];
+    const replacement = edits.get(entry.id);
+    if (!replacement) return [];
+    const content = typeof replacement.content === "string" ? [{ type: "text", text: replacement.content }] : replacement.content;
+    return [{ ...entry.message, content }];
+  });
+  let last = messages.length - 1;
+  // `getLastAssistantText()` passes over a request stopped before any output.
+  while (last >= 0 && messages[last].stopReason === "aborted" && Array.isArray(messages[last].content) &&
+    (messages[last].content as unknown[]).length === 0) last -= 1;
+  const texts = messages.flatMap((message, index) => {
+    const answer = index === last || (message.stopReason !== "error" && message.stopReason !== "aborted" &&
+      !(Array.isArray(message.content) && (message.content as { type?: unknown }[]).some((block) => block?.type === "toolCall")));
+    const text = answer ? messageText(message) : "";
+    return text ? [text] : [];
+  });
+  return texts.length ? texts.join("\n\n") : undefined;
+}
+
+/**
+ * What a settled run reports: the text of its own turns (#1726), falling back to the last
+ * assistant's text when the run recorded no entry boundary (a run stored before a hot reload) or
+ * the window holds no answer.
+ */
+function settledRunText(
+  inner: { sessionManager: { getEntries?: () => unknown }; getLastAssistantText(): string | undefined },
+  stored: Pick<StoredSubagentExecution, "entryBase">,
+): string | undefined {
+  const collected = stored.entryBase === undefined ? undefined : runResultText(inner.sessionManager, stored.entryBase);
+  return collected || inner.getLastAssistantText()?.trim();
 }
 
 /**
@@ -687,6 +758,7 @@ export function createSubagentController(
         completion,
         abortRequested: false,
         dispatchedAt: Date.now(),
+        entryBase: sessionManager.getEntries().length,
       };
       getSubagentRuns().set(initialRun.sessionId, stored);
       request.onUpdate?.(initialRun);
@@ -769,7 +841,7 @@ export function createSubagentController(
         try {
           await prepareChildMcp(childSession, stored);
           await inner.prompt(delegatedTask, { source: "rpc" });
-          const text = inner.getLastAssistantText()?.trim();
+          const text = settledRunText(inner, stored);
           const stop = stored.abortRequested ? undefined : lastAssistantStop(sessionManager);
           const aborted = stored.abortRequested || stop?.aborted === true;
           const errorMessage = aborted ? undefined : stop?.error ??
@@ -782,7 +854,7 @@ export function createSubagentController(
             ...(errorMessage ? { error: errorMessage } : {}),
           };
         } catch (error) {
-          const text = inner.getLastAssistantText()?.trim();
+          const text = settledRunText(inner, stored);
           const aborted = stored.abortRequested || request.signal?.aborted;
           result = {
             ...initialRun,
@@ -912,7 +984,7 @@ export function createSubagentController(
     const manager = wrapper.inner.sessionManager;
     let resolveCompletion!: (run: SubagentRunInfo) => void;
     const completion = new Promise<SubagentRunInfo>((resolve) => { resolveCompletion = resolve; });
-    const stored: StoredSubagentExecution = { run: initialRun, completion, abortRequested: false, dispatchedAt: Date.now() };
+    const stored: StoredSubagentExecution = { run: initialRun, completion, abortRequested: false, dispatchedAt: Date.now(), entryBase: manager.getEntries().length };
     getSubagentRuns().set(request.sessionId, stored);
     request.onUpdate?.(initialRun);
     dependencies.invalidateSessionList();
@@ -942,7 +1014,7 @@ export function createSubagentController(
       try {
         await prepareChildMcp(wrapper, stored);
         await wrapper!.inner.prompt(request.task, { source: "rpc" });
-        const text = wrapper!.inner.getLastAssistantText()?.trim();
+        const text = settledRunText(wrapper!.inner, stored);
         const stop = stored.abortRequested ? undefined : lastAssistantStop(manager);
         const aborted = stored.abortRequested || stop?.aborted === true;
         const providerError = aborted ? undefined : stop?.error;
@@ -954,10 +1026,12 @@ export function createSubagentController(
           ...(providerError ? { error: providerError } : {}),
         };
       } catch (error) {
+        const text = settledRunText(wrapper!.inner, stored);
         result = {
           ...initialRun,
           status: stored.abortRequested || request.signal?.aborted ? "aborted" : "failed",
           completedAt: new Date().toISOString(),
+          ...(text ? { result: text } : {}),
           ...(!stored.abortRequested && !request.signal?.aborted ? { error: error instanceof Error ? error.message : String(error) } : {}),
         };
       } finally {
