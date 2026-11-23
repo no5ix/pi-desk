@@ -1,23 +1,18 @@
-import { APP_PREF_KEYS, getPrefBool, setPrefBool } from "./app-prefs";
-
 /**
- * The client half of Settings › General › Local browser notification.
+ * The client half of Settings › General › Local notification.
  *
- * Two switches, because a finished task is raised by two senders that cannot see each
- * other, and each one belongs to somebody else:
+ * One switch, and it belongs to the installation: the notification in Notification Center
+ * is raised by `osascript` in the server's own process (app/api/notifications/local →
+ * lib/local-notification.ts), with no browser involved. So it cannot be a browser
+ * preference: a phone opening Pi over Tailscale must not decide what the Mac shows, and the
+ * server announces a run that finished with every page closed.
  *
- *  - **This browser's banner** (`safariNotifyOnComplete`, localStorage, default off). Only
- *    a page can put a banner in the browser you are looking at, so only this browser can
- *    switch it; lib/task-completion-notice.ts asks it, and it needs the browser's own
- *    notification permission.
- *  - **The computer running Pi** (a server setting, app/api/notifications/local →
- *    lib/local-notification.ts). The notification in Notification Center is raised by
- *    `osascript` in the server's own process, with no browser involved, so it cannot be a
- *    browser preference: a phone opening Pi over Tailscale must not decide what the Mac
- *    shows, and the server announces a run that finished with every page closed.
+ * The page used to raise a notification of its own next to this one, behind a per-browser
+ * localStorage switch. It is gone — the same finished task landing twice read as a bug, and
+ * the app's row is the one that works with no page open.
  *
  * `app/api/notifications/local` is local-only (isLocalRequest), so a remote page gets
- * `local: false` and its switches are disabled instead of silently doing nothing.
+ * `local: false` and the section explains why its switch is not there.
  */
 
 export interface SafariNotificationSupport {
@@ -32,25 +27,6 @@ export interface LocalNotificationSettings extends SafariNotificationSupport {
   enabled: boolean;
   /** The language the server's sentence is in — the app language of the page that set it. */
   locale: string;
-}
-
-export function safariNotificationsEnabled(): boolean {
-  return getPrefBool(APP_PREF_KEYS.safariNotifyOnComplete, false);
-}
-
-export function setSafariNotificationsEnabled(enabled: boolean): void {
-  setPrefBool(APP_PREF_KEYS.safariNotifyOnComplete, enabled);
-}
-
-export async function getSafariNotificationSupport(): Promise<SafariNotificationSupport> {
-  try {
-    const response = await fetch("/api/notifications/local", { cache: "no-store" });
-    if (!response.ok) return { supported: false, local: false };
-    const data = await response.json().catch(() => ({})) as { supported?: unknown; local?: unknown };
-    return { supported: data.supported === true, local: data.local === true };
-  } catch {
-    return { supported: false, local: false };
-  }
 }
 
 /** The server's switch and its language, or null when this server cannot answer. */
@@ -90,7 +66,7 @@ export async function setLocalNotificationEnabled(enabled: boolean): Promise<boo
  * Ask the server on this Mac to raise one notification now — the Settings panel's "Test"
  * button. True when the notification was raised.
  *
- * It is not gated by the browser's switch: this is the server's channel, and a test that
+ * It is not gated by any browser state: this is the server's channel, and a test that
  * quietly did nothing because a localStorage key was off was the old "no notification
  * anywhere and no way to find out why".
  */

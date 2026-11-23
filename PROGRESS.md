@@ -418,3 +418,52 @@ stubs. The registry module is where the marks live; `lib/subagent-runtime.ts` im
 - Build note for this shell: `next build` needs `TURBOPACK`, `NODE_ENV`,
   `__NEXT_PRIVATE_ORIGIN` and `__NEXT_PRIVATE_STANDALONE_CONFIG` unset
   (`Multiple bundler flags set: TURBOPACK=1, --webpack`).
+
+# Settings › General: one local notification (branch `fix/keyboard-msg-time-subagent`)
+
+From a screenshot of the section: the title said "Local browser notification", two switches
+offered two notifications for one finished task, and the **Test** button had no border. The
+ask was to rename the title, delete the browser row, keep the computer row, move its
+description under the title, and give the button a border. "Remove it completely" is taken
+literally: the browser half is deleted, not hidden — a row the user cannot switch off would
+keep sending the duplicate notice.
+
+## What changed and why
+* `components/SafariNotificationSection.tsx`: heading → `safariNotify.description` (the
+  sentence the server row used to carry) → one row in the grey card, exactly the ntfy
+  section's shape. The Test button is `variant="secondary"`, which is the shared
+  `.config-button-secondary` (1 px `--border`); the ntfy section's ghost buttons sit in their
+  own action row, where a borderless label reads fine, and this one did not.
+* `lib/task-completion-notice.ts` + its test, **deleted**: the page's own banner.
+  `components/AppShell.tsx`'s `handleAgentEnd` now only refreshes, and the
+  `pi-web:safari-notify-on-complete` localStorage key is gone from `lib/app-prefs.ts` and
+  `lib/safari-notification.ts` (with `safariNotificationsEnabled`,
+  `setSafariNotificationsEnabled` and `getSafariNotificationSupport`).
+* `components/ChatWindow.tsx`: `finishedRunFacts(messagesRef.current)` had exactly one
+  reader — the page banner — so the merge and the write-only `messagesRef` are gone, and
+  `lib/finished-run-facts.ts` (+ test) with them. `AgentEndInfo` keeps its span and
+  `aborted` (the completion sound reads `aborted`); the two page-only fields went with it.
+* i18n (`lib/i18n/locale-plugins.ts`, all three locales): `safariNotify.title` →
+  "Local notification" / 本地通知 / 本地通知; `serverSwitch` → `switch`, `serverHint` →
+  `description`; `body`/`hint` deleted; `unsupported`/`remote`/`testSent`/`testFailed`
+  reworded, since they used to promise a page notification that no longer exists.
+* Docs: `docs/agents/settings-ui.md`, `docs/agents/fork-files-security.md` (the announcer is
+  now the only sender), `docs/agents/subagents.md`, `AGENTS.md`'s file map.
+
+## What deliberately stayed
+* `GET /api/sessions/[id]/last-run` and `lib/session-last-run.ts`: the server's announcer
+  reads the span there; the HTTP route's only page caller was the deleted banner, and a
+  read-only documented endpoint is not notification plumbing.
+* `lib/browser-notifications.ts` and the notification permission: the extension UI's
+  "needs you" notice and scheduled runs use them. The new test asserts the sender is still
+  mounted, so removing the completion banner cannot orphan the permission.
+* The file name and the `safariNotify.*` key prefix: renaming them touches the route's
+  naming and three locales for no user-visible gain; the wording says computer, never Safari.
+
+## Verified
+- The full suite: 4574 pass, 0 fail, 0 cancelled (the deleted modules' 17 tests went with them).
+- `tsc --noEmit` clean; `eslint` 0 errors, 5 pre-existing warnings in files untouched.
+- Real browser at `127.0.0.1:30141`, Settings › General, desktop 1240 px and phone 390 px,
+  dark and light: heading "Local notification", the description under it, one row,
+  one switch, `Test` computed border `1px solid` in both themes; the two notification
+  sections read alike in the same column.

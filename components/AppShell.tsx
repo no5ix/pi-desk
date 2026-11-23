@@ -108,10 +108,7 @@ import { cacheWarmingRows } from "@/lib/cache-warming-display";
 import type { McpErrorResponse, ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { FileExplorerHandle } from "./FileExplorer";
-import type { AgentEndInfo } from "@/hooks/useAgentSession";
 import { useProjectBranch } from "@/hooks/useProjectBranch";
-import { fetchLastRunTimes, notifyTaskCompletion } from "@/lib/task-completion-notice";
-import { safariNotificationsEnabled } from "@/lib/safari-notification";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
@@ -193,8 +190,6 @@ export function AppShell() {
     setPref(APP_PREF_KEYS.quoteSelectionEnabled, String(enabled));
   }, []);
   const notifiedAttentionRequestIdsRef = useRef(new Set<string>());
-  /** Finished tasks this page has announced, keyed by session id and the run's end. */
-  const notifiedCompletionRunsRef = useRef(new Set<string>());
   const handleBackgroundTaskDone = useCallback(() => {
     if (soundEnabledRef.current) playDoneSound();
   }, [playDoneSound, soundEnabledRef]);
@@ -1503,43 +1498,16 @@ export function AppShell() {
     }
   }, [handleSelectSession, locale]);
 
-  const handleAgentEnd = useCallback((end?: AgentEndInfo) => {
+  const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
     if (selectedSession) hydrateSelectedSession(selectedSession.id);
-
-    // A stopped run did not finish a task: refresh, but announce nothing.
-    if (end?.aborted) return;
-    // Two endings announce nothing to this browser. A run that only answered a subagent's
-    // report is that subagent's ending, and a subagent finishing must stay quiet; a run that
-    // ended in an error has the provider's failure text, which belongs in the chat and not
-    // in a notification. The server's announcer skips the same two (lib/rpc-manager.ts,
-    // lib/task-completion-server.ts), so no channel says what this page would say.
-    if (end?.answeredSubagentReport || end?.failed) return;
-    if (isHiddenRelation(selectedSession?.relation)) return;
-
-    // The page's own banner: the one channel no server can raise. The finished task
-    // itself is announced by the server (lib/task-completion-server.ts — the phone push,
-    // the ntfy message, the Mac's Notification Center row), so a task that finishes with
-    // this tab closed, discarded, or started from a phone over the relay is still said
-    // out loud. lib/task-completion-notice.ts keeps this banner to one per run, in the
-    // same sentence, under the push payload's tag, and switches it off while this window
-    // is in the foreground (Settings › General › Local browser notification).
-    void notifyTaskCompletion(
-      {
-        sessionId: selectedSession?.id ?? null,
-        sessionName: selectedSession?.name ?? null,
-        end: end ?? { aborted: false },
-      },
-      {
-        translate,
-        locale,
-        fetchLastRun: fetchLastRunTimes,
-        pageEnabled: safariNotificationsEnabled,
-        notified: notifiedCompletionRunsRef.current,
-      },
-    );
-  }, [hydrateSelectedSession, locale, selectedSession, translate]);
+    // A finished task is announced by the app that runs Pi (Settings › General › Local
+    // notification, lib/task-completion-server.ts: the Notification Center row, the phone
+    // push, the ntfy message), which says it once per run with no page in the loop. The
+    // page adds no notification of its own — the same run landing in Notification Center
+    // twice, once from the tab, read as a bug. The completion sound is this page's own.
+  }, [hydrateSelectedSession, selectedSession]);
 
   // Scheduled runs have their own notification (success or failure, which task, why).
   // The desktop app shows it natively; a browser tab uses the same path as session completion.

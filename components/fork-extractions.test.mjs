@@ -374,12 +374,6 @@ const FORK_FEATURES = [
     markers: ["announceRunEnd", "announceAttention", "runAnnounceKey", "ATTENTION_COOLDOWN_MS", "env.publishNtfy", "env.raiseLocal", "sessionPushPayload"],
   },
   {
-    name: "The page announces only its own banner",
-    file: "lib/task-completion-notice.ts",
-    markers: ["pageEnabled", "NO_TIMES_NOTICE_BUCKET_MS", "sessionNotificationTag", "i18n.taskFinished"],
-    forbiddenMarkers: ["sendNtfyNotification", "sendSafariNotification", "pi-task-complete"],
-  },
-  {
     name: "A late push is a queued delivery, shown quiet and collapsed",
     file: "public/sw.js",
     // Upstream's 4-week TTL + always-alert push handler turns an offline iPhone into a

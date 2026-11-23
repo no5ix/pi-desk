@@ -14,7 +14,6 @@ const { getLocalePlugin, getSupportedLocales } = await createJiti(import.meta.ur
 const section = readFileSync(new URL("./NtfyNotificationSection.tsx", import.meta.url), "utf8");
 const client = readFileSync(new URL("../lib/ntfy-notification.ts", import.meta.url), "utf8");
 const appShell = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
-const notice = readFileSync(new URL("../lib/task-completion-notice.ts", import.meta.url), "utf8");
 const settings = readFileSync(new URL("./SettingsPanel.tsx", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
@@ -54,16 +53,17 @@ test("the switch carries the fields, so enabling is one honest write", () => {
 
 test("a finished run announces the session name and the sentence on every channel", () => {
   const serverNotice = readFileSync(new URL("../lib/task-completion-server.ts", import.meta.url), "utf8");
+  // The topic and the Mac are the server's channels: a run that finishes with every page
+  // closed has no page left to publish, which is where "no NTFY push" came from. The page
+  // used to add its own banner next to these (lib/task-completion-notice.ts), and one run
+  // arriving twice read as a bug, so the chat's end handler only refreshes.
   const handler = appShell.match(/const handleAgentEnd = useCallback[\s\S]*?\n  \}, \[[^\]]*\]\);/);
   assert.ok(handler, "handleAgentEnd found");
-  assert.match(handler[0], /void notifyTaskCompletion\(/, "the page's banner has one sender");
-  assert.match(handler[0], /sessionName: selectedSession\?\.name \?\? null/, "the title is the session's name");
-  assert.match(handler[0], /pageEnabled: safariNotificationsEnabled/, "the banner is this browser's switch");
-  assert.match(handler[0], /translate,\s*locale,/, "the sentence is in the page's language");
-  assert.match(notice, /title = sessionName\?\.trim\(\) \|\| deps\.translate\("i18n\.sessionComplete"\)/);
-  assert.match(notice, /formatCompletionSummary\(\s*deps\.translate\("safariNotify\.summary"\),\s*\{ startedAt: times\.startedAt, endedAt: times\.endedAt, poppedAt: now \},\s*deps\.locale,\s*\)/);
-  // The topic and the Mac are the server's channels: a run that finishes with every page
-  // closed has no page left to publish, which is where "no NTFY push" came from.
+  assert.doesNotMatch(handler[0], /notifyTaskCompletion|sendNtfyNotification|sendSafariNotification|formatCompletionSummary/,
+    "the chat does not ask the channels by hand any more");
+  // The server's own announcer skips a stopped run, a run that only answered a subagent's
+  // report, and a run that ended in a provider failure, so no channel says what the chat says.
+  assert.match(serverNotice, /status: "done" \| "failed" \| "aborted"/);
   assert.match(serverNotice, /env\.publishNtfy\(\{ title: message\.title, body: message\.body, priority: NTFY_PRIORITY \}\)/);
   assert.match(serverNotice, /env\.raiseLocal\(\{ title: message\.title, body: message\.body \}\)/);
   assert.match(serverNotice, /env\.notifyPush\(sessionId, event, sessionName\)/);

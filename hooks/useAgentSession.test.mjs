@@ -9,7 +9,6 @@ const phaseLabelSource = await jitiSource(new URL("../lib/chat-phase-label.ts", 
 const chatInputSource = await jitiSource(new URL("../components/ChatInput.tsx", import.meta.url));
 const messageViewSource = await jitiSource(new URL("../components/MessageView.tsx", import.meta.url));
 const appShellSource = await jitiSource(new URL("../components/AppShell.tsx", import.meta.url));
-const completionNoticeSource = await jitiSource(new URL("../lib/task-completion-notice.ts", import.meta.url));
 
 test("keeps the session event stream open through the idle grace window", () => {
   const finishSource = source.slice(
@@ -658,7 +657,9 @@ test("suppresses sounds and browser attention for the active subagent session", 
   assert.match(chatWindowSource, /completionNotificationsEnabled = !isHiddenRelation\(session\?\.relation\)/);
   assert.match(chatWindowSource, /completionNotificationsEnabled && soundEnabledRef\.current/);
   assert.match(chatWindowSource, /!completionNotificationsEnabled \|\| !surfaced/);
-  assert.match(completionSource, /if \(isHiddenRelation\(selectedSession\?\.relation\)\) return;/);
+  // A subagent's ending announces nothing anywhere: the chat's end handler adds no
+  // notification at all now, and the server's announcer skips the same family members.
+  assert.doesNotMatch(completionSource, /notifyTaskCompletion/, "the page announces a finished run nowhere");
   assert.match(attentionSource, /if \(isHiddenRelation\(selectedSession\?\.relation\)\) return;/);
 });
 
@@ -681,16 +682,14 @@ test("routes blocking extension requests through deduplicated browser attention 
     /isBlockingExtensionUiRequest\(request\)[\s\S]*?onAttentionNeeded\?\.\(request\)/,
   );
   assert.match(chatWindowSource, /onAttentionNeeded, onSessionCreated/);
-  // A finished task's notice is one call, and the rules that used to sit in the handler
-  // (the per-session tag, the foreground skip) belong to the sender now, so every channel
-  // shares them: lib/task-completion-notice.ts.
-  assert.match(completionSource, /void notifyTaskCompletion\(/);
+  // A finished task is announced by the server (lib/task-completion-server.ts: Notification
+  // Center, the phone push, ntfy). The banner the page added next to those channels is gone —
+  // one run landing twice read as a bug — so the only browser notification around this handler
+  // is the extension UI's "needs you" notice, which has its own dedupe and its own tag.
+  assert.doesNotMatch(completionSource, /notifyTaskCompletion|sendSafariNotification/);
   const completionHandler = completionSource.slice(0, completionSource.indexOf("useScheduledRunNotifications"));
-  assert.doesNotMatch(completionHandler, /shouldShowBrowserNotification\(\)/, "the handler does not gate the notice by hand");
+  assert.doesNotMatch(completionHandler, /shouldShowBrowserNotification\(\)/, "the chat's end handler raises no notification");
   assert.doesNotMatch(completionSource, /pushActive/);
-  assert.match(completionNoticeSource, /shouldShowBrowserNotification\(\)/);
-  assert.match(completionNoticeSource, /tag: completionNoticeTag\(sessionId\)/);
-  assert.doesNotMatch(completionNoticeSource, /document\.visibilityState === "visible"/);
   assert.match(attentionSource, /shouldShowBrowserNotification\(\)/);
   assert.match(attentionSource, /claimExtensionAttentionNotification\(request, notifiedAttentionRequestIdsRef\.current\)/);
   assert.match(attentionSource, /tag: `pi-extension-ui:\$\{request\.id\}`/);

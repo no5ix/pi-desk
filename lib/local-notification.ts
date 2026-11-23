@@ -6,14 +6,17 @@ import { getSupportedLocales } from "./i18n/registry";
  * The notification the server raises on the computer running Pi, and the setting that
  * switches it on.
  *
- * Two things raise a notification for one finished task, and they are not the same
- * sender: the page shows a banner in the browser you are looking at
- * (lib/task-completion-notice.ts, a per-browser localStorage switch), and this module
- * asks macOS to put one in Notification Center through
- * `osascript … display notification`. The second needs no browser at all, so it cannot be
- * a browser preference: it belongs to the installation, in Pi Web's own settings file,
- * next to ntfy's. That is also what makes it reliable — a task started from a phone over
- * the relay, or finished while every page is closed, still lands on the Mac.
+ * One finished task raises one notification on this computer, and this module is the whole
+ * sender: it asks macOS to put a row in Notification Center through
+ * `osascript … display notification`. It needs no browser at all, so it cannot be a
+ * browser preference: it belongs to the installation, in Pi Web's own settings file, next
+ * to ntfy's. That is also what makes it reliable — a task started from a phone over the
+ * relay, or finished while every page is closed, still lands on the Mac.
+ *
+ * The page used to raise its own banner next to this one, behind a per-browser
+ * localStorage switch (the Notification API). The same finished task arriving twice — and
+ * the browser half going silent with the tab in the foreground — read as a bug, so the page
+ * raises nothing for a finished run now.
  *
  * Local-only from a page: the route that exposes this is guarded by `isLocalRequest()`
  * (app/api/notifications/local), so a phone on the tailnet can never make this Mac buzz.

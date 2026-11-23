@@ -197,20 +197,12 @@ export interface AgentEndInfo {
   aborted: boolean;
   /**
    * When the hook saw the run begin (the prompt submit, or its `agent_start` event).
-   * With `endedAt` this is the "task lasted" span of the completion notification
-   * (Settings › General › Safari notification, lib/completion-notification.ts).
+   * With `endedAt` this is the span a finished run is described with (the server says it in
+   * "the task lasted …" — lib/completion-notification.ts).
    */
   startedAt?: number;
   /** When the run settled. */
   endedAt?: number;
-  /**
-   * The run answered a subagent's report, so its end is that subagent's ending and not the
-   * end of a task the user is waiting on. ChatWindow sets it from the transcript: the page's
-   * own banner skips such a run, as the server's announcer does (lib/subagent-runtime.ts).
-   */
-  answeredSubagentReport?: boolean;
-  /** The run's last reply carries an error. A failure is read in the chat, not announced. */
-  failed?: boolean;
 }
 
 export interface UseAgentSessionOptions {

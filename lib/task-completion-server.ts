@@ -27,8 +27,11 @@ import {
  *    it, and a run that ended while this process was not watching is dropped rather than
  *    announced as breaking news.
  *
- * What stays in the page (lib/task-completion-notice.ts) is only the banner in the browser
- * the user is looking at, which no server can raise.
+ * The page raises no notification for a finished run any more. It used to show its own
+ * banner next to these channels (the Notification API, a per-browser switch), and a task
+ * that arrived twice — the second one only while the tab was in the background — read as a
+ * bug. What the page keeps is the completion sound and the extension UI's "needs you"
+ * notice (lib/browser-notifications.ts).
  *
  * Every channel is asked in parallel and every failure is swallowed: this runs at the end
  * of a task, next to the completion sound, and a notification problem must never reach the
