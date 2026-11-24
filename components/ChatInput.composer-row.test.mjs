@@ -181,3 +181,18 @@ test("the full-width text area stays inside the card", () => {
   assert.doesNotMatch(rule, /width: 100%;/, "and no full width in the rule either");
   assert.match(chatInput, /alignItems: "stretch"/, "the column stretches its children, which is where the width comes from");
 });
+test("the row's ink lines up with the text, not only its boxes", () => {
+  // The `+` and Send are discs with no disc painted (`background: none`), so the only ink
+  // in them is the glyph. Centered in a 36px disc, the `+` began 10px right of the prompt
+  // it opens, and the hint's 23px padding left its sentence 13px short of Send's arrow:
+  // the card read as two left columns and a ragged right edge. The boxes always lined up;
+  // the ink is what the eye compares, so the ink is what is pinned here.
+  const attach = cssRule(css, ".composer-attach-button");
+  assert.ok(attach, "the attach button has a rule of its own");
+  assert.match(attach, /justify-content: flex-start;/, "the `+` glyph starts on the text's left edge");
+  assert.match(attach, /width: var\(--composer-send-size\);/, "and the hit area keeps the disc's touch size");
+  const hint = cssRule(css, ".composer-trigger-hint");
+  assert.ok(hint, "the hint has a rule of its own");
+  assert.match(hint, /padding-right: 10px;/, "the hint's ink ends on Send's arrow, not 13px inside it");
+  assert.match(hint, /right: 0;/, "the box stays at the text's right edge: the ink is moved, not the box");
+});

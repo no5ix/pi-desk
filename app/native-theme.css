@@ -3643,7 +3643,7 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   color: inherit;
   font: inherit;
   cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-native);
+  transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native);
 }
 
 .app-topbar-context-hit {
@@ -3671,7 +3671,24 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 .app-topbar-project-hit[aria-describedby],
 .app-topbar-branch-hit[aria-describedby],
 .app-topbar-context-hit[aria-describedby] {
+  /* The wash was the whole answer, and in this theme a wash is a 4% tint: a row of
+     tappable controls that does not say it is one. Hover, focus, or an open tip lights
+     the label and its glyph onto the row's full text colour, the way a `.app-menu` row
+     lifts the label it stands on. `aria-describedby` is set for exactly the moment a tip
+     is open, so a phone's tap leaves the pressed chip visibly open too. */
   background: var(--bg-hover);
+  color: var(--text);
+}
+/* A glyph sits below the button, where the row's own `.app-topbar-project svg` rule
+   out-specifies an inherited color, so it is named here: a chip never highlights half of
+   itself. */
+.app-topbar-project-hit:hover svg,
+.app-topbar-branch-hit:hover svg,
+.app-topbar-project-hit:focus-visible svg,
+.app-topbar-branch-hit:focus-visible svg,
+.app-topbar-project-hit[aria-describedby] svg,
+.app-topbar-branch-hit[aria-describedby] svg {
+  color: var(--text);
 }
 
 .app-topbar-project-hit:focus-visible,
@@ -5837,6 +5854,13 @@ html.dark {
    never pointed at. */
 .chat-scroll-container {
   overflow-anchor: none;
+  /* The composer floats over this scrollport, and what sits in the band above its card is
+     the tail of the transcript: the live `Waiting for model…` / `Compacting…` line, and
+     the last reply. That band is 32px of fade (`.chat-composer-overlay::before`) plus the
+     card's own shadow, so a line ending 8px above the card is painted over: the sentence
+     the user is watching arrives inside the shadow. The padding is scroll content, so it
+     only ever shows at the tail, where it lifts the last line clear of both. */
+  padding-bottom: 34px;
 }
 
 .chat-composer-editor {
@@ -6087,13 +6111,22 @@ html.dark {
   align-self: center;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   width: var(--composer-send-size);
   height: var(--composer-send-size);
   padding: 0;
   border-radius: 999px;
   background: none;
   color: var(--text-muted);
+}
+/* The `+` and the prompt share one vertical edge. The disc is centered — and with no
+   disc painted (background: none) the only ink in it is the glyph, which sat 10px to the
+   right of the text's own left edge, so the row's two left ends read as two columns.
+   Left-aligning the glyph inside the (unchanged, touch-sized) disc puts the ink on the
+   text's line; the Send disc keeps its centered arrow, because the card's bottom-right
+   arc is built around it. */
+.composer-attach-button > svg {
+  flex: 0 0 auto;
 }
 
 .composer-attach-button[data-active] {
@@ -6119,7 +6152,11 @@ html.dark {
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur-base) var(--ease-native);
-  padding-right: 23px;
+  /* The hint's right edge is Send's arrow, not the card's corner: 10px of padding is the
+     disc's own inset (14px card + 11px disc, arrow 10px inside), so the two ink edges
+     land on one line. A wider padding — the 23px this rule carried — left the sentence
+     13px short of the arrow it is meant to sit against. */
+  padding-right: 10px;
 }
 
 .chat-composer:focus-within .composer-trigger-hint {
@@ -11624,6 +11661,118 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
 }
 .agent-row-confirm.is-danger { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
 .agent-row-confirm.is-danger:hover { background: color-mix(in srgb, var(--danger) 9%, transparent); }
+/* ── The Agents panel is one menu, not a framed dialog ────────────────────────────
+   It opens under the topbar's subagent count, and it used to be drawn as a box welded
+   to the bar: a hairline down each side and along the bottom, a rule under the header,
+   a rule under the search box, a rule under every row. The app already owns the shape
+   the user pointed at — the `.app-menu` surface every popup uses: a rounded card in the
+   menu's own shadow with rounded rows floating in it. The class carries the surface, the
+   rules below lay out what is inside it, and nothing is drawn as a line again. */
+.agent-session-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* The header row carries the whole summary, search included: name, how many runs the
+   family holds, how many are running, and the box that narrows the list. */
+.agent-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px 7px;
+}
+.agent-panel-title {
+  color: var(--text);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+}
+.agent-panel-count,
+.agent-panel-running {
+  font-size: var(--fs-micro);
+}
+.agent-panel-count { color: var(--text-dim); }
+.agent-panel-running { color: var(--accent); }
+.agent-panel-search {
+  /* End of the header row: the labels are short, the filter is the wide thing, and a
+     narrow panel lets it shrink instead of wrapping the row. */
+  margin-left: auto;
+  flex: 0 1 168px;
+  min-width: 84px;
+  height: 28px;
+  padding: 0 9px;
+  border: var(--hairline) solid var(--separator);
+  border-radius: var(--menu-row-radius);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: var(--fs-micro);
+  outline: none;
+}
+.agent-panel-search:focus {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+.agent-panel-notice {
+  padding: 6px 8px;
+  border-radius: var(--menu-row-radius);
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  color: var(--danger);
+  font-size: var(--fs-micro);
+}
+/* A row's delete confirmation and the steer field: the same inset surface as the notice,
+   not a band ruled off from the list. The panel draws no rules inside itself. */
+.agent-panel-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0;
+  padding: 6px 8px;
+  border-radius: var(--menu-row-radius);
+  background: var(--surface-muted);
+}
+.agent-panel-list {
+  padding: 0;
+  overflow-y: auto;
+}
+.agent-row {
+  width: 100%;
+  min-height: 52px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--menu-row-radius);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease-native);
+}
+.agent-row:hover { background: var(--bg-hover); }
+.agent-row.is-selected {
+  /* A wash and an inset bar: the list draws no rules, and the row the session stands on
+     is still the findable one — the menu's own selection, not a border. */
+  background: var(--bg-selected);
+  box-shadow: inset 3px 0 0 var(--menu-selection-color);
+}
+.agent-row:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+/* The running subagent's head breathes — the header's count and the panel's row now
+   share one glyph, and the movement, not a spinner, is the state. */
+.agent-status-icon--pulse {
+  animation: agent-run-pulse 1.6s var(--ease-native) infinite;
+}
+@keyframes agent-run-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-row { transition: none; }
+  .agent-status-icon--pulse { animation: none; }
+}
 
 /* C1: where a side chat's own messages start, below the history it inherited. */
 .side-chat-divider {

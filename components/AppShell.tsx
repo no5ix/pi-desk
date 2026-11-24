@@ -776,10 +776,17 @@ export function AppShell() {
       const left = topBarRect.left;
       const available = topBarRect.width;
       if (activeTopPanel === "agents") {
+        const width = Math.min(AGENT_PANEL_WIDTH, available);
+        // Away from the sidebar, and under the count it opens from. A popover keeps to the
+        // side its control sits (components/SessionStatsPopover.tsx anchors top-right); the
+        // subagent count lives at the row's right end, while this panel was pinned to the
+        // topbar's left edge — so on a desktop or a pad a 420px card landed on top of the
+        // project tree, the one place a user is not reading a run. A phone's topbar is the
+        // whole width, where `available` already caps the panel and this stays at 0.
         setTopPanelPos({
           top: topBarRect.bottom,
-          left,
-          width: Math.min(AGENT_PANEL_WIDTH, available),
+          left: Math.max(topBarRect.left, topBarRect.right - width),
+          width,
         });
         return;
       }
@@ -2542,7 +2549,7 @@ export function AppShell() {
                   /* A control, like the branch chip: the label is a short name, the path
                      it stands for is longer than a phone, and nothing else in the header
                      says where the session works. Tap it for `Path` over the full path. */
-                  <TopbarProjectChip name={topBarSubtitle} path={visibleProjectCwd ?? ""} isWorktree={headerProjectIsWorktree} />
+                  <TopbarProjectChip name={topBarSubtitle} path={visibleProjectCwd ?? ""} branch={topBarBranch} isWorktree={headerProjectIsWorktree} />
                 ) : (
                   <small className="app-topbar-project">
                     <span>{topBarSubtitle}</span>

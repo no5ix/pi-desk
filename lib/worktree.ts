@@ -302,7 +302,9 @@ export function findCurrentWorktreePath(worktrees: readonly WorktreeInfo[], cwd:
   return findWorktreeByPath(worktrees, realPathOrSelf(cwd))?.path ?? null;
 }
 
-function sanitizeBranchForDir(branch: string): string {
+/** Exported for `lib/worktree-folder.ts`'s test: the client's copy of this rule is what
+ *  the header's worktree glyph reads, and the two must name folders the same way. */
+export function sanitizeBranchForDir(branch: string): string {
   return branch.replace(/[\/\\:*?"<>|\s]+/g, "-").replace(/^-+|-+$/g, "");
 }
 

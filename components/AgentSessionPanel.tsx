@@ -5,6 +5,7 @@ import { sideChatTitle } from "@/lib/session-family";
 import { useI18n } from "@/hooks/useI18n";
 import type { SessionInfo, SubagentSessionStatus } from "@/lib/types";
 import { isImeComposing } from "@/lib/ime";
+import { AgentRunningIcon } from "./TopbarSubagents";
 
 interface Props {
   rootSession: SessionInfo;
@@ -49,12 +50,9 @@ function statusColor(status: SubagentSessionStatus): string {
 
 function StatusIcon({ status }: { status: SubagentSessionStatus }) {
   if (status === "running" || status === "starting") {
-    return (
-      <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" opacity="0.25" />
-        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-    );
+    // The header's running glyph at row size. The row used to spin a circle: the same
+    // state was drawn two ways ten pixels apart, and a spinner names no subagent.
+    return <AgentRunningIcon size={14} />;
   }
   if (status === "failed") {
     return (
@@ -142,33 +140,13 @@ function AgentRow({
       role="option"
       aria-selected={selected}
       tabIndex={0}
+      className={`agent-row${selected ? " is-selected" : ""}`}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onSelect();
         }
-      }}
-      style={{
-        width: "100%",
-        minHeight: 56,
-        display: "grid",
-        gridTemplateColumns: "28px minmax(0, 1fr) auto",
-        alignItems: "center",
-        gap: 9,
-        padding: "7px 12px",
-        borderBottom: "var(--hairline) solid var(--border)",
-        borderLeft: selected ? "2px solid var(--accent)" : "2px solid transparent",
-        background: selected ? "var(--bg-selected)" : "transparent",
-        color: "var(--text)",
-        cursor: "pointer",
-        textAlign: "left",
-      }}
-      onMouseEnter={(event) => {
-        if (!selected) event.currentTarget.style.background = "var(--bg-hover)";
-      }}
-      onMouseLeave={(event) => {
-        if (!selected) event.currentTarget.style.background = "transparent";
       }}
     >
       <span style={{ width: 28, height: 28, display: "grid", placeItems: "center", color: main ? "var(--text-muted)" : "var(--accent)" }}>
@@ -376,58 +354,43 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
 
   return (
     <div
-      className="agent-session-panel"
+      className="agent-session-panel app-menu"
       role="listbox"
       aria-label={t("agentSwitcher.title")}
-      style={{
-        background: "var(--bg-panel)",
-        borderLeft: "var(--hairline) solid var(--border)",
-        borderRight: "var(--hairline) solid var(--border)",
-        borderBottom: "var(--hairline) solid var(--border)",
-        borderRadius: "0 0 var(--radius-sm) var(--radius-sm)",
-        boxShadow: "var(--shadow-popover)",
-        overflow: "hidden",
-      }}
     >
       <div>
-        <div style={{ minHeight: 44, display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderBottom: "var(--hairline) solid var(--border)" }}>
-          <strong style={{ fontSize: "var(--fs-caption)", fontWeight: "var(--fw-semibold)" }}>{t("agentSwitcher.title")}</strong>
-          <span style={{ color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>
+        {/* One row carries the family: its name, how many runs it holds, how many are
+            running, and the box that narrows the list. The search used to sit in a
+            bordered strip of its own under the header, which read as a second panel; the
+            app's menus put a filter in the header line, and that is the row it fits. */}
+        <div className="agent-panel-head">
+          <strong className="agent-panel-title">{t("agentSwitcher.title")}</strong>
+          <span className="agent-panel-count">
             {t("agentSwitcher.count", { count: subagents.length })}
           </span>
           {runningCount > 0 && (
-            <span style={{ marginLeft: "auto", color: "var(--accent)", fontSize: "var(--fs-micro)" }}>
+            <span className="agent-panel-running">
               {t("agentSwitcher.runningCount", { count: runningCount })}
             </span>
           )}
-        </div>
-        {sideChatError && (
-          <div role="alert" style={{ padding: "6px 12px", background: "color-mix(in srgb, var(--danger) 7%, transparent)", color: "var(--danger)", fontSize: "var(--fs-micro)", borderBottom: "var(--hairline) solid var(--border)" }}>
-            {sideChatError}
-          </div>
-        )}
-        {controlError && (
-          <div role="alert" style={{ padding: "6px 12px", background: "color-mix(in srgb, var(--danger) 7%, transparent)", color: "var(--danger)", fontSize: "var(--fs-micro)", borderBottom: "var(--hairline) solid var(--border)" }}>
-            {controlError}
-          </div>
-        )}
-        {subagents.length > 8 && (
-          <div style={{ padding: 8, borderBottom: "var(--hairline) solid var(--border)" }}>
+          {subagents.length > 8 && (
             <input
+              className="agent-panel-search"
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t("agentSwitcher.search")}
               aria-label={t("agentSwitcher.search")}
-              style={{
-                width: "100%", height: 32, padding: "0 10px",
-                border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)",
-                background: "var(--bg)", color: "var(--text)", fontSize: "var(--fs-caption)", outline: "none",
-              }}
             />
-          </div>
+          )}
+        </div>
+        {sideChatError && (
+          <div role="alert" className="agent-panel-notice">{sideChatError}</div>
         )}
-        <div style={{ maxHeight: "min(58dvh, 480px)", overflowY: "auto" }}>
+        {controlError && (
+          <div role="alert" className="agent-panel-notice">{controlError}</div>
+        )}
+        <div className="agent-panel-list" style={{ maxHeight: "min(58dvh, 480px)" }}>
           <AgentRow
             session={rootSession}
             main
@@ -463,14 +426,14 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
                 }}
               />
               {confirmDeleteId === session.id && (
-                <div role="alertdialog" aria-label={t("sidebar.delete")} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderBottom: "var(--hairline) solid var(--border)", background: "var(--bg)" }}>
+                <div role="alertdialog" aria-label={t("sidebar.delete")} className="agent-panel-strip">
                   <span style={{ flex: 1, minWidth: 0, color: "var(--text-muted)", fontSize: "var(--fs-caption)" }}>{t("sidebar.deleteChatBody")}</span>
                   <button type="button" className="agent-row-confirm" onClick={() => setConfirmDeleteId(null)}>{t("sidebar.cancel")}</button>
                   <button type="button" className="agent-row-confirm is-danger" onClick={() => void handleDeleteSideChat(session.id)}>{t("sidebar.delete")}</button>
                 </div>
               )}
               {steerOpenId === session.id && runningSessionIds.has(session.id) && (
-                <div style={{ display: "flex", gap: 6, padding: "6px 12px", borderBottom: "var(--hairline) solid var(--border)", background: "var(--bg)" }}>
+                <div className="agent-panel-strip">
                   <input
                     autoFocus
                     type="text"

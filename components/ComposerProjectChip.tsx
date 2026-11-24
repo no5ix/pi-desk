@@ -6,8 +6,10 @@
 // handler closes every composer menu) and mounts this.
 
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { useProjectBranch } from "@/hooks/useProjectBranch";
 import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import { getProjectDisplayName } from "@/lib/project-display";
+import { branchOwnsWorktreeFolder } from "@/lib/worktree-folder";
 import { useI18n } from "@/hooks/useI18n";
 import { WorktreeIcon } from "./GitIcons";
 
@@ -39,6 +41,12 @@ export function ComposerProjectChip({
   menuRef, open, onOpenChange, label, projectPath, isWorktree = false, maxWidth, projectOptions, onProjectChange, onSelectProject,
 }: ComposerProjectChipProps) {
   const { t } = useI18n();
+  // The chip's glyph answers a question about the branch, not only about the folder: a
+  // linked worktree switched to an ordinary branch is a plain folder to the person typing
+  // in it (lib/worktree-folder.ts). The branch is read through the same cached hook the
+  // branch chip beside this one uses, so the composer's two git chips ask once.
+  const projectBranch = useProjectBranch(projectPath);
+  const showsWorktreeGlyph = isWorktree && branchOwnsWorktreeFolder(projectPath, projectBranch);
   return (
     <div ref={menuRef} style={{ position: "relative", flexShrink: 0 }}>
       <button
@@ -70,7 +78,7 @@ export function ComposerProjectChip({
         }}
         disabled={!onSelectProject && !(projectOptions.length > 0 && onProjectChange)}
       >
-        {isWorktree ? <WorktreeIcon size={14} /> : (
+        {showsWorktreeGlyph ? <WorktreeIcon size={14} /> : (
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
           </svg>
