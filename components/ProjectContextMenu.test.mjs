@@ -138,28 +138,25 @@ test("the actions page is folder actions only", () => {
   assert.doesNotMatch(html, /sidebar-project-context-menu--wide/);
 });
 
-test("a branch row gets the composer chip's two buttons, and the plain row does not", () => {
+test("a branch row gets the composer chip's worktree button, and the plain row does not", () => {
   const plain = render({ view: "branches" });
   assert.ok(!plain.includes("sidebar-project-context-menu-branch-actions"), "the sidebar's own page keeps the plain row");
   const chip = render({ view: "branches", onCreateWorktreeFromBranch: () => {} });
   assert.match(chip, /sidebar-project-context-menu-row sidebar-project-context-menu-row--branch/);
-  // One pair per branch: check it out (or open the worktree that already holds it),
-  // and the worktree it can start. Each button names itself twice (title and
-  // aria-label), so four branches mean eight worktree hits and six checkout hits:
-  // `main` is checked out in the main checkout, so its branch button opens that folder.
-  assert.equal(chip.match(/sidebar\.checkOutBranchTitle\(/g)?.length, 6, "feature, dev, remote-only");
-  assert.equal(chip.match(/sidebar\.openWorktreeForBranchTitle\(/g)?.length, 2, "main lives in another worktree");
-  assert.equal(chip.match(/sidebar\.worktreeFromBranchTitle\(/g)?.length, 8);
-  const mainButton = chip.match(/<button[^>]*sidebar\.openWorktreeForBranchTitle\(main\)[^>]*>/);
-  assert.ok(mainButton, "the branch held in a worktree gets the worktree-opening button");
-  assert.ok(!/disabled/.test(mainButton[0]), "opening the worktree that holds it is allowed");
-  // The branch already checked out (the render's selectedCwd is the feature
-  // worktree) cannot be checked out again.
-  const featureButton = chip.match(/<button[^>]*sidebar\.checkOutBranchTitle\(feature\)[^>]*>/);
-  assert.ok(featureButton, "the checkout button for the current branch");
-  assert.match(featureButton[0], /disabled/, "the current branch's checkout button is off");
-  const devButton = chip.match(/<button[^>]*sidebar\.checkOutBranchTitle\(dev\)[^>]*>/);
-  assert.ok(devButton && !/disabled/.test(devButton[0]), "another branch can be checked out");
+  // One button per branch: the worktree this branch can start. The row used to carry
+  // a git-branch glyph next to it that called the same `onSwitchBranch` as the branch
+  // name, and the user read the pair as two different actions. The name is the switch.
+  assert.equal(chip.match(/sidebar\.worktreeFromBranchTitle\(/g)?.length, 8, "four branches, each button named twice");
+  assert.equal(chip.match(/class="sidebar-project-context-menu-branch-action"/g)?.length, 4,
+    "exactly one action button per branch row");
+  for (const key of ["sidebar.checkOutBranchTitle", "sidebar.openWorktreeForBranchTitle"]) {
+    assert.ok(!chip.includes(key), `${key} belonged to the removed branch glyph`);
+  }
+  // The name button is the switch, and it is the one that says what it will do.
+  assert.ok(chip.includes('aria-current="true"'), "the checked-out branch is marked in its own row");
+  assert.equal(chip.match(/sidebar\.branchInWorktreeTitle\(/g)?.length, 1,
+    "the row for a branch a worktree holds names that worktree in the name button");
+  assert.equal(chip.match(/sidebar\.switchBranchTitle\(/g)?.length, 2, "the switchable rows name the switch");
   // The worktree list hangs off the chip's branch page, where a checkout is switched or removed.
   assert.ok(chip.includes(">sidebar.worktrees</"), "Worktrees… opens from the branch page");
   assert.ok(!plain.includes(">sidebar.worktrees</"));
