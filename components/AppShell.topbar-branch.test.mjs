@@ -20,8 +20,8 @@ test("the title and the project line keep their positions in the title block", (
   assert.ok(block, "topbar title block found");
   assert.match(block[0], /<span>\{topBarTitle\}<\/span>/, "the title stays the first span child");
   assert.match(block[0], /className="app-topbar-subtitle-row"/, "the project line is a row inside the title block");
-  assert.match(block[0], /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} isWorktree=\{headerProjectIsWorktree\} \/>/,
-    "the project name is a chip, and its path is the folder the session works in");
+  assert.match(block[0], /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} branch=\{topBarBranch\} isWorktree=\{headerProjectIsWorktree\} \/>/,
+    "the project name is a chip, its path is the folder the session works in, and its glyph is asked of the branch");
   assert.match(projectChip, /<small className="app-topbar-project app-topbar-project--chip">[\s\S]*<span>\{name\}<\/span>/,
     "it stays a <small>, so the narrow-screen rule that hid the row still hides it");
 });
@@ -130,7 +130,9 @@ test("the hydration render shows no branch, so React keeps the tree", () => {
 test("the branch name says which checkout it is: branch glyph, worktree glyph", () => {
   // The same branch name can live in the repo and in a linked worktree, and the
   // header is the only place a session says where it runs.
-  assert.match(chip, /\{isWorktree \? <WorktreeIcon \/> : <BranchIcon \/>\}/);
+  assert.match(chip, /\{isWorktree && branchOwnsWorktreeFolder\(projectRoot, branch\) \? <WorktreeIcon \/> : <BranchIcon \/>\}/,
+    "the worktree glyph is asked of the branch on the row: a linked folder switched to an ordinary branch wears the branch glyph");
+  assert.match(chip, /import \{ branchOwnsWorktreeFolder \} from "@\/lib\/worktree-folder";/);
   assert.match(chip, /t\(isWorktree \? "chat\.gitWorktreeBranchTitle" : "chat\.gitBranchTitle",/, "and says it to a screen reader too");
   assert.match(appShell, /isWorktree=\{Boolean\(selectedSession\?\.isWorktree\)\}/, "the shell only says which kind this is");
   assert.match(chip, /import \{ BranchIcon, WorktreeIcon \} from "\.\/GitIcons";/,
@@ -291,4 +293,12 @@ test("the header's branch is polled, so a checkout outside pi shows up", () => {
   const route = readFileSync(new URL("../app/api/worktrees/branch/route.ts", import.meta.url), "utf8");
   assert.match(route, /readCurrentBranch/, "one short git rev-parse");
   assert.match(route, /isCwdAllowed/, "the endpoint is behind the file-access gate");
+});
+test("the Agents panel opens under the count it belongs to, not over the project tree", () => {
+  const block = appShell.match(/if \(activeTopPanel === "agents"\) \{[\s\S]*?\n      \}/);
+  assert.ok(block, "the agents branch of the top-panel placement exists");
+  assert.match(block[0], /left: Math\.max\(topBarRect\.left, topBarRect\.right - width\)/,
+    "a 420px card pinned to the topbar's left edge landed on the project tree on a desktop and a pad, under the pointer's start");
+  assert.match(block[0], /const width = Math\.min\(AGENT_PANEL_WIDTH, available\);/,
+    "the cap is the topbar's width, which is what keeps a phone's panel at the column's left edge");
 });

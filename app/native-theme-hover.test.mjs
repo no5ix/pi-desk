@@ -56,3 +56,20 @@ test("the palette keeps --bg-hover translucent, which is why the wash composites
   assert.match(css, /--bg-hover: rgba\(0, 0, 0, 0\.04\);/, "light");
   assert.match(css, /--bg-hover: rgba\(255, 255, 255, 0\.05\);/, "dark");
 });
+test("the header's project, branch and context chips lift their label and their glyph", () => {
+  // The header's project, branch, clock and context are controls that open the app's tip,
+  // and the only state they showed was the 4% wash — over the translucent chrome that is
+  // nearly nothing, so a pointer moving along the row said nothing and the row read as
+  // labels. The label and its glyph now lift to `--text` with the wash, the way a
+  // `.app-menu` row lifts the line it stands on; the wash itself stays the token.
+  const hover = css.match(/\.app-topbar-project-hit:hover,[^{}]*\{([^}]*)\}/);
+  assert.ok(hover, "the shared hover / open-tip block for the three chips exists");
+  assert.match(hover[1], /background: var\(--bg-hover\);/, "the wash stays the token");
+  assert.match(hover[1], /color: var\(--text\);/, "the label lifts to the row's full text colour");
+  const glyph = css.match(/\.app-topbar-project-hit:hover svg,[^{}]*\{([^}]*)\}/);
+  assert.ok(glyph, "the glyph is named on its own: `.app-topbar-project svg` out-specifies an inherited color");
+  assert.match(glyph[1], /color: var\(--text\);/, "a chip never highlights half of itself");
+  const chip = rule(".app-topbar-project-hit,\n.app-topbar-branch-hit,\n.app-topbar-context-hit");
+  assert.ok(chip, "the three chips share one base rule");
+  assert.match(chip, /transition: background [^,]+, color [^;]+;/, "the lift is animated with the wash, not after it");
+});

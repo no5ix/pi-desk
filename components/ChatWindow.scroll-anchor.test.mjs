@@ -55,6 +55,11 @@ test("the browser's own anchoring is off, so one mechanism owns the position", (
   assert.ok(rule, "the chat scroller has no fork rule");
   assert.match(rule[1], /overflow-anchor:\s*none;/,
     "with `auto` the browser anchors the same prepend and the two mechanisms stack");
+  // The composer floats over this scrollport, and the live `Waiting for model…` /
+  // `Compacting…` line is the transcript's last row: without room at the tail it is painted
+  // inside the card's 32px fade and its shadow, which is where the user read it.
+  assert.match(rule[1], /padding-bottom:\s*3[0-9]px;/,
+    "the transcript's tail clears the composer's fade and shadow, and the padding only exists at the tail");
   assert.ok(!/overflow-anchor/.test(upstreamCss),
     "app/globals.css is upstream-owned: this rule belongs to the fork's stylesheet");
 });

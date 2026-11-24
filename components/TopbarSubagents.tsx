@@ -110,10 +110,10 @@ function CheckIcon() {
   );
 }
 
-/* The header's own copies of the two glyphs components/AgentSessionPanel.tsx
-   draws in its rows (the sidebar's "Subagents" fold): the subagent head, and the
-   running pulse. They are module-private there; the header is a tenth of the
-   width, so it uses the same paths at 11px. */
+/* The header's own copy of the subagent head components/AgentSessionPanel.tsx draws in
+   its rows (the sidebar's "Subagents" fold): the header is a tenth of the width, so it
+   draws the same paths at 11px. The running head below is shared the other way — the
+   panel imports that one, at row size, so a running run has one shape. */
 function AgentIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -126,16 +126,24 @@ function AgentIcon() {
   );
 }
 
-function AgentRunningIcon() {
+/**
+ * The running subagent: the head with its eyes lit.
+ *
+ * Exported because it is the app's one answer to "this run is going". The header counts
+ * with it at 11px; the Agents panel used to spin a circle in the row, so the same state
+ * had two shapes ten pixels apart, and the circle said nothing about a subagent. The size
+ * is a prop for that reason: a row glyph and a header glyph cannot share one pixel size.
+ */
+export function AgentRunningIcon({ size = 11 }: { size?: number }) {
   return (
     <svg
       className="agent-status-icon--pulse"
-      width="11"
-      height="11"
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.9"
+      strokeWidth={size > 12 ? 1.75 : 1.9}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"

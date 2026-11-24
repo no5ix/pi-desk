@@ -3,6 +3,16 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const source = await readFile(new URL("./AgentSessionPanel.tsx", import.meta.url), "utf8");
+const css = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
+/** The body of the LAST top-level rule for a selector. The shared popover-surface group
+ *  near the top of the fork's stylesheet names this panel too; the panel's own block, the
+ *  one that lays it out, is the later one. */
+function cssRule(selector) {
+  const parts = css.split(`\n${selector} {`);
+  if (parts.length < 2) return null;
+  const body = parts[parts.length - 1];
+  return body.slice(0, body.indexOf("}"));
+}
 
 test("keeps the main session first and makes every agent session selectable", () => {
   const mainRow = source.indexOf("session={rootSession}");
@@ -21,12 +31,48 @@ test("sorts running subagents first and enables search only for larger families"
   assert.match(source, /maxHeight: "min\(58dvh, 480px\)"/);
 });
 
-test("renders as a compact left-positioned dropdown without a centered inner width", () => {
-  assert.match(source, /borderLeft: "var\(--hairline\) solid var\(--border\)"/);
-  assert.match(source, /borderRadius: "0 0 var\(--radius-sm\) var\(--radius-sm\)"/);
+test("renders as the app's own menu surface: a rounded card, flat rows, no rules inside", () => {
+  // The panel used to be a box welded to the topbar: a hairline down each side and along
+  // the bottom, a rule under the header, one under the search strip, one under every row.
+  // The user asked for the surface the app's popups already use, so the panel wears
+  // `.app-menu` (radius, separator, --shadow-popover) and its rows are flat menu rows.
+  assert.match(source, /className="agent-session-panel app-menu"/, "the shared menu card carries the surface");
+  assert.doesNotMatch(source, /borderLeft: "var\(--hairline\) solid var\(--border\)"/, "no hairline welded to the topbar");
+  assert.doesNotMatch(source, /borderRadius: "0 0 var\(--radius-sm\) var\(--radius-sm\)"/, "no square bottom corners");
+  assert.doesNotMatch(source, /borderBottom: "var\(--hairline\) solid var\(--border\)"/, "no rule under the header, the search box, or a row");
+  assert.match(source, /className=\{`agent-row\$\{selected \? " is-selected" : ""\}`\}/,
+    "rows are class-styled menu rows, and the selected one is marked by class, not by an inline border");
+  // The header row carries the whole summary, search included: name, counts, filter.
+  const head = source.indexOf('className="agent-panel-head"');
+  const search = source.indexOf('className="agent-panel-search"');
+  const list = source.indexOf('className="agent-panel-list"');
+  assert.ok(head > 0 && search > head && search < list,
+    "the search box sits in the header row, above the list — not in a bordered strip of its own");
   assert.doesNotMatch(source, /maxWidth: 680/);
 });
 
+test("a running row leads with the header's subagent head, not a spinner", () => {
+  // The header counts a running family with the subagent head; the row spun a circle. The
+  // same state drawn two ways ten pixels apart, and a circle names no subagent.
+  assert.match(source, /import \{ AgentRunningIcon \} from "\.\/TopbarSubagents";/);
+  assert.match(source, /return <AgentRunningIcon size=\{14\} \/>;/, "one glyph, at row size");
+  assert.doesNotMatch(source, /className="animate-spin"/, "no spinner left in the panel");
+});
+test("the panel's stylesheet is the menu surface: rounded, shadowed, no rules drawn inside", () => {
+  const panel = cssRule(".agent-session-panel");
+  assert.ok(panel, "the panel has a fork rule of its own");
+  assert.doesNotMatch(panel, /border/, "no hairline of its own: `.app-menu` carries the separator, the radius and the shadow");
+  const row = cssRule(".agent-row");
+  assert.ok(row, "the row has a fork rule of its own");
+  assert.match(row, /border: 0;/, "rows carry no divider: the list draws no rules inside it");
+  assert.match(row, /border-radius: var\(--menu-row-radius\);/, "flat rows round with the menu's rows");
+  assert.match(css, /\.agent-row\.is-selected \{[^}]*box-shadow: inset 3px 0 0 var\(--menu-selection-color\);/,
+    "the row the session stands on is a wash and an inset bar, not a border");
+  assert.match(cssRule(".agent-panel-head") ?? "", /display: flex;/, "one header row carries the name, the counts and the search box");
+  assert.match(cssRule(".agent-panel-search") ?? "", /margin-left: auto;/, "the search box sits at the end of that row");
+  assert.match(source, /className="agent-panel-strip"/, "a row's confirmation and the steer field are inset strips, not ruled-off bands");
+  assert.match(cssRule(".agent-panel-strip") ?? "", /border-radius: var\(--menu-row-radius\);/, "the strips round with the menu's rows");
+});
 test("shows persisted completion states while live running state takes precedence", () => {
   assert.match(source, /const status: SubagentSessionStatus = running \? "running" : relation\?\.status \?\? "completed"/);
   assert.match(source, /t\(`agentSwitcher\.status\.\$\{status\}`\)/);
