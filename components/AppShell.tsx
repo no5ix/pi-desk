@@ -142,6 +142,13 @@ const FILE_TREE_PREVIEW_MIN_WIDTH = 240;
 // shown: the viewer's toolbar (path, mode switch, actions) needs ~320px, and a
 // 220px tree beside it left the preview clipped.
 const FILE_TREE_AUTO_COLLAPSE_WIDTH = FILE_TREE_MIN_WIDTH + 320;
+/**
+ * How long the settings dialog is kept mounted after a close, so its exit
+ * animation plays: the shared `native-backdrop-out` / `native-modal-out`
+ * keyframes in `app/native-theme.css` run for `--dur-base` (180ms). Same length
+ * as `DIRECTORY_PICKER_CLOSE_MS`, the other dialog that animates out.
+ */
+const SETTINGS_EXIT_MS = 180;
 
 function parkedNewSessionDraftKey(cwd: string): string {
   return `parked-new:${cwd}`;
@@ -297,10 +304,38 @@ export function AppShell() {
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  // The dialog animates in and out. Closing therefore keeps the panel mounted for
+  // SETTINGS_EXIT_MS: unmounting it on the click would drop the sheet mid-fade and
+  // the disappearance would not be seen. Same duration as the CSS exit keyframe.
+  const [settingsClosing, setSettingsClosing] = useState(false);
+  const settingsExitRef = useRef<number | null>(null);
   // Shortcuts open their section; only the plain Settings button opens a phone's list of sections (P1).
   const [settingsOpenAtHome, setSettingsOpenAtHome] = useState(false);
   useNativeContextMenu();
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
+  const closeSettings = useCallback(() => {
+    if (!settingsSection || settingsClosing) return;
+    setSettingsOpenAtHome(false);
+    setModelsRefreshKey((key) => key + 1);
+    setSettingsClosing(true);
+    settingsExitRef.current = window.setTimeout(() => {
+      settingsExitRef.current = null;
+      setSettingsSection(null);
+      setSettingsClosing(false);
+    }, SETTINGS_EXIT_MS);
+  }, [settingsClosing, settingsSection]);
+  // Opening any section cancels an exit in flight, and the timer never outlives
+  // the shell.
+  useEffect(() => {
+    if (settingsSection && settingsClosing) {
+      if (settingsExitRef.current !== null) window.clearTimeout(settingsExitRef.current);
+      settingsExitRef.current = null;
+      setSettingsClosing(false);
+    }
+  }, [settingsClosing, settingsSection]);
+  useEffect(() => () => {
+    if (settingsExitRef.current !== null) window.clearTimeout(settingsExitRef.current);
+  }, []);
   const [topMoreOpen, setTopMoreOpen] = useState(false);
   const topMoreRef = useRef<HTMLDivElement>(null);
   const topMoreMenuRef = useRef<HTMLDivElement>(null);
@@ -3673,11 +3708,8 @@ export function AppShell() {
         onQuoteSelectionChange={handleQuoteSelectionChange}
         soundEnabled={soundEnabled}
         onSoundToggle={onSoundToggle}
-        onClose={() => {
-          setSettingsSection(null);
-          setSettingsOpenAtHome(false);
-          setModelsRefreshKey((key) => key + 1);
-        }}
+        onClose={closeSettings}
+        closing={settingsClosing}
         onSessionReloaded={() => setSessionKey((key) => key + 1)}
         projectTrust={projectTrust}
         onOpenTrustDialog={openProjectTrustDialog}

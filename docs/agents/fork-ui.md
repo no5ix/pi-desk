@@ -221,6 +221,7 @@ Single project sessions archive the same way chats do (#200): the session row's 
 - Navigation (#227): on every desktop platform the sections are a pane on the left under the dialog's title, the content beside it (the header is `display: contents` on the surface's grid). Between 641px and 899px the pane is an icon rail (labels stay as `.settings-section-tab-label`, visually hidden, plus the `title` tooltip); at 640px and below the phone drill-down is unchanged. Windows keeps its Fluent accent bar and caption close, GNOME its round close. The list is one tab stop (`tabIndex` only on the selected row) and arrow keys / Home / End move within it. General's two columns are a container query on `.settings-section-host` (760px of section width), not a viewport breakpoint, since the pane takes 208px. Rules live in `app/native-theme.css`; `app/settings.css` stays upstream's.
 - A signed desktop update installs and relaunches the app, so `AppUpdatesSection` reports `busy` up to `SettingsPanel`, which keeps backdrop clicks and Escape from dismissing the dialog mid-upgrade. That is the reason for the `onBusyChange` prop; don't drop it when refactoring the panel.
 - `UpdateReminder` opens the panel at `general`, where the update status now lives. `components/fork-extractions.test.mjs` pins that the update/desktop code stays in those fork-owned files instead of being regrouped into `SettingsPanel.tsx`.
+- The dialog appears and disappears. Its entrance was already the app's shared one (`native-backdrop-in` on the scrim, `native-modal-in` on the sheet); what was missing is the exit — the panel was removed from the DOM on the click, so the sheet blinked out and the disappearance was never seen. `closeSettings` in `AppShell` sets `settingsClosing` (the panel's `is-closing` class on backdrop and surface, `pointer-events: none`), the shared reverse (`native-backdrop-out` / `native-modal-out`) plays, and the unmount happens after `SETTINGS_EXIT_MS` — `--dur-base`, the same length `DIRECTORY_PICKER_CLOSE_MS` uses. Opening any section during the exit cancels it, the timer is cleared on unmount, and `prefers-reduced-motion` turns both halves off. `components/SettingsPanel.animation.test.mjs` pins the mount, the classes and the keyframes; `e2e/settings-animation.mjs` measures them in Chromium.
 
 ## Topbar, chat column, and right panel — who contains whom
 Upstream segment D (0e36743) restructured `AppShell.tsx`'s main region in ways this fork's layout cannot survive; all three are pinned by `components/AppShell.right-panel-row.test.mjs`:
@@ -256,6 +257,16 @@ phone sees the project, the branch and the elapsed time. The clock never wraps
 (`flex: 0 0 auto`); on the narrowest phones it is the *branch* that ellipsizes.
 Pinned by `components/AppShell.topbar-elapsed.test.mjs`, and the row's shape and the
 branch's contract by `components/AppShell.topbar-branch.test.mjs`.
+
+The row's room is `.app-topbar-title`'s `max-width`, because every label in it
+lives in that column. At 420px it ellipsized a branch name with room to spare — a
+1440px window showed `feat/branch-picker-header-…` — so the desktop cap is
+`min(64vw, 760px)`. The bar's buttons are `flex: 0 0 auto`, so a wider title never
+pushes them off; the phone caps (160px at 900px, `min(64vw, 340px)` at 640px) stay,
+and the project keeps `min-width: 5.5em` so it survives a phone's row. The branch
+keeps `flex: 1 1 0`: it takes the row's leftover width and is the one that ellipsizes.
+`e2e/topbar-project-row.mjs` measures the labels at 1440px and 390px, and puts the
+420px cap back on the last pass to prove the measurement sees the truncation.
 
 ## Composer branch chip, and a worktree from a branch
 

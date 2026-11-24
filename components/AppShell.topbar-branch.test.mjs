@@ -117,6 +117,19 @@ test("the chip prints the buckets, not a total", () => {
   assert.match(counter, /title=\{translate\("chat\.subagentsAborted", counts\)\}/, "each bucket says what it counts");
 });
 
+test("the project row is not cut off while the bar has room", () => {
+  // The project, the branch, the clock and the subagent counts all live inside
+  // `.app-topbar-title`, so that column's cap is the row's room. At 420px it
+  // ellipsized a normal branch name in a 1440px window.
+  assert.match(css, /\.app-topbar-title \{[\s\S]*?max-width: min\(64vw, 760px\);/, "the column is as wide as the bar can give it");
+  assert.ok(!/max-width: 420px;\n  flex-direction: column;/.test(css), "the old cap is gone");
+  // A phone keeps its smaller caps: the row must not widen the page there.
+  assert.match(css, /@media \(max-width: 900px\) \{\n  \.app-topbar-title \{\n    max-width: 160px;/);
+  assert.match(css, /@media \(max-width: 640px\) \{[\s\S]*?\.app-topbar-title \{\n    max-width: min\(64vw, 340px\);/);
+  assert.match(css, /\.app-topbar-project \{[\s\S]*?min-width: 5\.5em;/, "the project keeps a few characters and its icon");
+  assert.match(css, /\.app-topbar-branch \{\n\s*flex: 1 1 0;/, "the branch takes the row's leftover width");
+});
+
 test("a full row wraps the counts to a second line, and the bar grows with them", () => {
   assert.match(css, /\.app-topbar-subtitle-row \{\n\s*flex-wrap: wrap;/, "the row wraps");
   assert.match(css, /\.app-topbar-subagents \{[\s\S]*?flex: 0 0 auto;/, "the chip is never squeezed away");

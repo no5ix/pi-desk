@@ -240,6 +240,9 @@ interface Props {
    * Copy, in the completion notification's `0h31m10s` form, once the reply is finished.
    */
   turnDurationMs?: number;
+  /** The conversation's newest thinking opens by default, with the "expand thinking
+   *  blocks by default" switch on or off. Only the newest reply gets it. */
+  expandLatestThinking?: boolean;
 }
 
 export function getModelDisplayName(
@@ -311,12 +314,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenFileDiff, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenFileDiff, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs, expandLatestThinking }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} editDisabled={editDisabled} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenFileDiff={onOpenFileDiff} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} turnDurationMs={turnDurationMs} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenFileDiff={onOpenFileDiff} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} turnDurationMs={turnDurationMs} expandLatestThinking={expandLatestThinking} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -700,6 +703,7 @@ function AssistantMessageView({
   compactError,
   onOpenModelSettings,
   turnDurationMs,
+  expandLatestThinking,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -720,6 +724,7 @@ function AssistantMessageView({
   compactError?: string | null;
   onOpenModelSettings?: (provider: string, modelId: string) => void;
   turnDurationMs?: number;
+  expandLatestThinking?: boolean;
 }) {
   const { t, locale } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp, locale) : null;
@@ -730,6 +735,14 @@ function AssistantMessageView({
   const blockItems = useMemo(() => (message.content ?? [])
     .map((block, originalIndex) => ({ block, originalIndex }))
     .filter(({ block }) => !isEmptyThinkingBlock(block, { isStreaming })), [message.content, isStreaming]);
+  // The newest thinking of this reply is the one that opens by default, and it is
+  // the newest one of the newest reply that opens at all (see expandLatestThinking).
+  const lastThinkingOrderIndex = useMemo(() => {
+    for (let index = blockItems.length - 1; index >= 0; index -= 1) {
+      if (blockItems[index].block.type === "thinking") return index;
+    }
+    return -1;
+  }, [blockItems]);
   const blocks = useMemo(() => blockItems.map(({ block }) => block), [blockItems]);
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const levelRefused = isThinkingLevelRefusal(providerError);
@@ -911,8 +924,8 @@ function AssistantMessageView({
       </div>
 
       <div className="message-assistant-content" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {blockItems.map(({ block, originalIndex }) => (
-          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
+        {blockItems.map(({ block, originalIndex }, orderIndex) => (
+          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} expandByDefault={expandLatestThinking && orderIndex === lastThinkingOrderIndex} />
         ))}
       </div>
 
@@ -1062,12 +1075,12 @@ function AssistantMessageView({
   );
 }
 
-function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenSession, sessionId, entryId, blockIndex }: { block: AssistantContentBlock; searchTarget?: boolean; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void; onOpenSession?: (sessionId: string) => void; sessionId?: string; entryId?: string; blockIndex: number }) {
+function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenSession, sessionId, entryId, blockIndex, expandByDefault }: { block: AssistantContentBlock; searchTarget?: boolean; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void; onOpenSession?: (sessionId: string) => void; sessionId?: string; entryId?: string; blockIndex: number; expandByDefault?: boolean }) {
   if (block.type === "text") {
     return <div data-message-text data-search-target={searchTarget || undefined}><TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} /></div>;
   }
   if (block.type === "thinking") {
-    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
+    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} expandByDefault={expandByDefault} />;
   }
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
@@ -1085,20 +1098,26 @@ function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent
   return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} artifacts>{block.text}</SafeMarkdownBody>;
 }
 
-export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
+export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex, expandByDefault = false }: {
   block: ThinkingContent;
   duration?: number;
   sessionId?: string;
   entryId?: string;
   blockIndex: number;
+  /** The newest thinking in the conversation: it opens even when the preference
+   *  is off, because that is the reasoning the user is most likely reading now. */
+  expandByDefault?: boolean;
 }) {
   const { t } = useI18n();
   // A thinking card inside a turn's Process details opens collapsed even when the
   // "expand thinking by default" preference is on: opening the group reveals the steps of
   // the turn, not all of their text. Outside the group — a thinking message on its own, a
-  // live reply — the preference rules, and the card stays clickable either way.
+  // live reply — the preference rules, and the card stays clickable either way. The one
+  // thinking block at the end of the conversation is open regardless: it is the reasoning
+  // of the turn the user is looking at, and collapsing it hid the answer's shape.
   const insideProcessDetails = useContext(ProcessDetailsContext);
-  const [expanded, setExpanded] = useState(() => isThinkingExpandedByDefault() && !insideProcessDetails);
+  const expandedByRule = () => expandByDefault || (isThinkingExpandedByDefault() && !insideProcessDetails);
+  const [expanded, setExpanded] = useState(expandedByRule);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1108,10 +1127,11 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
 
   // Keep already-mounted blocks in sync when the preference changes.
   useEffect(() => {
-    const onChange = () => setExpanded(isThinkingExpandedByDefault() && !insideProcessDetails);
+    const onChange = () => setExpanded(expandedByRule());
     window.addEventListener(THINKING_EXPANDED_EVENT, onChange);
     return () => window.removeEventListener(THINKING_EXPANDED_EVENT, onChange);
-  }, [insideProcessDetails]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [insideProcessDetails, expandByDefault]);
 
   // Load deferred history content whenever the block is expanded.
   // loadThinkingContent() memoizes in-flight promises and drops failed ones

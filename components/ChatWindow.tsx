@@ -575,6 +575,17 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     return turns;
   }, [messages]);
 
+  // The conversation's newest reply owns its newest thinking block, and that one
+  // opens by default even with the "expand thinking blocks by default" switch off:
+  // it is the reasoning behind the answer the user is looking at. While a reply is
+  // streaming it is the live reply that owns that block, so the loaded list yields.
+  const lastAssistantIndex = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === "assistant") return index;
+    }
+    return -1;
+  }, [messages]);
+
   // How long each turn took, keyed by the reply that closes it — the same message that
   // carries the footer timestamp. MessageView shows it beside Copy as `0h31m10s`, the
   // shape the completion notification uses. A turn whose last response predates pi's
@@ -1600,6 +1611,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                     isEditing={editEntryId === entryIds[idx]}
                     showTimestamp={showTimestamp}
                     turnDurationMs={turnDurationByIndex.get(idx)}
+                    expandLatestThinking={!streamState.isStreaming && idx === lastAssistantIndex}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
                     sessionId={session?.id ?? sessionIdRef.current ?? undefined}
                     writtenFiles={options.writtenFiles}
@@ -1763,7 +1775,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
               );
             })()}
             {streamState.isStreaming && hasStreamingContent && streamState.streamingMessage && (
-              <MessageView message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={openFile} onOpenSession={onOpenSession} />
+              <MessageView message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={openFile} onOpenSession={onOpenSession} expandLatestThinking />
             )}
 
             {agentRunning && !hasStreamingContent && (agentPhase || isCompacting) && (

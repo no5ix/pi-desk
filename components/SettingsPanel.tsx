@@ -54,6 +54,9 @@ interface Props {
   /** A phone opens on the list of sections instead of `initialSection` (the plain Settings button, P1). */
   openAtHome?: boolean;
   onClose: () => void;
+  /** The owner is playing the exit animation: the sheet and the scrim fade out, and
+   *  the panel is unmounted when the animation ends (components/AppShell.tsx). */
+  closing?: boolean;
   onSessionReloaded: () => void;
   quoteSelectionEnabled: boolean;
   onQuoteSelectionChange: (enabled: boolean) => void;
@@ -521,6 +524,7 @@ export function SettingsPanel({
   initialSection,
   openAtHome = false,
   onClose: closeSettings,
+  closing = false,
   onSessionReloaded,
   quoteSelectionEnabled,
   onQuoteSelectionChange,
@@ -648,10 +652,10 @@ export function SettingsPanel({
       aria-modal="true"
       aria-label={t("settings.title")}
       tabIndex={-1}
-      onClick={(event) => { if (event.target === event.currentTarget && !busy) onClose(); }}
-      className="settings-dialog-backdrop"
+      onClick={(event) => { if (event.target === event.currentTarget && !busy) closeSettings(); }}
+      className={`settings-dialog-backdrop${closing ? " is-closing" : ""}`}
     >
-      <div className="settings-dialog-surface">
+      <div className={`settings-dialog-surface${closing ? " is-closing" : ""}`}>
         <div ref={headerRef} className="settings-dialog-header">
           {isPhone && phone.level !== "home" && (() => {
             const backName = phone.level === "detail" ? sectionLabel : t("settings.title");
