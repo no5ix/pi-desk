@@ -15,6 +15,64 @@ export function getNextVisibleCount(currentVisibleCount: number, pageSize = VISI
   return currentVisibleCount + pageSize;
 }
 
+/** How long a prepend keeps re-attaching the viewport to its anchor row. */
+export const CHAT_SCROLL_ANCHOR_WINDOW_MS = 600;
+
+/** One rendered message row, measured against the scroller's own box. */
+export interface ChatScrollRow {
+  entryId: string;
+  /** Distance from the scroller's top edge to the row's top. */
+  top: number;
+  bottom: number;
+}
+
+/**
+ * The row the viewport is standing on: the first row with a visible part, kept
+ * with its distance from the top edge.
+ *
+ * A prepend pushes rows down, so the position worth preserving is a row's
+ * distance, not a scroll offset. `scrollHeight - scrollTop` (the distance
+ * restore below) is only exact while the content above is final: a prepended
+ * page arrives before deferred code highlighting, images, and a Mermaid render
+ * have grown it, and each of those moves the viewport again.
+ */
+export function pickScrollAnchor(
+  rows: readonly ChatScrollRow[],
+  viewportHeight: number,
+  tolerance = 2,
+): { entryId: string; top: number } | null {
+  for (const row of rows) {
+    if (row.bottom > tolerance && row.top < viewportHeight - tolerance) {
+      return { entryId: row.entryId, top: row.top };
+    }
+  }
+  return null;
+}
+
+/**
+ * The scrollTop that puts the anchored row back at the distance it had from the
+ * top edge.
+ *
+ * The sign is the prepend: with `scrollTop` untouched, prepending content above
+ * the anchor pushes its viewport-relative top down by exactly the prepended
+ * height, so the offset has to grow by that same amount. `scrollTop + saved -
+ * now` (the sign this first shipped with) asks for a negative scroll on the
+ * common case — the user at the top of the window, the first row as the anchor —
+ * gets clamped to 0, and the viewport shows the oldest loaded page instead of
+ * the row they were reading. Clamped into the scroller, because content is still
+ * arriving when the re-attach runs.
+ */
+export function scrollTopForAnchor(
+  scrollTop: number,
+  anchorTopNow: number,
+  anchorTopSaved: number,
+  scrollHeight: number,
+  clientHeight: number,
+): number {
+  const max = Math.max(0, scrollHeight - clientHeight);
+  return Math.max(0, Math.min(max, scrollTop + (anchorTopNow - anchorTopSaved)));
+}
+
 export function captureScrollDistance(scrollHeight: number, scrollTop: number): number {
   return scrollHeight - scrollTop;
 }

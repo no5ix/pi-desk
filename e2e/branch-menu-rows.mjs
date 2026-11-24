@@ -141,38 +141,102 @@ assert.ok(before.some((row) => row.tagOverIcon || row.tagPastButton),
   "the check can see the bug: without the rules, a tag lands on the icons");
 
 // The browser stays open for the open-flow phase below.
-// The open flow, measured. The chip sits at the bottom of the window (the
-// composer's control row) and the branch list arrives 250ms after the click. A
-// menu placed for the loading shape lands below the chip and flips above when the
-// list lands — the flash the user reported. The menu must land on the side it
-// ends on, and stay inside the window as it grows.
+// The open flow, sampled every frame. The user's report: "when I click it, the
+// menu would pop out below the chat composer, and then it would immediately show
+// up above, so it looks like it just flashed." Two things made the panel move: it
+// was placed for a height larger than its own cap, and it painted a loading shape
+// that the list resized. The panel now opens invisible for the first beat of the
+// fetch, is placed for the height its list settles at, and keeps the side that
+// placement picked.
 const openServer = await serve(css, "open.js");
-await page.goto(`http://127.0.0.1:${openServer.address().port}/`);
-await page.waitForSelector(".chat-branch-context");
-await page.click(".chat-branch-context");
-await page.waitForSelector(".sidebar-project-context-menu");
-const placement = () => page.evaluate(() => {
-  const menu = document.querySelector(".sidebar-project-context-menu").getBoundingClientRect();
+const openUrl = (query) => `http://127.0.0.1:${openServer.address().port}/?${query}`;
+
+// Sampled inside the page, on every frame: the phases last tens of milliseconds,
+// and a round trip per sample would step over them.
+const RECORD = () => {
+  window.__samples = [];
   const chip = document.querySelector(".chat-branch-context").getBoundingClientRect();
-  return {
-    side: menu.top < chip.top - 8 ? "above" : "below",
-    top: menu.top,
-    bottom: menu.bottom,
-    height: menu.height,
-    gap: chip.top - menu.bottom,
-    rows: document.querySelectorAll(".sidebar-project-context-menu-branch-name").length,
-    skeleton: document.querySelectorAll(".sidebar-project-context-menu-branch-skeleton").length,
+  const rec = () => {
+    const el = document.querySelector(".sidebar-project-context-menu");
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    window.__samples.push({
+      t: Math.round(performance.now()),
+      top: Math.round(r.top),
+      bottom: Math.round(r.bottom),
+      height: Math.round(r.height),
+      side: r.top < chip.top - 8 ? "above" : "below",
+      rows: document.querySelectorAll(".sidebar-project-context-menu-branch-name").length,
+      skeleton: document.querySelectorAll(".sidebar-project-context-menu-branch-skeleton").length,
+      hidden: getComputedStyle(el).visibility === "hidden",
+    });
   };
-});
-const opened = await placement();
-assert.equal(opened.skeleton, 8, "the menu opens with the branch list's shape, not a thin loader");
-assert.equal(opened.side, "above", `a chip at the window's bottom opens above itself (${opened.top}px, ${Math.round(opened.height)}px)`);
-await page.waitForFunction(() => document.querySelectorAll(".sidebar-project-context-menu-branch-name").length >= 7, { timeout: 3000 });
-const settled = await placement();
-assert.equal(settled.side, "above", "the menu stays on that side when the list arrives — no flip, no flash");
-assert.ok(settled.gap >= -1, `the menu keeps clear of the chip (${settled.gap.toFixed(1)}px)`) ;
-assert.ok(settled.top >= 8 && settled.bottom <= 800 - 8 + 1, `the menu stays inside the window (${Math.round(settled.top)}..${Math.round(settled.bottom)})`);
+  const timer = window.setInterval(rec, 16);
+  window.__recStop = () => window.clearInterval(timer);
+};
+
+async function openFlow(query) {
+  // A page of its own: the open flow is sampled in the first frames after the click.
+  const flowPage = await browser.newPage({ viewport: { width: 900, height: 800 } });
+  await flowPage.goto(openUrl(query), { waitUntil: "domcontentloaded" });
+  await flowPage.waitForSelector(".chat-branch-context");
+  await flowPage.evaluate(RECORD);
+  await flowPage.click(".chat-branch-context");
+  await flowPage.waitForFunction(() => document.querySelectorAll(".sidebar-project-context-menu-branch-name").length >= 7, { timeout: 4000 });
+  await flowPage.waitForTimeout(200);
+  const samples = await flowPage.evaluate(() => {
+    window.__recStop();
+    return window.__samples;
+  });
+  return { samples, flowPage };
+}
+
+const assertStays = (samples, label) => {
+  const withPanel = samples.filter((sample) => sample.height > 0);
+  assert.ok(withPanel.length > 3, `${label}: the recorder saw ${withPanel.length} frames — it measured nothing`);
+  const sides = new Set(withPanel.map((sample) => sample.side));
+  assert.equal(sides.size, 1, `${label}: the panel changed side mid-flight: ${[...sides].join(" -> ")}`);
+  assert.ok([...sides][0] === "above", `${label}: a chip at the window's bottom opens above itself (${[...sides][0]})`);
+  const visible = withPanel.filter((sample) => !sample.hidden);
+  const bottoms = visible.map((sample) => sample.bottom);
+  const tops = visible.map((sample) => sample.top);
+  const bottomDrift = Math.max(...bottoms) - Math.min(...bottoms);
+  const topDrift = Math.max(...tops) - Math.min(...tops);
+  console.log(`${label}: ${withPanel.length} frames, ${visible.length} visible, panel ${Math.min(...tops)}..${Math.max(...tops)} (top drift ${topDrift}px, bottom drift ${bottomDrift}px)`);
+  return { visible, bottomDrift, topDrift, first: withPanel[0] };
+};
+
+const { samples, flowPage } = await openFlow("");
+const fixed = assertStays(samples, "fixed");
+// The panel is invisible while the fetch is in flight, so the first rectangle the
+// user sees is the final one; a slow fetch gets the loading shape, at the height
+// the list settles at.
+assert.ok(fixed.first.hidden, "the panel does not paint a shape the list will resize: the first frame is invisible");
+assert.ok(samples.some((sample) => sample.skeleton === 8 && !sample.hidden),
+  "a fetch that takes a beat shows the branch list's shape, not a thin loader");
+const shapeFrame = samples.find((sample) => sample.skeleton === 8 && !sample.hidden);
+assert.ok(Math.abs(shapeFrame.height - Math.min(420, Math.round(800 * 0.7))) <= 2,
+  `the shape is the size the list settles at (measured ${shapeFrame.height}px)`);
+// The edge at the chip is where the user's pointer is: it must not move. The far
+// edge grows away from the anchor, the way a native menu's does.
+assert.ok(fixed.bottomDrift <= 2, `the panel's edge at the chip moved ${fixed.bottomDrift}px`);
+assert.ok(fixed.topDrift <= 16, `the panel moved ${fixed.topDrift}px between its first visible frame and the list`);
+await flowPage.screenshot({ path: `${out}/open-flow.png` });
+await flowPage.close();
+
+// The control pass: the fixture goes back to the code that shipped before the fix
+// — a placement from 560px against the panel's 420px cap, and the loading shape
+// painted. The recorder must see that flash.
+const { samples: flashSamples, flowPage: flashPage } = await openFlow("flash=1");
+const flash = assertStays(flashSamples, "control pass");
+assert.ok(!flash.first.hidden, "the control pass paints the panel from the first frame, as the old code did");
+assert.ok(flash.topDrift > 40, `the control pass must show the flash, moved ${flash.topDrift}px`);
+await flashPage.close();
 openServer.close();
 await browser.close();
 
-console.log(`branch menu: ${rows.length} rows at ${Math.round(menuWidth)}px, rows ${Math.round(Math.max(...rows.map((row) => row.name.height)))}px at the tallest, no tag/icon overlap, no clipped name; opened ${opened.side} at ${Math.round(opened.top)}px and stayed ${settled.side} at ${Math.round(settled.top)}px; the un-fixed CSS overlaps ${before.filter((row) => row.tagOverIcon || row.tagPastButton).length} of ${before.length} rows`);
+console.log(
+  `branch menu: ${rows.length} rows at ${Math.round(menuWidth)}px, rows ${Math.round(Math.max(...rows.map((row) => row.name.height)))}px at the tallest, no tag/icon overlap, no clipped name; `
+  + `the open flow moves the panel ${fixed.topDrift}px (invisible while the fetch runs, shape at the list's height, the edge at the chip locked) where the pre-fix placement moved it ${flash.topDrift}px; `
+  + `the un-fixed CSS overlaps ${before.filter((row) => row.tagOverIcon || row.tagPastButton).length} of ${before.length} rows`,
+);

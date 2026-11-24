@@ -40,7 +40,10 @@ import type { ToolEntry } from "@/lib/tool-presets";
 import { rememberModelSettingsFocus, type SettingsSection } from "@/lib/settings-navigation";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
 import {
+  CHAT_SCROLL_ANCHOR_WINDOW_MS,
   captureScrollDistance,
+  pickScrollAnchor,
+  scrollTopForAnchor,
   getPromptAnchorSpacerHeight,
   getVisibleRenderWindow,
   isScrollAtTail,
@@ -652,6 +655,10 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   const sentinelRef = useRef<HTMLDivElement>(null);
   const messageContentRef = useRef<HTMLDivElement | null>(null);
   const prevScrollDistanceRef = useRef<number | null>(null);
+  // The row the viewport was standing on when an older page started loading.
+  // Kept for a short window so content that grows after the prepend (deferred
+  // code highlighting, images, a Mermaid render) cannot move the view.
+  const scrollAnchorRef = useRef<{ entryId: string; top: number; until: number } | null>(null);
   const loadingOlderRef = useRef(false);
   const restoreStartedRef = useRef(false);
   const pendingScrollRestoreRef = useRef(pendingScrollRestore);
@@ -676,6 +683,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     restoreStartedRef.current = false;
     loadingOlderRef.current = false;
     prevScrollDistanceRef.current = null;
+    scrollAnchorRef.current = null;
     setPendingSearchScroll(null);
   }
   const searchMessage = messages[entryIds.indexOf(pendingSearchScroll?.entryId ?? "")];
@@ -838,6 +846,50 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     onSearchTargetHandled?.(pendingSearchScroll);
   }, [pendingSearchScroll, searchTarget, searchMessage, scrollContainerRef, scrollToMessage, onSearchTargetHandled]);
 
+  /** Record the row the viewport is standing on, just before a prepend. */
+  const captureScrollAnchor = useCallback((container: HTMLElement) => {
+    const box = container.getBoundingClientRect();
+    const rows: { entryId: string; top: number; bottom: number }[] = [];
+    for (const el of container.querySelectorAll<HTMLElement>("[data-entry-id]")) {
+      const entryId = el.getAttribute("data-entry-id");
+      if (!entryId) continue;
+      const rect = el.getBoundingClientRect();
+      rows.push({ entryId, top: rect.top - box.top, bottom: rect.bottom - box.top });
+    }
+    const picked = pickScrollAnchor(rows, container.clientHeight);
+    scrollAnchorRef.current = picked
+      ? { ...picked, until: Date.now() + CHAT_SCROLL_ANCHOR_WINDOW_MS }
+      : null;
+    return scrollAnchorRef.current;
+  }, []);
+
+  /** Put the anchored row back at the distance it had, while the anchor is open. */
+  const applyScrollAnchor = useCallback((container: HTMLElement) => {
+    const anchor = scrollAnchorRef.current;
+    if (!anchor) return false;
+    if (Date.now() > anchor.until) {
+      scrollAnchorRef.current = null;
+      return false;
+    }
+    const row = container.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(anchor.entryId)}"]`);
+    if (!row) return false;
+    const now = row.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    const next = scrollTopForAnchor(
+      container.scrollTop,
+      now,
+      anchor.top,
+      container.scrollHeight,
+      container.clientHeight,
+    );
+    if (Math.abs(next - container.scrollTop) > 0.5) container.scrollTop = next;
+    return true;
+  }, []);
+
+  /** The user took the wheel: stop moving the viewport under them. */
+  const cancelScrollAnchor = useCallback(() => {
+    scrollAnchorRef.current = null;
+  }, []);
+
   // IntersectionObserver on the sentinel div at the top of the message list.
   // When it becomes visible, load the next page of older messages.
   useEffect(() => {
@@ -857,6 +909,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
         const sid = session?.id ?? sessionIdRef.current;
         if (!sid) return;
         loadingOlderRef.current = true;
+        captureScrollAnchor(container);
         prevScrollDistanceRef.current = captureScrollDistance(container.scrollHeight, container.scrollTop);
         void loadContext(sid, activeLeafId, oldestId).finally(() => {
           loadingOlderRef.current = false;
@@ -866,7 +919,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [historyCursor, hasEarlierMessages, session, activeLeafId, loadContext, sessionIdRef, scrollContainerRef]);
+  }, [historyCursor, hasEarlierMessages, session, activeLeafId, loadContext, sessionIdRef, scrollContainerRef, captureScrollAnchor]);
 
   // Keep the rendered window at least as large as what's loaded, so prepended
   // (older) pages stay visible instead of being sliced off the top.
@@ -874,15 +927,41 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     setVisibleCount((current) => Math.max(current, messages.length));
   }, [messages.length]);
 
-  // After visibleCount increases (more messages prepended), restore the
-  // scroll position so the viewport doesn't jump.
-  useEffect(() => {
-    if (prevScrollDistanceRef.current == null) return;
+  // After visibleCount increases (more messages prepended), put the viewport
+  // back where it was. The anchor row is the authority; the saved distance is
+  // the fallback for a window whose rows are all off-screen. This is a layout
+  // effect so the corrected position is the first one the browser paints.
+  useLayoutEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
+    if (scrollAnchorRef.current) {
+      applyScrollAnchor(container);
+      return;
+    }
+    if (prevScrollDistanceRef.current == null) return;
     container.scrollTop = restoreScrollTop(container.scrollHeight, prevScrollDistanceRef.current);
     prevScrollDistanceRef.current = null;
-  }, [visibleCount, scrollContainerRef]);
+  }, [visibleCount, messages.length, scrollContainerRef, applyScrollAnchor]);
+
+  // Content above the anchor keeps growing after the prepend lands (the
+  // highlight queue hands a long reply to Prism, an image reports its size, a
+  // Mermaid block renders). Each of those would move the view, so the anchor is
+  // re-applied for a short window, and dropped the moment the user scrolls.
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    const content = messageContentRef.current;
+    if (!container || !content || !scrollAnchorRef.current) return;
+    const observer = new ResizeObserver(() => applyScrollAnchor(container));
+    observer.observe(content);
+    const timer = window.setTimeout(() => {
+      scrollAnchorRef.current = null;
+      observer.disconnect();
+    }, CHAT_SCROLL_ANCHOR_WINDOW_MS);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [visibleCount, scrollContainerRef, applyScrollAnchor]);
   // Push session stats up to AppShell for the stats panel and ring hover summary.
   // Compare scalar fields to avoid loops from new object identity each render.
   const statsKey = sessionStats
@@ -1529,6 +1608,11 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
           // screen; the left padding mirrors it to centre the column on the
           // composer's axis.
           className="chat-scroll-container scrollbar-subtle min-w-0 flex-1 overflow-x-hidden overflow-y-scroll pt-4"
+          // The app owns the scroll position after a prepend (above), so a scroll
+          // the user starts cancels the re-attach instead of fighting it.
+          onWheel={cancelScrollAnchor}
+          onTouchStart={cancelScrollAnchor}
+          onKeyDown={cancelScrollAnchor}
           style={{
             paddingLeft: scrollbarGutter > 0 ? scrollbarGutter : undefined,
             visibility: pendingScrollRestore && !loading ? "hidden" : undefined,

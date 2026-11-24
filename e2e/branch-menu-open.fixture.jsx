@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ProjectContextMenuPanel } from "@/components/ProjectContextMenu.tsx";
-import { placeMenuWithinViewport } from "@/lib/menu-placement";
+import { menuExpectedHeight, placeMenuWithinViewport } from "@/lib/menu-placement";
 
 /**
  * The branch chip's open flow, in a real browser.
@@ -11,15 +11,29 @@ import { placeMenuWithinViewport } from "@/lib/menu-placement";
  * the loading shape, and flipped above when the branch list arrived. This mounts
  * the real panel at the bottom of the viewport, places it the way the chip places
  * it (the menu's own width and the height its list settles at), and swaps the
- * loading state for the loaded list 250ms later — the same delay the fixture's
- * stubbed `/api/worktrees` uses. e2e/branch-menu-rows.mjs measures the side the
- * menu is on before and after that swap: it must not change.
+ * loading state for the loaded list 400ms later (a beat slower than the
+ * stubbed `/api/worktrees`, so the invisible / shape / list phases are wide
+ * enough for a recorder to sample). e2e/branch-menu-rows.mjs samples the panel
+ * every frame from the click: the first frame must be invisible, the panel must
+ * not change side, and the edge at the chip must not move.
  */
 const t = (key, params) => (params ? `${key}(${Object.values(params).join(",")})` : key);
 
 const ROOT = "/repo";
 const MENU_WIDTH = 240;
-const MENU_EXPECTED_HEIGHT = Math.min(560, Math.round(window.innerHeight * 0.7));
+// `?flash=1` puts the fixture back on the code that shipped before the fix: place
+// for a number larger than the panel can reach (560 against its 420 cap), and let
+// the loading shape paint. e2e/branch-menu-rows.mjs measures that flash.
+const FLASH = new URL(window.location.href).searchParams.get("flash") === "1";
+const MENU_EXPECTED_HEIGHT = FLASH
+  ? Math.min(560, Math.round(window.innerHeight * 0.7))
+  : menuExpectedHeight(window.innerHeight);
+
+if (FLASH) {
+  const style = document.createElement("style");
+  style.textContent = '.sidebar-project-context-menu[data-loading="true"] { visibility: visible; }';
+  document.head.append(style);
+}
 
 const loadingMenu = { root: ROOT, isGit: true, branches: [], remoteBranches: [], worktrees: [], loaded: false, loading: true };
 const loadedMenu = {
@@ -41,6 +55,7 @@ function Chip() {
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const [anchor, setAnchor] = useState(null);
   const [menu, setMenu] = useState(loadingMenu);
+  const menuRef = useRef(null);
 
   const onClick = (event) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -54,7 +69,9 @@ function Chip() {
     setAnchor({ top: rect.top, bottom: rect.bottom, right: rect.right });
     setMenu(loadingMenu);
     setOpen(true);
-    setTimeout(() => setMenu(loadedMenu), 250);
+    // 400ms, a beat slower than the stubbed /api/worktrees, so the phases
+    // (invisible, shape, list) are wide enough for a browser to sample.
+    setTimeout(() => setMenu(loadedMenu), 400);
   };
 
   return (
@@ -66,12 +83,13 @@ function Chip() {
       </div>
       {open && anchor && (
         <ProjectContextMenuPanel
-          menuRef={{ current: null }}
+          menuRef={menuRef}
           projectRoot={ROOT}
           pos={pos}
           anchor={anchor}
           view="branches"
           branchMenu={menu}
+          branchLoading={menu === loadingMenu}
           selectedCwd={ROOT}
           canReveal={false}
           revealLabel="Reveal"

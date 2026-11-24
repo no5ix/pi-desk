@@ -528,13 +528,26 @@ button's edge, where it painted over the icons — `e2e/branch-menu-rows.mjs` me
 the tag against the icons in a real browser, and its last pass removes the rules to
 prove the measurement can see that overlap.
 
-The chip places its menu for the size the list **settles at** (`MENU_EXPECTED_HEIGHT`
-through `placeMenuWithinViewport`), and the branch page is born with the list's shape
-(eight skeleton rows) instead of a thin loader. The composer sits at the bottom of the
-window, so a menu measured while it is short was placed below the chip and flipped above
-when the branch list arrived — a flash on every click. `e2e/branch-menu-rows.mjs` clicks a
-bottom-anchored chip, measures the side the menu is on before the data lands and after, and
-requires the same side both times.
+The chip's menu is placed for the height the panel **settles at**, and it is invisible for
+the first beat of the fetch. `lib/menu-placement.ts` owns one cap — `MENU_MAX_HEIGHT_PX`
+(420) and `MENU_MAX_HEIGHT_CSS` — and the chip's estimate, `useMenuPlacement`'s **first**
+placement, and the panel's own `max-height` all read it: placed from 560 (the number this
+shipped with) against a 420 cap, the panel's top sits 140px above where its content can
+reach, and the measured placement moves the visible panel when the list arrives.
+`placeMenuWithinViewport` also **keeps the side it chose** (`side` in the result, remembered
+in the hook): a menu whose list arrives later grows its far edge, the way a native menu
+does, and never flips from below the chip to above it mid-flight — the flash the user
+described ("it pops out below the chat composer, and then it would immediately show up
+above, so it looks like it just flashed"). The branch page paints no shape at first: the
+panel is invisible for `MENU_SKELETON_REVEAL_MS` (120 ms, timed in code, so a reduced-motion
+rule cannot strand it invisible) and paints the eight skeleton rows — at the list's height —
+only on a fetch that takes a beat; focus goes to the first row as it shows, because focusing
+an invisible element is a no-op. `e2e/branch-menu-rows.mjs` samples the panel **every frame**
+from the click (a round trip per sample steps over phases that last tens of milliseconds):
+the first frame is invisible, the shape is the height the list settles at, the panel's edge
+at the chip never moves (0px over 38 frames), and `?flash=1` puts the fixture back on the
+pre-fix placement, where the same sample shows a 347px jump — the check cannot pass by being
+blind.
 
 The composer's **project chip** is a new-session control only: `ChatInput` gates it on
 `showProjectChip`, which `ChatWindow` passes as `!chatOnly && isNew`. A session that has run

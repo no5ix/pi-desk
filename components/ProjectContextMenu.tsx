@@ -14,10 +14,11 @@
 import { AppCombobox } from "./AppCombobox";
 import { BranchIcon, WorktreeIcon } from "./GitIcons";
 import type { RefObject } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { isImeComposing } from "@/lib/ime";
+import { MENU_MAX_HEIGHT_CSS } from "@/lib/menu-placement";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
 import { useMenuPlacement } from "@/hooks/useMenuPlacement";
 import type { MenuAnchor } from "@/lib/menu-placement";
@@ -52,6 +53,15 @@ export type ProjectMenuView = "actions" | "branches" | "worktrees" | "new-worktr
  * branches arrive in a normal window, so the menu is born at the height it keeps.
  */
 const BRANCH_SKELETON_ROWS = 8;
+/**
+ * How long the panel stays invisible while a branch list is in flight before it
+ * shows the loading shape. The fetch lands in tens of milliseconds, and painting
+ * a shape the real list resizes is the flash; a slow fetch gets the shape, at the
+ * height the list settles at.
+ */
+/** Exported so a test can assert the reveal is timed in code (a CSS animation a
+ *  reduced-motion rule cancels would strand the panel invisible). */
+export const MENU_SKELETON_REVEAL_MS = 120;
 /** Below this many branches, reading the list is faster than typing in a box. */
 const BRANCH_FILTER_THRESHOLD = 6;
 
@@ -338,6 +348,35 @@ export function ProjectContextMenuPanel({
   const position = placed ?? pos;
   const data = branchMenu?.root === projectRoot ? branchMenu : null;
   const loaded = Boolean(data?.loaded);
+  // The composer's chip opens the branch page before the list has arrived. The
+  // panel is invisible for the first beat of that fetch (CSS, on data-loading),
+  // so the user sees one final rectangle instead of a shape that jumps; see
+  // MENU_SKELETON_REVEAL_MS and hooks/useMenuPlacement.ts.
+  const loadingShape = branchLoading && !loaded;
+  const [showLoadingShape, setShowLoadingShape] = useState(false);
+  // Hidden only until the shape is shown: the shape is the panel's content on a
+  // slow fetch, and hiding it would make the wait silent.
+  const hiddenPanel = loadingShape && !showLoadingShape;
+  const hiddenPhaseRef = useRef(false);
+  useEffect(() => {
+    if (!loadingShape) {
+      setShowLoadingShape(false);
+      return;
+    }
+    hiddenPhaseRef.current = true;
+    const timer = window.setTimeout(() => setShowLoadingShape(true), MENU_SKELETON_REVEAL_MS);
+    return () => window.clearTimeout(timer);
+  }, [loadingShape]);
+  useEffect(() => {
+    if (!hiddenPhaseRef.current) return;
+    hiddenPhaseRef.current = false;
+    // Focusing an invisible element is a no-op, so useMenuNavigation's focus on
+    // open lands nowhere. Hand focus to the first row as the panel shows.
+    const panel = menuRef.current;
+    const first = panel?.querySelector<HTMLElement>('button[role="menuitem"]:not(:disabled)');
+    (first ?? panel)?.focus({ preventScroll: true });
+  }, [loadingShape, menuRef]);
+
   const checkout = data ? currentCheckout(data.worktrees, selectedCwd) : undefined;
   // The branch page's filter text. A menu opened on another page (or re-opened)
   // starts with an empty box: a leftover word would hide branches silently.
@@ -437,7 +476,7 @@ export function ProjectContextMenuPanel({
             sits at the bottom of the window, so that growth flips it from below the
             composer to above it, which reads as a flash. The list's shape is here
             from the first paint instead, at the height it settles at. */}
-        {!loaded && (
+        {!loaded && showLoadingShape && (
           <div className="sidebar-project-context-menu-branch-skeletons" aria-hidden="true">
             {Array.from({ length: BRANCH_SKELETON_ROWS }, (_, index) => (
               <div className="sidebar-project-context-menu-row sidebar-project-context-menu-row--branch" key={index}>
@@ -684,7 +723,8 @@ export function ProjectContextMenuPanel({
     <div
       ref={menuRef}
       className={`sidebar-project-context-menu native-popover app-menu${view === "actions" ? "" : " sidebar-project-context-menu--wide"}`}
-      style={{ top: position.top, left: position.left, maxHeight: "min(70vh, 420px)", overflowY: "auto" }}
+      data-loading={hiddenPanel ? "true" : undefined}
+      style={{ top: position.top, left: position.left, maxHeight: MENU_MAX_HEIGHT_CSS, overflowY: "auto" }}
       role="menu"
     >
       {body}

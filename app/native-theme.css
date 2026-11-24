@@ -480,6 +480,25 @@
 /* The branch page's loading shape: bars the height and rhythm of real branch
    rows, so the menu opens at the height the list settles at and the placement
    computed from it does not move when the branches arrive. */
+/* A panel whose list has not arrived is a shape the real list resizes, and a
+   resized panel moves: the composer's chip sits near the bottom of the window, so
+   the panel's top moves by the whole growth (the flash the user reported —
+   "it pops out below, then shows up above"). The panel is invisible for the first
+   beat of the fetch, and paints the loading shape — at the height the list
+   settles at — only on a slow one. components/ProjectContextMenu.tsx owns the
+   timing (MENU_SKELETON_REVEAL_MS); hooks/useMenuPlacement.ts places from the
+   same cap, so the rectangle the user sees is the final one. */
+.sidebar-project-context-menu[data-loading="true"] {
+  visibility: hidden;
+}
+
+.sidebar-project-context-menu-branch-skeletons {
+  height: min(70vh, 420px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .sidebar-project-context-menu-branch-skeleton {
   display: block;
   height: 10px;
@@ -5809,6 +5828,15 @@ html.dark {
     border-color var(--dur-base) var(--ease-native),
     box-shadow var(--dur-base) var(--ease-native),
     background var(--dur-base) var(--ease-native) !important;
+}
+
+/* The lazy-loaded chat re-attaches the viewport to the row it was standing on
+   when an older page is prepended (components/ChatWindow.tsx). Left at `auto`,
+   the browser runs its own anchoring on the same prepend and the two mechanisms
+   stack, so scrolling up in a long session landed the view on a row the user
+   never pointed at. */
+.chat-scroll-container {
+  overflow-anchor: none;
 }
 
 .chat-composer-editor {

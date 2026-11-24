@@ -27,7 +27,12 @@ import { useI18n } from "@/hooks/useI18n";
 import { useProjectBranch } from "@/hooks/useProjectBranch";
 import { useProjectWorktreeActions } from "@/hooks/useProjectWorktreeActions";
 import { canUseNativeMenu, menuPointBelow, type NativeMenuPoint } from "@/lib/desktop-menu";
-import { MENU_GAP, placeMenuWithinViewport } from "@/lib/menu-placement";
+import {
+  MENU_GAP,
+  MENU_MAX_HEIGHT_PX,
+  menuExpectedHeight,
+  placeMenuWithinViewport,
+} from "@/lib/menu-placement";
 import {
   fetchProjectBranchMenu,
   ProjectContextMenu,
@@ -43,14 +48,16 @@ const WORKTREES_VIEW: ProjectMenuView = "worktrees";
 const NEW_WORKTREE_VIEW: ProjectMenuView = "new-worktree";
 const MENU_WIDTH = 240;
 /**
- * The height the branch list settles at, used only to choose the side the menu
- * opens on. The composer sits at the bottom of the window, so a menu measured
- * while it is still the loading shape says "there is room below"; the branch list
- * then flips the same menu above, which reads as a flash. The menu's own
- * `max-height` is `min(70vh, 560px)`, so that is the size placement starts from.
+ * The height to place the menu for: the cap the panel carries, not the shape it
+ * opens at. `hooks/useMenuPlacement.ts` starts from the same number, and
+ * `ProjectContextMenuPanel` sizes itself by the same constant
+ * (`MENU_MAX_HEIGHT_CSS`), so the first paint, the measured placement, and the
+ * panel's own cap all agree. Placed from anything smaller, the panel lands on a
+ * side and at a top the branch list does not fit, and jumps when it arrives.
  */
-const MENU_EXPECTED_HEIGHT =
-  typeof window === "undefined" ? 420 : Math.min(560, Math.round(window.innerHeight * 0.7));
+function menuExpectedHeightForViewport(): number {
+  return typeof window === "undefined" ? MENU_MAX_HEIGHT_PX : menuExpectedHeight(window.innerHeight);
+}
 
 interface ComposerBranchChipProps {
   /** The composer's project folder — a new session starts in this checkout. */
@@ -112,7 +119,7 @@ export function ComposerBranchChip({
       // flash the user saw, so the first paint already sits above.
       const placed = placeMenuWithinViewport(
         { top: rect.top, bottom: rect.bottom, right: rect.right },
-        { width: MENU_WIDTH, height: MENU_EXPECTED_HEIGHT },
+        { width: MENU_WIDTH, height: menuExpectedHeightForViewport() },
         { width: window.innerWidth, height: window.innerHeight },
         { gap: MENU_GAP },
       );

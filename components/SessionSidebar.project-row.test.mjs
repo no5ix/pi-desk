@@ -55,10 +55,25 @@ test("the branch chip opens on the side the loaded list fits on", async () => {
   // flip above when the branch list arrived: a flash on every click.
   const chip = await readFile(new URL("./ComposerBranchMenu.tsx", import.meta.url), "utf8");
   const menu = await readFile(new URL("./ProjectContextMenu.tsx", import.meta.url), "utf8");
-  assert.match(chip, /placeMenuWithinViewport\(\s*\{ top: rect\.top, bottom: rect\.bottom, right: rect\.right \},\s*\{ width: MENU_WIDTH, height: MENU_EXPECTED_HEIGHT \}/,
+  const placement = await readFile(new URL("../lib/menu-placement.ts", import.meta.url), "utf8");
+  const hook = await readFile(new URL("../hooks/useMenuPlacement.ts", import.meta.url), "utf8");
+  assert.match(chip, /placeMenuWithinViewport\(\s*\{ top: rect\.top, bottom: rect\.bottom, right: rect\.right \},\s*\{ width: MENU_WIDTH, height: menuExpectedHeightForViewport\(\) \}/,
     "placement is computed from the size the menu ends up at");
   assert.ok(!chip.includes("pos: { top: rect.bottom + 4"), "no below-placement left to be corrected after paint");
-  // The page is born at the list's shape, so nothing swaps in under a placed menu.
+  // One cap, read by all three: the chip's estimate, the hook's first placement,
+  // and the panel's own max-height. Estimating a number the panel cannot reach
+  // (560 against its 420 cap) put the panel's top where no content lives, and the
+  // measured placement moved the visible panel when the list landed.
+  assert.match(chip, /menuExpectedHeight\(window\.innerHeight\)/);
+  assert.match(hook, /firstRef\.current\s*\?\s*Math\.max\(rect\.height, menuExpectedHeight\(window\.innerHeight, MENU_MAX_HEIGHT_PX\)\)/,
+    "the first placement is for the settled height, not the shape the menu is born at");
+  assert.match(hook, /sideRef\.current = next\.side;/, "the side is remembered: a growing list grows the far edge, it does not flip the panel");
+  assert.match(menu, /maxHeight: MENU_MAX_HEIGHT_CSS/, "the panel carries the same cap placement starts from");
+  // The list's shape is not painted on open: a fetch that lands in tens of
+  // milliseconds must not show a shape the list then resizes.
   assert.match(menu, /const BRANCH_SKELETON_ROWS = 8;/);
-  assert.match(menu, /\{!loaded && \(\s*<div className="sidebar-project-context-menu-branch-skeletons"/);
+  assert.match(menu, /\{!loaded && showLoadingShape && \(\s*<div className="sidebar-project-context-menu-branch-skeletons"/);
+  assert.match(menu, /const hiddenPanel = loadingShape && !showLoadingShape;/);
+  assert.match(menu, /data-loading=\{hiddenPanel \? "true" : undefined\}/);
+  assert.ok(placement.includes("export const MENU_MAX_HEIGHT_PX = 420;"), "one constant");
 });

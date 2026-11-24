@@ -8,6 +8,7 @@ const jiti = createJiti(import.meta.url, {
   tsconfigPaths: true,
 });
 const {
+  MENU_SKELETON_REVEAL_MS,
   ProjectContextMenuPanel,
   createProjectWorktree,
   currentCheckout,
@@ -18,6 +19,7 @@ const {
 } = await jiti.import("./ProjectContextMenu.tsx");
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
+const cssSource = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
 
 const ROOT = "/repo";
 const MAIN = { path: ROOT, branch: "main", isMain: true };
@@ -306,4 +308,26 @@ test("the composer chip wires the branch and worktree pages, the sidebar does no
   assert.match(chip, /actions\.create\(cwd, baseBranch \?\? undefined\)/);
   // The sidebar has none of it left.
   assert.doesNotMatch(sidebar, /showNativeProjectWorktreeMenu\(\{|openDomProjectMenu\(|wtDropdownOpen|sidebar-folder-row/);
+});
+test("the branch panel does not paint a shape the list resizes, and sizes by the number placement starts from", () => {
+  const loading = render({
+    view: "branches",
+    branchLoading: true,
+    branchMenu: { root: ROOT, isGit: true, branches: [], remoteBranches: [], worktrees: [MAIN], loaded: false },
+  });
+  assert.match(loading, /data-loading="true"/,
+    "the panel is invisible while the list is in flight, so the first rectangle the user sees is the final one (the flash was a panel that moved as the list landed)");
+  assert.ok(!loading.includes("sidebar-project-context-menu-branch-skeleton"),
+    "the loading shape is delayed, not painted on open: a fetch that lands in tens of milliseconds must not show a shape the list then resizes");
+  const loaded = render({ view: "branches" });
+  assert.ok(!loaded.includes('data-loading="true"'), "the panel is visible once the list is here");
+  assert.match(loaded, /max-height: ?min\(70vh, 420px\)/,
+    "the cap is MENU_MAX_HEIGHT_CSS: the chip's estimate, the hook's first placement, and the panel's own cap are one number");
+  // The shape, when a slow fetch earns it, is the height the list settles at.
+  const css = cssSource;
+  const shape = css.match(/\.sidebar-project-context-menu-branch-skeletons \{([^}]*)\}/);
+  assert.ok(shape, "the loading shape has no rule");
+  assert.match(shape[1], /height: ?min\(70vh, 420px\);/);
+  assert.ok(MENU_SKELETON_REVEAL_MS > 0 && MENU_SKELETON_REVEAL_MS < 400,
+    "the reveal is a beat, timed in code: `prefers-reduced-motion` must not be able to strand the panel invisible");
 });

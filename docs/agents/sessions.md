@@ -46,6 +46,27 @@ The resume reads only say that the run is active, not what it is waiting on. Rig
 
 ## Loading older history (`components/ChatWindow.tsx`)
 The chat renders the last `visibleCount` rows, kept at least the loaded message count, with a sentinel above them while rows are hidden or the server has older entries (`hasEarlierMessages`, paged with `loadContext(…, before)`). Rows are not messages: a turn's answer and its thinking render as two, so loaded rows can outnumber the window; with nothing older on the server, reaching the sentinel widens the window (`getNextVisibleCount()`). The sentinel element is state (a callback ref), so the observer attaches whenever it appears, and the observer is renewed when the window grows: IntersectionObserver reports only changes, so a sentinel still in view would wait for the user to scroll away and back. A page lands, and `loadingOlderRef` clears, a moment before the next cursor renders; a report in between still holds the old cursor and prepended the same page twice. So `loadOlderPage()` keeps the cursor it asked for until another one renders, and the observer skips it; a page that failed, or a cursor a reload brings back, can be asked for again.
+- **A prepended page does not move the reader.** Before the sentinel's fetch starts,
+  `captureScrollAnchor()` records the row the viewport stands on — the first row with a
+  visible part, with its distance from the top edge — and the re-attach in the layout
+  effect puts that row back at the distance it had (`scrollTopForAnchor()`; the sign is
+  the prepend: with the offset untouched the row's viewport-relative top grows by exactly
+  the prepended height, so the offset has to grow by the same amount — the first shipped
+  version subtracted the other way, the result clamped to 0, and scrolling up in a long
+  session threw the view to the oldest loaded page). The old `scrollHeight - scrollTop`
+  distance stays as the fallback for a window whose rows are all off-screen. It is not
+  enough on its own: a page lands before deferred code highlighting, images, and a Mermaid
+  render have grown the content above, so a `ResizeObserver` on the content box re-applies
+  the anchor for `CHAT_SCROLL_ANCHOR_WINDOW_MS` (600 ms), and `onWheel` / `onTouchStart` /
+  `onKeyDown` on the scroller drop it the moment the user scrolls — their scroll wins.
+  `.chat-scroll-container` sets `overflow-anchor: none` (fork CSS) because the browser
+  anchors the same prepend and the two mechanisms stack. Measured in
+  `e2e/chat-scroll-anchor.mjs` (three pages, rows growing after they land, max shift 0px;
+  `?broken=1` turns the re-attach off and the same pages throw the view 28,832px, so the
+  check cannot pass by being blind); `components/ChatWindow.scroll-anchor.test.mjs` pins
+  the order (capture before the fetch), the layout effect, the cancel handlers, the reset
+  on a session switch, and that `app/globals.css` stays free of the rule.
+
 - The minimap numbers turns from the branch's first, not the loaded page's (#791). Each context page carries `turnsBefore`: the turn anchors on the branch above its oldest entry, counted with `isMessageGroupAnchor()` on the shape `entryToUiMessage()` would give (`countTurnsBefore()`, `lib/session-reader.ts`), so the client's turns and the server's count agree. The hook keeps it beside the history cursor (`earlierTurnCount`, also in the view cache); a loaded turn is numbered `turnsBefore + index + 1` and keeps that number as older pages land. While it is above 0 the rail shows a dotted stub above the first node and the preview's first row says how many turns are not loaded; clicking it scrolls the chat to the top, so the sentinel pages them in. Unloaded turns have no placeholder nodes yet.
 
 ## Compaction SSE events
