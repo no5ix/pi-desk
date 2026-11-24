@@ -81,17 +81,22 @@ export async function GET(req: Request) {
   }
 }
 
-// POST /api/worktrees  body: { cwd, branch }  →  { path, branch }
+// POST /api/worktrees  body: { cwd, branch, baseBranch? }  →  { path, branch }
+//   `baseBranch` names the branch a *new* branch starts from (a worktree made
+//   from another branch in the picker); the caller's checkout is left alone.
 //   409 { code: "branch_in_use", branch, worktreePath } when another worktree has the branch,
 //   code "branch_worktree_missing" when that worktree's folder is gone (git worktree prune clears it)
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { cwd?: string; branch?: string };
+    const body = await req.json() as { cwd?: string; branch?: string; baseBranch?: string };
     if (!body.cwd || typeof body.cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
     if (!body.branch || typeof body.branch !== "string") {
       return NextResponse.json({ error: "branch is required" }, { status: 400 });
+    }
+    if (body.baseBranch !== undefined && typeof body.baseBranch !== "string") {
+      return NextResponse.json({ error: "baseBranch must be a string" }, { status: 400 });
     }
     const denied = await checkCwdAllowed(body.cwd);
     if (denied) return denied;
@@ -99,7 +104,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Directory does not exist: ${body.cwd}` }, { status: 400 });
     }
 
-    const result = await addWorktree(body.cwd, body.branch);
+    const result = await addWorktree(body.cwd, body.branch, body.baseBranch);
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

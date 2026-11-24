@@ -33,6 +33,8 @@ import { keepDocumentTitle } from "@/lib/document-title";
 import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { TopbarElapsed } from "./TopbarElapsed";
+import { TopbarSubagents, countSubagents } from "./TopbarSubagents";
+import { BranchIcon, WorktreeIcon } from "./GitIcons";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useFonts } from "@/hooks/useFonts";
@@ -108,7 +110,7 @@ import { cacheWarmingRows } from "@/lib/cache-warming-display";
 import type { McpErrorResponse, ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { FileExplorerHandle } from "./FileExplorer";
-import { useProjectBranch } from "@/hooks/useProjectBranch";
+import { useProjectBranch, invalidateProjectBranch } from "@/hooks/useProjectBranch";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
@@ -1271,6 +1273,42 @@ export function AppShell() {
     handleNewSession(`project-${Date.now()}`, projectRoot, "project");
   }, [handleNewSession, isChatWorkspaceActive, selectedSession]);
 
+  // The composer's branch chip (components/ComposerBranchMenu.tsx). A branch
+  // switch leaves the folder alone — the checkout the composer sits in changes
+  // under the new session — so the caches that name it are dropped and the
+  // session list re-read.
+  const handleComposerBranchSwitched = useCallback(() => {
+    invalidateProjectBranch(activeCwd ?? "");
+    setRefreshKey((key) => key + 1);
+  }, [activeCwd]);
+
+  // A worktree made from a branch is where the work goes: the new session moves
+  // to `<repo>-worktrees/<branch>`, and the folder it was opened from keeps the
+  // branch it was on. Picking an existing worktree moves the session the same way.
+  const handleComposerWorktreeCreated = useCallback((path: string, branch: string) => {
+    invalidateProjectBranch(path);
+    handleNewSession(`worktree-${Date.now()}`, path, "project");
+    setRefreshKey((key) => key + 1);
+    appNotify.success({ message: translate("sidebar.worktreeCreated", { branch, path }) });
+  }, [handleNewSession, translate]);
+
+  const handleComposerWorktreeSelected = useCallback((path: string) => {
+    invalidateProjectBranch(path);
+    handleNewSession(`worktree-${Date.now()}`, path, "project");
+    setRefreshKey((key) => key + 1);
+  }, [handleNewSession]);
+
+  const handleComposerWorktreeRemoved = useCallback((path: string, fallbackRoot: string | null) => {
+    invalidateProjectBranch(path);
+    // The composer was looking at the folder that just went away, so it moves to
+    // the project's main checkout — a composer pointed at a deleted folder is a
+    // composer that cannot start a session.
+    if (fallbackRoot && !selectedSession && activeCwd === path) {
+      handleNewSession(`worktree-${Date.now()}`, fallbackRoot, "project");
+    }
+    setRefreshKey((key) => key + 1);
+  }, [activeCwd, handleNewSession, selectedSession]);
+
   const handleSelectProjectFromComposer = useCallback(async () => {
     if (!desktopMode || isChatWorkspaceActive) return;
     try {
@@ -2095,6 +2133,11 @@ export function AppShell() {
   const topBarBranch = isChatWorkspaceActive || pageOpen
     ? null
     : selectedSession?.branch ?? activeProjectBranch;
+  // The active family's subagent runs, as the four numbers that fit in the header.
+  const topBarSubagents = useMemo(
+    () => countSubagents(activeSessionFamily, runningSessionIds),
+    [activeSessionFamily, runningSessionIds],
+  );
   const topBarProjectIcon = !pageOpen && !isChatWorkspaceActive && !!activeCwdName;
   const windowTitle = isChatWorkspaceActive
     ? `${topBarTitle} - ${PRODUCT_NAME}`
@@ -2400,7 +2443,7 @@ export function AppShell() {
           className={`app-topbar${macLightsOverTopbar ? " app-topbar--mac-inset" : ""}${!rightPanelOpen ? " app-topbar--panel-closed" : ""}`}
           {...desktopChrome.dragRegionProps}
           {...windowDrag}
-          style={{ display: "flex", alignItems: "center", flexShrink: 0, height: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)", background: "var(--bg-panel)" }}
+          style={{ display: "flex", alignItems: "center", flexShrink: 0, minHeight: "calc(36px + env(safe-area-inset-top))", paddingTop: "env(safe-area-inset-top)", background: "var(--bg-panel)" }}
         >
           {/* Sidebar reopen — while the sidebar (and its own toggle) is hidden.
               A wide-panel split keeps this reachable; the full-width panel covers
@@ -2437,14 +2480,15 @@ export function AppShell() {
                 {topBarBranch && (
                   <small
                     className="app-topbar-branch"
-                    title={translate("chat.currentBranch", { branch: topBarBranch })}
+                    title={translate(
+                      selectedSession?.isWorktree ? "chat.gitWorktreeBranchTitle" : "chat.gitBranchTitle",
+                      { gitBranch: topBarBranch, projectRoot: activeCwd ?? "" },
+                    )}
                   >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <line x1="6" y1="3" x2="6" y2="15" />
-                      <circle cx="18" cy="6" r="3" />
-                      <circle cx="6" cy="18" r="3" />
-                      <path d="M18 9a9 9 0 0 1-9 9" />
-                    </svg>
+                    {/* The sidebar's branch glyph in a checkout, the worktree glyph in a
+                        linked worktree: the same branch name can mean both folders, and
+                        the header has to say which one this session works in. */}
+                    {selectedSession?.isWorktree ? <WorktreeIcon /> : <BranchIcon />}
                     <span>{topBarBranch}</span>
                   </small>
                 )}
@@ -2455,6 +2499,16 @@ export function AppShell() {
                     passing re-renders this label and not the shell. */}
                 {showChat && !pageOpen && selectedSession !== null && runningSessionIds.has(selectedSession.id)
                   && <TopbarElapsed since={lastPromptAt} />}
+                {/* The subagent counts. Last in the row: on a phone, or behind a long
+                    project name, the row wraps and this is the chip that moves to the
+                    second line. */}
+                {showChat && !pageOpen && (
+                  <TopbarSubagents
+                    counts={topBarSubagents}
+                    onOpenAgents={() => toggleTopPanel("agents")}
+                    translate={translate}
+                  />
+                )}
               </span>
             )}
           </div>
@@ -3123,6 +3177,11 @@ export function AppShell() {
                 : undefined}
               projectOptions={selectedSession || isChatWorkspaceActive ? [] : availableProjectRoots}
               onProjectChange={selectedSession || isChatWorkspaceActive ? undefined : handleProjectChangeFromComposer}
+              onBranchChipCwd={!isChatWorkspaceActive && !selectedSession && !pageOpen ? activeCwd : null}
+              onBranchSwitched={handleComposerBranchSwitched}
+              onComposerWorktreeCreated={handleComposerWorktreeCreated}
+              onComposerWorktreeSelected={handleComposerWorktreeSelected}
+              onComposerWorktreeRemoved={handleComposerWorktreeRemoved}
               onOpenModelsConfig={() => setSettingsSection("models")}
               onOpenFile={handleOpenLinkedFile}
               onOpenFileDiff={handleOpenSessionFileDiff}

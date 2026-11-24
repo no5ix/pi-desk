@@ -441,6 +441,25 @@ export async function switchBranch(cwd: string, branch: string): Promise<{ branc
   return { branch: trimmed };
 }
 
+/**
+ * The branch checked out in `cwd`, from one short git call. The conversation
+ * header polls this every few seconds so a branch switched outside pi-desk (a
+ * terminal, another agent) shows up by itself — `resolveProject` answers from a
+ * 60-second cache, which is far too stale for a label the user watches.
+ *
+ * Null for a detached HEAD, a non-git folder, or a read that failed; the header
+ * shows nothing in every case.
+ */
+export async function readCurrentBranch(cwd: string): Promise<string | null> {
+  try {
+    const name = (await git(cwd, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "HEAD"], 5_000)).trim();
+    // `--abbrev-ref` answers the bare "HEAD" for a detached checkout.
+    return name && name !== "HEAD" ? name : null;
+  } catch {
+    return null;
+  }
+}
+
 /** `git fetch --prune` so newly pushed branches show up in the switcher. */
 export async function fetchRemote(cwd: string): Promise<void> {
   const repoRoot = await getRepoRoot(cwd);
@@ -464,9 +483,28 @@ export class WorktreeBranchInUseError extends Error {
   }
 }
 
-export async function addWorktree(cwd: string, branch: string): Promise<{ path: string; branch: string }> {
+/**
+ * Creates `<repo>-worktrees/<branch>` and checks `branch` out there.
+ *
+ * `baseBranch` (optional) is the branch a *new* branch starts from: picking
+ * "new worktree from find-icons" and naming the branch `test-upload` makes
+ * `test-upload` at find-icons' tip, while the caller's own checkout keeps
+ * sitting on whatever it was on. When `branch` already exists there is nothing
+ * to base, so `baseBranch` is ignored and the existing branch is checked out.
+ * A base name that resolves to neither a local branch nor exactly one
+ * remote-tracking branch is an error — git's own "starts from HEAD" fallback
+ * would silently build the worktree on the wrong commit.
+ */
+export async function addWorktree(
+  cwd: string,
+  branch: string,
+  baseBranch?: string,
+): Promise<{ path: string; branch: string }> {
   const trimmed = branch.trim();
   if (!trimmed) throw new Error("Branch name is required");
+  // Names go to git as argv, never through a shell: "-b"-style names must not pass.
+  const base = baseBranch?.trim();
+  if (base && base.startsWith("-")) throw new Error("Invalid base branch name");
 
   const dirName = sanitizeBranchForDir(trimmed);
   if (!dirName) throw new Error(`Invalid branch name: ${branch}`);
@@ -501,14 +539,19 @@ export async function addWorktree(cwd: string, branch: string): Promise<{ path: 
     if (branchExists) {
       await git(repoRoot, ["worktree", "add", "--", worktreePath, trimmed], WORKTREE_TIMEOUT);
     } else {
-      // New branch: prefer the remote-tracking tip (refs/remotes/origin/<branch>)
+      // New branch. An explicit base wins: the worktree belongs to that branch.
+      // Otherwise prefer the remote-tracking tip (refs/remotes/origin/<branch>)
       // over local HEAD when the user already fetched it; fall back to HEAD.
       let startFrom: string | undefined;
-      try {
-        await git(repoRoot, ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${trimmed}`]);
-        startFrom = `refs/remotes/origin/${trimmed}`;
-      } catch {
-        startFrom = undefined;
+      if (base) {
+        startFrom = await resolveBranchStartPoint(repoRoot, base);
+      } else {
+        try {
+          await git(repoRoot, ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${trimmed}`]);
+          startFrom = `refs/remotes/origin/${trimmed}`;
+        } catch {
+          startFrom = undefined;
+        }
       }
       const addArgs = ["worktree", "add", "-b", trimmed, "--", worktreePath];
       if (startFrom) addArgs.push(startFrom);
@@ -521,6 +564,27 @@ export async function addWorktree(cwd: string, branch: string): Promise<{ path: 
   allowFileRoot(worktreePath);
   invalidateProjectCache();
   return { path: worktreePath, branch: trimmed };
+}
+
+/**
+ * The ref a new branch starts from `name`: the local branch, else exactly one
+ * remote-tracking branch of that name. Throws when nothing matches (a name the
+ * user typed out of a list that has since changed) and when several remotes
+ * carry it, where git's own choice would be a guess.
+ */
+async function resolveBranchStartPoint(repoRoot: string, name: string): Promise<string> {
+  try {
+    await git(repoRoot, ["rev-parse", "--verify", "--quiet", `refs/heads/${name}`]);
+    return `refs/heads/${name}`;
+  } catch {
+    // Not a local branch: look for a remote-tracking ref of that name.
+  }
+  const matches = matchRemoteRefs(await listRemoteRefs(repoRoot), name);
+  if (matches.length === 0) throw new Error(`Branch not found: ${name}`);
+  if (matches.length > 1) {
+    throw new Error(`Branch exists on multiple remotes: ${matches.join(", ")}`);
+  }
+  return matches[0];
 }
 
 export async function removeWorktree(cwd: string, worktreePath: string, force = false): Promise<void> {

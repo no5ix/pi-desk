@@ -15,6 +15,7 @@ import {
   setDraft,
   type ChatDraftImage,
 } from "@/lib/draft-store";
+import { clearComposerDraft, pushComposerDraft, watchComposerDraft } from "@/lib/composer-sync";
 import type { ComposerHistoryEntry } from "@/lib/composer-history";
 import {
   MAX_ATTACHED_IMAGE_BYTES,
@@ -60,6 +61,7 @@ import { SessionAutomationMenu } from "./SessionAutomationMenu";
 import { ChatAccessRows } from "./ChatAccessRows";
 import type { ChatAccessControls } from "@/hooks/useChatAccess";
 import { ComposerProjectChip, getProjectLabel } from "./ComposerProjectChip";
+import { ComposerBranchChip } from "./ComposerBranchMenu";
 import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
 import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
 
@@ -169,6 +171,17 @@ interface Props {
   projectOptions?: string[];
   /** Switch the new-session composer to one of the active projects. */
   onProjectChange?: (projectRoot: string) => void;
+  /** Fork: the project folder whose git branch the composer shows, for a new
+   *  session only (components/ComposerBranchMenu.tsx). Absent: no branch chip. */
+  branchChipCwd?: string | null;
+  /** A branch was checked out in the composer's folder. */
+  onBranchSwitched?: (branch: string) => void;
+  /** A worktree was created from a branch; the new session moves to `path`. */
+  onComposerWorktreeCreated?: (path: string, branch: string) => void;
+  /** An existing worktree was picked from the chip's menu. */
+  onComposerWorktreeSelected?: (path: string) => void;
+  /** A worktree checkout was removed from the chip's menu. */
+  onComposerWorktreeRemoved?: (path: string, fallbackRoot: string | null) => void;
   /** Focus the textarea on mount / when this becomes true (e.g. New task page). */
   autoFocus?: boolean;
   /** Live context-window usage (numerator) for the usage ring next to the model selector */
@@ -599,6 +612,21 @@ function revokeImagePreview(image: AttachedImage): void {
   }
 }
 
+/** A cheap fingerprint of a composer's content: the text, each image's kind and
+ *  size, each file's id. Used to tell "this device typed something" from "this
+ *  composer was just loaded", so a load is never pushed back as an edit. */
+function draftSignature(
+  value: string,
+  images: { data: string; mimeType: string }[],
+  files: { id: string }[],
+): string {
+  return JSON.stringify([
+    value,
+    images.map((image) => `${image.mimeType}:${image.data.length}`),
+    files.map((file) => file.id),
+  ]);
+}
+
 function QueuedMessageRow({ kind, label, text }: { kind: "steer" | "follow-up"; label: string; text: string }) {
   return (
     <div
@@ -841,6 +869,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSelectProject,
   projectOptions = [],
   onProjectChange,
+  branchChipCwd,
+  onBranchSwitched,
+  onComposerWorktreeCreated,
+  onComposerWorktreeSelected,
+  onComposerWorktreeRemoved,
   autoFocus = false,
   contextUsage,
   sessionStats,
@@ -946,6 +979,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const fileIndexMetaRef = useRef<{ cwd: string; fetchedAt: number } | null>(null);
   const fileIndexFetchingRef = useRef<string | null>(null);
   const draftKeyRef = useRef(draftKey);
+  /** The composer's cross-device mirror (lib/composer-sync.ts): the stamp of the
+   *  last write this device made, and the content it last mirrored. A composer
+   *  applies a remote copy only when it is newer than its own typing. */
+  const composerSyncStampRef = useRef(0);
+  const syncedSignatureRef = useRef<string | null>(null);
   const valueRef = useRef(value);
   const attachedImagesRef = useRef(attachedImages);
   const pendingImageCountRef = useRef(0);
@@ -1296,6 +1334,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setHistoryMenuOpen(false);
     if (draftKey) clearDraft(draftKey);
     if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDraft(draftKeyRef.current);
+    // The sent prompt is no longer a draft anywhere: the server's copy goes too,
+    // or the other device's composer would fill up again with what was just sent.
+    if (draftKey) clearComposerDraft(draftKey);
+    if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearComposerDraft(draftKeyRef.current);
+    syncedSignatureRef.current = draftSignature("", [], []);
     clearImages();
     clearAttachedFiles();
     if (textareaRef.current) {
@@ -1305,11 +1348,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   useEffect(() => {
     if (!draftKey || draftKeyRef.current !== draftKey) return;
-    setDraft(draftKey, {
+    const draft = {
       value,
       images: attachedImages.map(imageToDraftImage),
       files: attachedFiles,
-    });
+    };
+    setDraft(draftKey, draft);
+    // Cross-device mirror. Only a composer this device actually changed is
+    // pushed: the content a composer loaded when it mounted (or switched key)
+    // was already written by whoever typed it, and pushing it back would make
+    // this device the newest writer and bury the other one's typing.
+    const signature = draftSignature(draft.value, draft.images, draft.files);
+    if (syncedSignatureRef.current === signature) return;
+    syncedSignatureRef.current = signature;
+    composerSyncStampRef.current = pushComposerDraft(draftKey, draft);
   }, [attachedFiles, attachedImages, draftKey, value]);
 
   useEffect(() => {
@@ -1329,6 +1381,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const nextValue = draft?.value ?? "";
     const nextImages = draftImagesToAttachedImages(draft?.images);
     const nextFiles = draft?.files ?? [];
+    // What the composer starts with is not this device's edit (see the mirror
+    // effect below), and no write of ours is in flight for the new key.
+    syncedSignatureRef.current = draftSignature(nextValue, nextImages.map(imageToDraftImage), nextFiles);
+    composerSyncStampRef.current = 0;
     valueRef.current = nextValue;
     attachedImagesRef.current = nextImages;
     attachedFilesRef.current = nextFiles;
@@ -1342,6 +1398,33 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       return nextImages;
     });
   }, [draftKey, setHashQuery]);
+
+  // The other devices' composer, read back from the server (the phone shows the
+  // prompt typed on the laptop). A copy older than this device's own last write
+  // is its own echo and is dropped, so typing is never overwritten mid-word.
+  useEffect(() => {
+    if (!draftKey) return;
+    return watchComposerDraft(draftKey, (remote) => {
+      if (remote.updatedAt <= composerSyncStampRef.current) return;
+      composerSyncStampRef.current = remote.updatedAt;
+      const nextValue = remote.value;
+      const nextImages = draftImagesToAttachedImages(remote.images);
+      const nextFiles = remote.files;
+      syncedSignatureRef.current = draftSignature(nextValue, nextImages.map(imageToDraftImage), nextFiles);
+      valueRef.current = nextValue;
+      attachedImagesRef.current = nextImages;
+      attachedFilesRef.current = nextFiles;
+      setValue(nextValue);
+      setAttachedImages((prev) => {
+        prev.forEach(revokeImagePreview);
+        return nextImages;
+      });
+      setAttachedFiles(nextFiles);
+      if (draftKeyRef.current === draftKey) {
+        setDraft(draftKey, { value: nextValue, images: remote.images, files: nextFiles });
+      }
+    });
+  }, [draftKey]);
 
   const resizeTextarea = useCallback(() => {
     const ta = textareaRef.current;
@@ -3046,6 +3129,20 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 projectOptions={projectOptions}
                 onProjectChange={onProjectChange}
                 onSelectProject={onSelectProject}
+              />
+            )}
+            {/* Fork: the branch of that project, right behind it, on a new-session
+                composer. It opens the project menu's branch page (the same code the
+                sidebar's "…" menu renders) with a check-out and a new-worktree
+                button on every branch. */}
+            {branchChipCwd && (
+              <ComposerBranchChip
+                cwd={branchChipCwd}
+                maxWidth={isNarrow ? 96 : isCompact ? 110 : 150}
+                onBranchSwitched={onBranchSwitched}
+                onWorktreeCreated={onComposerWorktreeCreated}
+                onWorktreeSelected={onComposerWorktreeSelected}
+                onWorktreeRemoved={onComposerWorktreeRemoved}
               />
             )}
             {/* Model selector — visible always, busy while a switch is pending; a switch during a run applies from its next request (C2) */}

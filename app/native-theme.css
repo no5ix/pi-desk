@@ -420,6 +420,40 @@
   margin-right: 0;
   padding: 0;
 }
+/* A branch row with the composer chip's two buttons: the name keeps its width
+   and ellipsizes, the icons sit at the row's trailing edge in the same place on
+   every row, so the eye scans one column of branch names. The row's own button
+   is a checkout, so it gets the row's mono face like the plain branch list. */
+.sidebar-project-context-menu-row--branch > button[role="menuitem"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+}
+.sidebar-project-context-menu-branch-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-branch-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: var(--control-h-md);
+  padding: 0;
+  color: var(--text-dim);
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-branch-action:hover:not(:disabled) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-branch-action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
 .sidebar-project-context-menu .sidebar-project-context-menu-fetch {
   display: flex;
   align-items: center;
@@ -2606,6 +2640,25 @@ html.dark .sidebar-view-switcher-thumb {
   padding-right: 52px;
 }
 
+/* A pinned project marks its row at all times, in a slot of its own: the "＋" and
+   "…" pair is a hover-only overlay, so the pin lives just left of it at a fixed
+   offset. It never moves when the buttons appear, every pinned row shows it in
+   the same place, and the row reserves the width so a long name stops before the
+   pin rather than under it. */
+.sidebar-project-tree-pin {
+  position: absolute;
+  top: 50%;
+  right: 56px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.sidebar-project-tree-row.is-pinned .sidebar-project-tree-row-main {
+  padding-right: 74px;
+}
+
 /* No hover on touch: keep the actions reachable, and the row a finger-sized
    target (it is 30px with a pointer). */
 @media (hover: none) {
@@ -2620,6 +2673,15 @@ html.dark .sidebar-view-switcher-thumb {
 
   .sidebar-project-tree-row-main {
     padding-right: 52px;
+  }
+
+  /* The actions are finger-sized here, so the pin's slot moves out past them. */
+  .sidebar-project-tree-row.is-pinned .sidebar-project-tree-pin {
+    right: 100px;
+  }
+
+  .sidebar-project-tree-row.is-pinned .sidebar-project-tree-row-main {
+    padding-right: 116px;
   }
 }
 
@@ -3460,6 +3522,79 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 .app-topbar-elapsed svg {
   flex: 0 0 auto;
   color: var(--text-dim);
+}
+
+/* The row is allowed to wrap, and the subagent chip is its last item: a long
+   project name, a long branch, or a phone's width pushes the counts to a second
+   line instead of cutting them off. The bar is a floor (min-height in AppShell),
+   not a fixed height, so a wrapped line grows the bar instead of spilling its
+   title into the chat. */
+.app-topbar-subtitle-row {
+  flex-wrap: wrap;
+  row-gap: 1px;
+}
+
+.app-topbar-subagents {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.18;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-fast) var(--ease-native);
+}
+
+.app-topbar-subagents:hover {
+  color: var(--text);
+}
+
+.app-topbar-subagents:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.app-topbar-subagents svg {
+  flex: 0 0 auto;
+}
+
+.app-topbar-subagents-total {
+  font-variant-numeric: tabular-nums;
+}
+
+.app-topbar-subagent-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-variant-numeric: tabular-nums;
+}
+
+.app-topbar-subagent-count.is-completed {
+  color: var(--success);
+}
+
+.app-topbar-subagent-count.is-aborted {
+  color: var(--warning);
+}
+
+.app-topbar-subagent-count.is-running {
+  color: var(--color-accent);
+}
+
+.app-topbar-subagent-glyph {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+/* The sidebar's session status dot, at the caption size this row uses. */
+.app-topbar-subagent-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: currentColor;
 }
 .native-icon-button,
 .native-toolbar-button {
@@ -12292,6 +12427,14 @@ html[data-standalone-safe-area] .app-topbar {
   height: calc(48px + var(--app-safe-area-top)) !important;
   min-height: calc(48px + var(--app-safe-area-top)) !important;
   padding-top: var(--app-safe-area-top) !important;
+}
+
+html[data-standalone-safe-area] .app-topbar:has(.app-topbar-subtitle-row > :nth-child(4)) {
+  /* A phone's header is the only place its project, branch, clock and subagent
+     counts appear, so it is the first place to run out of width. With the row
+     wrapped, 48px of content is the floor and the bar grows with the second
+     line. */
+  height: auto !important;
 }
 
 /* The sidebar and the right panel run the full window height, and on a phone

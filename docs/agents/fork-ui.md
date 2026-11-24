@@ -257,6 +257,52 @@ phone sees the project, the branch and the elapsed time. The clock never wraps
 Pinned by `components/AppShell.topbar-elapsed.test.mjs`, and the row's shape and the
 branch's contract by `components/AppShell.topbar-branch.test.mjs`.
 
+## Composer branch chip, and a worktree from a branch
+
+A new-session composer ends its control row with `[branch icon] main`, right behind
+the project chip (`components/ComposerBranchMenu.tsx`, mounted by `ChatInput` with
+`branchChipCwd` — an open session and a chat render nothing). It opens the project
+menu's own pages (`components/ProjectContextMenu.tsx`, driven by
+`hooks/useProjectWorktreeActions.ts`), so the branch list, "Fetch from remote", the
+worktree list and the new-worktree form are the same code the sidebar's "…" menu
+always used. The chip adds two buttons after every branch name: the branch icon
+checks that branch out in the composer's checkout, the worktree icon opens the
+new-worktree form **from that branch** — the branch is created at the row's tip
+(local ref, else the one remote that carries it) and checked out in
+`<repo>-worktrees/<branch>`, and the new session moves into that folder while the
+folder the composer was opened from keeps its own branch. The form names the base
+branch, and picking an existing worktree moves the session there. A worktree the
+composer was sitting in, once removed, sends the composer to the project's main
+checkout. The sidebar's "…" menu keeps folder actions only: `Switch branch` and
+`Worktrees…` are gone from it, DOM and native, so the app has one branching surface.
+
+The header's row reads `[folder] project  [branch|worktree icon] branch  [clock]  [subagents] N [✓] N [⚠] N [↻] N`. The glyph is the
+worktree one when the selected session runs in a linked worktree (`SessionInfo.isWorktree`),
+because the same branch name can live in the repo and in a worktree. The counts are the
+active family's subagent runs (`components/TopbarSubagents.tsx`,
+`countSubagents`): the subagent glyph and the total, then completed / aborted (aborted
+counts failed and stopped runs too) / running, in the sidebar's dot palette; clicking
+opens the Agents panel, and a session with no subagent runs renders nothing. The row
+wraps, and the counts are its last item, so on a phone, or behind a long project name,
+they take the second line; the topbar is a floor (`minHeight` in `AppShell`, `height:
+auto` in the standalone rule) so a wrapped line grows the bar instead of spilling into
+the chat. The branch name is polled (`hooks/useProjectBranch.ts`: 3s on the cheap
+`GET /api/worktrees/branch`, refresh on tab focus, 60s client cache, `setBranch` only
+on a change) — a checkout made in a terminal shows up without a reload.
+
+## Composer text across devices
+
+A composer's draft is mirrored to the server (`lib/composer-draft-store.ts`,
+`PUT/GET/DELETE /api/composer-draft`) so the prompt typed on the laptop appears in the
+phone's composer: `lib/composer-sync.ts` pushes on a 700ms debounce and polls every 4s
+while the tab is visible. The key is a shared identity (`composerSyncKey`: a session id,
+`parked-new:<cwd>`, or the folder of a `new:<id>:<cwd>` draft — the device's own draft id
+is dropped), the newest `updatedAt` wins, and a client applies a remote copy only when it
+is newer than its own last write, so typing is never overwritten by its own echo. A
+composer that only *loaded* a draft never pushes it: that content was written by the
+device that typed it. Sending clears the server's copy. See
+[fork-files-security](fork-files-security.md) for what the mirror may hold.
+
 ## The right panel opens on a terminal
 
 `handleRightPanelToggle` opens a project panel onto its shell: with a live terminal

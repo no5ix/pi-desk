@@ -1,17 +1,20 @@
 "use client";
 
-// Fork-owned: state and actions behind the worktree pages of the project "…"
-// menu (components/ProjectContextMenu.tsx) — fetch remote branches, create and
-// remove worktrees. SessionSidebar (upstream-owned) supplies what happens to
-// the sidebar afterwards through the callbacks.
+// Fork-owned: state and actions behind the branch and worktree pages of
+// components/ProjectContextMenu.tsx — fetch remote branches, check a branch out
+// in a checkout, create and remove worktrees. The composer's branch chip
+// (components/ComposerBranchMenu.tsx) is the app's branching surface; it supplies
+// what happens to the app afterwards through the callbacks here.
 
 import { useCallback, useState } from "react";
 import {
   createProjectWorktree,
   fetchRemoteBranches,
   removeProjectWorktree,
+  type ProjectBranchMenuState,
   type WorktreeRemoval,
 } from "@/components/ProjectContextMenu";
+import { invalidateProjectBranch } from "@/hooks/useProjectBranch";
 
 interface ProjectWorktreeCallbacks {
   /** A fetch landed; merge the fresh branch lists into the menu. */
@@ -20,14 +23,19 @@ interface ProjectWorktreeCallbacks {
   onWorktreeCreated: (projectRoot: string, path: string, branch: string) => void;
   /** A worktree checkout was removed; leave it if it was selected and refresh. */
   onWorktreeRemoved: (projectRoot: string, path: string) => void;
+  /** A branch was checked out in `cwd`. */
+  onBranchSwitched?: (cwd: string, branch: string) => void;
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
-export function useProjectWorktreeActions({ onBranchesFetched, onWorktreeCreated, onWorktreeRemoved }: ProjectWorktreeCallbacks) {
+export function useProjectWorktreeActions({
+  onBranchesFetched, onWorktreeCreated, onWorktreeRemoved, onBranchSwitched,
+}: ProjectWorktreeCallbacks) {
   const [busy, setBusy] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<WorktreeRemoval | null>(null);
   const [newBranch, setNewBranchValue] = useState("");
 
@@ -36,6 +44,7 @@ export function useProjectWorktreeActions({ onBranchesFetched, onWorktreeCreated
     setError(null);
     setConfirmRemove(null);
     setNewBranchValue("");
+    setSwitchingBranch(null);
   }, []);
 
   const setNewBranch = useCallback((value: string) => {
@@ -63,13 +72,14 @@ export function useProjectWorktreeActions({ onBranchesFetched, onWorktreeCreated
     }
   }, [fetching, onBranchesFetched]);
 
-  const create = useCallback(async (projectRoot: string) => {
+  const create = useCallback(async (projectRoot: string, baseBranch?: string) => {
     const branch = newBranch.trim();
     if (!branch || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const created = await createProjectWorktree(projectRoot, branch);
+      const created = await createProjectWorktree(projectRoot, branch, baseBranch);
+      invalidateProjectBranch(created.path);
       setNewBranchValue("");
       onWorktreeCreated(projectRoot, created.path, created.branch);
     } catch (e) {
@@ -91,6 +101,7 @@ export function useProjectWorktreeActions({ onBranchesFetched, onWorktreeCreated
         return;
       }
       setConfirmRemove(null);
+      invalidateProjectBranch(removal.path);
       onWorktreeRemoved(projectRoot, removal.path);
     } catch (e) {
       setError(message(e));
@@ -99,11 +110,59 @@ export function useProjectWorktreeActions({ onBranchesFetched, onWorktreeCreated
     }
   }, [busy, onWorktreeRemoved]);
 
+  /**
+   * Checks `branch` out in `cwd`'s checkout. A branch that belongs to another
+   * worktree answers with git's own refusal — the worktree list is the way
+   * there — so the caller passes the branch lists it is showing.
+   */
+  const switchBranch = useCallback(async (
+    cwd: string,
+    branch: string,
+    loaded?: ProjectBranchMenuState,
+    checkoutOf?: string,
+  ): Promise<string | null> => {
+    if (switchingBranch) return null;
+    setSwitchingBranch(branch);
+    setError(null);
+    let failure: string | null = null;
+    let checkedOut: string | null = null;
+    try {
+      const holder = loaded?.worktrees.find((w) => w.branch === branch && w.path !== (checkoutOf ?? cwd));
+      if (holder) {
+        failure = `Branch '${branch}' is already checked out at ${holder.path}`;
+      } else {
+        const res = await fetch("/api/worktrees", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cwd, branch }),
+        });
+        const data = await res.json().catch(() => ({})) as { branch?: string; error?: string };
+        if (!res.ok || data.error || !data.branch) failure = data.error ?? `HTTP ${res.status}`;
+        else {
+          checkedOut = data.branch;
+          invalidateProjectBranch(cwd);
+        }
+      }
+    } catch (e) {
+      failure = message(e);
+    } finally {
+      setSwitchingBranch(null);
+    }
+    if (failure) {
+      setError(failure);
+      return null;
+    }
+    setError(null);
+    if (checkedOut) onBranchSwitched?.(cwd, checkedOut);
+    return checkedOut;
+  }, [onBranchSwitched, switchingBranch]);
+
   return {
     busy,
     fetching,
     error,
     setError,
+    switchingBranch,
     confirmRemove,
     newBranch,
     setNewBranch,
@@ -113,5 +172,6 @@ export function useProjectWorktreeActions({ onBranchesFetched, onWorktreeCreated
     fetchBranches,
     create,
     remove,
+    switchBranch,
   };
 }

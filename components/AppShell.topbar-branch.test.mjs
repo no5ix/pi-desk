@@ -22,7 +22,7 @@ test("the title and the project line keep their positions in the title block", (
 });
 
 test("the branch label reads the session first, then the project directory", () => {
-  assert.match(appShell, /import \{ useProjectBranch \} from "@\/hooks\/useProjectBranch";/);
+  assert.match(appShell, /import \{ useProjectBranch, invalidateProjectBranch \} from "@\/hooks\/useProjectBranch";/);
   assert.match(appShell, /const activeProjectBranch = useProjectBranch\(\s*isChatWorkspaceActive \|\| pageOpen \|\| selectedSession \? null : visibleProjectCwd,\s*\);/,
     "a selected session asks the endpoint for nothing: it already carries its branch");
   assert.match(appShell, /const topBarBranch = isChatWorkspaceActive \|\| pageOpen\s*\?\s*null\s*:\s*selectedSession\?\.branch \?\? activeProjectBranch;/);
@@ -71,4 +71,61 @@ test("the hydration render shows no branch, so React keeps the tree", () => {
   assert.match(appShell, /<div className="app-topbar-title" title=\{topBarTitle\}>\n\s*<span>\{topBarTitle\}<\/span>/,
     "the title stays the first child: e2e/title-feedback reads it");
   assert.match(appShell, /<span className="app-topbar-subtitle-row">\n\s*<small className="app-topbar-project">/);
+});
+
+test("the branch name says which checkout it is: branch glyph, worktree glyph", () => {
+  // The same branch name can live in the repo and in a linked worktree, and the
+  // header is the only place a session says where it runs.
+  assert.match(appShell, /\{selectedSession\?\.isWorktree \? <WorktreeIcon \/> : <BranchIcon \/>\}/);
+  assert.match(appShell, /selectedSession\?\.isWorktree \? "chat\.gitWorktreeBranchTitle" : "chat\.gitBranchTitle"/);
+  assert.match(appShell, /import \{ BranchIcon, WorktreeIcon \} from "\.\/GitIcons";/,
+    "the glyphs are the sidebar's own, shared with the composer's chip");
+});
+
+test("the project row ends with the clock, then the subagent counts", () => {
+  const row = appShell.match(/<span className="app-topbar-subtitle-row">[\s\S]*?<\/span>\s*\)\}/);
+  assert.ok(row, "the project row renders");
+  const at = (needle) => row[0].indexOf(needle);
+  assert.ok(at('className="app-topbar-project"') < at('className="app-topbar-branch"'), "project, then branch");
+  assert.ok(at('className="app-topbar-branch"') < at("<TopbarElapsed"), "branch, then the clock");
+  assert.ok(at("<TopbarElapsed") < at("<TopbarSubagents"), "the counts come last: they are what wraps");
+});
+
+test("the subagent counts are the active family's, and clicking opens the agents panel", () => {
+  assert.match(appShell, /countSubagents\(activeSessionFamily, runningSessionIds\)/);
+  assert.match(appShell, /<TopbarSubagents\n\s*counts=\{topBarSubagents\}\n\s*onOpenAgents=\{\(\) => toggleTopPanel\("agents"\)\}/);
+  // The buckets are exclusive and read the live running set first.
+  const counter = readFileSync(new URL("./TopbarSubagents.tsx", import.meta.url), "utf8");
+  // A session with no subagent runs renders nothing — the row is not a scoreboard.
+  assert.match(counter, /if \(counts\.total === 0\) return null;/);
+  assert.match(counter, /if \(runningIds\.has\(session\.id\) \|\| status === "running" \|\| status === "queued"\) \{\n\s*counts\.running \+= 1;/);
+  assert.match(counter, /status === "aborted" \|\| status === "failed" \|\| status === "interrupted"/,
+    "a failed or stopped run is not a completed one");
+  assert.match(counter, /session\.relation\?\.kind === "subagent" \? session\.relation\.status : undefined/,
+    "only a subagent relation carries a status");
+});
+
+test("a full row wraps the counts to a second line, and the bar grows with them", () => {
+  assert.match(css, /\.app-topbar-subtitle-row \{\n\s*flex-wrap: wrap;/, "the row wraps");
+  assert.match(css, /\.app-topbar-subagents \{[\s\S]*?flex: 0 0 auto;/, "the chip is never squeezed away");
+  assert.match(css, /\.app-topbar-subagent-count\.is-completed \{\n\s*color: var\(--success\);/, "the palette of the sidebar's dots");
+  assert.match(css, /\.app-topbar-subagent-count\.is-aborted \{\n\s*color: var\(--warning\);/);
+  assert.match(css, /\.app-topbar-subagent-count\.is-running \{\n\s*color: var\(--color-accent\);/);
+  // A fixed height would clip the wrapped line into the chat; the bar is a floor.
+  assert.match(appShell, /flexShrink: 0, minHeight: "calc\(36px \+ env\(safe-area-inset-top\)\)"/);
+  assert.doesNotMatch(appShell, /flexShrink: 0, height: "calc\(36px \+ env\(safe-area-inset-top\)\)"/);
+  assert.match(css, /html\[data-standalone-safe-area\] \.app-topbar:has\(\.app-topbar-subtitle-row > :nth-child\(4\)\) \{[\s\S]*?height: auto !important;/,
+    "the phone's bar, which is pinned to 48px, is released when the row wraps");
+});
+
+test("the header's branch is polled, so a checkout outside pi shows up", () => {
+  assert.match(hook, /const POLL_INTERVAL_MS = 3_000;/);
+  assert.match(hook, /fetch\(`\/api\/worktrees\/branch\?cwd=\$\{encodeURIComponent\(cwd\)\}`/,
+    "the poll reads the cheap branch endpoint, not the whole project resolve");
+  assert.match(hook, /setBranch\(\(previous\) => \(previous === value \? previous : value\)\)/,
+    "an unchanged branch never re-renders the shell");
+  assert.match(hook, /document\.addEventListener\("visibilitychange", onVisible\)/, "a tab that comes back checks at once");
+  const route = readFileSync(new URL("../app/api/worktrees/branch/route.ts", import.meta.url), "utf8");
+  assert.match(route, /readCurrentBranch/, "one short git rev-parse");
+  assert.match(route, /isCwdAllowed/, "the endpoint is behind the file-access gate");
 });

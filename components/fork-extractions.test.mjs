@@ -203,11 +203,11 @@ const EXTRACTIONS = [
   {
     name: "SessionSidebar project menu",
     origin: "components/SessionSidebar.tsx",
-    // The project row's "…" menu (DOM and native) — branches with fetch, and
-    // the worktree pages that replaced the hidden header dropdown — is a fork
-    // feature; the sidebar keeps the menu state and wires the actions in.
+    // The project row's "…" menu is folder actions only. Branching — the branch
+    // list with fetch, the worktree pages, the native popups — moved to the
+    // composer's branch chip, so the sidebar must never grow a second copy back.
     // Reveal-in-file-manager stays in the origin: it is upstream's (#907).
-    movedTo: ["components/ProjectContextMenu.tsx", "hooks/useProjectWorktreeActions.ts"],
+    movedTo: ["components/ProjectContextMenu.tsx", "hooks/useProjectWorktreeActions.ts", "components/ComposerBranchMenu.tsx"],
     movedDefinitions: [
       "fetchProjectBranchMenu",
       "showNativeProjectBranchMenu",
@@ -222,12 +222,43 @@ const EXTRACTIONS = [
       "sidebar.branchInWorktreeTitle",
       "sidebar.confirmRemoveWorktree",
       "/api/worktrees/fetch",
-    ],
-    requiredInOrigin: [
-      "<ProjectContextMenu",
+      // The moved branching UI. A clean upstream merge that puts any of it back
+      // in the sidebar resurrects a second branching surface.
       "showNativeProjectBranchMenu(",
       "showNativeProjectWorktreeMenu(",
       "useProjectWorktreeActions(",
+      "wtSwitchingBranch",
+    ],
+    presentInTargets: [
+      "sidebar-project-context-menu",
+      "sidebar.fetchBranchesTitle",
+      "sidebar.branchInWorktreeTitle",
+      "sidebar.confirmRemoveWorktree",
+      "/api/worktrees/fetch",
+      "showNativeProjectBranchMenu(",
+      "showNativeProjectWorktreeMenu(",
+      "useProjectWorktreeActions(",
+    ],
+    requiredInOrigin: [
+      "<ProjectContextMenu",
+    ],
+  },
+  {
+    name: "Composer branch chip",
+    origin: "components/ComposerBranchMenu.tsx",
+    // The composer's branch chip is the app's one branching surface: it renders
+    // ProjectContextMenu's branch and worktree pages through the shared action
+    // hook, and a worktree made from a branch row starts from that branch.
+    movedTo: ["components/ProjectContextMenu.tsx", "hooks/useProjectWorktreeActions.ts"],
+    movedDefinitions: ["createProjectWorktree", "showNativeProjectBranchMenu", "fetchProjectBranchMenu"],
+    absentFromOrigin: [],
+    presentInTargets: ["sidebar.checkOutBranchTitle", "sidebar.worktreeFromBranchTitle", "sidebar.newWorktreeFrom", "baseBranch"],
+    requiredInOrigin: [
+      "showNativeProjectBranchMenu(",
+      "showNativeProjectWorktreeMenu(",
+      "useProjectWorktreeActions(",
+      "onCreateWorktreeFromBranch=",
+      "fetchProjectBranchMenu",
     ],
   },
   {

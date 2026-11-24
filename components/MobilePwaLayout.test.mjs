@@ -36,7 +36,10 @@ test("tracks the visual viewport while the software keyboard is open", () => {
   assert.match(appShellSource, /paddingBottom: "env\(safe-area-inset-bottom\)"/);
   assert.match(appShellSource, /paddingLeft: "env\(safe-area-inset-left\)"/);
   assert.match(appShellSource, /paddingRight: "env\(safe-area-inset-right\)"/);
-  assert.match(appShellSource, /height: "calc\(36px \+ env\(safe-area-inset-top\)\)"/);
+  // The bar is a floor, not a fixed height: its project row (project, branch,
+  // clock, subagent counts) wraps to a second line when the width runs out, and
+  // a fixed height would clip that line into the chat.
+  assert.match(appShellSource, /minHeight: "calc\(36px \+ env\(safe-area-inset-top\)\)"/);
   assert.match(appShellSource, /className=\{`right-panel-tab-strip/);
   assert.match(nativeThemeSource, /\.right-panel-tab-strip \{[\s\S]*?height: 48px/);
   assert.match(appShellSource, /height: "var\(--app-viewport-height, 100dvh\)"/);

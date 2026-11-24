@@ -1,15 +1,18 @@
 "use client";
 
 // Fork-owned: the "…" menu on a project row of the sidebar's project tree —
-// switch branch (and fetch remote branches), worktrees (switch, create,
-// remove), open a terminal, reveal in the file manager, archive. An archived
-// project's menu (the sidebar's Archive group) offers only restore and reveal. Rendered as a
-// DOM menu here, or as native popups in the desktop shell (showNative*); the
-// steps a native menu cannot do (typing a branch name, confirming a removal)
-// open the DOM menu at the same point. SessionSidebar (upstream-owned) keeps
-// the menu state and wires the actions in.
+// open a terminal, reveal in the file manager, archive. Since the composer's
+// branch chip took over branching (components/ComposerBranchMenu.tsx), the
+// actions page no longer offers Switch branch / Worktrees…; the branch and
+// worktree pages below stay here because that chip renders them (with its two
+// per-branch buttons), and the sidebar's worktree page is still where a
+// checkout is removed. Rendered as a DOM menu here, or as native popups in the
+// desktop shell (showNative*); the steps a native menu cannot do (typing a
+// branch name, confirming a removal) open the DOM menu at the same point
+// (openDomProjectMenu in SessionSidebar).
 
 import { AppCombobox } from "./AppCombobox";
+import { BranchIcon, WorktreeIcon } from "./GitIcons";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import { isImeComposing } from "@/lib/ime";
@@ -89,12 +92,13 @@ export async function fetchRemoteBranches(projectRoot: string): Promise<{ branch
   };
 }
 
-/** Creates `<repo>-worktrees/<branch>` for an existing or new branch. Throws with git's message on failure. */
-export async function createProjectWorktree(projectRoot: string, branch: string): Promise<{ path: string; branch: string }> {
+/** `git worktree add` for an existing or new branch, from `baseBranch` when the
+ *  branch is new. Throws with git's message on failure. */
+export async function createProjectWorktree(projectRoot: string, branch: string, baseBranch?: string): Promise<{ path: string; branch: string }> {
   const res = await fetch("/api/worktrees", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cwd: projectRoot, branch }),
+    body: JSON.stringify({ cwd: projectRoot, branch, ...(baseBranch ? { baseBranch } : {}) }),
   });
   const data = await readError(res) as { error?: string; path?: string; branch?: string };
   if (!res.ok || data.error || !data.path) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -127,9 +131,11 @@ function worktreeLabel(worktree: WorktreeEntry): string {
   return worktree.branch ?? worktree.path;
 }
 
-/** Desktop shell: the branch list as a native popup, led by "Fetch from remote". */
+/** Desktop shell: the branch list as a native popup, led by "Fetch from remote"
+ *  and (for the composer's chip) by "Worktrees…", which opens the worktree list
+ *  at the same point. */
 export async function showNativeProjectBranchMenu({
-  projectRoot, at, selectedCwd, switchingBranch, t, onSwitch, onFetch,
+  projectRoot, at, selectedCwd, switchingBranch, t, onSwitch, onFetch, onWorktrees,
 }: {
   projectRoot: string;
   at: NativeMenuPoint;
@@ -138,6 +144,7 @@ export async function showNativeProjectBranchMenu({
   t: Translate;
   onSwitch: (projectRoot: string, branch: string, loaded: ProjectBranchMenuState) => void;
   onFetch: (projectRoot: string) => void;
+  onWorktrees?: (projectRoot: string, at: NativeMenuPoint, loaded: ProjectBranchMenuState) => void;
 }) {
   const data = await fetchProjectBranchMenu(projectRoot);
   const checkout = currentCheckout(data.worktrees, selectedCwd);
@@ -148,9 +155,13 @@ export async function showNativeProjectBranchMenu({
   const fetchEntry: NativeMenuEntry[] = data.isGit
     ? [{ label: t("sidebar.fetchBranches"), onSelect: () => onFetch(projectRoot) }, { kind: "separator" }]
     : [];
+  const worktreesEntry: NativeMenuEntry[] = data.isGit && onWorktrees
+    ? [{ label: t("sidebar.worktrees"), onSelect: () => onWorktrees(projectRoot, at, data) }, { kind: "separator" }]
+    : [];
   await showNativeMenu(
     [
       ...fetchEntry,
+      ...worktreesEntry,
       ...(names.length === 0
         ? [{ label: t("sidebar.noOtherBranches"), disabled: true }]
         : names.map(({ name, remote }) => {
@@ -223,24 +234,25 @@ interface ProjectContextMenuProps {
   /** The "…" button the menu belongs to. The menu flips above it when the
    *  space below is too small for its measured height. */
   anchor: MenuAnchor | null;
-  view: ProjectMenuView;
-  branchMenu: ProjectBranchMenuState | null;
-  branchLoading: boolean;
-  selectedCwd: string | null;
-  switchingBranch: string | null;
-  fetching: boolean;
-  worktreeBusy: boolean;
-  worktreeError: string | null;
-  confirmRemove: WorktreeRemoval | null;
-  newBranch: string;
+  view?: ProjectMenuView;
+  /** The branch and worktree pages' data. A menu that shows only its actions
+   *  page (the sidebar's "…") passes none of it, so these stay optional. */
+  branchMenu?: ProjectBranchMenuState | null;
+  branchLoading?: boolean;
+  selectedCwd?: string | null;
+  switchingBranch?: string | null;
+  fetching?: boolean;
+  worktreeBusy?: boolean;
+  worktreeError?: string | null;
+  confirmRemove?: WorktreeRemoval | null;
+  newBranch?: string;
   canReveal: boolean;
   revealLabel: string;
   projectRevealError: string | null;
   t: Translate;
-  onShowBranches: () => void;
-  onShowWorktrees: () => void;
-  onShowNewWorktree: () => void;
-  onBackToActions: () => void;
+  onShowWorktrees?: () => void;
+  onShowNewWorktree?: () => void;
+  onBackToActions?: () => void;
   onOpenTerminal?: () => void;
   onReveal: () => void;
   /** The project sits in the Archive group: the menu is Restore + Reveal. */
@@ -253,26 +265,32 @@ interface ProjectContextMenuProps {
   /** S6: deletes every session of the project that is not running; null hides it (none to delete). */
   deleteSessionsCount?: number;
   onDeleteSessions?: () => void;
-  onSwitchBranch: (branch: string) => void;
-  onFetch: () => void;
-  onSelectWorktree: (path: string) => void;
-  onRequestRemove: (path: string) => void;
-  onConfirmRemove: (removal: WorktreeRemoval) => void;
-  onCancelRemove: () => void;
-  onNewBranchChange: (value: string) => void;
-  onCreateWorktree: () => void;
+  onSwitchBranch?: (branch: string) => void;
+  /** The composer's branch chip: two buttons after every branch name — check it
+   *  out, or make a worktree from it. Their absence keeps the plain row the
+   *  sidebar's own branch page always had. */
+  onCreateWorktreeFromBranch?: (branch: string) => void;
+  /** Set on the new-worktree page: the branch the new branch starts from. */
+  worktreeBaseBranch?: string | null;
+  onFetch?: () => void;
+  onSelectWorktree?: (path: string) => void;
+  onRequestRemove?: (path: string) => void;
+  onConfirmRemove?: (removal: WorktreeRemoval) => void;
+  onCancelRemove?: () => void;
+  onNewBranchChange?: (value: string) => void;
+  onCreateWorktree?: () => void;
   onClose?: () => void;
 }
 
 /** The menu itself; ProjectContextMenu portals it to the document body. */
 export function ProjectContextMenuPanel({
-  menuRef, projectRoot, pos, anchor, view, branchMenu, branchLoading, selectedCwd, switchingBranch,
-  fetching, worktreeBusy, worktreeError, confirmRemove, newBranch,
+  menuRef, projectRoot, pos, anchor, view = "actions", branchMenu = null, branchLoading = false, selectedCwd = null, switchingBranch = null,
+  fetching = false, worktreeBusy = false, worktreeError = null, confirmRemove = null, newBranch = "",
   canReveal, revealLabel, projectRevealError, t,
-  onShowBranches, onShowWorktrees, onShowNewWorktree, onBackToActions, onOpenTerminal, onReveal, archived = false, onArchive, onRestore,
+  onShowWorktrees = () => {}, onShowNewWorktree = () => {}, onBackToActions = () => {}, onOpenTerminal, onReveal, archived = false, onArchive, onRestore,
   pinned = false, onTogglePin, deleteSessionsCount = 0, onDeleteSessions,
-  onSwitchBranch, onFetch, onSelectWorktree, onRequestRemove, onConfirmRemove, onCancelRemove,
-  onNewBranchChange, onCreateWorktree,
+  onSwitchBranch = () => {}, onFetch = () => {}, onSelectWorktree = () => {}, onRequestRemove = () => {}, onConfirmRemove = () => {}, onCancelRemove = () => {},
+  onNewBranchChange = () => {}, onCreateWorktree = () => {}, onCreateWorktreeFromBranch, worktreeBaseBranch = null,
   onClose = () => {},
 }: ProjectContextMenuProps) {
   useMenuNavigation(view !== "new-worktree" && !confirmRemove, menuRef, onClose);
@@ -319,14 +337,11 @@ export function ProjectContextMenuPanel({
       </>
     );
   } else if (view === "actions") {
+    // No branch/worktree entries: the composer's branch chip
+    // (components/ComposerBranchMenu.tsx) is where a branch is switched and a
+    // worktree is made, so this menu keeps only the project's folder actions.
     body = (
       <>
-        <button type="button" role="menuitem" onClick={onShowBranches}>
-          {t("sidebar.switchBranch")}
-        </button>
-        <button type="button" role="menuitem" onClick={onShowWorktrees}>
-          {t("sidebar.worktrees")}
-        </button>
         {onOpenTerminal && (
           <button type="button" role="menuitem" onClick={onOpenTerminal}>
             {t("sidebar.openTerminalHere")}
@@ -382,7 +397,7 @@ export function ProjectContextMenuPanel({
                 const isCurrent = checkout?.branch === name;
                 const holder = data.worktrees.find((w) => w.branch === name && w.path !== checkout?.path);
                 const switching = switchingBranch === name;
-                return (
+                const row = (
                   <button
                     key={`${remote ? "remote:" : "local:"}${name}`}
                     type="button"
@@ -402,9 +417,47 @@ export function ProjectContextMenuPanel({
                     {switching && <span className="sidebar-project-context-menu-branch-spinner" aria-hidden="true">↻</span>}
                   </button>
                 );
+                if (!onCreateWorktreeFromBranch) return row;
+                // The composer's chip: the name checks the branch out, and the two
+                // buttons after it say what else the same branch can become — a
+                // checkout here, or a worktree of its own next to the folder.
+                return (
+                  <div key={`${remote ? "remote:" : "local:"}${name}`} className="sidebar-project-context-menu-row sidebar-project-context-menu-row--branch">
+                    {row}
+                    <span className="sidebar-project-context-menu-branch-actions">
+                      <button
+                        type="button"
+                        className="sidebar-project-context-menu-branch-action"
+                        disabled={switchingBranch !== null || isCurrent}
+                        title={t("sidebar.checkOutBranchTitle", { branch: name })}
+                        aria-label={t("sidebar.checkOutBranchTitle", { branch: name })}
+                        onClick={() => onSwitchBranch(name)}
+                      >
+                        <BranchIcon />
+                      </button>
+                      <button
+                        type="button"
+                        className="sidebar-project-context-menu-branch-action"
+                        disabled={worktreeBusy}
+                        title={t("sidebar.worktreeFromBranchTitle", { branch: name })}
+                        aria-label={t("sidebar.worktreeFromBranchTitle", { branch: name })}
+                        onClick={() => onCreateWorktreeFromBranch(name)}
+                      >
+                        <WorktreeIcon />
+                      </button>
+                    </span>
+                  </div>
+                );
               })}
             {data.branches.length === 0 && data.remoteBranches.length === 0 && (
               <div className="sidebar-project-context-menu-hint">{t("sidebar.noOtherBranches")}</div>
+            )}
+            {/* The composer's chip is the app's one branching surface, so the
+                worktree list (switch a checkout, remove one) hangs off it too. */}
+            {onCreateWorktreeFromBranch && data.isGit && (
+              <button type="button" role="menuitem" onClick={onShowWorktrees}>
+                {t("sidebar.worktrees")}
+              </button>
             )}
           </>
         )}
@@ -495,6 +548,11 @@ export function ProjectContextMenuPanel({
       <>
         {back(t("sidebar.switchWorktree"), onShowWorktrees)}
         <div className="sidebar-project-context-menu-heading">{t("sidebar.newWorktree")}</div>
+        {worktreeBaseBranch && (
+          <div className="sidebar-project-context-menu-hint">
+            {t("sidebar.newWorktreeFrom", { branch: worktreeBaseBranch })}
+          </div>
+        )}
         <div className="sidebar-project-context-menu-form">
           <AppCombobox
             autoFocus

@@ -109,12 +109,47 @@ function render(overrides = {}) {
   return renderToStaticMarkup(React.createElement(ProjectContextMenuPanel, props));
 }
 
-test("the actions page offers branches and worktrees next to the existing entries", () => {
+test("the actions page is folder actions only", () => {
   const html = render();
-  for (const key of ["sidebar.switchBranch", "sidebar.worktrees", "sidebar.openTerminalHere", "Reveal", "sidebar.archiveProject"]) {
+  for (const key of ["sidebar.openTerminalHere", "Reveal", "sidebar.archiveProject"]) {
     assert.ok(html.includes(key), key);
   }
+  // Branching belongs to the composer's branch chip now; the project's "…" menu
+  // offers Switch branch / Worktrees… nowhere, DOM or native.
+  for (const key of ["sidebar.switchBranch", "sidebar.worktrees"]) {
+    assert.ok(!html.includes(key), `${key} is not a project-menu entry`);
+  }
   assert.doesNotMatch(html, /sidebar-project-context-menu--wide/);
+});
+
+test("a branch row gets the composer chip's two buttons, and the plain row does not", () => {
+  const plain = render({ view: "branches" });
+  assert.ok(!plain.includes("sidebar-project-context-menu-branch-actions"), "the sidebar's own page keeps the plain row");
+  const chip = render({ view: "branches", onCreateWorktreeFromBranch: () => {} });
+  assert.match(chip, /sidebar-project-context-menu-row sidebar-project-context-menu-row--branch/);
+  // One pair per branch: check it out, or make a worktree from it. Each button
+  // names itself twice (title and aria-label), so four branches mean eight hits.
+  assert.equal(chip.match(/sidebar\.checkOutBranchTitle\(/g)?.length, 8, "main, feature, dev, remote-only");
+  assert.equal(chip.match(/sidebar\.worktreeFromBranchTitle\(/g)?.length, 8);
+  // The branch already checked out (the render's selectedCwd is the feature
+  // worktree) cannot be checked out again.
+  const featureButton = chip.match(/<button[^>]*sidebar\.checkOutBranchTitle\(feature\)[^>]*>/);
+  assert.ok(featureButton, "the checkout button for the current branch");
+  assert.match(featureButton[0], /disabled/, "the current branch's checkout button is off");
+  const devButton = chip.match(/<button[^>]*sidebar\.checkOutBranchTitle\(dev\)[^>]*>/);
+  assert.ok(devButton && !/disabled/.test(devButton[0]), "another branch can be checked out");
+  // The worktree list hangs off the chip's branch page, where a checkout is switched or removed.
+  assert.ok(chip.includes(">sidebar.worktrees</"), "Worktrees… opens from the branch page");
+  assert.ok(!plain.includes(">sidebar.worktrees</"));
+});
+
+test("the new-worktree page names the branch it starts from", () => {
+  const plain = render({ view: "new-worktree", newBranch: "test-upload" });
+  assert.ok(!plain.includes("sidebar.newWorktreeFrom("), "from HEAD: no base sentence");
+  const from = render({ view: "new-worktree", newBranch: "test-upload", worktreeBaseBranch: "find-icons" });
+  assert.match(from, /sidebar-project-context-menu-hint">sidebar\.newWorktreeFrom\(find-icons\)</);
+  // Back is the worktree list, the page the form was opened from.
+  assert.match(from, /sidebar-project-context-menu-back[^>]*>[\s\S]*?sidebar\.switchWorktree</);
 });
 
 test("an archived project's menu offers only restore and reveal", () => {
@@ -186,19 +221,23 @@ test("git errors are shown on the page that caused them", () => {
   }
 });
 
-test("the sidebar wires the worktree pages into both the DOM and the native menu", async () => {
+test("the composer chip wires the branch and worktree pages, the sidebar does not", async () => {
   const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
-  // Native: a Worktrees entry next to Switch branch, and fetch in the branch popup.
-  assert.match(sidebar, /label: t\("sidebar\.worktrees"\), onSelect: \(\) => void showNativeWorktreeMenu\(projectRoot, at\)/);
-  assert.match(sidebar, /showNativeProjectWorktreeMenu\(\{/);
-  assert.match(sidebar, /onFetch: \(root\) => void \(async \(\) => \{/);
-  // Steps a native menu cannot do open the DOM menu at the same point.
-  assert.match(sidebar, /openDomProjectMenu\(root, point, "new-worktree", loaded\)/);
-  assert.match(sidebar, /openDomProjectMenu\(root, point, "worktrees", loaded\);\s+requestWorktreeRemoval\(path\)/);
-  // DOM: the view and every worktree action reach the menu.
-  for (const prop of ["view={projectMenuView}", "onFetch=", "onSelectWorktree=", "onConfirmRemove=", "onCreateWorktree="]) {
-    assert.ok(sidebar.includes(prop), prop);
+  const chip = await readFile(new URL("./ComposerBranchMenu.tsx", import.meta.url), "utf8");
+  const hook = await readFile(new URL("../hooks/useProjectWorktreeActions.ts", import.meta.url), "utf8");
+  // The DOM menu's pages are driven by the chip, through the shared action hook.
+  for (const prop of ["view={view}", "onFetch=", "onSelectWorktree=", "onConfirmRemove=", "onCreateWorktree=", "onCreateWorktreeFromBranch="]) {
+    assert.ok(chip.includes(prop), prop);
   }
-  // The hidden header panel and its branch list are gone for good.
-  assert.doesNotMatch(sidebar, /showLegacyHeaderProjectRows|WorktreeBranchList|wtDropdownOpen|sidebar-folder-row/);
+  assert.match(chip, /useProjectWorktreeActions\(\{/);
+  assert.match(chip, /showNativeProjectBranchMenu\(\{/);
+  assert.match(chip, /showNativeProjectWorktreeMenu\(\{/);
+  // Steps a native menu cannot do open the DOM menu at the same point.
+  assert.match(chip, /openMenuAt\(NEW_WORKTREE_VIEW, point\)/);
+  assert.match(chip, /openMenuAt\(WORKTREES_VIEW, point\);\s*actions\.requestRemove\(path\)/);
+  // The worktree created from a branch starts from that branch.
+  assert.match(hook, /createProjectWorktree\(projectRoot, branch, baseBranch\)/);
+  assert.match(chip, /actions\.create\(cwd, baseBranch \?\? undefined\)/);
+  // The sidebar has none of it left.
+  assert.doesNotMatch(sidebar, /showNativeProjectWorktreeMenu\(\{|openDomProjectMenu\(|wtDropdownOpen|sidebar-folder-row/);
 });

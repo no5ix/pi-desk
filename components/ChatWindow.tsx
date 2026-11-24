@@ -96,6 +96,13 @@ interface Props {
   onSelectProject?: () => void;
   projectOptions?: string[];
   onProjectChange?: (projectRoot: string) => void;
+  /** Fork: a new-session composer shows the branch of its folder and can switch
+   *  branch or open a worktree from it (components/ComposerBranchMenu.tsx). */
+  onBranchChipCwd?: string | null;
+  onBranchSwitched?: (branch: string) => void;
+  onComposerWorktreeCreated?: (path: string, branch: string) => void;
+  onComposerWorktreeSelected?: (path: string) => void;
+  onComposerWorktreeRemoved?: (path: string, fallbackRoot: string | null) => void;
   onOpenFile?: (filePath: string, page?: number) => void;
   /** Opens a written file's diff, with the session that wrote it. */
   onOpenFileDiff?: (filePath: string, sessionId?: string) => void;
@@ -300,7 +307,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onBranchChipCwd, onBranchSwitched, onComposerWorktreeCreated, onComposerWorktreeSelected, onComposerWorktreeRemoved, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatOnly = workspaceKind === "chat" || session?.workspaceKind === "chat";
@@ -1351,6 +1358,13 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       onSelectProject={chatOnly ? undefined : onSelectProject}
       projectOptions={chatOnly ? [] : projectOptions}
       onProjectChange={chatOnly ? undefined : onProjectChange}
+      // Only a new session can still choose where it works, so only it gets the
+      // branch chip; a session that has run is pinned to its own worktree.
+      branchChipCwd={onBranchChipCwd}
+      onBranchSwitched={onBranchSwitched}
+      onComposerWorktreeCreated={onComposerWorktreeCreated}
+      onComposerWorktreeSelected={onComposerWorktreeSelected}
+      onComposerWorktreeRemoved={onComposerWorktreeRemoved}
       chatOnly={chatOnly}
       chatAccess={chatAccess}
       onToggleChatUnlocked={handleToggleChatUnlocked}

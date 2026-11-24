@@ -27,18 +27,7 @@ import { createPortal } from "react-dom";
 import { ProjectPicker, selectProjectDirectoryNative } from "./ProjectPicker";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { chooseProjectDirectory } from "@/lib/project-directory-pick";
-import {
-  ProjectContextMenu,
-  currentCheckout,
-  fetchProjectBranchMenu,
-  fetchRemoteBranches,
-  showNativeProjectBranchMenu,
-  showNativeProjectWorktreeMenu,
-  type ProjectBranchMenuState,
-  type ProjectMenuView,
-  type WorktreeEntry,
-} from "./ProjectContextMenu";
-import { useProjectWorktreeActions } from "@/hooks/useProjectWorktreeActions";
+import { ProjectContextMenu, type WorktreeEntry } from "./ProjectContextMenu";
 import { getRecentProjects, PathLabel } from "./path-ui";
 import { APP_PREF_KEYS, getPref, getPrefJson, removePref, setPref, setPrefJson } from "@/lib/app-prefs";
 import { groupByProject } from "@/lib/project-group";
@@ -368,7 +357,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         : undefined)
       ?? worktreeState.worktrees.find((worktree) => worktree.isMain)
     : undefined;
-  const currentWorktreePath = currentWorktree?.path ?? null;
 
   /** Chat detection always comes from server-provided identity or the exact
    *  chat cwd the server returned. The browser never derives the hidden path. */
@@ -392,8 +380,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const match = allSessions.find((s) => s.cwd === cwd);
     return match?.projectRoot ?? cwd;
   }, [allSessions, isChatCwd, worktreeState]);
-  // Branch currently being checked out (name shown dimmed with a spinner)
-  const [wtSwitchingBranch, setWtSwitchingBranch] = useState<string | null>(null);
   // Ticked by the poll/focus effect below so the worktree row reflects
   // branches checked out outside pi (terminal, IDE) without a manual reload.
   const [wtPollTick, setWtPollTick] = useState(0);
@@ -467,9 +453,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     };
   }, [hideProjectPathHint]);
   const [projectMenuAnchor, setProjectMenuAnchor] = useState<MenuAnchor | null>(null);
-  const [projectBranchMenu, setProjectBranchMenu] = useState<ProjectBranchMenuState | null>(null);
-  const [projectMenuView, setProjectMenuView] = useState<ProjectMenuView>("actions");
-  const [projectBranchLoading, setProjectBranchLoading] = useState(false);
   // "Open in file manager" on a project row. Only the server can raise a
   // file-manager window, and only when the browser runs on that same machine,
   // so the browser asks once and the menu shows the entry only where it works;
@@ -742,8 +725,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       if (projectMenuRef.current && !projectMenuRef.current.contains(e.target as Node)) {
         setProjectMenu(null);
         setProjectMenuPos(null);
-        setProjectBranchMenu(null);
-        setProjectMenuView("actions");
       }
     };
     document.addEventListener("mousedown", handler);
@@ -973,7 +954,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [selectedCwdProp]);
 
   // Load worktrees for the current effective cwd
-  const [wtRefreshKey, setWtRefreshKey] = useState(0);
   useLayoutEffect(() => {
     if (!selectedCwd || selectedCwdIsChat) {
       setWorktreeState(null);
@@ -1002,7 +982,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         if (!cancelled) setWorktreeState(null);
       });
     return () => { cancelled = true; };
-  }, [selectedCwd, selectedCwdIsChat, wtRefreshKey, refreshKey, wtPollTick]);
+  }, [selectedCwd, selectedCwdIsChat, refreshKey, wtPollTick]);
 
   // Keep the worktree/branch display honest when branches are switched outside
   // pi (terminal, IDE, another client): poll while the tab is visible and
@@ -1056,122 +1036,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setProjectMenu(null);
     setProjectMenuPos(null);
     setProjectMenuAnchor(null);
-    setProjectBranchMenu(null);
-    setProjectMenuView("actions");
   }, []);
-
-  /** Loads the branch and worktree lists behind the DOM menu's branch / worktree pages. */
-  const loadProjectMenuData = useCallback(async (projectRoot: string) => {
-    setProjectBranchMenu({ root: projectRoot, isGit: false, branches: [], remoteBranches: [], worktrees: [], loaded: false });
-    setProjectBranchLoading(true);
-    try {
-      const data = await fetchProjectBranchMenu(projectRoot);
-      setProjectBranchMenu((prev) => prev?.root === projectRoot ? data : prev);
-    } finally {
-      setProjectBranchLoading(false);
-    }
-  }, []);
-
-  const worktreeActions = useProjectWorktreeActions({
-    onBranchesFetched: (projectRoot, lists) => {
-      setProjectBranchMenu((prev) => prev?.root === projectRoot ? { ...prev, ...lists } : prev);
-    },
-    onWorktreeCreated: (projectRoot, path, branch) => {
-      closeProjectMenu();
-      // Register the new worktree right away so projectFor() resolves it to
-      // the main repo before the refetch lands (keeps AppShell from treating
-      // the new cwd as a different project).
-      setWorktreeState((prev) => prev?.projectRoot === projectRoot ? {
-        ...prev,
-        forCwd: path,
-        currentWorktreePath: path,
-        worktrees: [...prev.worktrees, { path, branch, isMain: false }],
-      } : prev);
-      setSelectedCwd(path);
-      setWtRefreshKey((k) => k + 1);
-    },
-    onWorktreeRemoved: (projectRoot, path) => {
-      if (currentWorktreePath === path || selectedCwd === path) setSelectedCwd(projectRoot);
-      setWtRefreshKey((k) => k + 1);
-      void loadProjectMenuData(projectRoot);
-      void loadSessions(false);
-    },
-  });
-  const { reset: resetWorktreeActions } = worktreeActions;
-
-  const showProjectMenuView = useCallback((projectRoot: string, view: ProjectMenuView) => {
-    resetWorktreeActions();
-    setProjectMenuView(view);
-    if (view !== "actions" && projectBranchMenu?.root !== projectRoot) void loadProjectMenuData(projectRoot);
-    if (view === "actions") setProjectBranchMenu(null);
-  }, [loadProjectMenuData, projectBranchMenu, resetWorktreeActions]);
-
-  /**
-   * Opens the DOM menu at a native popup's point, for the steps a native menu
-   * cannot do: typing a branch name, confirming a removal, showing an error.
-   */
-  const openDomProjectMenu = useCallback((projectRoot: string, at: NativeMenuPoint, view: ProjectMenuView, loaded?: ProjectBranchMenuState) => {
-    const menuWidth = 240;
-    setProjectMenu({ root: projectRoot });
-    setProjectMenuPos({
-      top: Math.max(8, Math.min(at.y, window.innerHeight - 160)),
-      left: Math.max(8, Math.min(at.x, window.innerWidth - menuWidth - 8)),
-    });
-    // The native popup's point stands in for the anchor, so the DOM menu that
-    // takes over still flips above when the space below runs out.
-    setProjectMenuAnchor({ top: at.y, bottom: at.y, right: at.x });
-    setProjectMenuView(view);
-    setProjectRevealError(null);
-    if (loaded?.root === projectRoot) setProjectBranchMenu(loaded);
-    else void loadProjectMenuData(projectRoot);
-  }, [loadProjectMenuData]);
-
-  const handleSwitchProjectBranch = useCallback(async (projectRoot: string, branch: string, loaded?: ProjectBranchMenuState, at?: NativeMenuPoint) => {
-    if (wtSwitchingBranch) return;
-    const branchData = loaded ?? (projectBranchMenu?.root === projectRoot ? projectBranchMenu : null);
-    const checkout = branchData ? currentCheckout(branchData.worktrees, selectedCwd) ?? null : null;
-    const holder = branchData?.worktrees.find((w) => w.branch === branch && w.path !== checkout?.path);
-    if (holder) {
-      setSelectedCwd(holder.path);
-      closeProjectMenu();
-      return;
-    }
-    if (checkout?.branch === branch) {
-      setSelectedCwd(checkout.path);
-      closeProjectMenu();
-      return;
-    }
-
-    const cwd = checkout?.path ?? projectRoot;
-    setWtSwitchingBranch(branch);
-    worktreeActions.setError(null);
-    let failure: string | null = null;
-    try {
-      const res = await fetch("/api/worktrees", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, branch }),
-      });
-      const data = await res.json().catch(() => ({})) as { branch?: string; error?: string };
-      if (!res.ok || data.error || !data.branch) {
-        failure = data.error ?? `HTTP ${res.status}`;
-      } else {
-        setSelectedCwd(cwd);
-        closeProjectMenu();
-        setWtRefreshKey((k) => k + 1);
-        void loadSessions(false);
-      }
-    } catch (e) {
-      failure = e instanceof Error ? e.message : String(e);
-    } finally {
-      setWtSwitchingBranch(null);
-    }
-    if (failure) {
-      // A native popup has already closed, so show git's answer in the DOM menu.
-      if (at) openDomProjectMenu(projectRoot, at, "branches", branchData ?? undefined);
-      worktreeActions.setError(failure);
-    }
-  }, [closeProjectMenu, loadSessions, openDomProjectMenu, projectBranchMenu, selectedCwd, worktreeActions, wtSwitchingBranch]);
 
   // Clicking a session moves the effective cwd to that session's worktree.
   // Done on the click path (not via the selectedCwd prop sync) so it also
@@ -1378,59 +1243,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     });
   }, [closeProjectMenu]);
 
-  // Desktop shell: native popup versions of the project menu and its branch
-  // and worktree lists. `projectMenu` stays set while one is up (it keeps the
-  // row's "…" visible) but `projectMenuPos` stays null, so the DOM menu never
-  // renders — until a step needs it (openDomProjectMenu).
-  const { setError: setWorktreeError, requestRemove: requestWorktreeRemoval } = worktreeActions;
-  const showNativeBranchMenu = useCallback(function showBranches(projectRoot: string, at: NativeMenuPoint): Promise<void> {
-    return showNativeProjectBranchMenu({
-      projectRoot,
-      at,
-      selectedCwd,
-      switchingBranch: wtSwitchingBranch,
-      t,
-      onSwitch: (root, branch, loaded) => void handleSwitchProjectBranch(root, branch, loaded, at),
-      onFetch: (root) => void (async () => {
-        try {
-          await fetchRemoteBranches(root);
-          await showBranches(root, at);
-        } catch (e) {
-          openDomProjectMenu(root, at, "branches");
-          setWorktreeError(e instanceof Error ? e.message : String(e));
-        }
-      })(),
-    });
-  }, [handleSwitchProjectBranch, openDomProjectMenu, selectedCwd, setWorktreeError, t, wtSwitchingBranch]);
-
-  const showNativeWorktreeMenu = useCallback((projectRoot: string, at: NativeMenuPoint) => showNativeProjectWorktreeMenu({
-    projectRoot,
-    at,
-    selectedCwd,
-    t,
-    onSelect: (path) => setSelectedCwd(path),
-    onNew: (root, point, loaded) => {
-      resetWorktreeActions();
-      openDomProjectMenu(root, point, "new-worktree", loaded);
-    },
-    onRemove: (root, path, point, loaded) => {
-      resetWorktreeActions();
-      openDomProjectMenu(root, point, "worktrees", loaded);
-      requestWorktreeRemoval(path);
-    },
-  }), [openDomProjectMenu, requestWorktreeRemoval, resetWorktreeActions, selectedCwd, t]);
-
+  // Desktop shell: the project menu as a native popup. `projectMenu` stays set
+  // while it is up (it keeps the row's "…" visible) but `projectMenuPos` stays
+  // null, so the DOM menu never renders.
   const showNativeProjectMenu = useCallback(async (projectRoot: string, at: NativeMenuPoint, archived = false): Promise<boolean> => {
     setProjectMenu({ root: projectRoot, archived });
     setProjectMenuPos(null);
-    setProjectBranchMenu(null);
     setProjectRevealError(null);
     const shown = await showNativeMenu(archived ? [
       { label: t("sidebar.restoreProject"), onSelect: () => restoreProject(projectRoot) },
       { label: revealProjectLabel, onSelect: () => void revealProjectInFileManager(projectRoot) },
     ] : [
-      { label: `${t("sidebar.switchBranch")}…`, onSelect: () => void showNativeBranchMenu(projectRoot, at) },
-      { label: t("sidebar.worktrees"), onSelect: () => void showNativeWorktreeMenu(projectRoot, at) },
       ...(onOpenTerminal
         ? [{ label: t("sidebar.openTerminalHere"), onSelect: () => onOpenTerminal(projectRoot) }]
         : []),
@@ -1444,7 +1267,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     ], at);
     setProjectMenu((current) => (current?.root === projectRoot ? null : current));
     return shown;
-  }, [archiveProject, onOpenTerminal, pinnedProjects, projectSessionsToDelete, requestProjectSessionsDelete, restoreProject, revealProjectInFileManager, revealProjectLabel, showNativeBranchMenu, showNativeWorktreeMenu, t]);
+  }, [archiveProject, onOpenTerminal, pinnedProjects, projectSessionsToDelete, requestProjectSessionsDelete, restoreProject, revealProjectInFileManager, revealProjectLabel, t]);
 
   /** "…" opens the menu under the button; a right-click opens it at the cursor. */
   const openProjectMenu = useCallback((e: React.MouseEvent<HTMLElement>, projectRoot: string, archived = false) => {
@@ -1452,7 +1275,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const atCursor = e.type === "contextmenu";
     if (atCursor) e.preventDefault();
     e.stopPropagation();
-    resetWorktreeActions();
     if (canUseNativeMenu()) {
       void showNativeProjectMenu(projectRoot, atCursor ? { x: e.clientX, y: e.clientY } : menuPointBelow(e.currentTarget), archived);
       return;
@@ -1472,10 +1294,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     // The menu measures its own height and flips above the row when the space
     // below is too small, so the last items stay reachable.
     setProjectMenuAnchor(anchor);
-    setProjectBranchMenu(null);
-    setProjectMenuView("actions");
     setProjectRevealError(null);
-  }, [closeProjectMenu, hideProjectPathHint, projectMenu, resetWorktreeActions, showNativeProjectMenu]);
+  }, [closeProjectMenu, hideProjectPathHint, projectMenu, showNativeProjectMenu]);
 
   // Phase A: project tree — groups sessions by project root. Sorting is
   const trimmedSessionQuery = sessionQuery.trim().toLowerCase();
@@ -1665,10 +1485,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const rowTitle = branchSubtitle ? `${group.projectRoot} · ${branchSubtitle}` : group.projectRoot;
     const displayName = (archived ? archivedDisplayNames : projectDisplayNames).get(group.projectRoot) ?? group.displayName;
 
+    const pinned = !archived && pinnedProjects.has(group.projectRoot);
     return (
       <div key={group.projectRoot} className={`sidebar-project-tree-group${isCollapsed ? " is-collapsed" : ""}${isActive ? " is-active" : ""}${archived ? " is-archived" : ""}`}>
         <div
-          className={`sidebar-project-tree-row${isMenuOpen ? " is-menu-open" : ""}`}
+          className={`sidebar-project-tree-row${isMenuOpen ? " is-menu-open" : ""}${pinned ? " is-pinned" : ""}`}
           onContextMenu={(e) => openProjectMenu(e, group.projectRoot, archived)}
         >
           <button
@@ -1734,6 +1555,27 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               </span>
             )}
           </button>
+          {/* A pinned project keeps its pin on the row at all times, in a slot of
+              its own just left of the hover-only "＋"/"…" pair, so the glyph never
+              shifts when the actions appear and every pinned row marks the same spot. */}
+          {pinned && (
+            <span className="sidebar-project-tree-pin" title={t("sidebar.pinProject")}>
+              <svg
+                className="session-item-pin"
+                aria-label={t("sidebar.pinProject")}
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
+              </svg>
+            </span>
+          )}
           {/* Hover-only overlay at the row's trailing edge: it covers the tail of a
               long name instead of reserving width the rest of the time. */}
           <div className="sidebar-project-tree-row-actions" data-no-drag>
@@ -2431,24 +2273,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           projectRoot={projectMenu.root}
           pos={projectMenuPos}
           anchor={projectMenuAnchor}
-          view={projectMenuView}
-          branchMenu={projectBranchMenu}
-          branchLoading={projectBranchLoading}
-          selectedCwd={selectedCwd}
-          switchingBranch={wtSwitchingBranch}
-          fetching={worktreeActions.fetching}
-          worktreeBusy={worktreeActions.busy}
-          worktreeError={worktreeActions.error}
-          confirmRemove={worktreeActions.confirmRemove}
-          newBranch={worktreeActions.newBranch}
           canReveal={isTauriDesktop() || fileManagerAvailability?.supported === true}
           revealLabel={revealProjectLabel}
           projectRevealError={projectRevealError}
           t={t}
-          onShowBranches={() => showProjectMenuView(projectMenu.root, "branches")}
-          onShowWorktrees={() => showProjectMenuView(projectMenu.root, "worktrees")}
-          onShowNewWorktree={() => showProjectMenuView(projectMenu.root, "new-worktree")}
-          onBackToActions={() => showProjectMenuView(projectMenu.root, "actions")}
           onClose={closeProjectMenu}
           onOpenTerminal={onOpenTerminal ? () => {
             const cwd = projectMenu.root;
@@ -2471,17 +2299,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             closeProjectMenu();
             requestProjectSessionsDelete(root);
           }}
-          onSwitchBranch={(branch) => void handleSwitchProjectBranch(projectMenu.root, branch)}
-          onFetch={() => void worktreeActions.fetchBranches(projectMenu.root)}
-          onSelectWorktree={(path) => {
-            setSelectedCwd(path);
-            closeProjectMenu();
-          }}
-          onRequestRemove={worktreeActions.requestRemove}
-          onConfirmRemove={(removal) => void worktreeActions.remove(projectMenu.root, removal)}
-          onCancelRemove={worktreeActions.cancelRemove}
-          onNewBranchChange={worktreeActions.setNewBranch}
-          onCreateWorktree={() => void worktreeActions.create(projectMenu.root)}
         />
       )}
       {continueChat && (
