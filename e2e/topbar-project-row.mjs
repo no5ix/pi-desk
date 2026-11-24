@@ -74,18 +74,28 @@ const MEASURE = () => {
   const clock = rect(".app-topbar-elapsed");
   const counts = rect(".app-topbar-subagents");
   const project = rect(".app-topbar-project");
+  const context = document.querySelector(".app-topbar-context-hit");
   const tip = document.querySelector(".app-topbar-tip");
   const tipValue = tip?.querySelector(".app-topbar-tip-value");
   const box = tip?.getBoundingClientRect();
   return {
     viewport: window.innerWidth,
     project: label(".app-topbar-project-hit > span"),
+    context: context ? {
+      left: context.getBoundingClientRect().left,
+      top: context.getBoundingClientRect().top,
+      width: Math.round(context.getBoundingClientRect().width),
+      title: context.getAttribute("title"),
+      label: context.getAttribute("aria-label"),
+    } : null,
     branchText: label(".app-topbar-branch-hit > span"),
     onOneLine: Math.abs(project.top - clock.top) < 4 && Math.abs(clock.top - counts.top) < 4,
     title: rect(".app-topbar-title"),
     titleText: label(".app-topbar-title > span"),
     actions: rect(".app-topbar-actions"),
     countsRight: counts.right,
+    countsLeft: counts.left,
+    countsTop: counts.top,
     actionsLeft: rect(".app-topbar-actions").left,
     gapTextClock: Math.round(clock.left - branchWords.right),
     gapClockCounts: Math.round(counts.left - clock.right),
@@ -106,6 +116,16 @@ const MEASURE = () => {
       right: Math.round(box.right),
       visible: getComputedStyle(tip).visibility,
     } : null,
+    // Every row of the open tip, in order: the context tip is two values and a row that
+    // acts, so the check reads them all and not just the first.
+    tipRows: tip ? [...tip.querySelectorAll(".app-topbar-tip-value")].map((value) => ({
+      label: value.previousElementSibling?.classList.contains("app-topbar-tip-label")
+        ? value.previousElementSibling.textContent : null,
+      value: value.textContent,
+      cut: value.scrollWidth - value.clientWidth,
+      lines: Math.round(value.getBoundingClientRect().height / (parseFloat(getComputedStyle(value).lineHeight) || 16)),
+    })) : null,
+    tipActions: tip ? tip.querySelectorAll(".app-topbar-tip-action").length : 0,
     overflow: document.documentElement.scrollWidth,
   };
 };
@@ -161,6 +181,35 @@ assert.equal(projectTip.tip.rows, 1);
 assert.ok(projectTip.tip.valueCut <= 1, `the path reads complete in its tip (${projectTip.tip.valueCut})`);
 await page.mouse.move(10, 700);
 
+// The context chip, last in the row. It left the composer's control strip with a
+// sentence (`37.6% ctx · 161.8M tok`) that used to live in a native tooltip; the header
+// shows it in the app's tip, which opens on hover, focus **or a tap**.
+await page.hover(".app-topbar-context-hit");
+const contextTip = await page.evaluate(MEASURE);
+assert.ok(contextTip.context, "the header carries the context chip");
+assert.ok(contextTip.tip, "hovering the ring opens its tip");
+assert.equal(contextTip.tipRows.length, 2, "the fullness, and the window it is a fraction of");
+assert.equal(contextTip.tipRows[0].label, "Context usage");
+assert.equal(contextTip.tipRows[0].value, "37.6% ctx · 161.8M tok · $0.123", "the sentence, unchanged");
+assert.ok(contextTip.tipRows[0].cut <= 1, `the tip does not cut the numbers it exists to show (${contextTip.tipRows[0].cut})`);
+assert.equal(contextTip.tipRows[1].label, "Window");
+assert.equal(contextTip.tipRows[1].value, "400k / 1.0M");
+assert.equal(contextTip.tipActions, 1, "the tip keeps the ring's way into the session-stats panel");
+assert.equal(contextTip.context.title, null, "no native tooltip: it never opens on a phone");
+assert.equal(contextTip.context.label, "Context: 37.6% ctx · 161.8M tok · $0.123",
+  "the accessible name is the sentence the tip shows");
+assert.ok(contextTip.context.left > contextTip.countsLeft, "the context chip is the row's last control");
+assert.ok(Math.abs(contextTip.context.top - contextTip.countsTop) < 8, "on the row's own line, not stacked under it");
+await page.click(".app-topbar-context-hit");
+await page.mouse.move(10, 700);
+assert.ok((await page.evaluate(MEASURE)).tip, "a click pins the tip: the way in without hover");
+await page.keyboard.press("Escape");
+assert.equal((await page.evaluate(MEASURE)).tip, null, "Escape closes it");
+await page.hover(".app-topbar-context-hit");
+await page.click(".app-topbar-tip-action");
+assert.equal(await page.evaluate(() => window.__statsOpened ?? 0), 1, "the tip's row opens the session-stats panel");
+await page.mouse.move(10, 700);
+
 const touch = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });
 const phone = await touch.newPage();
 await phone.goto(url);
@@ -193,6 +242,15 @@ assert.ok(onPhone.tip.valueCut <= 1, `the path is complete on a phone (${onPhone
 assert.ok(onPhone.tip.right <= 390 && onPhone.tip.left >= 0, "the project tip fits the phone's width");
 await phone.keyboard.press("Escape");
 
+await phone.tap(".app-topbar-context-hit");
+const phoneContext = await phone.evaluate(MEASURE);
+assert.ok(phoneContext.tip, "a tap opens the context tip on a phone, where a native tooltip never opened");
+assert.equal(phoneContext.tipRows[0].value, "37.6% ctx · 161.8M tok · $0.123", "with the whole sentence");
+assert.ok(phoneContext.tipRows[0].cut <= 1, `the numbers read complete on a phone (${phoneContext.tipRows[0].cut})`);
+assert.ok(phoneContext.tip.right <= 390 && phoneContext.tip.left >= 0, "the context tip fits the phone's width");
+assert.ok(phoneContext.onOneLine, "the fifth label does not stack the row");
+await phone.keyboard.press("Escape");
+
 // The case the phone truly cannot fit: a branch name and a path longer than the screen.
 // The tips wrap — a tip that cut its own value would defeat the tip.
 const longPhone = await touch.newPage();
@@ -211,6 +269,19 @@ const longPath = await longPhone.evaluate(MEASURE);
 assert.ok(longPath.tip.valueCut <= 1, `a long path reads complete in the tip (${longPath.tip.valueCut})`);
 assert.ok(longPath.tip.height > onPhone.tip.height,
   `and wraps to lines the phone can show (${onPhone.tip.height}px → ${longPath.tip.height}px)`);
+await longPhone.keyboard.press("Escape");
+await longPhone.tap(".app-topbar-context-hit");
+const longContext = await longPhone.evaluate(MEASURE);
+assert.equal(longContext.tipRows[0].cut <= 1, true, "the sentence is complete over a long branch name too");
+await longPhone.keyboard.press("Escape");
+
+// A session that has never run has no context to report: the chip renders nothing, so
+// an empty ring never reads as a spinner in the header.
+const dormant = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+await dormant.goto(`${url}?novalue=1`);
+await dormant.waitForSelector(".app-topbar-branch-hit");
+assert.equal((await dormant.evaluate(MEASURE)).context, null, "no usage, no chip");
+await dormant.close();
 await touch.close();
 
 // The controls: the two rules that produced the photographs.

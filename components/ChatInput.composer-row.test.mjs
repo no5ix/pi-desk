@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-// The composer's session row (project, model, context ring, controls) must fit
-// the width it is given on a phone and in a squeezed desktop window (the open
-// workspace panel). It used to be a three-column grid whose first column was
-// `auto`: a phone renders only two children there, so the controls block landed
-// in the 1fr track while the model chip's untruncated max-content widened the
-// first column. The "More controls" button (16px in a zero-width track) then
-// painted on top of the context-usage ring, and on a desktop the model chip's
-// fixed 220px box overflowed its own shrunken root onto the ring.
+// The composer's session row (project, model, controls) must fit the width it is
+// given on a phone and in a squeezed desktop window (the open workspace panel). It
+// used to be a three-column grid whose first column was `auto`: a phone renders only
+// two children there, so the controls block landed in the 1fr track while the model
+// chip's untruncated max-content widened the first column. The "More controls" button
+// (16px in a zero-width track) then painted on top of the context-usage ring, and on a
+// desktop the model chip's fixed 220px box overflowed its own shrunken root onto the
+// ring. The ring has since left this row for the conversation header
+// (components/TopbarContextChip.tsx); the width rules that fixed it stay.
 const chatInput = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const modelSource = await readFile(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
-const ringSource = await readFile(new URL("./ContextUsageRing.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
 
 const rowStart = chatInput.indexOf('className="chat-composer-controls"');
@@ -28,12 +28,14 @@ test("the narrow composer row gives the controls block its own track", () => {
     "an `auto` first track sizes to the model chip's max-content and pushes the trailing cell out of the row");
 });
 
-test("the left cell can shrink and the ring keeps its box", () => {
+test("the left cell can shrink, and no context control is left in the row", () => {
   assert.ok(leftCell, "the left cell is one styled div");
   assert.match(leftCell[0], /flex: isNarrow \? "1 1 auto" : "0 1 auto"/, "it shrinks in both tiers, so the chips truncate instead of pushing the controls out");
   assert.match(leftCell[0], /minWidth: 0/, "min-width:auto would stop it at the model name's content size");
-  assert.match(leftCell[0], /<ContextUsageRing/, "the context ring lives in this cell");
-  assert.match(ringSource, /width: 32, height: 32, padding: 0, flexShrink: 0/, "the ring is never squeezed below its button");
+  // The context moved to the header, so nothing may grow back into the strip the
+  // phone's More button has to share.
+  assert.doesNotMatch(chatInput, /ContextUsageRing/, "the composer renders no context ring");
+  assert.doesNotMatch(chatInput, /contextUsage|sessionStats/, "and it is not given the numbers any more");
 });
 
 test("the More controls button keeps its 32px box", () => {
@@ -91,4 +93,70 @@ test("the card keeps one control row: attach, the session controls, then Send", 
   assert.match(modelSource, /const triggerTitle = iconOnly \? `\$\{currentName\} — \$\{buttonTitle\}` : buttonTitle/,
     "the model's name rides in the title and aria-label");
   assert.match(modelSource, /\{!iconOnly && <span/, "the name is only printed when the label is asked for");
+});
+
+/** One top-level CSS block, by selector. */
+function cssRule(source, selector) {
+  const at = source.indexOf(`\n${selector} {`);
+  if (at === -1) return null;
+  const end = source.indexOf("\n}", at);
+  return source.slice(at, end);
+}
+
+test("the card has no clear button, and its row is quiet", async () => {
+  // A textarea is selected and deleted; a trash icon in the row asked for a click to
+  // do that, and the row is where the controls with no keyboard equivalent live.
+  assert.doesNotMatch(chatInput, /className="composer-clear-button"/, "the clear button is gone from the composer");
+  assert.doesNotMatch(chatInput, /onClearDraft/, "and the composer is not handed a draft-clearing callback any more");
+  const chatWindow = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(chatWindow, /onClearDraft/, "the shell stops forwarding one");
+  for (const locale of ["en", "zh-CN", "zh-TW"]) {
+    const messages = await readFile(new URL(`../lib/i18n/messages/${locale}.ts`, import.meta.url), "utf8");
+    assert.doesNotMatch(messages, /"chat\.clearDraft"/, `${locale}: the key left with the button`);
+  }
+  // Attaching gets no plate: it is a quiet glyph in a row of quiet glyphs, and the
+  // disc made it read as a toggle that was switched on.
+  const active = cssRule(css, ".composer-attach-button[data-active]");
+  assert.ok(active, "the attached state is styled");
+  assert.match(active, /color: var\(--text\);/, "it says so in the glyph's colour");
+  assert.doesNotMatch(active, /background/, "and grows no background of its own");
+  assert.match(cssRule(css, ".composer-attach-button") ?? "", /background: none;/, "at rest the button is bare");
+  // What replaced the button: every attachment names its own remove control, images
+  // included (the image's × used to be an unlabelled glyph, readable only because the
+  // clear button stood next to it).
+  assert.match(chatInput, /onClick=\{\(\) => removeImage\(i\)\}\n\s*aria-label=\{t\("chat\.removeImage"\)\}/,
+    "the image's × says what it removes");
+  const plugins = await readFile(new URL("../lib/i18n/locale-plugins.ts", import.meta.url), "utf8");
+  const key = /"chat\.removeImage": "(Remove image|移除图片|移除圖片)",/g;
+  assert.equal(plugins.match(key)?.length, 3, "the key carries all three locales");
+});
+
+test("the / @ # hint rides the placeholder's row", () => {
+  // It used to be a flex child under the text: the card grew a second line for a
+  // sentence that only reads once, and the hint sat out of the eye's line.
+  const hint = cssRule(css, ".composer-trigger-hint");
+  assert.ok(hint, "the hint is styled");
+  assert.match(hint, /position: absolute;/, "it is laid over the text's first line, not added under it");
+  assert.match(hint, /top: calc\(8px \+ \(var\(--composer-line-height\) - 1\.4em\) \/ 2\);/,
+    "centered on the first line, off the textarea's top margin, tracking the chat font size");
+  assert.match(hint, /right: 0;/, "flush with the text's right edge");
+  assert.match(hint, /pointer-events: none;/, "it never takes a click meant for the text");
+  assert.doesNotMatch(hint, /flex: 0 0 auto|align-self: center/, "it is no longer a row of its own");
+  assert.match(cssRule(css, ".chat-composer-editor") ?? "", /position: relative;/,
+    "the card is the box the hint is placed in");
+  // The gates stay: an empty, idle, wide card only.
+  const hintJsx = chatInput.slice(chatInput.indexOf('className="composer-trigger-hint"') - 220, chatInput.indexOf('className="composer-trigger-hint"'));
+  assert.match(hintJsx, /!compact && !isNarrow && !isStreaming && value\.length === 0/,
+    "the hint shows on a wide, idle, empty card");
+  assert.ok(chatInput.indexOf('className="chat-input-textarea"') < chatInput.indexOf('className="composer-trigger-hint"'),
+    "the hint is in the card, after the text");
+});
+
+test("the full-width text area stays inside the card", () => {
+  // `width: 100%` plus a horizontal margin pushed the text 8px past the card's right
+  // edge; the card's own inset is its padding.
+  const rule = cssRule(css, ".chat-composer-editor > .chat-input-textarea");
+  assert.ok(rule, "the textarea has a rule of its own");
+  assert.match(rule, /margin: 8px 0 0;/, "only a top margin");
+  assert.doesNotMatch(rule, /margin: 8px;/, "no horizontal margin on top of width: 100%");
 });

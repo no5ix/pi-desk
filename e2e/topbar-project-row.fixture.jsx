@@ -2,6 +2,7 @@ import { createRoot } from "react-dom/client";
 import { I18nProvider } from "@/hooks/useI18n";
 import { TopbarBranchChip } from "@/components/TopbarBranchChip";
 import { TopbarProjectChip } from "@/components/TopbarProjectChip";
+import { TopbarContextChip } from "@/components/TopbarContextChip";
 
 /**
  * The conversation header's project row, in a real browser.
@@ -19,7 +20,10 @@ import { TopbarProjectChip } from "@/components/TopbarProjectChip";
 function TopbarRow() {
   // `?long=1` is the case a phone cannot fit: a branch name and a path long enough that
   // the row cuts them to a stub, and the tips have to wrap to show them complete.
-  const long = new URLSearchParams(location.search).get("long") === "1";
+  // `?novalue=1` is a session that has never run: the context chip renders nothing.
+  const params = new URLSearchParams(location.search);
+  const long = params.get("long") === "1";
+  const noUsage = params.get("novalue") === "1";
   const branch = long
     ? "claude/conversation-list-optimization-and-header-widths-9ec111"
     : "feat/branch-picker-header-worktrees";
@@ -68,6 +72,16 @@ function TopbarRow() {
                 <span>2</span>
               </span>
             </button>
+            <TopbarContextChip
+              contextUsage={noUsage ? null : { percent: 37.6, contextWindow: 1_000_000, tokens: 400_000 }}
+              sessionStats={noUsage ? null : {
+                sessionId: "s", sessionIdShort: "s", sessionFile: "/tmp/s.jsonl", sessionName: null,
+                userMessages: 4, assistantMessages: 9, toolCalls: 21, toolResults: 21, totalMessages: 34,
+                tokens: { input: 120_000_000, output: 41_800_000, cacheRead: 0, cacheWrite: 0, total: 161_800_000 },
+                cost: 0.123, totalActiveMs: 0,
+              }}
+              onOpenStats={() => { window.__statsOpened = (window.__statsOpened ?? 0) + 1; }}
+            />
           </span>
         </div>
         <div className="app-topbar-actions" style={{ display: "flex", alignItems: "center", gap: 2, flex: "0 0 auto" }}>

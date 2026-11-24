@@ -36,6 +36,7 @@ import { TopbarElapsed } from "./TopbarElapsed";
 import { TopbarSubagents, countSubagents } from "./TopbarSubagents";
 import { TopbarBranchChip } from "./TopbarBranchChip";
 import { TopbarProjectChip } from "./TopbarProjectChip";
+import { TopbarContextChip } from "./TopbarContextChip";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useFonts } from "@/hooks/useFonts";
@@ -2545,6 +2546,17 @@ export function AppShell() {
                     counts={topBarSubagents}
                     onOpenAgents={() => toggleTopPanel("agents")}
                     translate={translate}
+                  />
+                )}
+                {/* The context ring, last in the row. It left the composer's control
+                    strip: how full the window is belongs with the conversation's other
+                    state, and its numbers are longer than a phone, so they go in the
+                    app's tip (hover, focus or a tap), never in a native tooltip. */}
+                {showChat && !pageOpen && (
+                  <TopbarContextChip
+                    contextUsage={contextUsage}
+                    sessionStats={sessionStats}
+                    onOpenStats={openSessionStatsPanel}
                   />
                 )}
               </span>

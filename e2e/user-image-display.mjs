@@ -46,14 +46,26 @@ try {
   await composer.fill("");
   await edit.click({ force: true });
   assert.equal(await page.locator("#admitted").textContent(), "blocked");
-  await page.getByRole("button", { name: "Clear text and attachments", exact: true }).click();
+  // The card has no "clear" button. The attachment carries its own remove control, the
+  // text is selected and deleted, and history-edit mode is left through Cancel.
+  const removeImage = page.getByRole("button", { name: "Remove image", exact: true });
+  assert.equal(await removeImage.count(), 1, "the attached image names its own remove control");
+  await removeImage.click();
   await edit.click({ force: true });
   assert.equal(await page.locator("#admitted").textContent(), "accepted");
-  // The real clear action leaves edit mode and removes both text and images.
-  await page.getByRole("button", { name: "Clear text and attachments", exact: true }).click();
+  // Emptying the composer is the text's own delete plus the attachment's ×; leaving
+  // history-edit mode is Cancel's job, and it keeps what the composer holds.
+  await composer.fill("");
+  await removeImage.click();
   assert.equal(await composer.inputValue(), "");
-  assert.equal(await page.getByRole("button", { name: "Cancel", exact: true }).count(), 0);
-  assert.equal(await page.getByRole("button", { name: "Clear text and attachments", exact: true }).count(), 0);
+  assert.equal(await removeImage.count(), 0, "the image is gone");
+  // The fixture stacks a bare composer under a message bubble with no app shell around
+  // it, so the bubble paints over the short composer's row; the edit links in this
+  // file are clicked the same way.
+  await page.getByRole("button", { name: "Cancel", exact: true }).click({ force: true });
+  assert.equal(await page.getByRole("button", { name: "Cancel", exact: true }).count(), 0,
+    "Cancel is the way out of history-edit mode");
+  assert.equal(await composer.inputValue(), "", "and it leaves the composer as it was");
   await edit.click({ force: true });
   const draft = JSON.parse(await page.locator("#draft").textContent());
   assert.equal(draft.content[0].text, "describe");

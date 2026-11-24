@@ -3588,16 +3588,26 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   white-space: nowrap;
 }
 
-/* The project and the branch are controls, not labels with a native tooltip: hover,
-   focus, or a tap opens the app's own tip with the value the row cut. A native `title`
-   never opens on a phone, and on Safari it showed a raw i18n key. */
+/* The project, the branch and the context ring are controls, not labels with a native
+   tooltip: hover, focus, or a tap opens the app's own tip with the value the row cut. A
+   native `title` never opens on a phone, and on Safari it showed a raw i18n key. */
 .app-topbar-project--chip,
 .app-topbar-branch--chip {
   padding: 0;
 }
 
+.app-topbar-context {
+  /* A 13px ring in a row of text: it sits on the label's baseline band, and it is the
+     one chip that never shrinks — the project name is the thing that gives way. */
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: 2px;
+}
+
 .app-topbar-project-hit,
-.app-topbar-branch-hit {
+.app-topbar-branch-hit,
+.app-topbar-context-hit {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -3613,13 +3623,24 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   transition: background var(--dur-fast) var(--ease-native);
 }
 
+.app-topbar-context-hit {
+  padding: 3px;
+}
+
 .app-topbar-project-hit:hover,
-.app-topbar-branch-hit:hover {
+.app-topbar-branch-hit:hover,
+.app-topbar-context-hit:hover,
+/* While its tip is open the control carries the wash: `aria-describedby` is set for
+   exactly that moment, so a phone's tap leaves the pressed chip visibly open too. */
+.app-topbar-project-hit[aria-describedby],
+.app-topbar-branch-hit[aria-describedby],
+.app-topbar-context-hit[aria-describedby] {
   background: var(--bg-hover);
 }
 
 .app-topbar-project-hit:focus-visible,
-.app-topbar-branch-hit:focus-visible {
+.app-topbar-branch-hit:focus-visible,
+.app-topbar-context-hit:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -3644,12 +3665,31 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 
 .app-topbar-tip-value {
   /* The tip exists to carry what the row could not fit, so it never ellipsizes: the
-     branch name and the path wrap and read complete, on a 390px phone too. */
+     branch name, the path and the context sentence wrap and read complete, on a 390px
+     phone too. */
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-small);
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* A tip row that does something (the context tip's "Session stats"). It reads as a row
+   of the tip, not as a button pasted onto it: no border, the tip's own type scale, the
+   accent for the words a click acts on. */
+.app-topbar-tip .app-topbar-tip-action {
+  justify-self: start;
+  margin-top: 2px;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+.app-topbar-tip .app-topbar-tip-action:hover {
+  background: var(--bg-hover);
 }
 /* The live clock after the branch: how long the task has been running since the
    last prompt. It re-reads itself every second, so `tabular-nums` keeps the
@@ -5736,6 +5776,7 @@ html.dark {
 }
 
 .chat-composer-editor {
+  position: relative;
   padding: 0 0 0 4px !important;
   border: 0 !important;
   border-radius: 0 !important;
@@ -5764,7 +5805,10 @@ html.dark {
 .chat-composer-editor > .chat-input-textarea {
   box-sizing: border-box;
   padding-right: 3px;
-  margin: 8px;
+  /* Only a top margin: the textarea is the card's full width, and a horizontal margin
+     on top of `width: 100%` pushed it 8px past the card's right edge. The card's own
+     inset is its padding, plus 4px of editor padding on the left. */
+  margin: 8px 0 0;
 }
 
 /* Focus only lifts the hairline a step; the caret already says where typing
@@ -5976,13 +6020,22 @@ html.dark {
 }
 
 .composer-attach-button[data-active] {
+  /* Attached files are the state, and the glyph says so in full colour. No disc: the
+     button sits in a row of quiet controls, and a plate under the `+` read as a
+     toggle that was on. */
   color: var(--text);
-  background: var(--bg-hover);
 }
 
+/* The / @ # triggers share the placeholder's row. They sat on a row of their own under
+   the text, which made the card taller for a sentence that only reads once, and put the
+   hint out of the eye's line when typing starts. It rides the textarea's first line on
+   the right, over the placeholder, and never takes the pointer. */
 .composer-trigger-hint {
-  flex: 0 0 auto;
-  align-self: center;
+  position: absolute;
+  /* The textarea's 8px top margin, then centered on the first line, whose height the
+     composer's own line-height token carries — so it tracks the chat font size. */
+  top: calc(8px + (var(--composer-line-height) - 1.4em) / 2);
+  right: 0;
   color: var(--text-dim);
   font-size: var(--fs-small);
   white-space: nowrap;

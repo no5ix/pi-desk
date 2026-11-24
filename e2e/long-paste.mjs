@@ -76,7 +76,15 @@ try {
   await page.waitForFunction(() => document.querySelectorAll(".composer-file-chip").length === 2);
   await page.getByRole("button", { name: "Insert as text", exact: true }).first().click();
   assert.equal(await composer.inputValue(), text);
-  await page.getByRole("button", { name: "Clear text and attachments", exact: true }).click();
+  // The card has no "clear" button: the text is selected and deleted, and every
+  // attachment carries its own remove control.
+  await composer.fill("");
+  for (let index = 0; index < 8; index += 1) {
+    const remove = page.getByRole("button", { name: /^Remove / }).first();
+    if (await remove.count() === 0) break;
+    await remove.click();
+  }
+  await page.waitForFunction(() => document.querySelectorAll(".composer-file-chip").length === 0);
   await paste("中".repeat(90000));
   assert.equal(await composer.inputValue(), "");
   assert.equal(await page.locator(".composer-file-chip").count(), 0);

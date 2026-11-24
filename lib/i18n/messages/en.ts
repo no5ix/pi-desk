@@ -816,7 +816,6 @@ export const enLocale: LocalePlugin = {
     "chat.writtenFileMissing": "No longer exists",
     "sidebar.expandProjectsSection": "Expand projects",
     "sidebar.collapseProjectsSection": "Collapse projects",
-    "chat.clearDraft": "Clear text and attachments",
     "chat.editDraftNotEmpty": "Your draft was kept. Clear the composer and attachments (or wait for uploads) before editing a previous message.",
     "chat.findTitle": "Find in conversation",
     "chat.findPrevious": "Previous match (Shift+Enter)",

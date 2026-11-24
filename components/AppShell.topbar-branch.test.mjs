@@ -60,7 +60,8 @@ test("the branch is a control that opens a tip, and nothing renders where there 
   assert.match(css, /\.app-topbar-tip-value \{[\s\S]*?white-space: normal;\n\s*overflow-wrap: anywhere;/,
     "the tip never ellipsizes — cutting the name in the tip defeats the tip");
   assert.ok(!/\.app-topbar-tip-value \{[^}]*text-overflow: ellipsis/.test(css), "no ellipsis in the tip");
-  assert.match(css, /\.app-topbar-branch-hit:hover \{[\s\S]*?background: var\(--bg-hover\);/);
+  assert.match(css, /\.app-topbar-branch-hit:hover,[\s\S]*?background: var\(--bg-hover\);/,
+    "the branch chip's hover wash, shared by the project and context chips");
 });
 
 test("the project label opens the same tip with the folder it points at", () => {
@@ -72,8 +73,8 @@ test("the project label opens the same tip with the folder it points at", () => 
   assert.match(projectChip, /\{open && path \? \(/, "no path, no tip");
   assert.match(projectChip, /<svg width="13" height="13"[\s\S]*?m6 14 1\.5-2\.9/,
     "the sidebar's folder glyph, so the header and the project tree read as one object");
-  assert.match(css, /\.app-topbar-project-hit,\n\.app-topbar-branch-hit \{/,
-    "the project chip's button shares the branch chip's control styling");
+  assert.match(css, /\.app-topbar-project-hit,\n\.app-topbar-branch-hit,\n\.app-topbar-context-hit \{/,
+    "all three header controls share one styling block — a new chip joins the family, it does not grow its own");
 });
 
 test("every locale can say what the tip says", () => {

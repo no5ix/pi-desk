@@ -816,7 +816,6 @@ export const zhCNLocale: LocalePlugin = {
     "chat.writtenFileMissing": "已不存在",
     "sidebar.expandProjectsSection": "展开项目列表",
     "sidebar.collapseProjectsSection": "折叠项目列表",
-    "chat.clearDraft": "清空文字和附件",
     "chat.editDraftNotEmpty": "已保留当前草稿。请先清空输入框及附件（或等待上传完成），再编辑历史消息。",
     "chat.findTitle": "搜索当前对话",
     "chat.findPrevious": "上一处（Shift+Enter）",

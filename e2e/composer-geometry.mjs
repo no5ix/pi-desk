@@ -18,6 +18,8 @@ export async function checkComposerGeometry(page) {
       for (const draft of ['', '给 Pi 发消息…', 'First line\nSecond line\nThird line']) {
         await input.fill(draft);
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        // The hint fades in (`opacity var(--dur-base)`), so read it after the fade lands.
+        await page.waitForTimeout(220);
         const layout = await card.evaluate(el => {
           const text = el.querySelector('textarea');
           const actions = el.querySelector('.chat-composer-actions');
@@ -80,6 +82,41 @@ export async function checkComposerGeometry(page) {
         }
         assert.ok(Math.abs(layout.placeholderLine - layout.line) < 0.1, 'Placeholder must use the actual text line height');
         if (!draft) assert.ok(layout.overflow <= 1, `Empty input must not have a vertical scrollbar at ${size}px / ${page.viewportSize().width}px: ${JSON.stringify(layout)}`);
+        // The card carries no "clear" button (a textarea is selected and deleted), the
+        // text never crosses the card's edge, and the / @ # hint — shown only on a
+        // wide, idle, empty card, so its presence is gate-dependent per page — never
+        // outlives the text. Where it is shown, it rides the placeholder's row.
+        const chrome = await card.evaluate((el) => {
+          const hint = el.querySelector('.composer-trigger-hint');
+          const text = el.querySelector('textarea');
+          const cardBox = el.getBoundingClientRect();
+          const textRightGap = cardBox.right - text.getBoundingClientRect().right;
+          const clear = el.querySelectorAll('.composer-clear-button:not(.composer-side-chat-button)').length;
+          if (!hint) return { present: false, textRightGap, clear };
+          const hb = hint.getBoundingClientRect();
+          const tb = text.getBoundingClientRect();
+          return {
+            present: true,
+            opacity: getComputedStyle(hint).opacity,
+            centerDelta: (hb.top + hb.bottom) / 2 - (tb.top + tb.bottom) / 2,
+            rightGap: cardBox.right - hb.right,
+            textRightGap,
+            clear,
+          };
+        });
+        assert.equal(chrome.clear, 0, `No clear button in the card at ${size}px`);
+        assert.ok(chrome.textRightGap >= -0.5, `The text stays inside the card at ${size}px: ${chrome.textRightGap}`);
+        if (page.viewportSize().width >= 700) {
+          if (draft) {
+            assert.equal(chrome.present, false, `The trigger hint leaves once there is text (${size}px)`);
+          } else if (chrome.present) {
+            assert.ok(Number(chrome.opacity) > 0.9, `The hint is readable while the empty card is focused at ${size}px: ${chrome.opacity}`);
+            assert.ok(Math.abs(chrome.centerDelta) < 3,
+              `The hint sits on the placeholder's row at ${size}px: ${chrome.centerDelta}px off its centre`);
+            assert.ok(chrome.rightGap >= 0 && chrome.rightGap <= 24,
+              `The hint ends with the text's right edge at ${size}px: ${chrome.rightGap}`);
+          }
+        }
         if (size === 14) {
           const theme=await page.locator('html').evaluate(el=>el.classList.contains('dark')?'dark':'light');
           const width=page.viewportSize().width;

@@ -81,6 +81,7 @@ interface Props {
     loader: ((kind: "system" | "tools" | "mcp") => Promise<void>) | null,
   ) => void;
   onSessionStatsChange?: (stats: SessionStatsInfo | null) => void;
+  /** Opens the header’s session-stats panel: the chat’s own usage command asks for it. */
   onSessionStatsPanelOpen?: () => void;
   /** Opens Settings on a section: a bare `/mcp` that pi's built-in MCP extension owns opens Settings › MCP. */
   onOpenSettings?: (section: SettingsSection) => void;
@@ -1308,7 +1309,6 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     <ChatInput
       ref={chatInputRef}
       onSend={handleSend}
-      onClearDraft={cancelEdit}
       onAttachFiles={onAttachFiles}
       onAbort={handleAbort}
       onSideChat={onSideSession && !isHiddenRelation(session?.relation) ? askInSideChat : undefined}
@@ -1382,9 +1382,6 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       chatOnly={chatOnly}
       chatAccess={chatAccess}
       onToggleChatUnlocked={handleToggleChatUnlocked}
-      onSessionStatsPanelOpen={onSessionStatsPanelOpen}
-      contextUsage={contextUsage}
-      sessionStats={sessionStats}
     />
   );
 

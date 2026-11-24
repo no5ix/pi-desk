@@ -24,7 +24,7 @@ function Fixture() {
       setDraft(message); setEditing(true); setAdmitted("accepted");
     }} />
     <output id="admitted">{admitted}</output>
-    <ChatInput ref={input} draftKey="image-display-fixture" onClearDraft={() => setEditing(false)} onSend={() => {}} onAbort={() => {}}
+    <ChatInput ref={input} draftKey="image-display-fixture" onSend={() => {}} onAbort={() => {}}
       isStreaming={false} thinkingLevel="high" onThinkingLevelChange={() => {}}
       toolPreset="configured" onToolPresetChange={() => {}}
       model={{ provider: "fixture", modelId: "fixture" }} modelList={[]} />

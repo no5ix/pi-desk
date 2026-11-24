@@ -101,6 +101,29 @@ and hover read. `ModelSelector` takes `iconOnly` for this; the `field` variant (
 model dialogs) keeps its label. The project and branch chips keep their text: they name
 which folder and which branch a session is in, which is identity, not a setting.
 
+The card has no "clear the composer" button: a textarea is selected and deleted, so a
+trash icon asked for a click to do what the keyboard already does, in a row that carries
+the controls with no key equivalent. `chat.clearDraft` left the three locales with it and
+`onClearDraft` left `ChatInput` / `ChatWindow`. The attachments carry their own remove
+controls, each named — `chat.removeAttachment` with the file's name, and `chat.removeImage`
+for an image's ×, which was an unlabelled glyph while the clear button stood beside it —
+and history-edit mode is left through its own Cancel.
+
+The `/ commands · @ files · # sessions` hint rides the **placeholder's row**: it is
+`position: absolute` inside the card
+(`top: calc(8px + (var(--composer-line-height) - 1.4em) / 2); right: 0`), so it shares
+the first line of an empty composer instead of growing a second line under the text and
+landing out of the eye's line once typing starts. It never takes a click
+(`pointer-events: none`), and the gates are unchanged — `!compact && !isNarrow &&
+!isStreaming && value.length === 0`, visible on `:focus-within`.
+
+The attach `+` is a bare glyph: no plate at rest, and no plate while files are attached
+(`[data-active]` changes the glyph's colour only). The text area's CSS margin is vertical
+only — `width: 100%` with a horizontal margin pushed the text 8px past the card's right
+edge. `e2e/composer-geometry.mjs` measures the hint's centre against the text's first
+line and asserts there is no clear button and the text ends inside the card, at every
+font size and theme.
+
 The row under the card no longer exists; the same controls live inside it. On a phone
 `.chat-composer-controls` is a grid with exactly TWO children (the wide spacer is
 rendered only on the flex tier), so its template is
@@ -491,6 +514,8 @@ uninitialized `const`). The toggle also raises a phone's keyboard through
 - 输入卡片是一列：文本域在上、独占整行宽度，下一行依次是 `+` 附件按钮、会话控件（`.chat-composer-controls`）、发送按钮。控件不再摆在卡片下方，长文本横贯卡片输入，操作就在文字手边。文本域用 `flex: "none"`，因为列布局里 `flex: 1` 等于零基准，会把自适应高度压回 `minHeight`（`components/MobilePwaLayout.test.mjs` 钉住）。
 - 这一行的控件只有图标：推理级别、工具预设、模型选择都不显示文字，统一 32px 方按钮（`--control-h-lg`）；文字搬进 `title` 与 `aria-label`（`"Change reasoning level: medium"`、`"Change tool preset: Chat only"`、`"<模型名> — Change model"`、压缩停止按钮是 `"Stop compaction · Compacting (2/3)…"`）。`ModelSelector` 用 `iconOnly` 属性进入这种形态，Settings 与模型对话框的 `field` 形态保留文字标签。项目与分支标签保留文字：它们说明的是“哪个目录、哪个分支”，属于身份，不是设置。
 - 发送按钮仍是行内最后一个控件，保持与卡片右下圆角同心；`e2e/composer-geometry.mjs` 在 12/14/20/24px 字号、深浅色、1280/390/320 宽度下量取：文本域宽度等于卡片内宽、行内按钮同一水平线（手机 More 弹层是绝对定位，不计入）、控件按钮无文字且 `title` 非空、发送圆与卡片圆弧圆心重合。
+- 输入卡片没有“清空”按钮：文本域选中即可删除，键盘已能完成的事不该占去一行里属于无快捷键控件的位置；`chat.clearDraft` 随按钮从三个语言文件删除，`onClearDraft` 同时从 `ChatInput` 与 `ChatWindow` 移除。附件的移除控件各自带无障碍名称（文件的 `chat.removeAttachment` 含文件名，图片的 × 是 `chat.removeImage`，此前只是无标签图形）；历史编辑模式由自己的 Cancel 退出。
+- `/ commands · @ files · # sessions` 提示与占位文字同占一行：它在卡片内绝对定位（`top: calc(8px + (var(--composer-line-height) - 1.4em) / 2); right: 0`），不再在文本下多撑一行、把提示挤到视线之外；`pointer-events: none` 不抢点击，显示条件不变。`+` 附件按钮默认和附带附件时都不加底色，附件状态只改图标颜色。文本域 CSS 只留上边距：`width: 100%` 再加横向 margin 会让文字越出卡片右缘 8px（e2e 量取文字右缘不越过卡片）。
 - 立即发送通过 SDK prompt admission 的 `steer` 在下一个可接收指令的时机引导当前任务，不承诺强制中断正在进行的工具调用。编辑通过 `restoreSubmission` 合并到原会话草稿，保留已有输入与图片。
 - 验证：`node e2e/composer-outbox.mjs`，覆盖深浅色、1280/390/320 宽度、换行同心圆角、排队/编辑/删除/引导、页面刷新及停止后的队列状态。
 

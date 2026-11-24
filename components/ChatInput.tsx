@@ -39,8 +39,6 @@ import { useMenuNavigation } from "@/hooks/useMenuNavigation";
 import { useEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useI18n } from "@/hooks/useI18n";
 import type { ReactNode } from "react";
-import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
-import { ContextUsageRing } from "./ContextUsageRing";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
 import type { ToolPreset } from "@/lib/tool-presets";
 import { SelectorRow } from "./SelectorRow";
@@ -73,8 +71,6 @@ export interface AttachedImage {
 }
 
 interface Props {
-  /** Explicit user draft clearing also leaves history-edit mode; never called on send. */
-  onClearDraft?: () => void;
   onSend: (message: string, images?: AttachedImage[]) => void;
   /** Files picked with "+": images and other files. Without it the picker takes images only. */
   onAttachFiles?: (files: File[]) => void;
@@ -188,12 +184,6 @@ interface Props {
   onComposerWorktreeRemoved?: (path: string, fallbackRoot: string | null) => void;
   /** Focus the textarea on mount / when this becomes true (e.g. New task page). */
   autoFocus?: boolean;
-  /** Live context-window usage (numerator) for the usage ring next to the model selector */
-  contextUsage?: ContextUsage | null;
-  /** Session token summary shown when hovering the usage ring */
-  sessionStats?: SessionStatsInfo | null;
-  /** Open the top-bar session-stats panel when the usage ring is clicked */
-  onSessionStatsPanelOpen?: () => void;
 }
 
 export interface ChatInputHandle {
@@ -857,7 +847,7 @@ export function ModelScopeWarningBanner({
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onClearDraft, onSend, onAttachFiles, onAbort, onSteer, onSideChat, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
+  onSend, onAttachFiles, onAbort, onSteer, onSideChat, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   defaultModel, onSetDefaultModel,
   onCompact, onAbortCompaction, isCompacting, compactError, compactNotice, compactResult, summarizationRetry, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
@@ -883,9 +873,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onComposerWorktreeSelected,
   onComposerWorktreeRemoved,
   autoFocus = false,
-  contextUsage,
-  sessionStats,
-  onSessionStatsPanelOpen,
   compact = false,
 }: Props, ref) {
   const { t } = useI18n();
@@ -2548,6 +2535,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <button
                   type="button"
                   onClick={() => removeImage(i)}
+                  aria-label={t("chat.removeImage")}
+                  title={t("chat.removeImage")}
                   style={{
                     position: "absolute", top: -4, right: -4,
                     width: 16, height: 16, borderRadius: "50%",
@@ -3149,7 +3138,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 → {routedModelName}{routedModel.thinkingLevel && !isNarrow ? ` • ${routedModel.thinkingLevel}` : ""}
               </span>
             )}
-            <ContextUsageRing contextUsage={contextUsage} sessionStats={sessionStats} onOpenStats={onSessionStatsPanelOpen} />
           </div>
 
           {/* spacer */}
@@ -3485,20 +3473,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </div>
 
         </div>}
-          {(value.length > 0 || attachedImages.length > 0 || attachedFiles.length > 0) && (
-            <button type="button" className="composer-clear-button"
-              title={t("chat.clearDraft")} aria-label={t("chat.clearDraft")}
-              onClick={() => {
-                attachmentClearVersionRef.current += 1;
-                clearInput();
-                onClearDraft?.();
-                textareaRef.current?.focus();
-              }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
-                <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
-              </svg>
-            </button>
-          )}
+          {/* No "clear the composer" button: the text is a textarea, and selecting it and
+              deleting is how a prompt is discarded. The row carries the controls that have
+              no keyboard equivalent. */}
           {isStreaming && onSideChat && (
             <button
               type="button"
