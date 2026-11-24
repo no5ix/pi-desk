@@ -4,8 +4,8 @@ Branch `wt/2wt-branch-picker-header-worktrees`. The task is the seven items in
 PLAN.md (six from the user's screenshots of 2026-11-25, plus the user's
 `custom-bak.css`); the reasoning is in DECISIONS.md.
 
-**All seven items are implemented and verified. Not yet committed at the time of
-this write.**
+**All seven items are implemented, verified, committed as `20729757` and pushed to
+`origin/wt/2wt-branch-picker-header-worktrees`.**
 
 ## What is on the branch
 
