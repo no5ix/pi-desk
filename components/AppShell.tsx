@@ -325,15 +325,21 @@ export function AppShell() {
       setSettingsClosing(false);
     }, SETTINGS_EXIT_MS);
   }, [settingsClosing, settingsSection]);
-  // Opening any section cancels an exit in flight, and the timer never outlives
-  // the shell.
-  useEffect(() => {
-    if (settingsSection && settingsClosing) {
-      if (settingsExitRef.current !== null) window.clearTimeout(settingsExitRef.current);
+  // Opening a section during an exit re-uses the mounted panel: the timer is the only
+  // thing that unmounts it, so cancelling the exit belongs to the open, next to the
+  // state it changes. It must not live in an effect watching `[settingsClosing,
+  // settingsSection]`: while the exit plays the section is *still* the one being closed,
+  // so such an effect cancelled every close the moment it started — the sheet snapped
+  // back into its entrance, which read as a dialog that would not close and had no
+  // animation at all.
+  const openSettings = useCallback((section: SettingsSection) => {
+    if (settingsExitRef.current !== null) {
+      window.clearTimeout(settingsExitRef.current);
       settingsExitRef.current = null;
-      setSettingsClosing(false);
     }
-  }, [settingsClosing, settingsSection]);
+    setSettingsClosing(false);
+    setSettingsSection(section);
+  }, []);
   useEffect(() => () => {
     if (settingsExitRef.current !== null) window.clearTimeout(settingsExitRef.current);
   }, []);
@@ -664,8 +670,8 @@ export function AppShell() {
 
   // The composer opens Settings too: a bare /mcp opens Settings › MCP (useAgentSession).
   const openSettingsSection = useCallback((section: SettingsSection) => {
-    setSettingsSection(section);
-  }, []);
+    openSettings(section);
+  }, [openSettings]);
 
   const handleSidebarToggle = useCallback(() => {
     if (isMobile) setActiveTopPanel(null);
@@ -1374,20 +1380,20 @@ export function AppShell() {
     if (payload === "settings-general" || payload === "settings-models") {
       setActiveTopPanel(null);
       setTopMoreOpen(false);
-      setSettingsSection(payload === "settings-general" ? "general" : "models");
+      openSettings(payload === "settings-general" ? "general" : "models");
     }
-  }, [activeCwd, blockArchivedNewSession, chatWorkspaceCwd, handleNewSession, isChatWorkspaceActive]);
+  }, [activeCwd, blockArchivedNewSession, chatWorkspaceCwd, handleNewSession, isChatWorkspaceActive, openSettings]);
 
   const openSettingsAtLastSection = useCallback(() => {
     setActiveTopPanel(null);
     setTopMoreOpen(false);
     // P1: the plain Settings button opens a phone's Settings on its list of sections.
-    setSettingsOpenAtHome(true);
-    // A project-only section without a project falls back to General (SettingsPanel re-checks).
-    setSettingsSection(getLastSettingsSection(
-      isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
-    ));
-  }, [activeCwd, isChatWorkspaceActive, newSessionCwd, selectedSession]);
+      setSettingsOpenAtHome(true);
+      // A project-only section without a project falls back to General (SettingsPanel re-checks).
+      openSettings(getLastSettingsSection(
+        isChatWorkspaceActive ? null : selectedSession?.cwd ?? newSessionCwd ?? activeCwd,
+      ));
+    }, [activeCwd, isChatWorkspaceActive, newSessionCwd, openSettings, selectedSession]);
 
   const toggleShortcutHelp = useCallback(() => {
     setShortcutHelpOpen((open) => {
@@ -1660,7 +1666,7 @@ export function AppShell() {
           : translate("title.errorNotice", { error: detail });
       const failed = {
         message, type: "error" as const, persistent: true,
-        action: { label: translate("title.modelSettings"), run: () => setSettingsSection("models") },
+        action: { label: translate("title.modelSettings"), run: () => openSettings("models") },
       };
       if (!updateAppNotice(noticeId, failed)) appNotify.error(failed);
       if (activeSessionIdRef.current !== sessionId) return;
@@ -1669,7 +1675,7 @@ export function AppShell() {
     } finally {
       autoNameInFlightRef.current.delete(sessionId);
     }
-  }, [selectedSession?.id, translate]);
+  }, [openSettings, selectedSession?.id, translate]);
 
   useEffect(() => {
     if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
@@ -3214,7 +3220,7 @@ export function AppShell() {
               onComposerWorktreeCreated={handleComposerWorktreeCreated}
               onComposerWorktreeSelected={handleComposerWorktreeSelected}
               onComposerWorktreeRemoved={handleComposerWorktreeRemoved}
-              onOpenModelsConfig={() => setSettingsSection("models")}
+              onOpenModelsConfig={() => openSettings("models")}
               onOpenFile={handleOpenLinkedFile}
               onOpenFileDiff={handleOpenSessionFileDiff}
               onOpenSession={handleOpenSession}
@@ -3726,7 +3732,7 @@ export function AppShell() {
         onStatus={setProjectTrust}
       />
     )}
-    <UpdateReminder onOpenSettings={() => setSettingsSection("general")} />
+    <UpdateReminder onOpenSettings={() => openSettings("general")} />
     <DomContextMenuHost />
     <AppNoticeShelf />
     </div>

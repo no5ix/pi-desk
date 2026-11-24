@@ -19,8 +19,25 @@ test("the shell keeps the dialog mounted for its exit animation", async () => {
     "the unmount happens when the animation is over, not on the click");
   assert.match(shell, /onClose=\{closeSettings\}\s*closing=\{settingsClosing\}/, "the panel is told it is closing");
   assert.ok(!shell.includes("onClose={() => {\n          setSettingsSection(null);"), "no unmount-on-click handler is left");
-  // The shortcuts and the reminder can open a section during the exit; that cancels it.
-  assert.match(shell, /if \(settingsSection && settingsClosing\) \{[\s\S]*?window\.clearTimeout\(settingsExitRef\.current\);/);
+  // The shortcuts, the sidebar, the composer's bare /mcp and the update reminder all
+  // open a section; that is what cancels an exit in flight — inside the open helper,
+  // next to the state it changes.
+  const open = shell.match(/const openSettings = useCallback\(\(section: SettingsSection\) => \{[\s\S]*?\}, \[\]\);/);
+  assert.ok(open, "an open helper owns the cancel");
+  assert.match(open[0], /window\.clearTimeout\(settingsExitRef\.current\);/);
+  assert.match(open[0], /setSettingsClosing\(false\);\s*setSettingsSection\(section\);/,
+    "it clears the exit flag before the section, so the panel re-enters in one commit");
+  assert.match(shell, /const openSettingsSection = useCallback\(\(section: SettingsSection\) => \{\s*openSettings\(section\);\s*\}, \[openSettings\]\);/,
+    "the composer's route into Settings opens through the same helper");
+  // No effect may cancel the exit for a section that is merely still open: for the whole
+  // exit the section *is* the one being closed, so an effect watching
+  // `[settingsClosing, settingsSection]` cancelled every close the instant it started and
+  // the sheet snapped back into its entrance — a dialog that would not close, with no
+  // animation to be seen.
+  assert.ok(!/if \(settingsSection && settingsClosing\)/.test(shell), "the exit is not cancelled by the section it is closing");
+  const writers = [...shell.matchAll(/setSettingsSection\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.deepEqual(writers, ["null", "section"],
+    "only the exit timer closes and the open helper opens: every open routes through openSettings");
   assert.match(shell, /useEffect\(\(\) => \(\) => \{\s*if \(settingsExitRef\.current !== null\) window\.clearTimeout\(settingsExitRef\.current\);/,
     "the timer never outlives the shell");
 });

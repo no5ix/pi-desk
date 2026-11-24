@@ -17,7 +17,7 @@ test("routes native macOS menu actions into app state", () => {
   assert.match(appShellSource, /useNativeAppMenu\(handleNativeMenuAction\)/);
   assert.match(appShellSource, /payload === "new-session"/);
   assert.match(appShellSource, /payload === "settings-general" \|\| payload === "settings-models"/);
-  assert.match(appShellSource, /setSettingsSection\(payload === "settings-general" \? "general" : "models"\)/);
+  assert.match(appShellSource, /openSettings\(payload === "settings-general" \? "general" : "models"\)/);
   assert.match(hookSource, /listen<string>\("pi-agent-menu-action"/);
 });
 

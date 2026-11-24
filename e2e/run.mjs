@@ -16,6 +16,7 @@ import { checkSidebarBreakpoint } from "./sidebar-breakpoint.mjs";
 import { checkMcpManager } from "./mcp-manager.mjs";
 import { checkMissingWorkspace, MISSING_WORKSPACE, missingWorkspaceReply } from "./missing-workspace.mjs";
 import { checkCodeBackground } from "./code-background.mjs";
+import { checkSettingsExit } from "./settings-exit.mjs";
 import { createE2EServerEnv } from "../scripts/e2e-server-env.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -532,6 +533,7 @@ try {
       await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
       await page.locator(".markdown-code-block pre").waitFor();
       await checkChatAppearance(page);
+      await checkSettingsExit(page);
       await checkSidebarBreakpoint(page);
       await checkMcpManager(page, { agentDir, cwd: project });
     }
