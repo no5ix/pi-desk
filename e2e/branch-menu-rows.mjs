@@ -127,7 +127,12 @@ for (const row of rows) {
   assert.ok(rows.some((row) => row.name.height > 20), "a long branch name wraps to more than one line");
 
 // The control: without the fix rules, the same measurement sees the overlap.
+// The row lost an action icon (the name is the switch now), so the control also takes
+// back the width that icon used to occupy: the menu falls to its narrow 168px form, the
+// width a phone's project menu has. Pressure restored, the unshrunken tag must reach the
+// icon again — a control that passes on an empty field proves nothing.
 const unfixed = css
+  .replace(/\.sidebar-project-context-menu--wide \{([^}]*?)width: 240px;/, ".sidebar-project-context-menu--wide {$1width: 168px;")
   .replace(/\.sidebar-project-context-menu-branch-name \{[^}]*\}/g, "")
   .replace(/\.sidebar-project-context-menu-branch-tag \{\n((?:[^}]*\n)*?)\}/, ".sidebar-project-context-menu-branch-tag {\n  margin-left: auto;\n  color: var(--text-dim);\n  font-family: var(--font-ui);\n  font-size: var(--fs-micro);\n}")
   .replace(/(\.sidebar-project-context-menu-row--branch > button\[role="menuitem"\] \{)([^}]*?)overflow: hidden;/, "$1$2");
