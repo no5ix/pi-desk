@@ -151,9 +151,15 @@ export function isComposerDraftEmpty(draft: ComposerDraftSnapshot): boolean {
 export function writeComposerDraft(
   key: string,
   input: Parameters<typeof normalizeComposerDraft>[0],
-): { ok: true; draft: ComposerDraftSnapshot } | { ok: false; error: string; draft?: ComposerDraftSnapshot; dropped?: number } {
+): { ok: true; draft: ComposerDraftSnapshot } | { ok: false; error: string; draft?: ComposerDraftSnapshot; dropped?: number; refused?: boolean } {
   const normalized = normalizeComposerDraft(input);
-  if (!normalized.ok) return normalized;
+  if (!normalized.ok) {
+    // The whole snapshot is past what the mirror may keep (the text cap, the total size).
+    // That is the same news as an oversized attachment — this composer cannot be mirrored
+    // — and the route says so with a 413, so the client stops mirroring it instead of
+    // collecting a "a newer draft is stored" answer on every keystroke.
+    return { ok: false, error: normalized.error, draft: drafts().get(key), refused: true };
+  }
   const store = drafts();
   const current = store.get(key);
   if (normalized.dropped > 0) {
