@@ -453,3 +453,22 @@ test("a project session's row menus offer Fork, which opens the copy (S4)", () =
   assert.match(sessionItemSource, /\.\.\.\(onFork \? \[\{ label: t\("sidebar\.fork"\), onSelect: \(\) => onFork\(session\) \}\] : \[\]\),/);
   assert.match(sessionItemSource, /onClick=\{\(\) => \{ setMenuOpen\(false\); onFork\(session\); \}\}/);
 });
+
+test("a side chat row carries the composer's side-chat glyph", () => {
+  // The row is labelled "Side chat 2" by the server's title; the glyph that says
+  // "this run hangs off the session above" is the composer's own side-chat mark.
+  assert.match(source, /isSideChat=\{node\.session\.relation\?\.kind === "side"\}/,
+    "the row knows it is a side chat");
+  const icons = sessionItemSource.slice(
+    sessionItemSource.indexOf("{isRunning ? ("),
+    sessionItemSource.indexOf(") : isFork ? (") > -1 ? sessionItemSource.indexOf(") : isFork ? (") : sessionItemSource.indexOf("{title}</span>"),
+  );
+  assert.ok(icons.includes(") : isSideChat ? ("), "the side-chat case is in the leading-icon chain");
+  assert.ok(icons.indexOf("isSideChat ? (") < icons.indexOf("isSubagentChild ? ("),
+    "a side chat is read before the subagent glyph, not as a fallback bubble");
+  assert.match(icons, /isSideChat \? \(\s*<svg[\s\S]*?M21 12a8 8 0 0 1-8 8H5\.5[\s\S]*?M13 8\.5v7M9\.5 12h7/,
+    "the circle-and-plus mark the composer's side-chat button uses");
+  // The glyph is decoration; the row's tip and label carry the words.
+  assert.match(sessionItemSource, /isSideChat \? t\("sideChat\.title"\) : null,/,
+    "the row's tip says which row is a side chat");
+});

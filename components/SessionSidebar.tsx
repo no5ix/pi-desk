@@ -2412,6 +2412,7 @@ function SessionFamilyItem({
         <SessionItem
           session={node.session}
           isSubagentChild={Boolean(node.session.relation?.kind === "subagent")}
+          isSideChat={node.session.relation?.kind === "side"}
           isSelected={familySessions
             ? familySessions.some((session) => session.id === selectedSessionId)
             : node.session.id === selectedSessionId}
@@ -2583,6 +2584,7 @@ function SessionItem({
   collapsed = false,
   onToggleCollapse,
   isSubagentChild = false,
+  isSideChat = false,
   isFork = false,
   forkSourceTitle,
   subtitle,
@@ -2606,6 +2608,9 @@ function SessionItem({
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   isSubagentChild?: boolean;
+  /** A side chat forked off a session: the composer's side-chat glyph, not the
+   *  plain chat bubble, so the numbered "Side chat 2" row is recognisable. */
+  isSideChat?: boolean;
   /** A fork: a row of its own, with the fork glyph instead of the chat bubble. */
   isFork?: boolean;
   /** The fork's source session, named in the row's tooltip when it is listed. */
@@ -2916,11 +2921,16 @@ function SessionItem({
         <>
           {/* Leading icon: running / unread, falling back to the standard
               chat-bubble glyph for every session. Subagent child rows carry
-              the robot glyph instead of the chat bubble. */}
+              the robot glyph, side chats the composer's side-chat glyph (a circle
+              and a plus) — the same mark the composer's own side-chat button uses. */}
           {isRunning ? (
             <RunningSessionIndicator />
           ) : isUnread ? (
             <UnreadSessionIndicator />
+          ) : isSideChat ? (
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M21 12a8 8 0 0 1-8 8H5.5a2 2 0 0 1-1.4-3.4A8 8 0 1 1 21 12z" /><path d="M13 8.5v7M9.5 12h7" />
+            </svg>
           ) : isSubagentChild ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <rect x="5" y="7" width="14" height="11" rx="2" />
@@ -2935,6 +2945,7 @@ function SessionItem({
             className="session-item-title"
             title={[
               subtitle ? `${title} · ${subtitle}` : title,
+              isSideChat ? t("sideChat.title") : null,
               isFork ? (forkSourceTitle ? t("sidebar.forkedFrom", { title: forkSourceTitle }) : t("sidebar.forkRow")) : null,
             ].filter(Boolean).join("\n")}
             style={{
