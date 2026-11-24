@@ -35,6 +35,7 @@ import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { TopbarElapsed } from "./TopbarElapsed";
 import { TopbarSubagents, countSubagents } from "./TopbarSubagents";
 import { TopbarBranchChip } from "./TopbarBranchChip";
+import { TopbarProjectChip } from "./TopbarProjectChip";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useFonts } from "@/hooks/useFonts";
@@ -2502,16 +2503,16 @@ export function AppShell() {
             <span>{topBarTitle}</span>
             {topBarSubtitle && (
               <span className="app-topbar-subtitle-row">
-                <small className="app-topbar-project">
-                  {topBarProjectIcon && (
-                    // The sidebar's project folder (SessionSidebar's row glyph), so the
-                    // header and the project tree read as the same object.
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
-                    </svg>
-                  )}
-                  <span>{topBarSubtitle}</span>
-                </small>
+                {topBarProjectIcon ? (
+                  /* A control, like the branch chip: the label is a short name, the path
+                     it stands for is longer than a phone, and nothing else in the header
+                     says where the session works. Tap it for `Path` over the full path. */
+                  <TopbarProjectChip name={topBarSubtitle} path={visibleProjectCwd ?? ""} />
+                ) : (
+                  <small className="app-topbar-project">
+                    <span>{topBarSubtitle}</span>
+                  </small>
+                )}
                 {topBarBranch && (
                   // A control, not a label with a native tooltip: the branch is the only
                   // thing in this row that gets cut, and on a phone a native tooltip never

@@ -100,6 +100,23 @@ try {
     });
     assert.ok(layout.left >= 0 && layout.right <= layout.viewport, JSON.stringify(layout));
     assert.ok(layout.bottom - layout.cardTop >= 10 && layout.bottom - layout.cardTop <= 14, 'outbox must dock to the card');
+    // A queued prompt is a sentence, not text glued to the queue glyph: its first word
+    // starts clear of the glyph (the row's gap plus the preview's 6px of left padding), so a
+    // list of queued messages reads down its own left margin. Below the desktop width the
+    // glyph is hidden, so the inset is measured from the row itself.
+    const geo = await page.locator(".composer-outbox-row").first().evaluate((row) => {
+      const box = (el) => {
+        const b = el.getBoundingClientRect();
+        return { l: Math.round(b.left), r: Math.round(b.right), w: Math.round(b.width) };
+      };
+      const preview = row.querySelector(".composer-outbox-preview");
+      const range = document.createRange();
+      range.selectNodeContents(preview.firstChild ?? preview);
+      return { row: box(row), mark: box(row.querySelector(".composer-outbox-mark")), textLeft: Math.round(range.getBoundingClientRect().left) };
+    });
+    const inset = geo.mark.w > 0 ? geo.textLeft - geo.mark.r : geo.textLeft - geo.row.l;
+    assert.ok(inset >= (geo.mark.w > 0 ? 12 : 8) && inset <= 24,
+      `the queued text starts ${inset}px clear of ${geo.mark.w > 0 ? "the queue glyph" : "the row's edge"}`);
     await page.screenshot({ path: `${dir}/${theme}-${width}.png` });
     await page.locator('.chat-input-shell').screenshot({ path: `${dir}/${theme}-${width}-composer.png` });
     await rows.last().getByRole('button', { name: '删除待发送消息', exact: true }).click();

@@ -82,7 +82,6 @@ read/conversion results and revokes discarded image preview URLs. Cancel remains
 a separate, non-destructive action that only leaves history-edit mode.
 
 ## Composer session row: project, model, context, controls
-
 The row under the input card (`className="chat-composer-controls"`) carries the
 project chip, the model chip, the context-usage ring and — on a phone — the More
 controls button. On a phone it is a grid with exactly TWO children (the wide
@@ -287,21 +286,36 @@ at 640px): three stacked header lines are worse than an ellipsized branch, and t
 below carries the whole name. The project keeps `min-width: 5.5em` (5em on a phone).
 
 The branch is a control, `components/TopbarBranchChip.tsx`, not a label with a native
-`title`: hover and focus on desktop, a tap on a phone, and the app's own tip appears
-under it with the whole branch name and the folder it lives in (`role="tooltip"`,
-`--z-popover`, repositioned on reflow, closed by Escape or a tap elsewhere; a touch
-pointer is ignored by the hover handlers so a tap does not fight it). The native tooltip
-it replaced showed a raw key in Safari (`chat.gitBranchTitle`, missing from every
-catalogue — the keys are in all three now, and `lib/i18n/registry.test.mjs` keeps the
-locales in step) and on a phone a native tooltip never opens, so the full name was
+`title`: hover and focus on desktop, a tap on a phone, and the app's tip appears under it
+with the **whole branch name** — the branch tip shows the branch and nothing else. The
+project label in front of it is a control too, `components/TopbarProjectChip.tsx`, and its
+tip is:
+
+```
+Path
+/Users/lynx/Documents/github/pi-desk
+```
+
+so the folder the session works in is one tap from the label that names it. Both share the
+plumbing in `components/TopbarTip.tsx`: `role="tooltip"`, `--z-popover`, repositioned on
+reflow, closed by Escape or a tap elsewhere, and a touch pointer is ignored by the hover
+handlers so a tap does not fight it. **The tip's value never ellipsizes** — the surface is
+`min(70vw, 420px)` and its text wraps (`white-space: normal; overflow-wrap: anywhere`), so
+a long branch name and a long path read complete on a 390px phone; the tip exists to carry
+what the row could not fit, so cutting it in the tip defeats it. The native tooltip this
+replaced showed a raw key in Safari (`chat.gitBranchTitle`, missing from every catalogue —
+the tip's labels are keys in all three locales now, and `lib/i18n/registry.test.mjs` keeps
+the locales in step) and on a phone a native tooltip never opens, so the full name was
 unreachable exactly where the row cuts it.
 
 `e2e/topbar-project-row.mjs` measures all of this in Chromium: the four labels at
 1920/1200/960/700px, the distance from the branch's words (measured on a Range, because a
-growing label carries its empty space with it) to the clock, the tip under hover and
-under a tap on a 390px touch context, and two control passes that put the old rules back
-— the 760px cap with a growing branch strands the clock, a 200px column cuts the name to
-a stub — so the checks cannot pass by being blind.
+growing label carries its empty space with it) to the clock, the branch tip under hover and
+under a tap on a 390px touch context, the project tip's `Path` row on both, and `?long=1`
+— a branch name and a path wider than the phone, which the tips must show complete and
+wrapped. Two control passes put the old rules back: the 760px cap with a growing branch
+strands the clock, a 200px column cuts the name to a stub — so the checks cannot pass by
+being blind.
 
 ## Composer branch chip, and a worktree from a branch
 
@@ -401,6 +415,7 @@ uninitialized `const`). The toggle also raises a phone's keyboard through
 
 - 输入框只保留一个圆形主操作：空闲时发送；运行中且草稿为空时停止（方块）；运行中有文字或附件时，点击或发送快捷键都加入“完成后发送”队列。不要重新引入 Steer / Follow-up 双按钮或底栏重复的 Stop。
 - `ComposerOutbox` 把待发送消息贴在输入框上沿；每条消息支持立即发送、取回编辑、删除。窄窗口操作使用图标和完整无障碍标签，触屏点击范围至少 44px；不使用彩色描边区分队列模式。
+- 待发送行的文字与排队图标之间留左侧间距：行 `gap` 加 `.composer-outbox-preview` 的 6px `padding-left`，桌面实测 14px，使多条消息沿自己的左边距成列，而不是文字顶到图标边缘。`e2e/composer-outbox.mjs` 量取文字起点相对图标（窄窗口图标隐藏时相对行左缘）的距离。
 - 立即发送通过 SDK prompt admission 的 `steer` 在下一个可接收指令的时机引导当前任务，不承诺强制中断正在进行的工具调用。编辑通过 `restoreSubmission` 合并到原会话草稿，保留已有输入与图片。
 - 验证：`node e2e/composer-outbox.mjs`，覆盖深浅色、1280/390/320 宽度、换行同心圆角、排队/编辑/删除/引导、页面刷新及停止后的队列状态。
 

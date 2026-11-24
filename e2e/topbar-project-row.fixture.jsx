@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { I18nProvider } from "@/hooks/useI18n";
 import { TopbarBranchChip } from "@/components/TopbarBranchChip";
+import { TopbarProjectChip } from "@/components/TopbarProjectChip";
 
 /**
  * The conversation header's project row, in a real browser.
@@ -16,6 +17,15 @@ import { TopbarBranchChip } from "@/components/TopbarBranchChip";
  * widths, and puts the old rules back to prove the measurement sees the bug.
  */
 function TopbarRow() {
+  // `?long=1` is the case a phone cannot fit: a branch name and a path long enough that
+  // the row cuts them to a stub, and the tips have to wrap to show them complete.
+  const long = new URLSearchParams(location.search).get("long") === "1";
+  const branch = long
+    ? "claude/conversation-list-optimization-and-header-widths-9ec111"
+    : "feat/branch-picker-header-worktrees";
+  const projectRoot = long
+    ? "/Users/lynx/Documents/github/pi-desk-worktrees/branch-picker-header-worktrees"
+    : "/Users/lynx/Documents/github/pi-desk";
   return (
     <div className="app-main-column" style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
       <div
@@ -37,15 +47,10 @@ function TopbarRow() {
         <div className="app-topbar-title" title="Fix Remote Text Overlap in Composer Branch Menu">
           <span>Fix Remote Text Overlap in Composer Branch Menu</span>
           <span className="app-topbar-subtitle-row">
-            <small className="app-topbar-project">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
-                <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
-              </svg>
-              <span>pi-desk</span>
-            </small>
+            <TopbarProjectChip name="pi-desk" path={projectRoot} />
             <TopbarBranchChip
-              branch="feat/branch-picker-header-worktrees"
-              projectRoot="/Users/lynx/Documents/github/pi-desk"
+              branch={branch}
+              projectRoot={projectRoot}
               isWorktree={false}
             />
             <small className="app-topbar-elapsed">

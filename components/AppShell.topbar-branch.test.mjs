@@ -11,6 +11,8 @@ import test from "node:test";
 const appShell = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const chip = readFileSync(new URL("./TopbarBranchChip.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const projectChip = readFileSync(new URL("./TopbarProjectChip.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const tip = readFileSync(new URL("./TopbarTip.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const hook = readFileSync(new URL("../hooks/useProjectBranch.ts", import.meta.url), "utf8");
 
 test("the title and the project line keep their positions in the title block", () => {
@@ -18,8 +20,10 @@ test("the title and the project line keep their positions in the title block", (
   assert.ok(block, "topbar title block found");
   assert.match(block[0], /<span>\{topBarTitle\}<\/span>/, "the title stays the first span child");
   assert.match(block[0], /className="app-topbar-subtitle-row"/, "the project line is a row inside the title block");
-  assert.match(block[0], /<small className="app-topbar-project">[\s\S]*<span>\{topBarSubtitle\}<\/span>/,
-    "the project name stays a <small>, so the narrow-screen rule that hid it still hides the row");
+  assert.match(block[0], /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} \/>/,
+    "the project name is a chip, and its path is the folder the session works in");
+  assert.match(projectChip, /<small className="app-topbar-project app-topbar-project--chip">[\s\S]*<span>\{name\}<\/span>/,
+    "it stays a <small>, so the narrow-screen rule that hid the row still hides it");
 });
 
 test("the branch label reads the session first, then the project directory", () => {
@@ -36,20 +40,40 @@ test("the branch is a control that opens a tip, and nothing renders where there 
     "a chat has no project, so no branch");
   // The tip, not a native tooltip: Safari showed the raw i18n key (the key was
   // missing) and a phone never opens a native one, so the full name was
-  // unreachable exactly where the row cuts it.
+  // unreachable exactly where the row cuts it. The plumbing is shared with the
+  // project chip, so it lives in TopbarTip.tsx.
   assert.ok(!/className="app-topbar-branch"[\s\S]{0,400}?title=\{/.test(appShell), "no native title is left in the shell");
-  assert.match(chip, /role="tooltip"/);
-  assert.match(chip, /aria-describedby=\{open \? tipId : undefined\}/);
-  assert.match(chip, /onPointerEnter=\{\(event\) => \{[\s\S]*?if \(event\.pointerType === "touch"\) return;/,
+  assert.match(tip, /role="tooltip"/);
+  assert.match(tip, /"aria-describedby": open \? tipId : undefined,/);
+  assert.match(tip, /onPointerEnter: \(event: React\.PointerEvent\) => \{[\s\S]*?if \(event\.pointerType === "touch"\) return;/,
     "a touch pointer is owned by the click, so a tap does not fight the hover");
-  assert.match(chip, /onFocus=\{\(\) => setFocused\(true\)\}/, "the keyboard opens it");
-  assert.match(chip, /onClick=\{\(\) => setPinned\(\(current\) => !current\)\}/, "a tap opens it on a phone");
-  assert.match(chip, /if \(event\.key !== "Escape"\) return;/);
-  assert.match(chip, /document\.addEventListener\("pointerdown", onPointerDown, true\)/, "a tap elsewhere closes it");
-  assert.match(chip, /className="app-topbar-branch-tip-name">\{branch\}<\/span>/, "the tip carries the whole name");
-  assert.match(chip, /className="app-topbar-branch-tip-path"/, "and the folder it lives in");
-  assert.match(css, /\.app-topbar-branch-tip \{\n\s*position: fixed;\n\s*z-index: var\(--z-popover\);/);
-  assert.match(css, /\.app-topbar-branch-hit:hover \{\n\s*background: var\(--bg-hover\);/);
+  assert.match(tip, /onFocus: \(\) => setFocused\(true\)/, "the keyboard opens it");
+  assert.match(tip, /onClick: \(\) => setPinned\(\(current\) => !current\)/, "a tap opens it on a phone");
+  assert.match(tip, /if \(event\.key !== "Escape"\) return;/);
+  assert.match(tip, /document\.addEventListener\("pointerdown", onPointerDown, true\)/, "a tap elsewhere closes it");
+  assert.match(chip, /<TopbarTipRow\n\s*label=\{t\(isWorktree \? "chat\.branchTipWorktreeLabel" : "chat\.branchTipBranchLabel"\)\}\n\s*value=\{branch\}/,
+    "the tip carries the whole name");
+  assert.ok(!chip.includes("branchTipFolderLabel") && !chip.includes("projectRoot} }"),
+    "the branch tip names the branch and nothing else: the project label in front of it carries the path");
+  assert.match(tip, /maxWidth: `min\(70vw, \$\{TIP_MAX_WIDTH\}px\)`/, "the tip is clamped, so long values wrap inside it");
+  assert.match(css, /\.app-topbar-tip \{\n\s*position: fixed;\n\s*z-index: var\(--z-popover\);/);
+  assert.match(css, /\.app-topbar-tip-value \{[\s\S]*?white-space: normal;\n\s*overflow-wrap: anywhere;/,
+    "the tip never ellipsizes — cutting the name in the tip defeats the tip");
+  assert.ok(!/\.app-topbar-tip-value \{[^}]*text-overflow: ellipsis/.test(css), "no ellipsis in the tip");
+  assert.match(css, /\.app-topbar-branch-hit:hover \{[\s\S]*?background: var\(--bg-hover\);/);
+});
+
+test("the project label opens the same tip with the folder it points at", () => {
+  // The branch tip used to carry the folder line; the user wants it on the project label
+  // that names the folder, where it belongs, and the branch tip left with one value.
+  assert.match(projectChip, /<TopbarTipRow label=\{t\("chat\.projectTipPathLabel"\)\} value=\{path\} \/>/);
+  assert.match(projectChip, /className="app-topbar-project-hit"/);
+  assert.match(projectChip, /aria-label=\{t\("chat\.projectTipTitle", \{ projectRoot: path \}\)\}/, "and says it to a screen reader");
+  assert.match(projectChip, /\{open && path \? \(/, "no path, no tip");
+  assert.match(projectChip, /<svg width="13" height="13"[\s\S]*?m6 14 1\.5-2\.9/,
+    "the sidebar's folder glyph, so the header and the project tree read as one object");
+  assert.match(css, /\.app-topbar-project-hit,\n\.app-topbar-branch-hit \{/,
+    "the project chip's button shares the branch chip's control styling");
 });
 
 test("every locale can say what the tip says", () => {
@@ -58,9 +82,11 @@ test("every locale can say what the tip says", () => {
   for (const locale of ["en", "zh-CN", "zh-TW"]) {
     const messages = readFileSync(new URL(`../lib/i18n/messages/${locale}.ts`, import.meta.url), "utf8");
     for (const key of ["chat.gitBranchTitle", "chat.gitWorktreeBranchTitle", "chat.branchTipBranchLabel",
-      "chat.branchTipWorktreeLabel", "chat.branchTipFolderLabel"]) {
+      "chat.branchTipWorktreeLabel", "chat.projectTipPathLabel", "chat.projectTipTitle"]) {
       assert.match(messages, new RegExp(`"${key}": `), `${locale} has ${key}`);
     }
+    assert.match(messages, /"chat\.projectTipPathLabel": "[^"]+"/, `${locale} labels the path row`);
+    assert.match(messages, /"chat\.projectTipTitle": "[^"]*\{projectRoot\}[^"]*"/, `${locale} names the project's folder`);
     assert.match(messages, /"chat\.gitBranchTitle": "[^"]*\{gitBranch\}[^"]*\{projectRoot\}[^"]*"/, `${locale} names the branch and the folder`);
   }
 });
@@ -97,7 +123,7 @@ test("the hydration render shows no branch, so React keeps the tree", () => {
     "the cache is still served, from the effect");
   assert.match(appShell, /<div className="app-topbar-title" title=\{topBarTitle\}>\n\s*<span>\{topBarTitle\}<\/span>/,
     "the title stays the first child: e2e/title-feedback reads it");
-  assert.match(appShell, /<span className="app-topbar-subtitle-row">\n\s*<small className="app-topbar-project">/);
+  assert.match(appShell, /<span className="app-topbar-subtitle-row">\n\s*(?:\/\*[^]*?\*\/\s*)?\{topBarProjectIcon \? \(/);
 });
 
 test("the branch name says which checkout it is: branch glyph, worktree glyph", () => {
@@ -114,7 +140,7 @@ test("the project row ends with the clock, then the subagent counts", () => {
   const row = appShell.match(/<span className="app-topbar-subtitle-row">[\s\S]*?<\/span>\s*\)\}/);
   assert.ok(row, "the project row renders");
   const at = (needle) => row[0].indexOf(needle);
-  assert.ok(at('className="app-topbar-project"') < at("<TopbarBranchChip"), "project, then branch");
+  assert.ok(at("<TopbarProjectChip") < at("<TopbarBranchChip"), "project, then branch");
   assert.ok(at("<TopbarBranchChip") < at("<TopbarElapsed"), "branch, then the clock");
   assert.ok(at("<TopbarElapsed") < at("<TopbarSubagents"), "the counts come last: they are what wraps");
 });

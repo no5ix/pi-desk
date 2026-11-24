@@ -3553,22 +3553,26 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 }
 .app-topbar-project > span,
 .app-topbar-branch > span,
+.app-topbar-project-hit > span,
 .app-topbar-branch-hit > span {
-  /* The branch label's text is inside the tip's button, so the ellipsis rule follows it
-     in there; without it the name spills over the clock instead of ellipsizing. */
+  /* Both labels' text lives inside the tip's button, so the ellipsis rule follows it in
+     there; without it the name spills over the next label instead of ellipsizing. The
+     row is where they get cut — the tip is where they must not be. */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The branch is a control, not a label with a native tooltip: hover, focus, or a tap
-   opens the app's own tip with the whole branch name and the folder it lives in. A native
-   `title` never opens on a phone, and on Safari it showed a raw i18n key. */
+/* The project and the branch are controls, not labels with a native tooltip: hover,
+   focus, or a tap opens the app's own tip with the value the row cut. A native `title`
+   never opens on a phone, and on Safari it showed a raw i18n key. */
+.app-topbar-project--chip,
 .app-topbar-branch--chip {
   padding: 0;
 }
 
+.app-topbar-project-hit,
 .app-topbar-branch-hit {
   display: inline-flex;
   align-items: center;
@@ -3585,16 +3589,18 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   transition: background var(--dur-fast) var(--ease-native);
 }
 
+.app-topbar-project-hit:hover,
 .app-topbar-branch-hit:hover {
   background: var(--bg-hover);
 }
 
+.app-topbar-project-hit:focus-visible,
 .app-topbar-branch-hit:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-.app-topbar-branch-tip {
+.app-topbar-tip {
   position: fixed;
   z-index: var(--z-popover);
   display: grid;
@@ -3606,28 +3612,20 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   box-shadow: var(--shadow-popover);
 }
 
-.app-topbar-branch-tip-label {
+.app-topbar-tip-label {
   color: var(--text-muted);
   font-size: var(--fs-micro);
   font-weight: var(--fw-medium);
 }
 
-.app-topbar-branch-tip-name {
+.app-topbar-tip-value {
+  /* The tip exists to carry what the row could not fit, so it never ellipsizes: the
+     branch name and the path wrap and read complete, on a 390px phone too. */
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-small);
+  white-space: normal;
   overflow-wrap: anywhere;
-}
-
-.app-topbar-branch-tip-path {
-  color: var(--text-dim);
-  font-size: var(--fs-caption);
-  overflow-wrap: anywhere;
-}
-
-.app-topbar-branch-tip-path-label {
-  margin-right: 5px;
-  color: var(--text-muted);
 }
 /* The live clock after the branch: how long the task has been running since the
    last prompt. It re-reads itself every second, so `tabular-nums` keeps the
@@ -10806,7 +10804,9 @@ html.native-desktop :is(
 .composer-outbox-preview {
   flex: 1;
   min-width: 0;
-  padding: 8px 2px;
+  /* The queued prompt reads as a sentence, not as text glued to the queue glyph: the
+     row's 8px gap plus 2px left padding put the first word under the glyph's edge. */
+  padding: 8px 2px 8px 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

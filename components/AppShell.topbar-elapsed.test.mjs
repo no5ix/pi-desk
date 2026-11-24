@@ -25,7 +25,7 @@ test("the clock chip sits after the branch, in the project row", () => {
   const chipAt = appShell.indexOf("<TopbarElapsed since={lastPromptAt} />");
   assert.ok(rowStart > 0 && chipAt > rowStart, "the clock renders inside the project row");
   const row = appShell.slice(rowStart, chipAt + 40);
-  const projectAt = row.indexOf('className="app-topbar-project"');
+  const projectAt = row.indexOf("<TopbarProjectChip");
   const branchAt = row.indexOf("<TopbarBranchChip");
   assert.ok(projectAt > 0 && branchAt > 0, "the project and the branch render in the same row");
   assert.ok(projectAt < branchAt, "[folder] project, then [branch] branch, then the clock");
