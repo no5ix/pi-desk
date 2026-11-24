@@ -110,7 +110,7 @@ assert.ok(menuWidth > 225 && menuWidth <= 240, `the chip's menu is the wide proj
 
 for (const row of rows) {
   const label = row.text;
-  assert.equal(row.actions.length, 2, `${label}: the two action icons`);
+  assert.equal(row.actions.length, 1, `${label}: one action icon — the worktree; the branch name is the switch`);
   assert.ok(!row.tagOverIcon, `${label}: the "${row.tagText}" tag does not overlap the row's icons`);
   assert.ok(!row.tagPastButton, `${label}: the "${row.tagText}" tag stays inside the row's button`);
   if (row.tag) {

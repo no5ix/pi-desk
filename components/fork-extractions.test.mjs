@@ -252,7 +252,7 @@ const EXTRACTIONS = [
     movedTo: ["components/ProjectContextMenu.tsx", "hooks/useProjectWorktreeActions.ts"],
     movedDefinitions: ["createProjectWorktree", "showNativeProjectBranchMenu", "fetchProjectBranchMenu"],
     absentFromOrigin: [],
-    presentInTargets: ["sidebar.checkOutBranchTitle", "sidebar.worktreeFromBranchTitle", "sidebar.newWorktreeFrom", "baseBranch"],
+    presentInTargets: ["sidebar.worktreeFromBranchTitle", "sidebar.newWorktreeFrom", "baseBranch"],
     requiredInOrigin: [
       "showNativeProjectBranchMenu(",
       "showNativeProjectWorktreeMenu(",
