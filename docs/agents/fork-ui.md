@@ -391,6 +391,29 @@ turns a label into a target the pointer has to aim at, and the panel already has
 through the chat's usage command (`onSessionStatsPanelOpen`, `hooks/useAgentSession.ts`).
 With nothing to report the chip renders nothing, so an empty ring never reads as a spinner.
 
+**The row's order is `[folder] project  [branch] branch  [robot] ✓2 ⚠1 ↻3  [side] 2 ↻1
+[clock] 11m5s  [context]`.** The counts of the family's runs come right behind the branch —
+they are the state of the work — and the clock is the tail of that state, with the context
+ring last. The clock used to sit in front of the counts, so the row read as a header that
+ended with a label.
+
+`components/TopbarSubagents.tsx` is the family's chip: **one button, two groups**. A family
+holds two kinds of member (ADR 0007, `lib/session-family.ts`), and `countSubagents` /
+`countSideChats` read them apart — a delegated run and a conversation the user opened are
+different facts, and "6 runs" that mixes them says nothing a user can act on. Each group
+leads with the glyph its kind already wears elsewhere (the Agents panel's head, and the
+composer's / the sidebar's circle-and-plus), so the row reads
+`[robot] ✓2 ⚠1 ↻3  [side] 2 ↻1`. Both groups open the same panel, so they live in **one**
+control: two `<small role="button">` neighbours would be two targets for one action and two
+tab stops on a phone, and the accessible name is both sentences joined.
+
+**A side chat has no outcome.** Only a subagent relation carries a `status`; a conversation
+the user is typing into is not "completed" or "aborted". The side-chat group therefore
+states its count and its live runs (`{total} side chats · {running} running`), and there is
+no `chat.sideChatsCompleted` / `chat.sideChatsAborted` key to invent a check mark for —
+`components/AppShell.topbar-branch.test.mjs` asserts those keys stay **absent** from all
+three locales, because a ✓ over a conversation is fabricated data.
+
 `e2e/topbar-project-row.mjs` measures all of this in Chromium: the four labels at
 1920/1200/960/700px, the distance from the branch's words (measured on a Range, because a
 growing label carries its empty space with it) to the clock, the branch tip under hover and
@@ -562,6 +585,8 @@ uninitialized `const`). The toggle also raises a phone's keyboard through
 - 输入卡片是一列：文本域在上、独占整行宽度，下一行依次是 `+` 附件按钮、会话控件（`.chat-composer-controls`）、发送按钮。控件不再摆在卡片下方，长文本横贯卡片输入，操作就在文字手边。文本域用 `flex: "none"`，因为列布局里 `flex: 1` 等于零基准，会把自适应高度压回 `minHeight`（`components/MobilePwaLayout.test.mjs` 钉住）。
 - 这一行的控件只有图标：推理级别、工具预设、模型选择都不显示文字，统一 32px 方按钮（`--control-h-lg`）；文字搬进 `title` 与 `aria-label`（`"Change reasoning level: medium"`、`"Change tool preset: Chat only"`、`"<模型名> — Change model"`、压缩停止按钮是 `"Stop compaction · Compacting (2/3)…"`）。`ModelSelector` 用 `iconOnly` 属性进入这种形态，Settings 与模型对话框的 `field` 形态保留文字标签。项目与分支标签保留文字：它们说明的是“哪个目录、哪个分支”，属于身份，不是设置。
 - 发送按钮仍是行内最后一个控件，保持与卡片右下圆角同心；`e2e/composer-geometry.mjs` 在 12/14/20/24px 字号、深浅色、1280/390/320 宽度下量取：文本域宽度等于卡片内宽、行内按钮同一水平线（手机 More 弹层是绝对定位，不计入）、控件按钮无文字且 `title` 非空、发送圆与卡片圆弧圆心重合。
+- 手机键盘弹起时 `.chat-composer-controls` 被 `html[data-keyboard-open]` 隐藏，而它正是这一行的弹性填充块：填充消失后整行靠左堆叠，发送按钮离开卡片右下角（WebKit 390px 实测 Send 在 x=130，卡片右边界 366，右边留出一条空带 —— 就是用户发来的手机 Safari 截图）。`.chat-composer-actions > .composer-send-button { margin-left: auto }` 让 Send 在有控件条和没有控件条时都钉在角上。`e2e/composer-ios.mjs` 用 **WebKit** 量这条（Chromium 的手机模拟看不出这类问题），带对照 pass（移除该规则 Send 漂移约 200px）并断言 fixture 的 class 链与 `ChatInput` 一致，防止 fixture 与被测对象漂移。
+- 文本域的宽度来自这一列的 `align-items: stretch`，不是 `width: 100%`：卡片内缩是它的 padding（再加编辑器左侧 4px），整宽 *加上* 水平 margin 会把文字推出卡片右边界 8px（手机上光标落在边框里）。被拉伸时 margin 只能内缩，所以 `ChatInput` 不设行内宽度，规则是 `width: auto; margin: 8px 0 0`。这个配对是承重的：该 bug 曾因样式表里一次手改 margin 而复现，`components/ChatInput.composer-row.test.mjs` 钉住 `width: auto` 且禁止 `margin: 8px;`。
 - 输入卡片没有“清空”按钮：文本域选中即可删除，键盘已能完成的事不该占去一行里属于无快捷键控件的位置；`chat.clearDraft` 随按钮从三个语言文件删除，`onClearDraft` 同时从 `ChatInput` 与 `ChatWindow` 移除。附件的移除控件各自带无障碍名称（文件的 `chat.removeAttachment` 含文件名，图片的 × 是 `chat.removeImage`，此前只是无标签图形）；历史编辑模式由自己的 Cancel 退出。
 - `/ commands · @ files · # sessions` 提示与占位文字同占一行：它在卡片内绝对定位（`top: calc(8px + (var(--composer-line-height) - 1.4em) / 2); right: 0`），不再在文本下多撑一行、把提示挤到视线之外；`pointer-events: none` 不抢点击，显示条件不变。`+` 附件按钮默认和附带附件时都不加底色，附件状态只改图标颜色。文本域 CSS 只留上边距：`width: 100%` 再加横向 margin 会让文字越出卡片右缘 8px（e2e 量取文字右缘不越过卡片）。
 - 立即发送通过 SDK prompt admission 的 `steer` 在下一个可接收指令的时机引导当前任务，不承诺强制中断正在进行的工具调用。编辑通过 `restoreSubmission` 合并到原会话草稿，保留已有输入与图片。
@@ -615,6 +640,10 @@ linear-gradient(var(--bg-hover), var(--bg-hover))` 作为叠加色，在每套�
 只有 linked worktree 才换图标、换项目名；普通检出仍显示目录名，因为那里目录就是项目。
 worktree 自己的路径没丢：项目 tip 的 `Path` 行就是正在工作的目录，branch chip 说那里的分支。
 `components/AppShell.worktree-project.test.mjs` 钉住解析与四处佩戴。
+
+**头部行的顺序是 `[文件夹] 项目  [分支] 分支  [机器人] ✓2 ⚠1 ↻3  [侧聊] 2 ↻1  [时钟] 11m5s  [上下文]`。** 家族运行的计数紧跟在分支后面（它们是工作的状态），时钟是这段状态的尾巴，上下文环收尾；时钟曾排在计数之前，整行读起来像以标签结束。`components/TopbarSubagents.tsx` 是**一个按钮、两个分组**：一个家族含两种成员（ADR 0007），`countSubagents` 与 `countSideChats` 分开计数 —— 委派运行与用户自己开的会话是两件事，混在一起的 “6 runs” 无法据以行动。每组以该类型在别处已使用的图标开头（Agents 面板的机器人头、输入框与侧栏的圆圈加号）。两组打开同一个面板，所以放在**一个**控件里：两个 `role="button"` 兄弟节点等于同一动作两个目标，手机上还多一次 Tab。可访问名是两句拼在一起。
+
+**侧聊没有“结果”。** 只有 subagent 的 relation 带 `status`；用户正在输入的会话谈不上“已完成 / 已中止”。所以侧聊分组只报数量与正在运行的条数（`{total} 个侧聊 · {running} 运行中`），语言文件里不存在 `chat.sideChatsCompleted` / `chat.sideChatsAborted` —— 给会话画 ✓ 是编造数据，`components/AppShell.topbar-branch.test.mjs` 断言这两个 key 在三种语言中始终**不存在**。
 
 worktree 的分支菜单列的是**仓库的**分支：`fetchProjectBranchMenu(cwd)` 按被询问的检出取数据，
 返回属于它即可接受 —— `data.projectRoot === cwd`，**或** `cwd` 在返回的 worktree 列表里。

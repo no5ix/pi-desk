@@ -33,7 +33,7 @@ import { keepDocumentTitle } from "@/lib/document-title";
 import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDialog";
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { TopbarElapsed } from "./TopbarElapsed";
-import { TopbarSubagents, countSubagents } from "./TopbarSubagents";
+import { TopbarSubagents, countSubagents, countSideChats } from "./TopbarSubagents";
 import { TopbarBranchChip } from "./TopbarBranchChip";
 import { TopbarProjectChip } from "./TopbarProjectChip";
 import { TopbarContextChip } from "./TopbarContextChip";
@@ -2202,6 +2202,13 @@ export function AppShell() {
     () => countSubagents(activeSessionFamily, runningSessionIds),
     [activeSessionFamily, runningSessionIds],
   );
+  // The family's other kind: the side chats the user opened beside this conversation.
+  // Counted apart (a delegated run and a side chat are different facts) and led by the
+  // composer's side-chat glyph, in the same button.
+  const topBarSideChats = useMemo(
+    () => countSideChats(activeSessionFamily, runningSessionIds),
+    [activeSessionFamily, runningSessionIds],
+  );
   const topBarProjectIcon = !pageOpen && !isChatWorkspaceActive && !!activeCwdName;
   const windowTitle = isChatWorkspaceActive
     ? `${topBarTitle} - ${PRODUCT_NAME}`
@@ -2552,23 +2559,29 @@ export function AppShell() {
                     isWorktree={Boolean(selectedSession?.isWorktree)}
                   />
                 )}
-                {/* The live clock after the branch: how long the running task has
+                {/* The family's runs, right behind the branch: the subagent runs and
+                    the side chats, each led by its kind's glyph and each with its
+                    completed / aborted / running buckets, in one button that opens the
+                    Agents panel. It comes before the clock because it is the state of
+                    the work, and the clock is the tail of it: `[robot] ✓2 ⚠1 ↻3
+                    [side] ✓1 ↻1  [clock] 11m5s  [context]`. On a phone, or behind a long
+                    project name, the row wraps and the counts are what move to the
+                    second line. */}
+                {showChat && !pageOpen && (
+                  <TopbarSubagents
+                    subagents={topBarSubagents}
+                    sideChats={topBarSideChats}
+                    onOpenAgents={() => toggleTopPanel("agents")}
+                    translate={translate}
+                  />
+                )}
+                {/* The live clock after the counts: how long the running task has
                     taken since its prompt. Only a running session has one — a count
                     that keeps ticking after its task ended is not a clock, it is a
                     reading of the wall. It ticks in its own component, so a second
                     passing re-renders this label and not the shell. */}
                 {showChat && !pageOpen && selectedSession !== null && runningSessionIds.has(selectedSession.id)
                   && <TopbarElapsed since={lastPromptAt} />}
-                {/* The subagent counts. Last in the row: on a phone, or behind a long
-                    project name, the row wraps and this is the chip that moves to the
-                    second line. */}
-                {showChat && !pageOpen && (
-                  <TopbarSubagents
-                    counts={topBarSubagents}
-                    onOpenAgents={() => toggleTopPanel("agents")}
-                    translate={translate}
-                  />
-                )}
                 {/* The context ring, last in the row. It left the composer's control
                     strip: how full the window is belongs with the conversation's other
                     state, and its numbers are longer than a phone, so they go in the

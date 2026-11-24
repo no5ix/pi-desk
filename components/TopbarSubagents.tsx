@@ -1,14 +1,26 @@
 "use client";
 
-// Fork-owned: the subagent counts in the header's project row, next to the
+// Fork-owned: the family's run counts in the header's project row, next to the
 // project, the branch and the running clock.
 //
 // The data is the active session's family — the same `listSessionFamilies`
 // grouping the sidebar's "Subagents" fold and components/AgentSessionPanel.tsx
-// use — reduced to four numbers, because the header has no room for a list. The
-// live running set (`/api/agent/running/events`) is what makes the "running"
-// number move while the task is going; the file's own status fields cover the
-// runs that finished, failed, were aborted or stopped.
+// use — reduced to numbers, because the header has no room for a list. The live
+// running set (`/api/agent/running/events`) is what makes the "running" number
+// move while the task is going; the file's own status fields cover the runs that
+// finished, failed, were aborted or stopped.
+//
+// A family holds two kinds of member (ADR 0007): the subagent runs and the side
+// chats. They are counted apart and shown apart — a side chat is a conversation
+// the user opened beside the main one, a subagent is a run the agent delegated —
+// and each kind leads with the glyph the rest of the app already uses for it, so
+// the row reads `[robot] ✓2 ⚠1 ↻3  [circle-plus] ✓1 ↻1`.
+//
+// **One button, two groups.** The chip opens one thing (the Agents panel), so it is
+// one control: two `<small role="button">` neighbours in a 400px row would be two
+// targets for the same action, and a keyboard user would tab through the same panel
+// twice. The groups carry their own tooltips; the button's accessible name is both
+// sentences.
 //
 // The icons are the ones the rest of the app already uses for these states:
 // AgentIcon for the family, the panel's check for a completed run, its stopped
@@ -32,13 +44,43 @@ export interface SubagentCounts {
  *  running, queued, interrupted, failed or aborted is counted once, in that
  *  order, so a run never lands in two buckets. */
 export function countSubagents(family: SessionFamily | null, runningIds: Set<string>): SubagentCounts {
+  return countFamilyMembers(family, runningIds, "subagent");
+}
+
+/**
+ * The same buckets for the family's side chats — the conversations the user opened
+ * beside the main one (`relation.kind === "side"`, the sidebar's leading glyph). A
+ * family's `subagents` list carries both kinds (ADR 0007), so the two counts are read
+ * from one pass over it and never added together: "6 runs" that mixes a delegated run
+ * with a side chat says nothing a user can act on.
+ *
+ * A side chat has no outcome. Only a subagent relation carries a `status`
+ * (`lib/session-family.ts`: `{ kind: "side"; parentSessionId }`), and a conversation
+ * the user is typing into is not "completed" or "aborted", so this kind reports what
+ * the app can state: how many side chats the family has, and how many are running now
+ * (the live set, `/api/agent/running/events`). The completed and aborted buckets stay
+ * zero and render nothing — a check mark invented for a chat is fabricated data.
+ */
+export function countSideChats(family: SessionFamily | null, runningIds: Set<string>): SubagentCounts {
+  return countFamilyMembers(family, runningIds, "side");
+}
+
+function countFamilyMembers(
+  family: SessionFamily | null,
+  runningIds: Set<string>,
+  kind: "subagent" | "side",
+): SubagentCounts {
   const counts: SubagentCounts = { total: 0, completed: 0, aborted: 0, running: 0 };
   if (!family) return counts;
   for (const session of family.subagents) {
+    // Only a member of the counted kind; the sidebar's fold filters the family the same
+    // way (AgentSessionPanel.tsx).
+    const relation = session.relation;
+    if (relation?.kind !== kind) continue;
     counts.total += 1;
-    // Only a subagent relation carries a status; the sidebar's fold filters the
-    // family the same way (components/AgentSessionPanel.tsx).
-    const status = session.relation?.kind === "subagent" ? session.relation.status : undefined;
+    // The live running set answers for every kind; the relation's own status exists on a
+    // subagent run only, and only a subagent's buckets go past "running".
+    const status = relation.kind === "subagent" ? relation.status : undefined;
     if (runningIds.has(session.id) || status === "running" || status === "queued") {
       counts.running += 1;
     } else if (status === "aborted" || status === "failed" || status === "interrupted") {
@@ -107,17 +149,75 @@ function AgentRunningIcon() {
   );
 }
 
+/* The composer's side-chat mark (components/ChatInput.tsx) and the sidebar's leading
+   glyph on a side chat's row (components/SessionSidebar.tsx): a bubble with a plus.
+   The header uses it at 11px so the same shape names the same kind in all three places. */
+function SideChatIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M21 12a8 8 0 0 1-8 8H5.5a2 2 0 0 1-1.4-3.4A8 8 0 1 1 21 12z" />
+      <path d="M13 8.5v7M9.5 12h7" />
+    </svg>
+  );
+}
+
+/** One bucket: the state's glyph and its number. A zero bucket renders nothing —
+ *  "✓0" is a claim about runs that do not exist, and the row has no room for it. */
+function Bucket({ kind, count, title }: { kind: "completed" | "aborted" | "running"; count: number; title: string }) {
+  if (count === 0) return null;
+  return (
+    <span className={`app-topbar-subagent-count is-${kind}`} title={title}>
+      <span className="app-topbar-subagent-glyph">
+        {kind === "completed" && <CheckIcon />}
+        {kind === "aborted" && (
+          /* The Agents panel's own stopped-run glyph, so the header's number and
+             the list's row say the same thing. */
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" /><path d="M9 9h6v6H9z" />
+          </svg>
+        )}
+        {kind === "running" && <AgentRunningIcon />}
+      </span>
+      <span>{count}</span>
+    </span>
+  );
+}
+
+function Buckets({ counts, translate, keys }: {
+  counts: SubagentCounts;
+  translate: (key: string, params?: TranslationParams) => string;
+  keys: { completed: string; aborted: string; running: string };
+}) {
+  return (
+    <>
+      <Bucket kind="completed" count={counts.completed} title={translate(keys.completed, counts)} />
+      <Bucket kind="aborted" count={counts.aborted} title={translate(keys.aborted, counts)} />
+      <Bucket kind="running" count={counts.running} title={translate(keys.running, counts)} />
+    </>
+  );
+}
+
+/**
+ * The header's family chip: the subagent runs and the side chats, each led by its
+ * kind's glyph, each with its completed / aborted / running buckets — inside ONE
+ * button, because both groups open the same panel.
+ */
 export function TopbarSubagents({
-  counts,
+  subagents,
+  sideChats,
   onOpenAgents,
   translate,
 }: {
-  counts: SubagentCounts;
+  subagents: SubagentCounts;
+  sideChats: SubagentCounts;
   onOpenAgents: () => void;
   translate: (key: string, params?: TranslationParams) => string;
 }) {
-  if (counts.total === 0) return null;
-  const title = translate("chat.subagentsTitle", counts);
+  if (subagents.total + sideChats.total === 0) return null;
+  const parts: string[] = [];
+  if (subagents.total > 0) parts.push(translate("chat.subagentsTitle", subagents));
+  if (sideChats.total > 0) parts.push(translate("chat.sideChatsTitle", sideChats));
+  const title = parts.join(" · ");
   return (
     <small
       className="app-topbar-subagents"
@@ -132,38 +232,27 @@ export function TopbarSubagents({
         onOpenAgents();
       }}
     >
-      <AgentIcon />
-      {counts.completed > 0 && (
-        <span
-          className="app-topbar-subagent-count is-completed"
-          title={translate("chat.subagentsCompleted", counts)}
-        >
-          <span className="app-topbar-subagent-glyph"><CheckIcon /></span>
-          <span>{counts.completed}</span>
+      {subagents.total > 0 && (
+        <span className="app-topbar-family-group" title={translate("chat.subagentsTitle", subagents)}>
+          <AgentIcon />
+          <Buckets
+            counts={subagents}
+            translate={translate}
+            keys={{
+              completed: "chat.subagentsCompleted",
+              aborted: "chat.subagentsAborted",
+              running: "chat.subagentsRunning",
+            }}
+          />
         </span>
       )}
-      {counts.aborted > 0 && (
-        <span
-          className="app-topbar-subagent-count is-aborted"
-          title={translate("chat.subagentsAborted", counts)}
-        >
-          {/* The Agents panel's own stopped-run glyph, so the header's number and
-              the list's row say the same thing. */}
-          <span className="app-topbar-subagent-glyph">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" /><path d="M9 9h6v6H9z" />
-            </svg>
-          </span>
-          <span>{counts.aborted}</span>
-        </span>
-      )}
-      {counts.running > 0 && (
-        <span
-          className="app-topbar-subagent-count is-running"
-          title={translate("chat.subagentsRunning", counts)}
-        >
-          <AgentRunningIcon />
-          <span>{counts.running}</span>
+      {sideChats.total > 0 && (
+        <span className="app-topbar-family-group app-topbar-family-group--side" title={translate("chat.sideChatsTitle", sideChats)}>
+          <SideChatIcon />
+          {/* A conversation is counted, not graded: the number is the family's side chats,
+              and the running bucket joins it while one is live. */}
+          <span className="app-topbar-subagent-count">{sideChats.total}</span>
+          <Bucket kind="running" count={sideChats.running} title={translate("chat.sideChatsRunning", sideChats)} />
         </span>
       )}
     </small>

@@ -613,6 +613,8 @@ export const zhCNLocale: LocalePlugin = {
     "chat.subagentsCompleted": "{completed} 已完成",
     "chat.subagentsAborted": "{aborted} 已中止",
     "chat.subagentsRunning": "{running} 运行中",
+    "chat.sideChatsTitle": "{total} 个侧聊 · {running} 运行中",
+    "chat.sideChatsRunning": "{running} 运行中",
     "chat.noBranchChip": "无分支",
     "sidebar.uploadFilesTitle": "将文件上传到项目根目录",
     "sidebar.uploadFiles": "上传文件",

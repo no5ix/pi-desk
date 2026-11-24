@@ -613,6 +613,8 @@ export const zhTWLocale: LocalePlugin = {
     "chat.subagentsCompleted": "{completed} 已完成",
     "chat.subagentsAborted": "{aborted} 已中止",
     "chat.subagentsRunning": "{running} 執行中",
+    "chat.sideChatsTitle": "{total} 個側聊 · {running} 執行中",
+    "chat.sideChatsRunning": "{running} 執行中",
     "chat.noBranchChip": "無分支",
     "sidebar.uploadFilesTitle": "將檔案上傳到專案根目錄",
     "sidebar.uploadFiles": "上傳檔案",

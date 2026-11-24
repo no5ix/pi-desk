@@ -107,6 +107,16 @@ test("the card has no clear button, and its row is quiet", async () => {
   // A textarea is selected and deleted; a trash icon in the row asked for a click to
   // do that, and the row is where the controls with no keyboard equivalent live.
   assert.doesNotMatch(chatInput, /className="composer-clear-button"/, "the clear button is gone from the composer");
+  assert.doesNotMatch(chatInput, /composer-clear-button/,
+    "and no leftover class in the row: the side-chat button borrowed the clear button's class, which kept the removed control's rules (and its 44px touch box) alive on a phone");
+  assert.doesNotMatch(css, /\.composer-clear-button/, "and no rule survives for the removed control");
+  assert.match(chatInput, /className="composer-side-chat-button"/);
+  const side = cssRule(css, ".composer-side-chat-button");
+  assert.ok(side, "the side-chat button owns its own box");
+  assert.ok(side.includes("width: var(--control-h-lg)") && side.includes("height: var(--control-h-lg)"),
+    "the row's icon control is one 32px square, like reasoning and the tool preset");
+  assert.match(cssRule(css, "@media (pointer: coarse) { .composer-side-chat-button") ?? css, /@media \(pointer: coarse\) \{ \.composer-side-chat-button \{ width: 44px; height: 44px; \} \}/,
+    "and a finger's 44px target on a phone");
   assert.doesNotMatch(chatInput, /onClearDraft/, "and the composer is not handed a draft-clearing callback any more");
   const chatWindow = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(chatWindow, /onClearDraft/, "the shell stops forwarding one");
@@ -121,6 +131,12 @@ test("the card has no clear button, and its row is quiet", async () => {
   assert.match(active, /color: var\(--text\);/, "it says so in the glyph's colour");
   assert.doesNotMatch(active, /background/, "and grows no background of its own");
   assert.match(cssRule(css, ".composer-attach-button") ?? "", /background: none;/, "at rest the button is bare");
+  // The phone's keyboard hides the controls strip, and the strip is the row's flex
+  // filler: with it gone every control packed to the left, Send included (WebKit, 390px:
+  // Send at x=130 of a card ending at 366). `auto` keeps Send in the card's corner.
+  const sendRule = cssRule(css, ".chat-composer-actions > .composer-send-button");
+  assert.ok(sendRule && sendRule.includes("margin-left: auto"),
+    "Send stays at the card's bottom-right corner with the strip hidden or shown");
   // What replaced the button: every attachment names its own remove control, images
   // included (the image's × used to be an unlabelled glyph, readable only because the
   // clear button stood next to it).
@@ -154,9 +170,14 @@ test("the / @ # hint rides the placeholder's row", () => {
 
 test("the full-width text area stays inside the card", () => {
   // `width: 100%` plus a horizontal margin pushed the text 8px past the card's right
-  // edge; the card's own inset is its padding.
+  // edge, on the phone as much as on a desktop; the card's own inset is its padding. The
+  // width is bought from the column's stretch, so a margin can only inset — this survived
+  // one hand-edit of the margin in the stylesheet, which is how the bug came back once.
   const rule = cssRule(css, ".chat-composer-editor > .chat-input-textarea");
   assert.ok(rule, "the textarea has a rule of its own");
+  assert.match(rule, /width: auto;/, "the width comes from the column's stretch");
   assert.match(rule, /margin: 8px 0 0;/, "only a top margin");
-  assert.doesNotMatch(rule, /margin: 8px;/, "no horizontal margin on top of width: 100%");
+  assert.doesNotMatch(rule, /margin: 8px;/, "never a horizontal margin beside a full width");
+  assert.doesNotMatch(rule, /width: 100%;/, "and no full width in the rule either");
+  assert.match(chatInput, /alignItems: "stretch"/, "the column stretches its children, which is where the width comes from");
 });

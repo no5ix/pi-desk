@@ -3735,6 +3735,23 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   flex: 0 0 auto;
 }
 
+/* The chip is ONE button holding two groups — the subagent runs and the side chats — so
+   one click opens the Agents panel. A group is its kind's glyph followed by the buckets;
+   the groups sit apart from each other so the eye reads two sentences, not six numbers. */
+.app-topbar-family-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.app-topbar-family-group + .app-topbar-family-group {
+  margin-left: 5px;
+  padding-left: 7px;
+  border-left: var(--hairline) solid var(--border);
+}
+.app-topbar-family-group--side {
+  color: var(--accent);
+}
+
 .app-topbar-subagent-count {
   display: inline-flex;
   align-items: center;
@@ -5789,12 +5806,25 @@ html.dark {
   padding: 0;
 }
 
+/* Send keeps the card's bottom-right corner even when the phone hides the controls strip.
+   The strip is the row's flex filler, so the keyboard-open rule
+   (`html[data-keyboard-open] .chat-composer-controls { display: none }`) collapsed the
+   filler and the row packed every control to the left: measured on WebKit at 390px, Send
+   sat at x=130 of a card that ends at 366, with 200px of empty card beside it. `auto`
+   pins the corner with the strip there or not, and changes nothing when it is. */
+.chat-composer-actions > .composer-send-button {
+  margin-left: auto;
+}
+
 .chat-composer-editor > .chat-input-textarea {
   box-sizing: border-box;
   padding-right: 3px;
-  /* Only a top margin: the textarea is the card's full width, and a horizontal margin
-     on top of `width: 100%` pushed it 8px past the card's right edge. The card's own
-     inset is its padding, plus 4px of editor padding on the left. */
+  /* The width comes from the column's `align-items: stretch`, not from `width: 100%`:
+     a full width and a horizontal margin together pushed the text 8px past the card's
+     right edge (the phone's Safari showed the caret in the border), and the margin is
+     the card's inset. Stretched, a margin can only inset. Keep the top margin vertical
+     only — that pairing is the invariant the width is bought with. */
+  width: auto;
   margin: 8px 0 0;
 }
 
@@ -6029,6 +6059,7 @@ html.dark {
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur-base) var(--ease-native);
+  padding-right: 23px;
 }
 
 .chat-composer:focus-within .composer-trigger-hint {
@@ -11453,8 +11484,25 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
 }
 
 /* The composer's clear/trash button is gone: a textarea is selected and deleted, and the
-   control row was better spent. Nothing renders `.composer-clear-button`; if the button
-   comes back, it belongs inside `.chat-composer-actions`, before Send. */
+   control row was better spent. The side-chat button that shared its class owns the box
+   now — the row's icon control, one 32px square, its words in the title and the label. */
+.composer-side-chat-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-self: center;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-lg);
+  height: var(--control-h-lg);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.composer-side-chat-button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.composer-side-chat-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .composer-side-chat-button:disabled { opacity: 0.45; cursor: not-allowed; }
 .composer-side-chat-button:disabled:hover { background: transparent; color: inherit; }
 
@@ -11519,7 +11567,7 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
   height: var(--hairline);
   background: var(--border);
 }
-@media (pointer: coarse) { .composer-clear-button { width: 44px; height: 44px; } }
+@media (pointer: coarse) { .composer-side-chat-button { width: 44px; height: 44px; } }
 
 
 /* ==========================================================================

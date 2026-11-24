@@ -3020,10 +3020,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             style={{
               // The card is a column: the text area keeps the height its auto-grow logic
               // computed (`flex: 1` would be a zero basis in a column and clip it), and the
-              // control row sits under it.
+              // control row sits under it. No inline width: the column stretches it to the
+              // card, so a horizontal margin (the card's own inset) can only inset it, never
+              // push it past the card's right edge — `width: 100%` plus a margin did exactly
+              // that, and a stray margin edit in the stylesheet reproduced it on a phone.
               flex: "none",
               minWidth: 0,
-              width: "100%",
               background: "none",
               border: "none",
               outline: "none",
@@ -3483,7 +3485,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {isStreaming && onSideChat && (
             <button
               type="button"
-              className="composer-clear-button composer-side-chat-button"
+              className="composer-side-chat-button"
               onClick={sendToSideChat}
               disabled={!value.trim() || attachedImages.length > 0}
               title={t("chat.sideChatHint")}

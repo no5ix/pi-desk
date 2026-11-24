@@ -137,39 +137,78 @@ test("the branch name says which checkout it is: branch glyph, worktree glyph", 
     "the glyphs are the sidebar's own, shared with the composer's chip");
 });
 
-test("the project row ends with the clock, then the subagent counts", () => {
+test("the project row carries the runs, then the clock, then the context", () => {
   const row = appShell.match(/<span className="app-topbar-subtitle-row">[\s\S]*?<\/span>\s*\)\}/);
   assert.ok(row, "the project row renders");
   const at = (needle) => row[0].indexOf(needle);
   assert.ok(at("<TopbarProjectChip") < at("<TopbarBranchChip"), "project, then branch");
-  assert.ok(at("<TopbarBranchChip") < at("<TopbarElapsed"), "branch, then the clock");
-  assert.ok(at("<TopbarElapsed") < at("<TopbarSubagents"), "the counts come last: they are what wraps");
+  assert.ok(at("<TopbarBranchChip") < at("<TopbarSubagents"), "then the family's runs, right behind the branch");
+  assert.ok(at("<TopbarSubagents") < at("<TopbarElapsed"), "then the clock: the counts are the work, the clock is its tail");
+  assert.ok(at("<TopbarElapsed") < at("<TopbarContextChip"), "and the context ring closes the row");
 });
 
-test("the subagent counts are the active family's, and clicking opens the agents panel", () => {
+test("the family chip counts subagents and side chats apart, in one button", () => {
   assert.match(appShell, /countSubagents\(activeSessionFamily, runningSessionIds\)/);
-  assert.match(appShell, /<TopbarSubagents\n\s*counts=\{topBarSubagents\}\n\s*onOpenAgents=\{\(\) => toggleTopPanel\("agents"\)\}/);
-  // The buckets are exclusive and read the live running set first.
+  assert.match(appShell, /countSideChats\(activeSessionFamily, runningSessionIds\)/);
+  assert.match(appShell, /<TopbarSubagents\n\s*subagents=\{topBarSubagents\}\n\s*sideChats=\{topBarSideChats\}\n\s*onOpenAgents=\{\(\) => toggleTopPanel\("agents"\)\}/);
   const counter = readFileSync(new URL("./TopbarSubagents.tsx", import.meta.url), "utf8");
-  // A session with no subagent runs renders nothing — the row is not a scoreboard.
-  assert.match(counter, /if \(counts\.total === 0\) return null;/);
+  // A family with neither kind of member renders nothing — the row is not a scoreboard.
+  assert.match(counter, /if \(subagents\.total \+ sideChats\.total === 0\) return null;/);
+  // A family's list carries both kinds (ADR 0007); a member is counted in one kind only,
+  // so "6 runs" never mixes a delegated run with a conversation the user opened.
+  assert.match(counter, /if \(relation\?\.kind !== kind\) continue;/);
+  assert.match(counter, /countFamilyMembers\(family, runningIds, "subagent"\)/);
+  assert.match(counter, /export function countSideChats[\s\S]*?countFamilyMembers\(family, runningIds, "side"\)/);
+  // The buckets are exclusive and read the live running set first.
   assert.match(counter, /if \(runningIds\.has\(session\.id\) \|\| status === "running" \|\| status === "queued"\) \{\n\s*counts\.running \+= 1;/);
   assert.match(counter, /status === "aborted" \|\| status === "failed" \|\| status === "interrupted"/,
     "a failed or stopped run is not a completed one");
-  assert.match(counter, /session\.relation\?\.kind === "subagent" \? session\.relation\.status : undefined/,
-    "only a subagent relation carries a status");
+  // One button: the two groups open the same panel, so one control. Two would be two
+  // targets for one action and two tab stops on the phone's keyboard.
+  assert.equal((counter.match(/\n\s*role="button"/g) ?? []).length, 1, "one button, not one per kind");
+  assert.equal((counter.match(/onClick=\{onOpenAgents\}/g) ?? []).length, 1);
+  assert.match(counter, /const title = parts\.join\(" · "\);\n\s*return \(/,
+    "the accessible name says both sentences, so a screen reader hears the whole chip");
+  // Two groups, each led by the glyph its kind already wears elsewhere in the app.
+  assert.match(counter, /className="app-topbar-family-group"[^>]*>\s*<AgentIcon \/>/);
+  assert.match(counter, /className="app-topbar-family-group app-topbar-family-group--side"[^>]*>\s*<SideChatIcon \/>/);
+  assert.match(counter, /<path d="M21 12a8 8 0 0 1-8 8H5\.5a2 2 0 0 1-1\.4-3\.4A8 8 0 1 1 21 12z" \/>\s*<path d="M13 8\.5v7M9\.5 12h7" \/>/,
+    "the side-chat glyph is the composer's and the sidebar's, not a new drawing");
+  assert.match(css, /\.app-topbar-family-group \+ \.app-topbar-family-group \{[^}]*margin-left: 5px;/,
+    "the groups sit apart: two sentences, not six numbers");
+  for (const loc of ["en", "zh-CN", "zh-TW"]) {
+    const messages = readFileSync(new URL(`../lib/i18n/messages/${loc}.ts`, import.meta.url), "utf8");
+    for (const key of ["chat.sideChatsTitle", "chat.sideChatsRunning"]) {
+      assert.ok(messages.includes(`"${key}"`), `${key} is translated in ${loc}`);
+    }
+    // A conversation has no outcome: only a subagent relation carries a status
+    // (lib/session-family.ts), so the side-chat group states its count and its live runs,
+    // and invents no completed / aborted buckets.
+    for (const key of ["chat.sideChatsCompleted", "chat.sideChatsAborted"]) {
+      assert.ok(!messages.includes(`"${key}"`), `${loc}: ${key} would be a fabricated state`);
+    }
+  }
+  assert.match(counter, /<SideChatIcon \/>[\s\S]{0,200}?<span className="app-topbar-subagent-count">\{sideChats\.total\}<\/span>/,
+    "the side-chat group is its glyph and its count");
+  assert.match(counter, /const status = relation\.kind === "subagent" \? relation\.status : undefined;/);
+  assert.match(counter, /<Bucket kind="running" count=\{sideChats\.running\}/, "plus the live ones");
 });
 
 test("the chip prints the buckets, not a total", () => {
   const counter = readFileSync(new URL("./TopbarSubagents.tsx", import.meta.url), "utf8");
-  // [subagent icon] [completed icon]N [aborted icon]N [running icon]N. The three
+  // [kind glyph] [completed glyph]N [aborted glyph]N [running glyph]N, per kind. The three
   // buckets are the total; a number after the glyph only took width from the row.
   assert.ok(!counter.includes("app-topbar-subagents-total"), "no total number");
   assert.ok(!css.includes(".app-topbar-subagents-total"), "and no rule for it");
-  assert.match(counter, /<AgentIcon \/>\s*\{counts\.completed > 0 && \(/, "the glyph is followed by the completed bucket");
-  assert.match(counter, /className="app-topbar-subagent-count is-aborted"[\s\S]*?<svg/, "the aborted bucket carries the Agents panel's stop glyph");
+  assert.match(counter, /function Bucket\(\{ kind, count, title \}[\s\S]*?if \(count === 0\) return null;/,
+    "a zero bucket renders nothing: \"\u27130\" is a claim about runs that do not exist");
+  assert.match(counter, /<AgentIcon \/>\s*<Buckets/, "the kind's glyph is followed by its buckets");
+  assert.match(counter, /className=\{`app-topbar-subagent-count is-\$\{kind\}`\}/,
+    "the buckets keep the classes the row colours by");
+  assert.match(counter, /kind === "aborted" && \([\s\S]*?<circle cx="12" cy="12" r="9" \/>/,
+    "the aborted bucket carries the Agents panel's stop glyph");
   assert.ok(!counter.includes("app-topbar-subagent-dot"), "the status dot is not the aborted icon");
-  assert.match(counter, /title=\{translate\("chat\.subagentsAborted", counts\)\}/, "each bucket says what it counts");
+  assert.match(counter, /title=\{title\}/, "each bucket says what it counts");
 });
 
 test("the project row is not cut off while the bar has room", () => {

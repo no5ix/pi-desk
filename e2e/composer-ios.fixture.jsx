@@ -1,0 +1,45 @@
+import { createRoot } from "react-dom/client";
+
+/**
+ * The composer's card and control row, in a form WebKit (the phone's Safari engine)
+ * can lay out, so the row can be measured at 390px with the keyboard open.
+ *
+ * The structure and the inline styles mirror components/ChatInput.tsx: the card is a
+ * column (`flexDirection: "column"`, `alignItems: "stretch"`), the text area is
+ * `flex: "none"` with no width of its own, and one `.chat-composer-actions` row carries
+ * the attach button, the session controls, the side-chat button and Send. The classes
+ * are the real ones, so the cascade that decides the geometry is the shipped one.
+ * e2e/composer-ios.mjs asserts this mirror against ChatInput's source: a fixture that
+ * drifts from the composer it models is a fixture that measures nothing.
+ */
+function Composer() {
+  return (
+    <div className="chat-composer" style={{ "--chat-content-font-size": "14px" }}>
+      <div
+        className="chat-composer-editor"
+        style={{ display: "flex", flexDirection: "column", gap: 0, alignItems: "stretch", position: "relative" }}
+      >
+        <textarea
+          className="chat-input-textarea"
+          rows={1}
+          placeholder="Message Pi…"
+          style={{ flex: "none", minWidth: 0, background: "none", border: "none", outline: "none", resize: "none" }}
+        />
+        <span className="composer-trigger-hint">/ commands · @ files · # sessions</span>
+        <div className="chat-composer-actions">
+          <button type="button" className="native-toolbar-button composer-attach-button" aria-label="Attach files">
+            +
+          </button>
+          <div className="chat-composer-controls">
+            <button type="button" aria-label="Reasoning: high" aria-haspopup="listbox" style={{ width: "var(--control-h-lg)", height: "var(--control-h-lg)", padding: 0 }} />
+            <button type="button" aria-label="Change tool preset: default" aria-haspopup="listbox" style={{ width: "var(--control-h-lg)", height: "var(--control-h-lg)", padding: 0 }} />
+          </div>
+          <button type="button" className="composer-side-chat-button" aria-label="Side chat" />
+          <button type="button" className="native-primary-button composer-send-button" data-action="send" aria-label="Send" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")).render(<Composer />);

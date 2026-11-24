@@ -613,6 +613,8 @@ export const enLocale: LocalePlugin = {
     "chat.subagentsCompleted": "{completed} completed",
     "chat.subagentsAborted": "{aborted} aborted",
     "chat.subagentsRunning": "{running} running",
+    "chat.sideChatsTitle": "{total} side chats · {running} running",
+    "chat.sideChatsRunning": "{running} running",
     "chat.noBranchChip": "No branch",
     "sidebar.uploadFilesTitle": "Upload files to project root",
     "sidebar.uploadFiles": "Upload files",
