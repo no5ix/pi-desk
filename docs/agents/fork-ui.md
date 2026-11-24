@@ -538,16 +538,21 @@ reach, and the measured placement moves the visible panel when the list arrives.
 in the hook): a menu whose list arrives later grows its far edge, the way a native menu
 does, and never flips from below the chip to above it mid-flight — the flash the user
 described ("it pops out below the chat composer, and then it would immediately show up
-above, so it looks like it just flashed"). The branch page paints no shape at first: the
-panel is invisible for `MENU_SKELETON_REVEAL_MS` (120 ms, timed in code, so a reduced-motion
-rule cannot strand it invisible) and paints the eight skeleton rows — at the list's height —
-only on a fetch that takes a beat; focus goes to the first row as it shows, because focusing
-an invisible element is a no-op. `e2e/branch-menu-rows.mjs` samples the panel **every frame**
-from the click (a round trip per sample steps over phases that last tens of milliseconds):
-the first frame is invisible, the shape is the height the list settles at, the panel's edge
-at the chip never moves (0px over 38 frames), and `?flash=1` puts the fixture back on the
-pre-fix placement, where the same sample shows a 347px jump — the check cannot pass by being
-blind.
+above, so it looks like it just flashed"). The cap floor is in force while the menu is born
+**and** while its list is in flight — the panel passes `{ growing: loadingShape }` — because
+the hook's first placement is not the last one: the `ResizeObserver` re-places from the
+measured height on every later frame, and in the live app that put the loading shape 343px
+from where the list landed. Once the content is final the measured height rules, so a
+five-branch repository still sits against its chip.
+The branch page paints no shape at first: the panel is invisible for
+`MENU_SKELETON_REVEAL_MS` (120 ms, timed in code, so a reduced-motion rule cannot strand it
+invisible) and paints the eight skeleton rows — at the list's height — only on a fetch that
+takes a beat; focus goes to the first row as it shows, because focusing an invisible element
+is a no-op. `e2e/branch-menu-rows.mjs` samples the panel **every frame** from the click (a
+round trip per sample steps over phases that last tens of milliseconds) and reports the
+movement of the visible rectangle: **0px** (38 frames, top and bottom both locked), while
+`?flash=1` puts the fixture back on the pre-fix flow and shows **342px** — the check cannot
+pass by being blind. Measured live in the app: `visible tops 38..38 → drift 0px`.
 
 The composer's **project chip** is a new-session control only: `ChatInput` gates it on
 `showProjectChip`, which `ChatWindow` passes as `!chatOnly && isNew`. A session that has run

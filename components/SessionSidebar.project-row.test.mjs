@@ -65,8 +65,10 @@ test("the branch chip opens on the side the loaded list fits on", async () => {
   // (560 against its 420 cap) put the panel's top where no content lives, and the
   // measured placement moved the visible panel when the list landed.
   assert.match(chip, /menuExpectedHeight\(window\.innerHeight\)/);
-  assert.match(hook, /firstRef\.current\s*\?\s*Math\.max\(rect\.height, menuExpectedHeight\(window\.innerHeight, MENU_MAX_HEIGHT_PX\)\)/,
-    "the first placement is for the settled height, not the shape the menu is born at");
+  assert.match(hook, /const capFloor = firstRef\.current \|\| options\.growing\s*\?\s*menuExpectedHeight\(window\.innerHeight, MENU_MAX_HEIGHT_PX\)/,
+    "the placement is bought for the settled height while the menu is born and while its list is in flight, not for the shape it is born at");
+  assert.match(menu, /useMenuPlacement\(anchor, menuRef, \{ growing: loadingShape \}\)/,
+    "the panel tells the hook its list is in flight: live in the app, the skeleton frame sat 343px from where the list landed");
   assert.match(hook, /sideRef\.current = next\.side;/, "the side is remembered: a growing list grows the far edge, it does not flip the panel");
   assert.match(menu, /maxHeight: MENU_MAX_HEIGHT_CSS/, "the panel carries the same cap placement starts from");
   // The list's shape is not painted on open: a fetch that lands in tens of

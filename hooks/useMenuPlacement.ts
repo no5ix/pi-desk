@@ -28,6 +28,7 @@ import {
 export function useMenuPlacement(
   anchor: MenuAnchor | null,
   menuRef: RefObject<HTMLElement | null>,
+  options: { growing?: boolean } = {},
 ): { top: number; left: number } | null {
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const sideRef = useRef<MenuSide | null>(null);
@@ -44,9 +45,15 @@ export function useMenuPlacement(
     firstRef.current = true;
     const place = () => {
       const rect = element.getBoundingClientRect();
-      const height = firstRef.current
-        ? Math.max(rect.height, menuExpectedHeight(window.innerHeight, MENU_MAX_HEIGHT_PX))
-        : rect.height;
+      // The cap floor is in force while the menu is *born* and while it is
+      // `growing` (a list a fetch has not filled): the panel is placed for the
+      // height its content settles at, so the frame the user first sees is the
+      // frame the content lands in. Once the content is final, the measured
+      // height rules, and a short list sits against its anchor.
+      const capFloor = firstRef.current || options.growing
+        ? menuExpectedHeight(window.innerHeight, MENU_MAX_HEIGHT_PX)
+        : 0;
+      const height = Math.max(rect.height, capFloor);
       const next = placeMenuWithinViewport(
         anchor,
         { width: rect.width, height },
@@ -68,7 +75,7 @@ export function useMenuPlacement(
       observer.disconnect();
       window.removeEventListener("resize", place);
     };
-  }, [anchor, menuRef]);
+  }, [anchor, menuRef, options.growing]);
 
   return position;
 }

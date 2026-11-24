@@ -202,8 +202,12 @@ const assertStays = (samples, label) => {
   const tops = visible.map((sample) => sample.top);
   const bottomDrift = Math.max(...bottoms) - Math.min(...bottoms);
   const topDrift = Math.max(...tops) - Math.min(...tops);
-  console.log(`${label}: ${withPanel.length} frames, ${visible.length} visible, panel ${Math.min(...tops)}..${Math.max(...tops)} (top drift ${topDrift}px, bottom drift ${bottomDrift}px)`);
-  return { visible, bottomDrift, topDrift, first: withPanel[0] };
+  // One number for the defect the user reported: the visible rectangle changed.
+  // A panel that keeps its top and grows its bottom is the same complaint as one
+  // that keeps its bottom and moves its top.
+  const movement = Math.max(topDrift, bottomDrift);
+  console.log(`${label}: ${withPanel.length} frames, ${visible.length} visible, panel top ${Math.min(...tops)}..${Math.max(...tops)}, moved ${movement}px (top ${topDrift}, bottom ${bottomDrift})`);
+  return { visible, bottomDrift, topDrift, movement, first: withPanel[0] };
 };
 
 const { samples, flowPage } = await openFlow("");
@@ -220,7 +224,7 @@ assert.ok(Math.abs(shapeFrame.height - Math.min(420, Math.round(800 * 0.7))) <= 
 // The edge at the chip is where the user's pointer is: it must not move. The far
 // edge grows away from the anchor, the way a native menu's does.
 assert.ok(fixed.bottomDrift <= 2, `the panel's edge at the chip moved ${fixed.bottomDrift}px`);
-assert.ok(fixed.topDrift <= 16, `the panel moved ${fixed.topDrift}px between its first visible frame and the list`);
+assert.ok(fixed.movement <= 16, `the panel's rectangle changed by ${fixed.movement}px between its first visible frame and the list`);
 await flowPage.screenshot({ path: `${out}/open-flow.png` });
 await flowPage.close();
 
@@ -230,13 +234,13 @@ await flowPage.close();
 const { samples: flashSamples, flowPage: flashPage } = await openFlow("flash=1");
 const flash = assertStays(flashSamples, "control pass");
 assert.ok(!flash.first.hidden, "the control pass paints the panel from the first frame, as the old code did");
-assert.ok(flash.topDrift > 40, `the control pass must show the flash, moved ${flash.topDrift}px`);
+assert.ok(flash.movement > 40, `the control pass must show the flash, moved ${flash.movement}px`);
 await flashPage.close();
 openServer.close();
 await browser.close();
 
 console.log(
   `branch menu: ${rows.length} rows at ${Math.round(menuWidth)}px, rows ${Math.round(Math.max(...rows.map((row) => row.name.height)))}px at the tallest, no tag/icon overlap, no clipped name; `
-  + `the open flow moves the panel ${fixed.topDrift}px (invisible while the fetch runs, shape at the list's height, the edge at the chip locked) where the pre-fix placement moved it ${flash.topDrift}px; `
+  + `the open flow moves the visible panel ${fixed.movement}px (invisible while the fetch runs, placed for the height the list settles at, the edge at the chip locked) where the pre-fix flow moved it ${flash.movement}px; `
   + `the un-fixed CSS overlaps ${before.filter((row) => row.tagOverIcon || row.tagPastButton).length} of ${before.length} rows`,
 );

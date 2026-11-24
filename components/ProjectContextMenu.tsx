@@ -341,18 +341,19 @@ export function ProjectContextMenuPanel({
   onClose = () => {},
 }: ProjectContextMenuProps) {
   useMenuNavigation(view !== "new-worktree" && !confirmRemove, menuRef, onClose);
-  // The menu is far taller than the row that opened it, so its real height is
-  // measured after rendering: a row near the bottom of the window flips the
-  // menu upward instead of letting it run off the screen.
-  const placed = useMenuPlacement(anchor, menuRef);
-  const position = placed ?? pos;
   const data = branchMenu?.root === projectRoot ? branchMenu : null;
   const loaded = Boolean(data?.loaded);
   // The composer's chip opens the branch page before the list has arrived. The
-  // panel is invisible for the first beat of that fetch (CSS, on data-loading),
-  // so the user sees one final rectangle instead of a shape that jumps; see
-  // MENU_SKELETON_REVEAL_MS and hooks/useMenuPlacement.ts.
+  // panel is invisible for the first beat of that fetch (the `data-loading` rule
+  // in app/native-theme.css), so the user sees one final rectangle instead of a
+  // shape that jumps; see MENU_SKELETON_REVEAL_MS and hooks/useMenuPlacement.ts.
   const loadingShape = branchLoading && !loaded;
+  // The menu is far taller than the row that opened it, so its real height is
+  // measured after rendering: a row near the bottom of the window flips the menu
+  // upward instead of letting it run off the screen. `growing` tells the hook the
+  // list is in flight, so the panel is placed for the height it settles at.
+  const placed = useMenuPlacement(anchor, menuRef, { growing: loadingShape });
+  const position = placed ?? pos;
   const [showLoadingShape, setShowLoadingShape] = useState(false);
   // Hidden only until the shape is shown: the shape is the panel's content on a
   // slow fetch, and hiding it would make the wait silent.
