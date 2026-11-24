@@ -10,6 +10,7 @@ import test from "node:test";
 
 const appShell = readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const chip = readFileSync(new URL("./TopbarBranchChip.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const hook = readFileSync(new URL("../hooks/useProjectBranch.ts", import.meta.url), "utf8");
 
 test("the title and the project line keep their positions in the title block", () => {
@@ -26,16 +27,42 @@ test("the branch label reads the session first, then the project directory", () 
   assert.match(appShell, /const activeProjectBranch = useProjectBranch\(\s*isChatWorkspaceActive \|\| pageOpen \|\| selectedSession \? null : visibleProjectCwd,\s*\);/,
     "a selected session asks the endpoint for nothing: it already carries its branch");
   assert.match(appShell, /const topBarBranch = isChatWorkspaceActive \|\| pageOpen\s*\?\s*null\s*:\s*selectedSession\?\.branch \?\? activeProjectBranch;/);
-  assert.match(appShell, /className="app-topbar-branch"/);
+  assert.match(chip, /className="app-topbar-branch app-topbar-branch--chip"/, "the row's branch label is the chip's");
 });
 
-test("the branch is a plain label, and nothing renders where there is no branch", () => {
-  assert.match(appShell, /\{topBarBranch && \(\s*<small\s+className="app-topbar-branch"/, "no branch, no element");
-  const chip = appShell.match(/<small\s+className="app-topbar-branch"[\s\S]*?<\/small>/);
-  assert.ok(chip, "branch chip renders");
-  assert.doesNotMatch(chip[0], /onClick|role="button"/, "it is a label, not a control");
+test("the branch is a control that opens a tip, and nothing renders where there is no branch", () => {
+  assert.match(appShell, /\{topBarBranch && \(\s*(?:\/\/[^\n]*\n\s*)*<TopbarBranchChip\n\s*branch=\{topBarBranch\}\n\s*projectRoot=\{activeCwd \?\? ""\}\n\s*isWorktree=\{Boolean\(selectedSession\?\.isWorktree\)\}\n\s*\/>/, "no branch, no element");
   assert.match(appShell, /const visibleProjectCwd = isChatWorkspaceActive \? null : activeCwd;/,
     "a chat has no project, so no branch");
+  // The tip, not a native tooltip: Safari showed the raw i18n key (the key was
+  // missing) and a phone never opens a native one, so the full name was
+  // unreachable exactly where the row cuts it.
+  assert.ok(!/className="app-topbar-branch"[\s\S]{0,400}?title=\{/.test(appShell), "no native title is left in the shell");
+  assert.match(chip, /role="tooltip"/);
+  assert.match(chip, /aria-describedby=\{open \? tipId : undefined\}/);
+  assert.match(chip, /onPointerEnter=\{\(event\) => \{[\s\S]*?if \(event\.pointerType === "touch"\) return;/,
+    "a touch pointer is owned by the click, so a tap does not fight the hover");
+  assert.match(chip, /onFocus=\{\(\) => setFocused\(true\)\}/, "the keyboard opens it");
+  assert.match(chip, /onClick=\{\(\) => setPinned\(\(current\) => !current\)\}/, "a tap opens it on a phone");
+  assert.match(chip, /if \(event\.key !== "Escape"\) return;/);
+  assert.match(chip, /document\.addEventListener\("pointerdown", onPointerDown, true\)/, "a tap elsewhere closes it");
+  assert.match(chip, /className="app-topbar-branch-tip-name">\{branch\}<\/span>/, "the tip carries the whole name");
+  assert.match(chip, /className="app-topbar-branch-tip-path"/, "and the folder it lives in");
+  assert.match(css, /\.app-topbar-branch-tip \{\n\s*position: fixed;\n\s*z-index: var\(--z-popover\);/);
+  assert.match(css, /\.app-topbar-branch-hit:hover \{\n\s*background: var\(--bg-hover\);/);
+});
+
+test("every locale can say what the tip says", () => {
+  // The header's native title once showed `chat.gitBranchTitle` because the key
+  // existed in no catalogue. The tip's labels are keys too, so they are pinned.
+  for (const locale of ["en", "zh-CN", "zh-TW"]) {
+    const messages = readFileSync(new URL(`../lib/i18n/messages/${locale}.ts`, import.meta.url), "utf8");
+    for (const key of ["chat.gitBranchTitle", "chat.gitWorktreeBranchTitle", "chat.branchTipBranchLabel",
+      "chat.branchTipWorktreeLabel", "chat.branchTipFolderLabel"]) {
+      assert.match(messages, new RegExp(`"${key}": `), `${locale} has ${key}`);
+    }
+    assert.match(messages, /"chat\.gitBranchTitle": "[^"]*\{gitBranch\}[^"]*\{projectRoot\}[^"]*"/, `${locale} names the branch and the folder`);
+  }
 });
 
 test("the branch line is styled in the fork CSS, like the sidebar's branch meta", () => {
@@ -76,9 +103,10 @@ test("the hydration render shows no branch, so React keeps the tree", () => {
 test("the branch name says which checkout it is: branch glyph, worktree glyph", () => {
   // The same branch name can live in the repo and in a linked worktree, and the
   // header is the only place a session says where it runs.
-  assert.match(appShell, /\{selectedSession\?\.isWorktree \? <WorktreeIcon \/> : <BranchIcon \/>\}/);
-  assert.match(appShell, /selectedSession\?\.isWorktree \? "chat\.gitWorktreeBranchTitle" : "chat\.gitBranchTitle"/);
-  assert.match(appShell, /import \{ BranchIcon, WorktreeIcon \} from "\.\/GitIcons";/,
+  assert.match(chip, /\{isWorktree \? <WorktreeIcon \/> : <BranchIcon \/>\}/);
+  assert.match(chip, /t\(isWorktree \? "chat\.gitWorktreeBranchTitle" : "chat\.gitBranchTitle",/, "and says it to a screen reader too");
+  assert.match(appShell, /isWorktree=\{Boolean\(selectedSession\?\.isWorktree\)\}/, "the shell only says which kind this is");
+  assert.match(chip, /import \{ BranchIcon, WorktreeIcon \} from "\.\/GitIcons";/,
     "the glyphs are the sidebar's own, shared with the composer's chip");
 });
 
@@ -86,8 +114,8 @@ test("the project row ends with the clock, then the subagent counts", () => {
   const row = appShell.match(/<span className="app-topbar-subtitle-row">[\s\S]*?<\/span>\s*\)\}/);
   assert.ok(row, "the project row renders");
   const at = (needle) => row[0].indexOf(needle);
-  assert.ok(at('className="app-topbar-project"') < at('className="app-topbar-branch"'), "project, then branch");
-  assert.ok(at('className="app-topbar-branch"') < at("<TopbarElapsed"), "branch, then the clock");
+  assert.ok(at('className="app-topbar-project"') < at("<TopbarBranchChip"), "project, then branch");
+  assert.ok(at("<TopbarBranchChip") < at("<TopbarElapsed"), "branch, then the clock");
   assert.ok(at("<TopbarElapsed") < at("<TopbarSubagents"), "the counts come last: they are what wraps");
 });
 
@@ -118,16 +146,27 @@ test("the chip prints the buckets, not a total", () => {
 });
 
 test("the project row is not cut off while the bar has room", () => {
-  // The project, the branch, the clock and the subagent counts all live inside
-  // `.app-topbar-title`, so that column's cap is the row's room. At 420px it
-  // ellipsized a normal branch name in a 1440px window.
-  assert.match(css, /\.app-topbar-title \{[\s\S]*?max-width: min\(64vw, 760px\);/, "the column is as wide as the bar can give it");
-  assert.ok(!/max-width: 420px;\n  flex-direction: column;/.test(css), "the old cap is gone");
-  // A phone keeps its smaller caps: the row must not widen the page there.
-  assert.match(css, /@media \(max-width: 900px\) \{\n  \.app-topbar-title \{\n    max-width: 160px;/);
-  assert.match(css, /@media \(max-width: 640px\) \{[\s\S]*?\.app-topbar-title \{\n    max-width: min\(64vw, 340px\);/);
+  // All four labels live inside `.app-topbar-title`, and the bar's actions push with
+  // `margin-left: auto`, which takes the free space before flex-grow does — so this
+  // column is sized by its own content and every cap on it truncated the row. It was
+  // 420px, then 240px at 1120px (`pi-desk  fe…` in a window with room to spare).
+  assert.match(css, /\.app-topbar-title \{[\s\S]*?max-width: none;/, "the desktop column is as wide as the bar allows");
+  assert.ok(!/\.app-topbar-title \{\n\s*max-width: (420px|240px|160px);/.test(css), "no fixed cap is left on the column");
+  // The session title is the label that gives way: its text is kept out of the
+  // column's intrinsic width so the project row is what sizes it.
+  assert.match(css, /\.app-topbar-title > span:not\(\.app-topbar-subtitle-row\) \{\n\s*width: 0;\n\s*min-width: 100%;/, "the title ellipsizes, not the row");
+  // Nothing grows, so the labels sit together and the clock and the counts stay behind
+  // the branch they describe.
+  assert.match(css, /\.app-topbar-branch \{[\s\S]*?flex: 0 1 auto;/, "the branch takes its own width");
+  assert.ok(!/\.app-topbar-branch \{\n\s*flex: 1 1 0;/.test(css), "a growing branch pushes the clock to the far edge");
+  // A narrow window keeps the labels on one line and the branch is what shrinks.
+  assert.match(css, /@media \(max-width: 900px\) \{[\s\S]*?\.app-topbar-title \{\s*(?:\/\*[\s\S]*?\*\/\s*)?max-width: min\(72vw, 560px\);/,
+    "a 900px window gets room for the four labels");
+  assert.match(css, /@media \(max-width: 640px\) \{[\s\S]*?\.app-topbar-title \{\s*(?:\/\*[\s\S]*?\*\/\s*)?max-width: min\(78vw, 420px\);/,
+    "a phone gets the most the bar can spare");
+  assert.match(css, /@media \(max-width: 640px\) \{[\s\S]*?\.app-topbar-subtitle-row \{[\s\S]*?flex-wrap: nowrap;/,
+    "a phone keeps one line: three stacked header lines are worse than a cut branch, whose name the tip carries");
   assert.match(css, /\.app-topbar-project \{[\s\S]*?min-width: 5\.5em;/, "the project keeps a few characters and its icon");
-  assert.match(css, /\.app-topbar-branch \{\n\s*flex: 1 1 0;/, "the branch takes the row's leftover width");
 });
 
 test("a full row wraps the counts to a second line, and the bar grows with them", () => {

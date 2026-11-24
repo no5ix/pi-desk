@@ -34,7 +34,7 @@ import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDial
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { TopbarElapsed } from "./TopbarElapsed";
 import { TopbarSubagents, countSubagents } from "./TopbarSubagents";
-import { BranchIcon, WorktreeIcon } from "./GitIcons";
+import { TopbarBranchChip } from "./TopbarBranchChip";
 import { UpdateReminder } from "./UpdateReminder";
 import { useTheme } from "@/hooks/useTheme";
 import { useFonts } from "@/hooks/useFonts";
@@ -2513,19 +2513,15 @@ export function AppShell() {
                   <span>{topBarSubtitle}</span>
                 </small>
                 {topBarBranch && (
-                  <small
-                    className="app-topbar-branch"
-                    title={translate(
-                      selectedSession?.isWorktree ? "chat.gitWorktreeBranchTitle" : "chat.gitBranchTitle",
-                      { gitBranch: topBarBranch, projectRoot: activeCwd ?? "" },
-                    )}
-                  >
-                    {/* The sidebar's branch glyph in a checkout, the worktree glyph in a
-                        linked worktree: the same branch name can mean both folders, and
-                        the header has to say which one this session works in. */}
-                    {selectedSession?.isWorktree ? <WorktreeIcon /> : <BranchIcon />}
-                    <span>{topBarBranch}</span>
-                  </small>
+                  // A control, not a label with a native tooltip: the branch is the only
+                  // thing in this row that gets cut, and on a phone a native tooltip never
+                  // opens. Hover, focus or tap and the tip gives the whole name and the
+                  // folder it lives in.
+                  <TopbarBranchChip
+                    branch={topBarBranch}
+                    projectRoot={activeCwd ?? ""}
+                    isWorktree={Boolean(selectedSession?.isWorktree)}
+                  />
                 )}
                 {/* The live clock after the branch: how long the running task has
                     taken since its prompt. Only a running session has one — a count

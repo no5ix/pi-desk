@@ -258,15 +258,39 @@ phone sees the project, the branch and the elapsed time. The clock never wraps
 Pinned by `components/AppShell.topbar-elapsed.test.mjs`, and the row's shape and the
 branch's contract by `components/AppShell.topbar-branch.test.mjs`.
 
-The row's room is `.app-topbar-title`'s `max-width`, because every label in it
-lives in that column. At 420px it ellipsized a branch name with room to spare — a
-1440px window showed `feat/branch-picker-header-…` — so the desktop cap is
-`min(64vw, 760px)`. The bar's buttons are `flex: 0 0 auto`, so a wider title never
-pushes them off; the phone caps (160px at 900px, `min(64vw, 340px)` at 640px) stay,
-and the project keeps `min-width: 5.5em` so it survives a phone's row. The branch
-keeps `flex: 1 1 0`: it takes the row's leftover width and is the one that ellipsizes.
-`e2e/topbar-project-row.mjs` measures the labels at 1440px and 390px, and puts the
-420px cap back on the last pass to prove the measurement sees the truncation.
+The row's room is `.app-topbar-title`, and the bar's actions push with
+`margin-left: auto` — an auto margin takes the free space before `flex-grow` does, so
+the column is sized by its **own content** and every cap on it truncated the row: 420px
+at desktop, then 240px at 1120px and 160px at 900px, which is how a 960px window ended up
+showing `pi-desk  fe…`. The caps are gone (`max-width: none`; `min(72vw, 560px)` at
+900px, `min(78vw, 420px)` at 640px) and the session title is the label that gives way:
+`width: 0; min-width: 100%` keeps the title's text out of the column's intrinsic size, so
+the project row is what sizes the column and the title is what ellipsizes.
+
+Nothing in the row grows. The branch is `flex: 0 1 auto`, not `flex: 1 1 0`: a growing
+branch filled the column and shoved the clock and the subagent counts to the far edge —
+measured 320px from the branch's words, in a row whose project is six characters. Labels
+that take their own width sit together (the clock 12px behind the words) and the branch
+is still the first to shrink. A phone keeps the row on one line (`flex-wrap: nowrap`
+at 640px): three stacked header lines are worse than an ellipsized branch, and the tip
+below carries the whole name. The project keeps `min-width: 5.5em` (5em on a phone).
+
+The branch is a control, `components/TopbarBranchChip.tsx`, not a label with a native
+`title`: hover and focus on desktop, a tap on a phone, and the app's own tip appears
+under it with the whole branch name and the folder it lives in (`role="tooltip"`,
+`--z-popover`, repositioned on reflow, closed by Escape or a tap elsewhere; a touch
+pointer is ignored by the hover handlers so a tap does not fight it). The native tooltip
+it replaced showed a raw key in Safari (`chat.gitBranchTitle`, missing from every
+catalogue — the keys are in all three now, and `lib/i18n/registry.test.mjs` keeps the
+locales in step) and on a phone a native tooltip never opens, so the full name was
+unreachable exactly where the row cuts it.
+
+`e2e/topbar-project-row.mjs` measures all of this in Chromium: the four labels at
+1920/1200/960/700px, the distance from the branch's words (measured on a Range, because a
+growing label carries its empty space with it) to the clock, the tip under hover and
+under a tap on a 390px touch context, and two control passes that put the old rules back
+— the 760px cap with a growing branch strands the clock, a 200px column cuts the name to
+a stub — so the checks cannot pass by being blind.
 
 ## Composer branch chip, and a worktree from a branch
 

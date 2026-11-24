@@ -26,7 +26,7 @@ test("the clock chip sits after the branch, in the project row", () => {
   assert.ok(rowStart > 0 && chipAt > rowStart, "the clock renders inside the project row");
   const row = appShell.slice(rowStart, chipAt + 40);
   const projectAt = row.indexOf('className="app-topbar-project"');
-  const branchAt = row.indexOf('className="app-topbar-branch"');
+  const branchAt = row.indexOf("<TopbarBranchChip");
   assert.ok(projectAt > 0 && branchAt > 0, "the project and the branch render in the same row");
   assert.ok(projectAt < branchAt, "[folder] project, then [branch] branch, then the clock");
   assert.match(appShell, /\{showChat && !pageOpen && selectedSession !== null && runningSessionIds\.has\(selectedSession\.id\)\s*&&\s*<TopbarElapsed since=\{lastPromptAt\} \/>/,
@@ -70,7 +70,7 @@ test("the chip is styled with the row, and the row is the phone's context line",
   assert.match(css, /\.app-topbar-elapsed \{[\s\S]*?flex: 0 0 auto;/, "the clock is never squeezed away; the project name gives way");
   assert.match(css, /\.app-topbar-elapsed svg \{\s*flex: 0 0 auto;/);
   const phone = css.match(/@media \(max-width: 640px\) \{[\s\S]*?\n\}/g) ?? [];
-  assert.ok(phone.some((block) => /\.app-topbar-title \{\s*max-width: min\(64vw, 340px\);/.test(block)),
+  assert.ok(phone.some((block) => /\.app-topbar-title \{\s*(?:\/\*[\s\S]*?\*\/\s*)?max-width: min\(78vw, 420px\);/.test(block)),
     "the phone's title block is wide enough to carry project, branch and clock");
   assert.ok(css.includes("min-width: 5.5em") && css.includes("min-width: 5em"),
     "the project label keeps a few characters and its icon, so the long branch name is what ellipsizes");

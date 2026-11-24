@@ -760,15 +760,6 @@
   pointer-events: none;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .settings-dialog-backdrop,
-  .settings-dialog-surface,
-  .settings-dialog-backdrop.is-closing,
-  .settings-dialog-surface.is-closing {
-    animation: none;
-  }
-}
-
 .settings-dialog-surface {
   width: min(1040px, calc(100vw - 64px));
   max-width: none;
@@ -3501,17 +3492,26 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   display: flex;
   flex: 1 1 auto;
   min-width: 72px;
-  /* The project line lives in this column, so its cap is the project line's room.
-     A 420px cap ellipsized a normal branch name (`feat/branch-picker-header-…`)
-     while the bar had most of a window of space to spare. The title keeps the
-     free space and the bar's buttons are `flex: 0 0 auto`, so widening this
-     never pushes them out; the phone rules below set their own smaller caps. */
-  max-width: min(64vw, 760px);
+  /* The project row under the title is the row that has to read fully — project,
+     branch, clock, counts. The bar's actions push with `margin-left: auto`, and an auto
+     margin takes the free space before flex-grow does, so this column is sized by its own
+     content: a cap here (420px, then 760px) ellipsized a normal branch name in a window
+     with most of its width free. `max-width: none` lets the row ask for what it needs;
+     the phone rules below keep their own smaller caps. */
+  max-width: none;
   flex-direction: column;
   justify-content: center;
   margin-left: 4px;
   padding: 0 7px;
   line-height: 1.18;
+}
+
+/* The session title is the label that gives way, so its text must not decide the
+   column's width: `width: 0` keeps it out of the column's intrinsic size, and
+   `min-width: 100%` makes it fill whatever the project row won, ellipsizing there. */
+.app-topbar-title > span:not(.app-topbar-subtitle-row) {
+  width: 0;
+  min-width: 100%;
 }
 
 .app-topbar-title > span {
@@ -3569,7 +3569,10 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   min-width: 5.5em;
 }
 .app-topbar-branch {
-  flex: 1 1 0;
+  /* Not `flex: 1 1 0`: growing the branch filled the row and pushed the clock and the
+     subagent counts to the far edge of the header, far away from the branch they belong
+     to. It takes its own width and is the first to shrink when the row runs out. */
+  flex: 0 1 auto;
   min-width: 0;
   color: var(--text-dim);
   font-family: var(--font-mono);
@@ -3580,11 +3583,82 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   color: var(--text-dim);
 }
 .app-topbar-project > span,
-.app-topbar-branch > span {
+.app-topbar-branch > span,
+.app-topbar-branch-hit > span {
+  /* The branch label's text is inside the tip's button, so the ellipsis rule follows it
+     in there; without it the name spills over the clock instead of ellipsizing. */
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The branch is a control, not a label with a native tooltip: hover, focus, or a tap
+   opens the app's own tip with the whole branch name and the folder it lives in. A native
+   `title` never opens on a phone, and on Safari it showed a raw i18n key. */
+.app-topbar-branch--chip {
+  padding: 0;
+}
+
+.app-topbar-branch-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-native);
+}
+
+.app-topbar-branch-hit:hover {
+  background: var(--bg-hover);
+}
+
+.app-topbar-branch-hit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.app-topbar-branch-tip {
+  position: fixed;
+  z-index: var(--z-popover);
+  display: grid;
+  gap: 3px;
+  padding: 7px 9px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-popover);
+}
+
+.app-topbar-branch-tip-label {
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-medium);
+}
+
+.app-topbar-branch-tip-name {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.app-topbar-branch-tip-path {
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+}
+
+.app-topbar-branch-tip-path-label {
+  margin-right: 5px;
+  color: var(--text-muted);
 }
 /* The live clock after the branch: how long the task has been running since the
    last prompt. It re-reads itself every second, so `tabular-nums` keeps the
@@ -5233,6 +5307,18 @@ html.dark {
   animation: native-modal-in var(--dur-base) var(--ease-sheet) both;
 }
 
+/* Reduced motion turns both halves off. This sits after the entrance rule above:
+   the plain `.settings-dialog-surface` selector and this one are equally specific,
+   so the one that comes later wins, and the entrance must lose. */
+@media (prefers-reduced-motion: reduce) {
+  .settings-dialog-backdrop,
+  .settings-dialog-surface,
+  .settings-dialog-backdrop.is-closing,
+  .settings-dialog-surface.is-closing {
+    animation: none;
+  }
+}
+
 .settings-dialog-surface .config-switch[aria-checked="true"] {
   border-color: var(--settings-control-on);
   background: var(--settings-control-on);
@@ -6170,8 +6256,11 @@ html.dark {
 }
 
 @media (max-width: 1120px) {
+  /* The old 240px cap is what cut a normal branch name to `fe…` in a window with
+     most of its width free. The column is sized by the project row's own content
+     (~450px) now, so it needs no cap until the window itself runs short. */
   .app-topbar-title {
-    max-width: 240px;
+    max-width: none;
   }
 
   .app-topbar-actions .native-toolbar-button {
@@ -6181,7 +6270,9 @@ html.dark {
 
 @media (max-width: 900px) {
   .app-topbar-title {
-    max-width: 160px;
+    /* Room for `[folder] project  [branch] branch  [clock]  [✓] 2` on one line, with
+       the branch the label that ellipsizes. */
+    max-width: min(72vw, 560px);
   }
 
   /* The one-line subtitle the project row replaced stays hidden. The row itself
@@ -6203,11 +6294,17 @@ html.dark {
      title takes the room it needs, and the project name is the part that ellipsizes.
      The row is the title block's own second line, so it never lands on the title. */
   .app-topbar-title {
-    max-width: min(64vw, 340px);
+    /* A phone gets the most the bar can spare; the counts wrap to a second line when
+       the row runs out, and the branch is what ellipsizes. */
+    max-width: min(78vw, 420px);
   }
 
   .app-topbar-subtitle-row {
     gap: 5px;
+    /* A phone keeps the row on one line — `[folder] project  [branch] branch  [clock]  [✓] 2`
+       under the session name — and the branch is the label that ellipsizes; the tip on tap
+     carries the whole name. Wrapping here would stack the header three lines tall. */
+    flex-wrap: nowrap;
   }
 
   .app-topbar-project {

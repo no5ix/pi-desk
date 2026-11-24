@@ -1,14 +1,19 @@
 import { createRoot } from "react-dom/client";
+import { I18nProvider } from "@/hooks/useI18n";
+import { TopbarBranchChip } from "@/components/TopbarBranchChip";
 
 /**
  * The conversation header's project row, in a real browser.
  *
- * The row — `[folder] project  [branch] branch  [clock]  [subagents]` — lives
- * inside `.app-topbar-title`, and that column's `max-width` is the row's room. It
- * was 420px, so a normal branch name ellipsized (`feat/branch-picker-header-…`)
- * in a window with most of its width free. This reproduces the header's markup
- * with the app's real classes and CSS; e2e/topbar-project-row.mjs measures the
- * labels at desktop and phone widths.
+ * The row — `[folder] project  [branch] branch  [clock]  [✓] 2` — lives inside
+ * `.app-topbar-title`, and that column is sized by its own content (the bar's
+ * actions push with `margin-left: auto`, which takes the free space before
+ * flex-grow does). The column's old 420px cap and the branch's `flex: 1 1 0`
+ * together ellipsized a normal branch name and pushed the clock and the counts to
+ * the far edge, away from the branch they describe. This renders the header with
+ * the app's real CSS and the real branch chip; e2e/topbar-project-row.mjs measures
+ * the labels, the distance between them and the tip at desktop, narrow and phone
+ * widths, and puts the old rules back to prove the measurement sees the bug.
  */
 function TopbarRow() {
   return (
@@ -19,12 +24,16 @@ function TopbarRow() {
           display: "flex",
           alignItems: "center",
           flexShrink: 0,
-          flexWrap: "wrap",
           gap: 2,
           height: "auto",
           minHeight: 36,
         }}
       >
+        <button type="button" className="native-icon-button" style={{ width: 32, height: 32 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="9" y1="3" x2="9" y2="21" />
+          </svg>
+        </button>
         <div className="app-topbar-title" title="Fix Remote Text Overlap in Composer Branch Menu">
           <span>Fix Remote Text Overlap in Composer Branch Menu</span>
           <span className="app-topbar-subtitle-row">
@@ -34,18 +43,16 @@ function TopbarRow() {
               </svg>
               <span>pi-desk</span>
             </small>
-            <small className="app-topbar-branch">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <circle cx="6" cy="5" r="2" /><circle cx="18" cy="5" r="2" /><circle cx="12" cy="19" r="2" />
-                <path d="M6 7v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7M12 12v5" />
-              </svg>
-              <span>feat/branch-picker-header-worktrees</span>
-            </small>
+            <TopbarBranchChip
+              branch="feat/branch-picker-header-worktrees"
+              projectRoot="/Users/lynx/Documents/github/pi-desk"
+              isWorktree={false}
+            />
             <small className="app-topbar-elapsed">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                 <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
               </svg>
-              3m35s
+              11m5s
             </small>
             <button type="button" className="app-topbar-subagents">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -58,8 +65,8 @@ function TopbarRow() {
             </button>
           </span>
         </div>
-        <div className="app-topbar-actions" style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
-          {["Files", "Terminal", "Agents", "Close"].map((label) => (
+        <div className="app-topbar-actions" style={{ display: "flex", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
+          {["More", "Panel"].map((label) => (
             <button key={label} type="button" className="native-icon-button" style={{ width: 32, height: 32 }}>{label[0]}</button>
           ))}
         </div>
@@ -69,7 +76,11 @@ function TopbarRow() {
 }
 
 export function renderFixture(root) {
-  createRoot(root).render(<TopbarRow />);
+  createRoot(root).render(
+    <I18nProvider>
+      <TopbarRow />
+    </I18nProvider>,
+  );
 }
 
 const mount = typeof document !== "undefined" ? document.getElementById("root") : null;
