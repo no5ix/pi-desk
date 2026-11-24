@@ -30,9 +30,80 @@ const POLL_INTERVAL_MS = 3_000;
 interface WorktreesResponse {
   isGit?: boolean;
   branch?: string | null;
+  projectRoot?: string;
+  currentWorktreePath?: string | null;
+  worktrees?: { path: string; branch: string | null; isMain: boolean }[];
 }
 
 const cache = new Map<string, { branch: string | null; at: number }>();
+
+export interface ProjectIdentity {
+  /** The repository's main checkout, which is the project a worktree belongs to. Null
+   *  for a folder that is not a git repository. */
+  projectRoot: string | null;
+  /** True when the folder is a linked worktree, not the checkout itself. */
+  isWorktree: boolean;
+}
+
+const NO_IDENTITY: ProjectIdentity = { projectRoot: null, isWorktree: false };
+
+/**
+ * The identity out of the worktrees payload: the endpoint names the current checkout,
+ * and that entry is linked when it is not the main one. A linked worktree answers with
+ * the repository's root, so this is where a folder like
+ * `tab-to-find-worktrees/fix-x` becomes the project `tab-to-find` — the name the header
+ * and the composer show, with the worktree glyph in front of it.
+ */
+export function readProjectIdentity(data: WorktreesResponse): ProjectIdentity {
+  const current = (data.worktrees ?? []).find((entry) => entry.path === data.currentWorktreePath);
+  const projectRoot = typeof data.projectRoot === "string" && data.projectRoot ? data.projectRoot : null;
+  return { projectRoot, isWorktree: current !== undefined && current.isMain === false };
+}
+
+const identityCache = new Map<string, { value: ProjectIdentity; at: number }>();
+
+/** Forget a folder's identity, e.g. after a worktree is created or removed. */
+export function invalidateProjectIdentity(cwd: string): void {
+  identityCache.delete(cwd);
+}
+
+/**
+ * Which project a folder belongs to, and whether it is a linked worktree.
+ *
+ * A folder's identity does not move under a running session the way a branch name
+ * does, so this is read once and cached on both sides (the endpoint answers from the
+ * server's 60-second project cache); the branch keeps its own uncached poll.
+ */
+export function useProjectIdentity(cwd: string | null | undefined): ProjectIdentity {
+  // The first render says nothing, so it matches the server's HTML; the label updates
+  // once the payload answers (and the sidebar's project tree already names the project).
+  const [identity, setIdentity] = useState<ProjectIdentity>(NO_IDENTITY);
+
+  useEffect(() => {
+    if (!cwd) {
+      setIdentity(NO_IDENTITY);
+      return;
+    }
+    const fresh = identityCache.get(cwd);
+    if (fresh && Date.now() - fresh.at < CLIENT_CACHE_TTL_MS) {
+      setIdentity(fresh.value);
+      return;
+    }
+    let current = true;
+    void fetch(`/api/worktrees?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" })
+      .then((response) => (response.ok ? (response.json() as Promise<WorktreesResponse>) : null))
+      .then((data) => (data ? readProjectIdentity(data) : NO_IDENTITY))
+      .catch(() => NO_IDENTITY)
+      .then((value) => {
+        identityCache.set(cwd, { value, at: Date.now() });
+        if (current) setIdentity(value);
+      });
+    return () => { current = false; };
+  }, [cwd]);
+
+  return identity;
+}
+
 const inflight = new Map<string, Promise<string | null>>();
 
 /** Drop one project's cached branch, e.g. after a branch switch. */

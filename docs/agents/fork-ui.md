@@ -279,14 +279,21 @@ The topbar renders exactly ONE toolbar group (`app-topbar-actions`: history/bran
 
 **A hover state is a solid layer, not a window.** The palette's `--bg-hover` is a 4–5%
 overlay (light `rgba(0,0,0,.04)`, dark `rgba(255,255,255,.05)`) because it has to sit over
-the desktop's translucent vibrancy window, and the panel header has nothing opaque under
-it: the right panel's × (`.file-workbench-icon-button`) took that overlay straight over the
-header, so pointing at the control the user is about to press read as the glyph going
-faint. The wash is the same tint composited onto the panel's own colour —
-`color-mix(in srgb, var(--bg-hover), var(--bg-panel))` — one opaque layer, same look, plus
-the glyph brightening to `--text`, which is the feedback that was asked for.
-`app/native-theme-hover.test.mjs` pins it, and asserts the palette stays translucent so
-the compositing keeps its reason.
+the desktop's translucent vibrancy window. The panel header has nothing opaque under it,
+so the right panel's × (`.file-workbench-icon-button`) took that overlay straight over the
+header, and pointing at the control the user is about to press read as the glyph going
+faint. Compositing it with `color-mix` does **not** fix this: mixing a 5%-alpha colour
+with an opaque one yields a layer that is about *half* transparent — measured in a browser
+as `color(srgb … / 0.52)` — so the wallpaper kept showing through the hovered button. The
+wash is therefore a solid build-up: `background-color: var(--surface)` (the base the
+control sits on) with `background-image: linear-gradient(var(--bg-hover), var(--bg-hover))`
+as the tint, one opaque layer, the same look in every palette, plus the glyph brightening
+to `--text`, which is the feedback that was asked for. The same rule covers
+`.right-panel-close:hover` and `.terminal-panel-header button:hover`. Measured in
+`e2e/panel-hover-wash.mjs` (opaque base, tint over it, a composite at least 3 levels from
+the strip, and a control pass proving the old `color-mix` recipe is translucent);
+`app/native-theme-hover.test.mjs` pins the declarations and forbids both the bare overlay
+and any `opacity` on a hover state.
 
 ## Conversation header: project, branch, and the running clock
 
@@ -354,6 +361,36 @@ the tip's labels are keys in all three locales now, and `lib/i18n/registry.test.
 the locales in step) and on a phone a native tooltip never opens, so the full name was
 unreachable exactly where the row cuts it.
 
+**A worktree is a checkout of its project, not a project of its own.** Working in
+`tab-to-find-worktrees/fix-wt-test-first-click-delayed-scroll`, the header and the composer
+said `fix-wt-test-first-click-delayed-scroll`, which is a folder name the user never chose
+and which names no project. Both now read the repository the folder belongs to
+(`hooks/useProjectBranch.ts` → `useProjectIdentity(cwd)`, whose `readProjectIdentity` is
+exported and unit-tested): the label is the project's display name
+(`getProjectDisplayName(projectRoot, availableProjectRoots)` — the same resolution every
+project name uses, so duplicate basenames stay disambiguated), and the glyph in front of it
+is `WorktreeIcon`, the checkout glyph the branch chip uses, in the header
+(`TopbarProjectChip`'s `isWorktree`) and in the composer (`ComposerProjectChip`'s
+`isWorktree`, fed by `ChatWindow`'s `composerProjectRoot` / `composerProjectIsWorktree`). A
+session carries both from its file (`SessionInfo.projectRoot` / `isWorktree`); a fresh
+composer resolves them from the folder it points at, so the pair agrees with the branch chip
+beside it. Only a linked worktree takes the glyph and the project name — a normal checkout
+keeps its folder name, because there the folder *is* the project. The worktree's own path is
+not lost: the project tip's `Path` row is `visibleProjectCwd`, the folder being worked in,
+and the branch chip names the branch that lives there. `components/AppShell.worktree-project.test.mjs`
+pins the resolution and the four places it is worn; live on the user's repository it reads
+`tab-to-find` + the checkout glyph in the header and the composer, with the menu listing
+every branch of the repository.
+
+The row ends with the context ring, `components/TopbarContextChip.tsx` (last turn's move out
+of the composer's control strip). Its tip is the numbers and **nothing else**: `Context
+usage` over `37.6% ctx · 161.8M tok · $0.123` and `Window` over `400k / 1.0M`, both from
+`lib/context-usage-summary.ts` so the accessible name, the tip and the stats panel say the
+same sentence. A "Session stats" row inside the tip was removed: a control inside a readout
+turns a label into a target the pointer has to aim at, and the panel already has its way in
+through the chat's usage command (`onSessionStatsPanelOpen`, `hooks/useAgentSession.ts`).
+With nothing to report the chip renders nothing, so an empty ring never reads as a spinner.
+
 `e2e/topbar-project-row.mjs` measures all of this in Chromium: the four labels at
 1920/1200/960/700px, the distance from the branch's words (measured on a Range, because a
 growing label carries its empty space with it) to the clock, the branch tip under hover and
@@ -389,6 +426,17 @@ what a pointer wants (`onContextMenu` → `showNativeProjectBranchMenu`). The ch
 `newSessionCwd ?? activeCwd` (`AppShell`'s `onBranchChipCwd`): the folder the composer's
 project chip names. Reading `activeCwd` alone listed the *previously selected* session's
 branches under a chip labelled with the new session's project.
+
+**Branches belong to the repository, so a worktree's menu lists them all.**
+`fetchProjectBranchMenu(cwd)` is keyed by the checkout that was asked about, and the payload
+is accepted when it *belongs* to it: `data.projectRoot === cwd`, **or** `cwd` is one of the
+worktrees the payload lists. The equality check alone rejected every linked worktree — the
+endpoint answers a worktree with the repository's root — and a repository with a dozen
+branches read as "No other branches" while its sidebar row showed them. The guard is not
+dropped: a response for an unrelated project must still never paint this menu, and the
+stale-response protection is what `root: cwd` (the checkout the actions run in, the value
+`useProjectWorktreeActions` posts) is for. `projectRoot` rides along in the state so the
+menu can name the project a worktree belongs to.
 
 A branch checked out in **another** worktree cannot be checked out here, and git's refusal
 is a useless answer, so `useProjectWorktreeActions.switchBranch` never asks git: it finds
@@ -543,6 +591,36 @@ uninitialized `const`). The toggle also raises a phone's keyboard through
 
 外观页只提供明暗模式，没有背景选择；侧栏、窗口和设置外框是同一个中性纯色（`--canvas-background`），
 强调色用 CSS `AccentColor` 跟随系统。`THEME_INIT_SCRIPT` 先使用浏览器缓存避免刷新闪烁。相关回归：`node e2e/appearance.mjs`。
+
+**悬停态是一层实心色，不是一扇窗。** 调色板的 `--bg-hover` 是 4–5% 的叠加层（浅色
+`rgba(0,0,0,.04)`，深色 `rgba(255,255,255,.05)`），因为它要盖在桌面端半透明的 vibrancy 窗口上；
+右侧面板头部下面没有实心底色，面板右上角的 × 就把这层叠加直接铺在头部上，指针移到准备按的控件上时
+读起来像控件变淡。用 `color-mix` 合成并**不能**修好：把 5% alpha 的颜色和不透明颜色混合，
+得到的层大约只有*一半*不透明（浏览器实测 `color(srgb … / 0.52)`），壁纸仍会从悬停的按钮后透出。
+所以现在实心铺底：`background-color: var(--surface)` 作为控件所在的底，`background-image:
+linear-gradient(var(--bg-hover), var(--bg-hover))` 作为叠加色，在每套配色里都是一层实心，
+图标同时提到 `--text`。同样的写法覆盖 `.right-panel-close:hover` 与 `.terminal-panel-header button:hover`。
+`e2e/panel-hover-wash.mjs` 在真实浏览器里量明暗两套：实心底、叠加色、合成后与所在条至少差 3 级，
+并带一次对照（旧的 `color-mix` 写法确实是半透明，证明断言不是瞎的）；
+`app/native-theme-hover.test.mjs` 钉住声明，并禁止裸叠加层与悬停态的 `opacity`。
+
+**worktree 是项目的检出，不是一个新项目。** 在 `tab-to-find-worktrees/fix-wt-test-first-click-delayed-scroll`
+里，头部和输入框都显示那串工作目录名，而用户从没选过这个名字。两处现在读目录所属的仓库
+（`hooks/useProjectBranch.ts` 的 `useProjectIdentity(cwd)`，其 `readProjectIdentity` 导出并有单元测试）：
+标签用项目的显示名（`getProjectDisplayName(projectRoot, availableProjectRoots)`，与其它项目名同源，
+重名的 basename 仍会消歧），前面的图标换成 branch chip 一直在用的检出图标 —— 头部由
+`TopbarProjectChip` 的 `isWorktree`，输入框由 `ComposerProjectChip` 的 `isWorktree`（`ChatWindow` 传
+`composerProjectRoot` / `composerProjectIsWorktree`）。已存在的会话从会话文件里带这两项
+（`SessionInfo.projectRoot` / `isWorktree`），新会话按当前目录解析，所以和旁边的 branch chip 一致。
+只有 linked worktree 才换图标、换项目名；普通检出仍显示目录名，因为那里目录就是项目。
+worktree 自己的路径没丢：项目 tip 的 `Path` 行就是正在工作的目录，branch chip 说那里的分支。
+`components/AppShell.worktree-project.test.mjs` 钉住解析与四处佩戴。
+
+worktree 的分支菜单列的是**仓库的**分支：`fetchProjectBranchMenu(cwd)` 按被询问的检出取数据，
+返回属于它即可接受 —— `data.projectRoot === cwd`，**或** `cwd` 在返回的 worktree 列表里。
+只用相等判断会把每个 linked worktree 都拒掉（接口对 worktree 回答的是仓库根目录），
+于是十几条分支的仓库显示成 “No other branches”。守卫没有删掉：不相关项目的响应仍不能画进这个菜单，
+`root: cwd` 就是动作真正执行的检出。
 
 ## 设置选项细节
 

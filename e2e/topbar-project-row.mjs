@@ -194,7 +194,7 @@ assert.equal(contextTip.tipRows[0].value, "37.6% ctx · 161.8M tok · $0.123", "
 assert.ok(contextTip.tipRows[0].cut <= 1, `the tip does not cut the numbers it exists to show (${contextTip.tipRows[0].cut})`);
 assert.equal(contextTip.tipRows[1].label, "Window");
 assert.equal(contextTip.tipRows[1].value, "400k / 1.0M");
-assert.equal(contextTip.tipActions, 1, "the tip keeps the ring's way into the session-stats panel");
+assert.equal(contextTip.tipActions, 0, "the tip is the numbers and nothing else: the stats panel has its own command");
 assert.equal(contextTip.context.title, null, "no native tooltip: it never opens on a phone");
 assert.equal(contextTip.context.label, "Context: 37.6% ctx · 161.8M tok · $0.123",
   "the accessible name is the sentence the tip shows");
@@ -205,9 +205,6 @@ await page.mouse.move(10, 700);
 assert.ok((await page.evaluate(MEASURE)).tip, "a click pins the tip: the way in without hover");
 await page.keyboard.press("Escape");
 assert.equal((await page.evaluate(MEASURE)).tip, null, "Escape closes it");
-await page.hover(".app-topbar-context-hit");
-await page.click(".app-topbar-tip-action");
-assert.equal(await page.evaluate(() => window.__statsOpened ?? 0), 1, "the tip's row opens the session-stats panel");
 await page.mouse.move(10, 700);
 
 const touch = await browser.newContext({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });

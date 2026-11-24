@@ -31,7 +31,12 @@ export interface WorktreeEntry {
 }
 
 export interface ProjectBranchMenuState {
+  /** The checkout the menu was asked about: a main checkout or a linked worktree. Every
+   *  git action in the menu runs here, which is what the user is standing in. */
   root: string;
+  /** The repository's main checkout — the project the worktrees belong to, and the name
+   *  the header and the composer show for a worktree. */
+  projectRoot: string;
   isGit: boolean;
   branches: string[];
   remoteBranches: string[];
@@ -70,9 +75,9 @@ export interface WorktreeRemoval {
 type Translate = (key: string, params?: TranslationParams) => string;
 
 /** A project's local and remote branches plus its worktrees; empty when the read fails. */
-export async function fetchProjectBranchMenu(projectRoot: string): Promise<ProjectBranchMenuState> {
+export async function fetchProjectBranchMenu(cwd: string): Promise<ProjectBranchMenuState> {
   try {
-    const res = await fetch(`/api/worktrees?cwd=${encodeURIComponent(projectRoot)}&branches=1`);
+    const res = await fetch(`/api/worktrees?cwd=${encodeURIComponent(cwd)}&branches=1`);
     const data = await res.json().catch(() => ({})) as {
       projectRoot?: string;
       isGit?: boolean;
@@ -80,17 +85,28 @@ export async function fetchProjectBranchMenu(projectRoot: string): Promise<Proje
       remoteBranches?: string[];
       worktrees?: WorktreeEntry[];
     };
-    if (!res.ok || data.projectRoot !== projectRoot) throw new Error(`HTTP ${res.status}`);
+    const worktrees = Array.isArray(data.worktrees) ? data.worktrees : [];
+    // The answer must belong to the checkout that was asked about — a stale response
+    // for another project must not paint this menu. A linked worktree answers with the
+    // repository's main root, so the check is "the cwd is that root, or one of the
+    // worktrees it lists". The old `data.projectRoot === cwd` rejected every worktree,
+    // and a repository with a dozen branches read as "No other branches".
+    const belongs = Boolean(data.projectRoot)
+      && (data.projectRoot === cwd || worktrees.some((entry) => entry.path === cwd));
+    if (!res.ok || !belongs) throw new Error(`HTTP ${res.status}`);
     return {
-      root: projectRoot,
+      root: cwd,
+      projectRoot: data.projectRoot as string,
       isGit: data.isGit === true,
       branches: Array.isArray(data.branches) ? data.branches : [],
       remoteBranches: Array.isArray(data.remoteBranches) ? data.remoteBranches : [],
-      worktrees: Array.isArray(data.worktrees) ? data.worktrees : [],
+      worktrees,
       loaded: true,
     };
   } catch {
-    return { root: projectRoot, isGit: false, branches: [], remoteBranches: [], worktrees: [], loaded: true };
+    return {
+      root: cwd, projectRoot: cwd, isGit: false, branches: [], remoteBranches: [], worktrees: [], loaded: true,
+    };
   }
 }
 

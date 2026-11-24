@@ -15,8 +15,6 @@ const CTX_DANGER_PCT = 90;
 interface TopbarContextChipProps {
   contextUsage?: ContextUsage | null;
   sessionStats?: SessionStatsInfo | null;
-  /** Open the header's session-stats panel. Its row stays in the tip's list. */
-  onOpenStats?: () => void;
 }
 
 /**
@@ -32,8 +30,13 @@ interface TopbarContextChipProps {
  * The arc is the value: a ring filled to the percent, red at the high-risk threshold.
  * With nothing to report — a session that has never run — the chip renders nothing, so
  * an empty ring never reads as a spinner.
+ *
+ * The tip is the numbers and nothing else. The full session-stats panel is a command
+ * (`/stats` in the composer, `onSessionStatsPanelOpen` in hooks/useAgentSession.ts),
+ * not a row inside a hover tip — a tip is a readout, and a control inside it turns a
+ * label into a target the pointer has to aim at.
  */
-export function TopbarContextChip({ contextUsage, sessionStats, onOpenStats }: TopbarContextChipProps) {
+export function TopbarContextChip({ contextUsage, sessionStats }: TopbarContextChipProps) {
   const { t } = useI18n();
   const { tipId, open, pos, tipRef, triggerProps } = useTopbarTip<HTMLButtonElement>();
   const summary = contextUsageSummary(contextUsage, sessionStats);
@@ -53,7 +56,6 @@ export function TopbarContextChip({ contextUsage, sessionStats, onOpenStats }: T
         {...triggerProps}
         className="app-topbar-context-hit"
         aria-label={t("chat.contextTipTitle", { summary })}
-        aria-haspopup={onOpenStats ? "dialog" : undefined}
       >
         <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} aria-hidden="true">
           <circle cx={RING_SIZE / 2} cy={RING_SIZE / 2} r={RING_RADIUS} fill="none" stroke="var(--border)" strokeWidth={RING_STROKE} />
@@ -79,11 +81,6 @@ export function TopbarContextChip({ contextUsage, sessionStats, onOpenStats }: T
               label={t("chat.contextTipWindowLabel")}
               value={`${formatTokenWindow(inWindow)} / ${formatTokenWindow(contextUsage.contextWindow)}`}
             />
-          ) : null}
-          {onOpenStats ? (
-            <button type="button" className="app-topbar-tip-action" onClick={onOpenStats}>
-              {t("appshell.sessionStats")}
-            </button>
           ) : null}
         </TopbarTip>
       ) : null}

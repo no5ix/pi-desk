@@ -100,6 +100,11 @@ interface Props {
   /** Fork: a new-session composer shows the branch of its folder and can switch
    *  branch or open a worktree from it (components/ComposerBranchMenu.tsx). */
   onBranchChipCwd?: string | null;
+  /** The repository a new-session composer works in, resolved from its folder: a
+   *  linked worktree belongs to its project, and the composer names that project. */
+  composerProjectRoot?: string | null;
+  /** True when the new-session composer's folder is a linked worktree. */
+  composerProjectIsWorktree?: boolean;
   onBranchSwitched?: (branch: string) => void;
   onComposerWorktreeCreated?: (path: string, branch: string) => void;
   onComposerWorktreeSelected?: (path: string) => void;
@@ -308,7 +313,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onBranchChipCwd, onBranchSwitched, onComposerWorktreeCreated, onComposerWorktreeSelected, onComposerWorktreeRemoved, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onBranchChipCwd, composerProjectRoot, composerProjectIsWorktree, onBranchSwitched, onComposerWorktreeCreated, onComposerWorktreeSelected, onComposerWorktreeRemoved, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatOnly = workspaceKind === "chat" || session?.workspaceKind === "chat";
@@ -1365,7 +1370,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       autoFocus={isNew}
       draftKey={session?.id ?? newSessionDraftKey ?? undefined}
       cwd={chatOnly ? undefined : session?.cwd ?? newSessionCwd}
-      projectPath={chatOnly ? undefined : session?.projectRoot ?? session?.cwd ?? newSessionCwd}
+      projectPath={chatOnly ? undefined : session?.projectRoot ?? composerProjectRoot ?? newSessionCwd}
+      projectIsWorktree={chatOnly ? false : Boolean(session?.isWorktree ?? composerProjectIsWorktree)}
       onSelectProject={chatOnly ? undefined : onSelectProject}
       projectOptions={chatOnly ? [] : projectOptions}
       // Only a new session picks its project from the composer row; a session that

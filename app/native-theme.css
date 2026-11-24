@@ -1744,11 +1744,15 @@ html.dark .conversation-navigator-preview {
 }
 
 .file-workbench-icon-button:hover:not(:disabled) {
-  /* The hover wash is composited onto the panel's own colour. The palette's
-     --bg-hover is a 4–5% overlay (it has to be, to sit over the desktop's
-     translucent window), so on the panel's header the close button read as the
-     glyph going faint behind the pointer. Same tint, one opaque layer. */
-  background: color-mix(in srgb, var(--bg-hover), var(--bg-panel));
+  /* The hover wash must be a solid layer. The palette's --bg-hover is a 4–5% overlay
+     (it has to be, to sit over the desktop's translucent vibrancy window), and a
+     color-mix that carries that token keeps its alpha: the layer is about half
+     transparent, so pointing at the panel's × read as the control going faint — the
+     one control the pointer is aiming at. So the tint is laid over an opaque base:
+     background-color answers for the surface the button sits on, the gradient is the
+     hover tint over it. One opaque layer, same look in every palette. */
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--bg-hover), var(--bg-hover));
   color: var(--text);
 }
 
@@ -3674,23 +3678,6 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   overflow-wrap: anywhere;
 }
 
-/* A tip row that does something (the context tip's "Session stats"). It reads as a row
-   of the tip, not as a button pasted onto it: no border, the tip's own type scale, the
-   accent for the words a click acts on. */
-.app-topbar-tip .app-topbar-tip-action {
-  justify-self: start;
-  margin-top: 2px;
-  padding: 1px 4px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--accent);
-  font-size: var(--fs-caption);
-  cursor: pointer;
-}
-.app-topbar-tip .app-topbar-tip-action:hover {
-  background: var(--bg-hover);
-}
 /* The live clock after the branch: how long the task has been running since the
    last prompt. It re-reads itself every second, so `tabular-nums` keeps the
    ticking label from re-flowing the row around it, and it never shrinks — the
@@ -7228,7 +7215,11 @@ html.dark {
 }
 
 .right-panel-close:hover {
-  background: color-mix(in srgb, var(--bg-panel) 65%, var(--surface));
+  /* The same solid wash as the panel's other icon buttons (see
+     .file-workbench-icon-button:hover): the tint over an opaque base, never the bare
+     translucent token and never a mix that keeps its alpha. */
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--bg-hover), var(--bg-hover));
   color: var(--text);
 }
 
@@ -11394,7 +11385,11 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
   color: var(--text-muted);
 }
 .terminal-panel-header button:hover {
-  background: var(--bg-hover);
+  /* A hover state is a layer, not a window: the tint over an opaque base (see
+     .file-workbench-icon-button:hover), because the bare --bg-hover token is 5% alpha
+     and the header sits over the desktop's vibrancy. */
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--bg-hover), var(--bg-hover));
   color: var(--text);
 }
 .terminal-panel-exit { color: var(--text-muted); }
@@ -11457,24 +11452,9 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
   .conversation-find input { min-height: 44px; }
 }
 
-/* Draft-only action: distinct from Send/Stop, using the shared icon treatment. */
-.composer-clear-button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-self: flex-end;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 36px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-.composer-clear-button:hover { background: var(--bg-hover); color: var(--text); }
-.composer-clear-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The composer's clear/trash button is gone: a textarea is selected and deleted, and the
+   control row was better spent. Nothing renders `.composer-clear-button`; if the button
+   comes back, it belongs inside `.chat-composer-actions`, before Send. */
 .composer-side-chat-button:disabled { opacity: 0.45; cursor: not-allowed; }
 .composer-side-chat-button:disabled:hover { background: transparent; color: inherit; }
 

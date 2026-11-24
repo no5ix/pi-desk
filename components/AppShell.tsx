@@ -112,7 +112,7 @@ import { cacheWarmingRows } from "@/lib/cache-warming-display";
 import type { McpErrorResponse, ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { FileExplorerHandle } from "./FileExplorer";
-import { useProjectBranch, invalidateProjectBranch } from "@/hooks/useProjectBranch";
+import { useProjectBranch, useProjectIdentity, invalidateProjectBranch } from "@/hooks/useProjectBranch";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
@@ -2151,6 +2151,21 @@ export function AppShell() {
     }
   };
   const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
+  // Which project the header's folder belongs to. A linked worktree is not a new
+  // project: the label names its repository (`tab-to-find`, not the worktree's folder)
+  // and the checkout glyph says this folder is one of its checkouts. A selected session
+  // carries both (SessionInfo.projectRoot / isWorktree, lib/session-reader.ts); a fresh
+  // composer resolves them from its folder, the same read the branch chip does.
+  const composerProjectCwd = isChatWorkspaceActive || pageOpen || selectedSession
+    ? null
+    : newSessionCwd ?? visibleProjectCwd;
+  const composerProjectIdentity = useProjectIdentity(composerProjectCwd);
+  const headerProjectRoot = isChatWorkspaceActive || pageOpen
+    ? null
+    : selectedSession?.projectRoot ?? composerProjectIdentity.projectRoot ?? visibleProjectCwd ?? null;
+  const headerProjectIsWorktree = isChatWorkspaceActive || pageOpen
+    ? false
+    : Boolean(selectedSession?.isWorktree ?? composerProjectIdentity.isWorktree);
   const topBarTitle = tasksOpen
     ? translate("tasks.title")
     : scheduledOpen
@@ -2166,7 +2181,13 @@ export function AppShell() {
     ? ""
     : isChatWorkspaceActive
       ? translate("workspace.chatTitle")
-      : activeCwdName ?? translate("appshell.subtitle");
+      // A worktree's row names its project; the worktree's own folder is the path in
+      // the tip, and the branch chip beside it carries the branch.
+      : (headerProjectIsWorktree && headerProjectRoot
+          ? getProjectDisplayName(headerProjectRoot, availableProjectRoots)
+          : null)
+        ?? activeCwdName
+        ?? translate("appshell.subtitle");
   // The git branch beside the project name. A selected session carries it
   // (SessionInfo.branch, lib/session-reader.ts); a fresh composer asks the worktree
   // endpoint for its project. Chats and page views have no repository, so no chip.
@@ -2514,7 +2535,7 @@ export function AppShell() {
                   /* A control, like the branch chip: the label is a short name, the path
                      it stands for is longer than a phone, and nothing else in the header
                      says where the session works. Tap it for `Path` over the full path. */
-                  <TopbarProjectChip name={topBarSubtitle} path={visibleProjectCwd ?? ""} />
+                  <TopbarProjectChip name={topBarSubtitle} path={visibleProjectCwd ?? ""} isWorktree={headerProjectIsWorktree} />
                 ) : (
                   <small className="app-topbar-project">
                     <span>{topBarSubtitle}</span>
@@ -2556,7 +2577,6 @@ export function AppShell() {
                   <TopbarContextChip
                     contextUsage={contextUsage}
                     sessionStats={sessionStats}
-                    onOpenStats={openSessionStatsPanel}
                   />
                 )}
               </span>
@@ -3228,6 +3248,8 @@ export function AppShell() {
               projectOptions={selectedSession || isChatWorkspaceActive ? [] : availableProjectRoots}
               onProjectChange={selectedSession || isChatWorkspaceActive ? undefined : handleProjectChangeFromComposer}
               onBranchChipCwd={!isChatWorkspaceActive && !selectedSession && !pageOpen ? newSessionCwd ?? activeCwd : null}
+              composerProjectRoot={composerProjectIdentity.projectRoot}
+              composerProjectIsWorktree={composerProjectIdentity.isWorktree}
               onBranchSwitched={handleComposerBranchSwitched}
               onComposerWorktreeCreated={handleComposerWorktreeCreated}
               onComposerWorktreeSelected={handleComposerWorktreeSelected}

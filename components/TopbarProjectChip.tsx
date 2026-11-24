@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@/hooks/useI18n";
+import { WorktreeIcon } from "./GitIcons";
 import { TopbarTip, TopbarTipRow, useTopbarTip } from "./TopbarTip";
 
 /**
@@ -11,8 +12,17 @@ import { TopbarTip, TopbarTipRow, useTopbarTip } from "./TopbarTip";
  * session works — the branch's tip did, and the project's own label stayed a plain
  * word. So it is a control like the branch chip: hover, focus or a tap, and the app's
  * tip shows `Path` over the full path, wrapped so the whole path reads complete.
+ *
+ * A linked worktree is not a new project: the label names the repository it belongs to
+ * (`tab-to-find`, not the worktree's folder) and the checkout glyph in front of it says
+ * this folder is one of its checkouts — the branch chip beside it carries the same glyph
+ * and names the branch.
  */
-export function TopbarProjectChip({ name, path }: { name: string; path: string }) {
+export function TopbarProjectChip({ name, path, isWorktree = false }: {
+  name: string;
+  path: string;
+  isWorktree?: boolean;
+}) {
   const { t } = useI18n();
   const { tipId, open, pos, tipRef, triggerProps } = useTopbarTip<HTMLButtonElement>();
   return (
@@ -23,10 +33,13 @@ export function TopbarProjectChip({ name, path }: { name: string; path: string }
         aria-label={t("chat.projectTipTitle", { projectRoot: path })}
       >
         {/* The sidebar's project folder (SessionSidebar's row glyph), so the header and
-            the project tree read as the same object. */}
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
-        </svg>
+            the project tree read as the same object; a linked worktree takes the
+            checkout glyph the branch chip uses, which is what it is. */}
+        {isWorktree ? <WorktreeIcon size={13} /> : (
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
+          </svg>
+        )}
         <span>{name}</span>
       </button>
       {open && path ? (

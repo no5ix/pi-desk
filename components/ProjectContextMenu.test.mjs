@@ -39,7 +39,20 @@ function stubFetch(status, body) {
 test("the menu data carries isGit and falls back to an empty non-git state", async () => {
   stubFetch(200, { projectRoot: ROOT, isGit: true, branches: ["main"], remoteBranches: ["r"], worktrees: [MAIN] });
   assert.deepEqual(await fetchProjectBranchMenu(ROOT), {
-    root: ROOT, isGit: true, branches: ["main"], remoteBranches: ["r"], worktrees: [MAIN], loaded: true,
+    root: ROOT, projectRoot: ROOT, isGit: true, branches: ["main"], remoteBranches: ["r"], worktrees: [MAIN], loaded: true,
+  });
+  // A linked worktree answers with the repository's root. The list belongs to the
+  // checkout asked about, and the actions run there: git branches are the repository's,
+  // so `feature` and `main` are the worktree's branches too. The old equality check
+  // (`data.projectRoot === cwd`) threw the payload away in every worktree, and a
+  // repository with a dozen branches read as "No other branches".
+  stubFetch(200, {
+    projectRoot: ROOT, currentWorktreePath: FEATURE.path, isGit: true,
+    branches: ["main", "feature"], remoteBranches: ["r"], worktrees: [MAIN, FEATURE],
+  });
+  assert.deepEqual(await fetchProjectBranchMenu(FEATURE.path), {
+    root: FEATURE.path, projectRoot: ROOT, isGit: true,
+    branches: ["main", "feature"], remoteBranches: ["r"], worktrees: [MAIN, FEATURE], loaded: true,
   });
   stubFetch(200, { projectRoot: "/elsewhere", isGit: true });
   assert.equal((await fetchProjectBranchMenu(ROOT)).isGit, false);

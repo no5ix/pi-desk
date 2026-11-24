@@ -20,14 +20,14 @@ test("the title and the project line keep their positions in the title block", (
   assert.ok(block, "topbar title block found");
   assert.match(block[0], /<span>\{topBarTitle\}<\/span>/, "the title stays the first span child");
   assert.match(block[0], /className="app-topbar-subtitle-row"/, "the project line is a row inside the title block");
-  assert.match(block[0], /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} \/>/,
+  assert.match(block[0], /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} isWorktree=\{headerProjectIsWorktree\} \/>/,
     "the project name is a chip, and its path is the folder the session works in");
   assert.match(projectChip, /<small className="app-topbar-project app-topbar-project--chip">[\s\S]*<span>\{name\}<\/span>/,
     "it stays a <small>, so the narrow-screen rule that hid the row still hides it");
 });
 
 test("the branch label reads the session first, then the project directory", () => {
-  assert.match(appShell, /import \{ useProjectBranch, invalidateProjectBranch \} from "@\/hooks\/useProjectBranch";/);
+  assert.match(appShell, /import \{ useProjectBranch, useProjectIdentity, invalidateProjectBranch \} from "@\/hooks\/useProjectBranch";/);
   assert.match(appShell, /const activeProjectBranch = useProjectBranch\(\s*isChatWorkspaceActive \|\| pageOpen \|\| selectedSession \? null : visibleProjectCwd,\s*\);/,
     "a selected session asks the endpoint for nothing: it already carries its branch");
   assert.match(appShell, /const topBarBranch = isChatWorkspaceActive \|\| pageOpen\s*\?\s*null\s*:\s*selectedSession\?\.branch \?\? activeProjectBranch;/);

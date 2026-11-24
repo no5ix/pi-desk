@@ -9,6 +9,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import { getProjectDisplayName } from "@/lib/project-display";
 import { useI18n } from "@/hooks/useI18n";
+import { WorktreeIcon } from "./GitIcons";
 
 export function getProjectLabel(
   projectPath: string | null | undefined,
@@ -24,6 +25,8 @@ interface ComposerProjectChipProps {
   onOpenChange: Dispatch<SetStateAction<boolean>>;
   label: string;
   projectPath?: string | null;
+  /** The project is a linked worktree checkout: the checkout glyph, not the folder. */
+  isWorktree?: boolean;
   maxWidth: number;
   /** Active project roots a new-session composer can switch between. */
   projectOptions: string[];
@@ -33,7 +36,7 @@ interface ComposerProjectChipProps {
 }
 
 export function ComposerProjectChip({
-  menuRef, open, onOpenChange, label, projectPath, maxWidth, projectOptions, onProjectChange, onSelectProject,
+  menuRef, open, onOpenChange, label, projectPath, isWorktree = false, maxWidth, projectOptions, onProjectChange, onSelectProject,
 }: ComposerProjectChipProps) {
   const { t } = useI18n();
   return (
@@ -67,9 +70,11 @@ export function ComposerProjectChip({
         }}
         disabled={!onSelectProject && !(projectOptions.length > 0 && onProjectChange)}
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-        </svg>
+        {isWorktree ? <WorktreeIcon size={14} /> : (
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+          </svg>
+        )}
         <span>{label}</span>
       </button>
       {open && projectOptions.length > 0 && onProjectChange && (

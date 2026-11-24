@@ -161,6 +161,8 @@ interface Props {
   onToggleChatUnlocked?: (nextUnlocked: boolean) => void;
   /** Project root shown in the composer so the session context is always visible. */
   projectPath?: string | null;
+  /** The project's folder is a linked git worktree: the checkout glyph, not the folder. */
+  projectIsWorktree?: boolean;
   /** Open the project chooser and switch the active project. */
   onSelectProject?: () => void;
   /** Active project roots available to a new-session composer. */
@@ -863,6 +865,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   chatAccess = null,
   onToggleChatUnlocked,
   projectPath,
+  projectIsWorktree = false,
   onSelectProject,
   projectOptions = [],
   showProjectChip,
@@ -3094,6 +3097,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 // On a phone the owner prefix ate the whole chip ("you…"); the folder name is what identifies it.
                 label={isNarrow ? projectLabel.split("/").pop() || projectLabel : projectLabel}
                 projectPath={projectPath}
+                isWorktree={projectIsWorktree}
                 maxWidth={isNarrow ? 112 : isCompact ? 120 : 170}
                 projectOptions={projectOptions}
                 onProjectChange={onProjectChange}

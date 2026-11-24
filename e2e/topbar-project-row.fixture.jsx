@@ -80,7 +80,6 @@ function TopbarRow() {
                 tokens: { input: 120_000_000, output: 41_800_000, cacheRead: 0, cacheWrite: 0, total: 161_800_000 },
                 cost: 0.123, totalActiveMs: 0,
               }}
-              onOpenStats={() => { window.__statsOpened = (window.__statsOpened ?? 0) + 1; }}
             />
           </span>
         </div>

@@ -34,7 +34,7 @@ test("the header renders the chip last, on a conversation only", () => {
   assert.ok(at("<TopbarProjectChip") < at("<TopbarBranchChip"), "project, then branch");
   assert.ok(at("<TopbarBranchChip") < at("<TopbarSubagents"), "then the runs");
   assert.ok(at("<TopbarSubagents") < at("<TopbarContextChip"), "and the context is the row's last control");
-  assert.match(appShell, /<TopbarContextChip\n\s*contextUsage=\{contextUsage\}\n\s*sessionStats=\{sessionStats\}\n\s*onOpenStats=\{openSessionStatsPanel\}\n\s*\/>/,
+  assert.match(appShell, /<TopbarContextChip\n\s*contextUsage=\{contextUsage\}\n\s*sessionStats=\{sessionStats\}\n\s*\/>/,
     "it reads the state the chat already reports to the shell");
   const gate = appShell.match(/\{showChat && !pageOpen && \(\s*<TopbarContextChip/);
   assert.ok(gate, "a page (Tasks, Scheduled, Artifacts) has no conversation to measure");
@@ -48,8 +48,12 @@ test("the chip is a control whose tip carries the sentence, not a native tooltip
   assert.doesNotMatch(chip, /\btitle=\{/, "no native tooltip: it never opens on a phone");
   assert.match(chip, /\{open \? \(\s*<TopbarTip/, "the tip is out of the a11y tree while closed");
   assert.match(chip, /<TopbarTipRow label=\{t\("chat\.ctxUsage"\)} value=\{summary\} \/>/);
-  // The ring's click used to open the stats panel; the tip keeps that way in.
-  assert.match(chip, /<button type="button" className="app-topbar-tip-action" onClick=\{onOpenStats\}>\s*\{t\("appshell\.sessionStats"\)\}/);
+  // The tip is the numbers and nothing else. A control inside a readout turns a label
+  // into a target the pointer has to aim at, and the panel has its own way in: the
+  // chat's usage command (`onSessionStatsPanelOpen`, hooks/useAgentSession.ts).
+  assert.doesNotMatch(chip, /app-topbar-tip-action|appshell\.sessionStats/, "no row inside the tip acts");
+  assert.doesNotMatch(chip, /aria-haspopup/, "and the ring opens nothing: it is a readout");
+  assert.match(appShell, /onSessionStatsPanelOpen=\{openSessionStatsPanel\}/, "the panel keeps its way in from the chat");
 });
 
 test("nothing is shown when there is nothing to report", () => {
@@ -67,7 +71,6 @@ test("the chip is styled with the row's other controls", () => {
     assert.ok(css.includes(selector), `the row's control rule covers the context chip (${selector.split("\n")[0]}…)`);
   }
   assert.match(css, /\.app-topbar-context \{[^}]*flex: 0 0 auto;/, "the ring never shrinks: the project name is what gives way");
-  assert.match(css, /\.app-topbar-tip \.app-topbar-tip-action \{[^}]*background: none;/, "the tip's action is a row, not a pasted button");
   const value = css.slice(css.indexOf(".app-topbar-tip-value {"), css.indexOf("}", css.indexOf(".app-topbar-tip-value {")));
   assert.ok(value.includes("white-space: normal") && value.includes("overflow-wrap: anywhere"),
     "the tip's value never ellipsizes: it carries what the row cut");
