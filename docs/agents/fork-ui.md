@@ -232,6 +232,17 @@ Upstream segment D (0e36743) restructured `AppShell.tsx`'s main region in ways t
 
 The topbar renders exactly ONE toolbar group (`app-topbar-actions`: history/branches/more), pushed to the right edge by `margin-left: auto` — right-aligned since 2026-09-24 (a user request; an earlier experiment had it left of the title via `order: -1`, removed). The inline session-stats button (`renderSessionStatsButton`, ↑in ↓out ↻cache $cost) was removed the same day — session info opens from the More menu entry instead; `sessionStats`/`contextUsage` state stays (auto-name guards + More-menu labels). Segment D also left a second desktop group (`renderChatToolbarActions(false)` — history/generate-title/system/tools) next to it; the duplicate is removed, its unique entries (Sub-agents, Tools) live in the More menu via `handleSystemInfoToggle` (keeping the lazy dormant-session start), and its generate-title guards (persisted-stats counting + `selectedSession.transient` check) were merged into the group-A button — pinned by `AppShell.auto-name.test.mjs`. JSX indentation in AppShell.tsx is unreliable; verify structure with the TS AST or the DOM, not by counting whitespace. `fileContentBlock()` in `AppShell.file-viewer-state.test.mjs` slices source by the panel's closing-div sequence — keep in sync.
 
+**A hover state is a solid layer, not a window.** The palette's `--bg-hover` is a 4–5%
+overlay (light `rgba(0,0,0,.04)`, dark `rgba(255,255,255,.05)`) because it has to sit over
+the desktop's translucent vibrancy window, and the panel header has nothing opaque under
+it: the right panel's × (`.file-workbench-icon-button`) took that overlay straight over the
+header, so pointing at the control the user is about to press read as the glyph going
+faint. The wash is the same tint composited onto the panel's own colour —
+`color-mix(in srgb, var(--bg-hover), var(--bg-panel))` — one opaque layer, same look, plus
+the glyph brightening to `--text`, which is the feedback that was asked for.
+`app/native-theme-hover.test.mjs` pins it, and asserts the palette stays translucent so
+the compositing keeps its reason.
+
 ## Conversation header: project, branch, and the running clock
 
 The title block (`app-topbar-title`) is the session title and, under it, one

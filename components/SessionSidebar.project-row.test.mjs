@@ -4,24 +4,26 @@ import { test } from "node:test";
 
 /**
  * The rows the sidebar lists projects and sessions with, and the composer chips
- * that sit under a chat. Each of these was the user's complaint: a pin that was
- * decoration and not a control, a fork mark that pushed the title, a project
- * chip that outlived the moment it was useful, and a menu that flashed.
+ * that sit under a chat. Each of these was the user's complaint: a pinned project
+ * marked by a glyph that had to be squeezed behind the name, a fork mark that
+ * pushed the title, a project chip that outlived the moment it was useful, and a
+ * menu that flashed.
  */
 
-test("a pinned project's pin sits behind the name and unpins on click", async () => {
+test("a pinned project is its orange folder icon, with no pin button in the row", async () => {
   const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
   const css = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
-  const pin = sidebar.match(/\{pinned && \(\s*<button[\s\S]*?className="sidebar-project-tree-pin"[\s\S]*?<\/button>\s*\)}/);
-  assert.ok(pin, "the pin is a real button, not a glyph");
-  assert.match(pin[0], /aria-label=\{t\("sidebar\.unpinProject"\)\}/, "it says what clicking it does");
-  assert.match(pin[0], /setPinnedProjects\(\(current\) => toggleId\(current, group\.projectRoot\)\)/, "it toggles the pin off");
-  assert.ok(!sidebar.includes('<span className="sidebar-project-tree-pin"'), "no dead pin glyph is left behind");
-  // The row packs the name to the left, so the glyph rides right behind the text
-  // instead of parking at a fixed offset from the row's right edge.
-  assert.match(css, /\.sidebar-project-tree-row\.is-pinned \.sidebar-project-tree-row-main \{\n\s*flex: 0 1 auto;/);
-  assert.match(css, /\.sidebar-project-tree-pin \{\n((?:[^}]*\n)*?)\s*cursor: pointer;/, "a pointer, because it is a control");
-  assert.ok(!/\.sidebar-project-tree-pin \{[^}]*position: absolute;/.test(css), "the fixed slot is gone");
+  assert.ok(!sidebar.includes("sidebar-project-tree-pin"),
+    "the pin button is gone: the row is dense and its trailing edge belongs to the hover-only ＋/…");
+  assert.ok(!/\.sidebar-project-tree-pin \{/.test(css), "its CSS went with the button");
+  assert.match(sidebar, /className=\{`sidebar-project-tree-row\$\{isMenuOpen \? " is-menu-open" : ""\}\$\{pinned \? " is-pinned" : ""\}`\}/,
+    "the row carries the pin state");
+  assert.match(css, /\.sidebar-project-tree-row\.is-pinned \.sidebar-project-tree-folder \{\n  color: var\(--warning\);\n\}/,
+    "the folder icon takes the app's orange");
+  // The state is announced, and unpinning is the project menu's item — a row with no
+  // glyph must still say what it is and let the user change it.
+  assert.match(sidebar, /aria-label=\{`\$\{displayName\}\$\{pinned \? ` · \$\{t\("sidebar\.pinnedProject"\)\}` : ""\} · \$\{rowTitle\}`\}/);
+  assert.match(sidebar, /t\(pinnedProjects\.has\(projectRoot\) \? "sidebar\.unpinProject" : "sidebar\.pinProject"\)/);
 });
 
 test("a fork is marked at the row's end, before the subagent count", async () => {

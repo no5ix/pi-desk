@@ -240,8 +240,9 @@ interface Props {
    * Copy, in the completion notification's `0h31m10s` form, once the reply is finished.
    */
   turnDurationMs?: number;
-  /** The conversation's newest thinking opens by default, with the "expand thinking
-   *  blocks by default" switch on or off. Only the newest reply gets it. */
+  /** This message is the newest reply (or the live one). Its last thinking block is open,
+   *  and the "expand thinking by default" switch reaches this reply's thinking — not every
+   *  thinking card in the file, which turned a long conversation into a wall of open text. */
   expandLatestThinking?: boolean;
 }
 
@@ -925,7 +926,7 @@ function AssistantMessageView({
 
       <div className="message-assistant-content" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {blockItems.map(({ block, originalIndex }, orderIndex) => (
-          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} expandByDefault={expandLatestThinking && orderIndex === lastThinkingOrderIndex} />
+          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} searchTarget={block === searchBlock} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} onOpenSession={onOpenSession} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} expandByDefault={expandLatestThinking && orderIndex === lastThinkingOrderIndex} latestReply={expandLatestThinking} />
         ))}
       </div>
 
@@ -1075,12 +1076,12 @@ function AssistantMessageView({
   );
 }
 
-function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenSession, sessionId, entryId, blockIndex, expandByDefault }: { block: AssistantContentBlock; searchTarget?: boolean; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void; onOpenSession?: (sessionId: string) => void; sessionId?: string; entryId?: string; blockIndex: number; expandByDefault?: boolean }) {
+function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, onOpenSession, sessionId, entryId, blockIndex, expandByDefault, latestReply }: { block: AssistantContentBlock; searchTarget?: boolean; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void; onOpenSession?: (sessionId: string) => void; sessionId?: string; entryId?: string; blockIndex: number; expandByDefault?: boolean; latestReply?: boolean }) {
   if (block.type === "text") {
     return <div data-message-text data-search-target={searchTarget || undefined}><TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} /></div>;
   }
   if (block.type === "thinking") {
-    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} expandByDefault={expandByDefault} />;
+    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} expandByDefault={expandByDefault} latestReply={latestReply} />;
   }
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
@@ -1098,26 +1099,33 @@ function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent
   return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} artifacts>{block.text}</SafeMarkdownBody>;
 }
 
-export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex, expandByDefault = false }: {
+export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex, expandByDefault = false, latestReply = false }: {
   block: ThinkingContent;
   duration?: number;
   sessionId?: string;
   entryId?: string;
   blockIndex: number;
-  /** The newest thinking in the conversation: it opens even when the preference
-   *  is off, because that is the reasoning the user is most likely reading now. */
+  /** The newest thinking in the conversation: it is open while it streams, stays open
+   *  when it ends and nothing follows, and closes itself when the next thinking takes
+   *  its place. Open even when the preference is off. */
   expandByDefault?: boolean;
+  /** This block belongs to the newest reply. The "expand thinking by default" preference
+   *  reaches the turn the user is reading — not every thinking card in the file, which
+   *  is what turned a long conversation into a wall of open reasoning. */
+  latestReply?: boolean;
 }) {
   const { t } = useI18n();
-  // A thinking card inside a turn's Process details opens collapsed even when the
-  // "expand thinking by default" preference is on: opening the group reveals the steps of
-  // the turn, not all of their text. Outside the group — a thinking message on its own, a
-  // live reply — the preference rules, and the card stays clickable either way. The one
-  // thinking block at the end of the conversation is open regardless: it is the reasoning
-  // of the turn the user is looking at, and collapsing it hid the answer's shape.
+  // One thinking card is open at a time: the newest one (the turn being read), by the
+  // position rule below. A thinking card inside a turn's Process details does not follow
+  // the preference — opening the group reveals the turn's steps, not all of their text —
+  // and the newest block opens regardless of that, because it is the reasoning behind the
+  // answer on screen. The card is clickable either way.
   const insideProcessDetails = useContext(ProcessDetailsContext);
-  const expandedByRule = () => expandByDefault || (isThinkingExpandedByDefault() && !insideProcessDetails);
+  const expandedByRule = () =>
+    expandByDefault || (latestReply && isThinkingExpandedByDefault() && !insideProcessDetails);
   const [expanded, setExpanded] = useState(expandedByRule);
+  // A click is the user's own choice: after that the rule stops moving this card.
+  const touchedRef = useRef(false);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1125,13 +1133,24 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
   tRef.current = t;
   const preview = getThinkingPreview(block.thinking);
 
+  // A is the newest while it streams and stays open after it ends with nothing following
+  // it. The moment B starts, A is history and closes on its own: the conversation keeps
+  // open the thinking being written, never the pile behind it. Same rule for a preference
+  // change, and never over a card the user opened by hand.
+  useEffect(() => {
+    if (!touchedRef.current) setExpanded(expandedByRule());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandByDefault, latestReply, insideProcessDetails]);
+
   // Keep already-mounted blocks in sync when the preference changes.
   useEffect(() => {
-    const onChange = () => setExpanded(expandedByRule());
+    const onChange = () => {
+      if (!touchedRef.current) setExpanded(expandedByRule());
+    };
     window.addEventListener(THINKING_EXPANDED_EVENT, onChange);
     return () => window.removeEventListener(THINKING_EXPANDED_EVENT, onChange);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [insideProcessDetails, expandByDefault]);
+  }, [insideProcessDetails, expandByDefault, latestReply]);
 
   // Load deferred history content whenever the block is expanded.
   // loadThinkingContent() memoizes in-flight promises and drops failed ones
@@ -1180,7 +1199,12 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
         aria-expanded={expanded}
         aria-label={`${t("i18n.thinking")}${preview ? `: ${preview}` : ""}`}
         title={t("i18n.thinking")}
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => {
+          // The user's own click outranks the position rule from here on: a card they
+          // opened stays open when the next thinking starts, and one they closed stays shut.
+          touchedRef.current = true;
+          setExpanded((v) => !v);
+        }}
         style={{
           display: "inline-flex",
           alignItems: "center",

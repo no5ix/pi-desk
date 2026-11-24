@@ -38,15 +38,15 @@ test("a thinking card inside Process details starts collapsed; the preference ru
   assert.match(messageView, /import \{ ProcessDetailsContext \} from "\.\/process-details-context";/);
   const thinking = messageView.match(/export function ThinkingBlock\([\s\S]*?\n\}\n/)[0];
   assert.match(thinking, /const insideProcessDetails = useContext\(ProcessDetailsContext\);/);
-  // One rule decides both the initial state and a preference change. The newest
-  // thinking of the conversation opens whatever the switch says — see
-  // components/MessageView.latest-thinking.test.mjs.
-  assert.match(thinking, /const expandedByRule = \(\) => expandByDefault \|\| \(isThinkingExpandedByDefault\(\) && !insideProcessDetails\);/);
+  // One rule decides both the initial state and a preference change, and it is a
+  // position: the newest thinking opens whatever the switch says, and the switch reaches
+  // only the newest reply — see components/MessageView.latest-thinking.test.mjs.
+  assert.match(thinking, /const expandedByRule = \(\) =>\s*expandByDefault \|\| \(latestReply && isThinkingExpandedByDefault\(\) && !insideProcessDetails\);/);
   assert.match(thinking, /const \[expanded, setExpanded\] = useState\(expandedByRule\);/);
-  assert.match(thinking, /const onChange = \(\) => setExpanded\(expandedByRule\(\)\);/,
-    "flipping the preference in Settings keeps a group's cards collapsed");
-  assert.match(thinking, /return \(\) => window\.removeEventListener\(THINKING_EXPANDED_EVENT, onChange\);\n(.*\n)?  \}, \[insideProcessDetails, expandByDefault\]\);/,
-    "the listener's deps carry both inputs of the rule (`expandedByRule` is rebuilt every render, so the call itself is not a dep)");
+  assert.match(thinking, /const onChange = \(\) => \{\s*if \(!touchedRef\.current\) setExpanded\(expandedByRule\(\)\);\s*\};/,
+    "flipping the preference keeps a group's cards collapsed, and leaves a card the user opened alone");
+  assert.match(thinking, /return \(\) => window\.removeEventListener\(THINKING_EXPANDED_EVENT, onChange\);\n(.*\n)?  \}, \[insideProcessDetails, expandByDefault, latestReply\]\);/,
+    "the listener's deps carry every input of the rule (`expandedByRule` is rebuilt every render, so the call itself is not a dep)");
   const group = chatWindow.match(/function ProcessDetailsGroup\([\s\S]*?\n\}/)[0];
   assert.match(group, /<ProcessDetailsContext\.Provider value=\{true\}>\s*\{children\}\s*<\/ProcessDetailsContext\.Provider>/,
     "the flag travels with the group, so a thinking message on its own keeps the preference");

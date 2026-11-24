@@ -1501,7 +1501,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             aria-selected={isActive}
             onClick={toggleCollapse}
             aria-expanded={!isCollapsed}
-            aria-label={`${displayName} · ${rowTitle}`}
+            aria-label={`${displayName}${pinned ? ` · ${t("sidebar.pinnedProject")}` : ""} · ${rowTitle}`}
             onMouseEnter={(e) => scheduleProjectPathHint(e.currentTarget, group.projectRoot)}
             onMouseLeave={hideProjectPathHint}
             onClickCapture={hideProjectPathHint}
@@ -1555,38 +1555,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               </span>
             )}
           </button>
-          {/* A pinned project marks its row with a pin right behind the name, and
-              the pin is the way back out: clicking it unpins the project and the
-              glyph goes away with the pin state. It sits in the row's own line, so
-              the hover-only "＋"/"…" overlay never moves it. */}
-          {pinned && (
-            <button
-              type="button"
-              className="sidebar-project-tree-pin"
-              data-no-drag
-              aria-label={t("sidebar.unpinProject")}
-              title={t("sidebar.unpinProject")}
-              onClick={(e) => {
-                e.stopPropagation();
-                setPinnedProjects((current) => toggleId(current, group.projectRoot));
-              }}
-            >
-              <svg
-                className="session-item-pin"
-                aria-hidden="true"
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
-              </svg>
-            </button>
-          )}
+          {/* A pinned project is marked by its own folder icon turning orange — no glyph
+              to click, no extra column to fit: the row is dense and its trailing edge is
+              the hover-only "＋"/"…". Unpinning lives in the "…" menu. */}
           {/* Hover-only overlay at the row's trailing edge: it covers the tail of a
               long name instead of reserving width the rest of the time. */}
           <div className="sidebar-project-tree-row-actions" data-no-drag>

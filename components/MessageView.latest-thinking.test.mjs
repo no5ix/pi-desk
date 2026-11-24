@@ -3,35 +3,49 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 /**
- * The newest thinking block stays open.
+ * One thinking card is open at a time: the newest one.
  *
- * The "Expand thinking blocks by default" switch decides the initial state of
- * every thinking card, and a card inside a turn's Process details opens collapsed
- * even when the switch is on. Both rules left the *reasoning of the answer on
- * screen* folded: the user reads the reply and never sees how it got there. The
- * conversation's last thinking block is open whatever the switch says; every older
- * one follows the switch, and a manual collapse is kept for the session.
+ * "Expand thinking blocks by default" used to decide the initial state of *every*
+ * thinking card, and the newest-block rule sat on top of that — so a conversation
+ * that has run for an hour opened as a wall of folded-away reasoning, and the one
+ * block the user is reading was lost in it. The rule now is a position: A is open
+ * while it streams, stays open when it ends with nothing after it, and closes
+ * itself the moment B starts. The switch reaches the reply being read, not the
+ * file's history, and a card the user opened by hand is never moved.
  */
 
-test("the newest thinking opens by rule, the rest by preference", async () => {
-  const view = await readFile(new URL("./MessageView.tsx", import.meta.url), "utf8");
-  const rule = view.match(/const expandedByRule = \(\) => ([^;]+);/);
-  assert.ok(rule, "one rule decides the initial state and the preference changes");
-  assert.match(rule[1], /expandByDefault \|\| \(isThinkingExpandedByDefault\(\) && !insideProcessDetails\)/,
-    "the newest block wins over the switch and over the Process-details fold");
+const load = async (rel) => (await readFile(new URL(rel, import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+
+test("one rule decides the state, and it is a position in the conversation", async () => {
+  const view = await load("./MessageView.tsx");
+  const rule = view.match(/const expandedByRule = \(\) =>\s*([^;]+);/);
+  assert.ok(rule, "one rule decides the initial state and every later change");
+  assert.match(rule[1], /expandByDefault \|\| \(latestReply && isThinkingExpandedByDefault\(\) && !insideProcessDetails\)/,
+    "the newest block opens whatever the switch says; the switch only reaches the newest reply, and never the Process-details fold");
   assert.match(view, /const \[expanded, setExpanded\] = useState\(expandedByRule\);/);
-  assert.match(view, /const onChange = \(\) => setExpanded\(expandedByRule\(\)\);/,
-    "a preference change re-applies the same rule, so the newest block does not collapse");
-  assert.match(view, /\}, \[insideProcessDetails, expandByDefault\]\);/, "the listener follows the block's own rule");
+  assert.match(view, /const touchedRef = useRef\(false\);/, "a manual click is recorded");
+  assert.match(view, /onClick=\{\(\) => \{\s*(?:\/\/[^\n]*\n\s*)*touchedRef\.current = true;\s*setExpanded\(\(v\) => !v\);\s*\}\}/,
+    "and the rule stops moving that card");
+});
+
+test("A closes itself when B starts, and a preference change respects the click", async () => {
+  const view = await load("./MessageView.tsx");
+  assert.match(view, /useEffect\(\(\) => \{\s*if \(!touchedRef\.current\) setExpanded\(expandedByRule\(\)\);\s*(?:\/\/[^\n]*\n\s*)?\}, \[expandByDefault, latestReply, insideProcessDetails\]\);/,
+    "A stops being the newest the moment B appears, and closes — unless the user opened it");
+  assert.match(view, /const onChange = \(\) => \{\s*if \(!touchedRef\.current\) setExpanded\(expandedByRule\(\)\);\s*\};/,
+    "the switch re-applies the same rule, respecting a card the user touched");
+  assert.match(view, /\}, \[insideProcessDetails, expandByDefault, latestReply\]\);/,
+    "the listener re-runs when this reply stops being the newest");
 });
 
 test("the last thinking block of the newest reply is the one that opens", async () => {
-  const view = await readFile(new URL("./MessageView.tsx", import.meta.url), "utf8");
-  const chat = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
+  const view = await load("./MessageView.tsx");
+  const chat = await load("./ChatWindow.tsx");
   assert.match(view, /const lastThinkingOrderIndex = useMemo\(\(\) => \{\s*for \(let index = blockItems\.length - 1; index >= 0; index -= 1\) \{\s*if \(blockItems\[index\]\.block\.type === "thinking"\) return index;/,
     "the newest thinking of the reply, not the first");
-  assert.match(view, /expandByDefault=\{expandLatestThinking && orderIndex === lastThinkingOrderIndex\}/);
-  assert.match(view, /if \(block\.type === "thinking"\) \{\s*return <ThinkingBlock[\s\S]*?expandByDefault=\{expandByDefault\}/);
+  assert.match(view, /expandByDefault=\{expandLatestThinking && orderIndex === lastThinkingOrderIndex\} latestReply=\{expandLatestThinking\}/,
+    "one block is the newest; the whole reply is the newest, and the switch reads the second");
+  assert.match(view, /if \(block\.type === "thinking"\) \{\s*return <ThinkingBlock[\s\S]*?expandByDefault=\{expandByDefault\} latestReply=\{latestReply\}/);
   // The owner decides which reply is the newest, and yields to a live reply.
   assert.match(chat, /expandLatestThinking=\{!streamState\.isStreaming && idx === lastAssistantIndex\}/);
   assert.match(chat, /<MessageView message=\{streamState\.streamingMessage[\s\S]*?expandLatestThinking \/>/,

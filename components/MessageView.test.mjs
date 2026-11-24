@@ -74,6 +74,9 @@ test("previews the first thinking line and reveals the full text with the saved 
           block: { type: "thinking", thinking: "**Independent reasoning**\n\nDetailed second line." },
           blockIndex: 2,
           duration: 3,
+          // The saved default reaches the reply the user is reading; an older reply's
+          // thinking stays folded, which is what keeps a long conversation readable.
+          latestReply: true,
         }),
       ));
       assert.match(html, new RegExp(`aria-expanded="${expanded}"`));
@@ -82,6 +85,19 @@ test("previews the first thinking line and reveals the full text with the saved 
       assert.match(html, /aria-label="Thinking: /);
       assert.match(html, /3s/);
     }
+    // The switch on, and this is not the newest reply: folded, and the text unrendered.
+    globalThis.window = { localStorage: { getItem: () => "true" } };
+    const history = renderToStaticMarkup(React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ThinkingBlock, {
+        block: { type: "thinking", thinking: "**Independent reasoning**\n\nDetailed second line." },
+        blockIndex: 2,
+        duration: 3,
+      }),
+    ));
+    assert.match(history, /aria-expanded="false"/, "the switch no longer unfolds every thinking card in the file");
+    assert.ok(!history.includes("Detailed second line."), "and a folded card renders no text");
   } finally {
     if (previousWindow === undefined) delete globalThis.window;
     else globalThis.window = previousWindow;

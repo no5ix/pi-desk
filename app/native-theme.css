@@ -1720,7 +1720,11 @@ html.dark .conversation-navigator-preview {
 }
 
 .file-workbench-icon-button:hover:not(:disabled) {
-  background: var(--bg-hover);
+  /* The hover wash is composited onto the panel's own colour. The palette's
+     --bg-hover is a 4–5% overlay (it has to be, to sit over the desktop's
+     translucent window), so on the panel's header the close button read as the
+     glyph going faint behind the pointer. Same tint, one opaque layer. */
+  background: color-mix(in srgb, var(--bg-hover), var(--bg-panel));
   color: var(--text);
 }
 
@@ -2691,43 +2695,14 @@ html.dark .sidebar-view-switcher-thumb {
   padding-right: 52px;
 }
 
-/* A pinned project marks its row with a pin right behind the name, and clicking
-   that pin unpins the project (the glyph goes with the pin state). The row packs
-   its name to the left and the pin rides along with it; the "＋"/"…" pair is a
-   hover-only overlay at the row's trailing edge, so it never moves the pin. */
-.sidebar-project-tree-pin {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  margin-left: 4px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.sidebar-project-tree-pin:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-.sidebar-project-tree-pin:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.sidebar-project-tree-row.is-pinned .sidebar-project-tree-row-main {
-  flex: 0 1 auto;
-}
-
-.sidebar-project-tree-row.is-pinned::after {
-  content: "";
-  flex: 1 1 auto;
+/* A pinned project is marked by its folder icon in the app's orange, and by nothing
+   else: the row is dense, its trailing edge belongs to the hover-only "＋"/"…", and a
+   pin of its own had to be squeezed behind the name. The state is in the row's label for
+   a screen reader, and unpinning is the "…" menu's item. The rule outranks the active
+   group's `--accent` folder (two classes + one, against two), so a pinned project reads
+   pinned even while its session is the one on screen. */
+.sidebar-project-tree-row.is-pinned .sidebar-project-tree-folder {
+  color: var(--warning);
 }
 
 /* No hover on touch: keep the actions reachable, and the row a finger-sized
@@ -2744,12 +2719,6 @@ html.dark .sidebar-view-switcher-thumb {
 
   .sidebar-project-tree-row-main {
     padding-right: 52px;
-  }
-
-  /* No hover here, so the pair is always painted; the name keeps clear of it and
-     the pin that rides right behind the name. */
-  .sidebar-project-tree-row.is-pinned .sidebar-project-tree-row-main {
-    padding-right: 74px;
   }
 }
 

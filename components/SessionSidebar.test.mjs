@@ -316,7 +316,8 @@ test("project header shows a session count and chips only while folded", () => {
   // The rendered path replaces the native tooltip; the accessible label keeps the branch.
   assert.doesNotMatch(source, /className="sidebar-project-tree-branch"/);
   assert.match(source, /const rowTitle = branchSubtitle \? `\$\{group\.projectRoot\} · \$\{branchSubtitle\}` : group\.projectRoot/);
-  assert.match(source, /aria-label=\{`\$\{displayName\} · \$\{rowTitle\}`\}/);
+  // A pinned project has no glyph in its row, so the state rides in the label.
+  assert.match(source, /aria-label=\{`\$\{displayName\}\$\{pinned \? ` · \$\{t\("sidebar\.pinnedProject"\)\}` : ""\} · \$\{rowTitle\}`\}/);
   assert.doesNotMatch(source, /title=\{rowTitle\}/);
 });
 
