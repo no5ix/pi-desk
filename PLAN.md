@@ -1,45 +1,45 @@
-# Selective backport of four pi-web PRs and the pi 1.6.0 bump
+# Branch picker: tree, icons, worktree form; the custom.css rules adopted
 
-Branch: `chore/selective-pi-web-backport` (from `pi-desk-main` at `41913bcd`).
-Source: `https://github.com/agegr/pi-web` (remote `pi-web`, fetched as
-`refs/pull/<n>/head`). All items are done; the shas and the verification are in
-PROGRESS.md.
+Branch: `wt/2wt-branch-picker-header-worktrees`. Six fixes from the user's
+screenshots (`pic1`…`pic7`, 2026-11-25) plus the user stylesheet.
 
-| Item | Upstream | Result on this branch |
+| # | Ask | Where |
 | --- | --- | --- |
-| #1731 `formatCompactCount` 999_500 → `1.0M` | `lib/session-stats-format.ts` + test | `f8bac2c2` — cherry-picked clean (the file is the fork's) |
-| #1730 batch the agent family's usage reads | `lib/agent-switcher.ts`, `components/AgentStatusBar.tsx`, `lib/session-stats.ts`, route | `78665202` — the lib half (`MAX_SESSION_STATS_IDS` exported from `lib/session-stats.ts`, route imports it) + the cap tests. The client half is **N/A**: this fork has no agent switcher and no `AgentStatusBar`, so nothing batch-reads usage |
-| `3443700` pi 1.6.0 | `package.json`, `package-lock.json` | `197f0d7a` — every `@earendil-works/*` moved `1.5.2` → `1.6.0` with `npm install`, from HEAD's lock so the tauri plugin pins held. `844b2fa1` follows the SDK's data move (Qwen Token Plan endpoint) |
-| #1742 steer a background report into the parent's running run | `lib/subagent.ts` (`steerIntoRun`), `lib/subagent-runtime.ts`, `lib/subagent-status.ts`, `lib/subagent-notification.ts`, `lib/subagent-ui.ts`, `components/AgentStatusBar.tsx` | `b72769da` — `steerIntoRun()` + `canSteerAfterTurn()` in the fork's `lib/subagent-runtime.ts`, report kept as the `pi-web:subagent-notification` custom message. `66f67abc` — the 71eb6b84 refusal half, in the fork's `get_subagent_result` |
-| #1739 keep the report when a steer arrives as the child finishes | `lib/subagent.ts` / `lib/subagent-runtime.ts` (`runResultText`), `lib/subagent-ui.ts` | `dd5ee7ad` — `runResultText(sessionManager, entryBase)` with pi's `context_edit` projection, at every record site |
+| 1 | Apply every rule in `~/Desktop/custom-bak.css` to the project's own CSS | `app/native-theme.css` (fork CSS lives only there; `custom.css` is a per-user file served by `/api/custom-css`) |
+| 2 | A branch row's worktree button opens the **new-worktree form**, not a plain branch list | `components/ComposerBranchMenu.tsx` (`openWorktreeForm`), asserted in the panel's tests |
+| 3 | The new-worktree page: no back button, no "Switch worktree" heading; the hint names the base branch **and** the folder the worktree will land in | `components/ProjectContextMenu.tsx` (`view === "new-worktree"`), `lib/worktree-folder.ts` (the folder rule), `sidebar.newWorktreeFrom` / `sidebar.newWorktreeInto` |
+| 4 | The header's branch glyph is the **branch** glyph, not the worktree glyph | `components/TopbarBranchChip.tsx` |
+| 5 | The branch page: no back button / "Project actions"; the panel is as wide as its longest branch name, nothing cut off | `components/ProjectContextMenu.tsx`, `.sidebar-project-context-menu--wide` in `app/native-theme.css` |
+| 6 | The branch list: current branch on top with a blue project glyph, worktree branches next with a blue worktree glyph, everything else in a foldable prefix tree (pic7) | `lib/branch-tree.ts` (new, pure), `components/ProjectContextMenu.tsx`, CSS |
+| 7 | No "Worktrees…" item in the branch page | `components/ProjectContextMenu.tsx`; the DOM worktree rows keep a remove button so a checkout is still removable |
 
-## Order (kept)
+## Order
 
-Upstream chronology: #1731 and #1730 are based on `f97292ee`; pi 1.6.0
-(`3443700`) is on main and is an ancestor of #1742's head (`71eb6b84`), so #1742
-needs 1.6.0; #1739 (`61695daf` + `3fbbe2f4`) is based on #1742's merge commit.
+1. `lib/branch-tree.ts` + `lib/branch-tree.test.mjs` (pure row order, tree, flatten).
+2. `components/ProjectContextMenu.tsx`: branch page (tree, glyphs, width, no
+   back, no Worktrees item, inline worktree removal), worktrees page (no back),
+   new-worktree page (no back/heading, folder in the hint, cancel closes).
+3. `components/GitIcons.tsx`: the project folder glyph shared with the header.
+4. `components/TopbarBranchChip.tsx`: always `BranchIcon`.
+5. i18n: en / zh-CN / zh-TW keys, same placeholders.
+6. CSS: the tree's rows + the width rule + the adopted custom.css rules.
+7. Tests: `components/ProjectContextMenu.test.mjs`,
+   `components/ComposerBranchMenu.test.mjs`,
+   `components/AppShell.topbar-branch.test.mjs`, `e2e/branch-menu-rows*`,
+   `e2e/branch-menu-filter*`.
+8. Docs: `docs/agents/fork-ui.md`, `docs/agents/sessions.md`,
+   `docs/agents/files-and-security.md`, `docs/native-theme.md`.
+9. Verify: unit tests, `tsc --noEmit`, `npm run lint`,
+   `node e2e/branch-menu-rows.mjs`, `node e2e/branch-menu-filter.mjs`,
+   `node --test scripts/ui-menu-consistency.test.mjs`, `npm run drift`.
+10. Commit and `git push -u origin wt/2wt-branch-picker-header-worktrees`.
 
-1. #1731
-2. #1730 (the half the fork has)
-3. pi 1.6.0 (`3443700`)
-4. #1742 (`f1c86e21` + `71eb6b84`)
-5. #1739 (`61695daf` + `3fbbe2f4`)
+## Notes / decisions
 
-## Rules that bound this port
-
-- Fork docs win where they disagree with the upstream doc;
-  `docs/agents/subagents.md` is fork-diverged, so every doc port is hand-adapted.
-- The fork's `AgentSessionLike.sendCustomMessage(message, { deliverAs, triggerTurn })`
-  is the two-argument form: the steered report stays a `pi-web:subagent-notification`
-  custom message so the report card keeps rendering.
-- `markSubagentReportRun()` marks the parent run a report *starts*. A steered
-  report starts no run, so it must not be marked: the user's own run announces normally.
-- `hasUnsettledSubagentRun()` holds a parent's stream/run open while a
-  notification is pending; the steered path settles that entry exactly like the
-  follow-up path (the `subscribe`-driven `onSettled` test covers it).
-- A run's result boundary is an **entry index** (`stored.entryBase`), not a clock
-  reading: the fork's own integration test resumes in the same millisecond.
-- `package-lock.json` keeps the tauri plugin pins: install from HEAD's lock.
-- Verification: `tsc --noEmit`, `npm run lint`, the touched `node --test` files,
-  the full `npm test`, `npm run drift`, and (for the SDK bump)
-  `npm run desktop:prepare` + `npm run desktop:verify`.
+- `custom.css` (repo root) is a copy of the user's `<agentDir>/desktop/custom.css`;
+  the rules are **copied** into `app/native-theme.css`, and the repo's
+  `custom.css` is left alone (it is the user's own file, not app source).
+- Removing the "Worktrees…" item does not remove the feature: the branch page
+  shows a worktree glyph on every branch a worktree holds, and that row carries
+  the remove button the worktree page had. The right-click native popup keeps
+  its "Worktrees…" entry.

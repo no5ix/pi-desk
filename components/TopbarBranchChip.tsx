@@ -1,8 +1,7 @@
 "use client";
 
 import { useI18n } from "@/hooks/useI18n";
-import { branchOwnsWorktreeFolder } from "@/lib/worktree-folder";
-import { BranchIcon, WorktreeIcon } from "./GitIcons";
+import { BranchIcon } from "./GitIcons";
 import { TopbarTip, TopbarTipRow, useTopbarTip } from "./TopbarTip";
 
 /**
@@ -38,13 +37,16 @@ export function TopbarBranchChip({
           projectRoot,
         })}
       >
-        {/* The sidebar's branch glyph in a checkout, the worktree glyph in a linked
-            worktree: the same branch name can mean both folders, and the header has to
-            say which one this session works in. A linked folder that was switched to an
-            ordinary branch is a plain folder to the person typing in it, so the glyph
-            asks the question they read it as: is this folder *this* branch's own
-            worktree, the one the app made for it? */}
-        {isWorktree && branchOwnsWorktreeFolder(projectRoot, branch) ? <WorktreeIcon /> : <BranchIcon />}
+        {/* The branch glyph, on every branch, in a checkout and in a linked folder
+            alike. The header used to swap in the worktree glyph when the folder was
+            the worktree this branch owns, and a row of `[folder] pi-desk [worktree]
+            wt/x` read as two claims about one name — the project chip in front of it
+            already says which folder this session works in, and says it with its own
+            tip. What sits in front of a branch name is "this is a branch", and the
+            branch glyph is the shape the sidebar, the composer's chip and the branch
+            menu all use for that. The folder fact stays in the words: the tip and the
+            aria-label say *Worktree branch* when it is one. */}
+        <BranchIcon />
         <span>{branch}</span>
       </button>
       {open ? (

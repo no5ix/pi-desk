@@ -9,9 +9,11 @@
 // and drives them through hooks/useProjectWorktreeActions.ts, so the branch
 // list, the "Fetch from remote" row, the worktree list and the new-worktree
 // form are the same code the sidebar's "…" menu has always used. The chip adds
-// the two buttons per branch: the branch icon checks that branch out in this
-// checkout — or, when a worktree already holds it, takes the session to that
-// worktree; the worktree icon makes a branch from it in
+// the row's button: the worktree icon opens the new-worktree form for that
+// branch — the branch it starts from and the folder it lands in are named in the
+// form before anything is created — and the row's name is the switch: it checks
+// that branch out in this checkout, or, when a worktree already holds it, takes
+// the session to that worktree. A worktree made from a branch lives in
 // `<repo>-worktrees/<branch>` and moves this new session into that folder,
 // leaving the checkout the composer was opened from on its own branch.
 //
@@ -305,9 +307,7 @@ export function ComposerBranchChip({
           revealLabel=""
           projectRevealError={null}
           t={t}
-          onShowWorktrees={() => setView(WORKTREES_VIEW)}
           onShowNewWorktree={() => openWorktreeForm(baseBranch ?? "")}
-          onBackToActions={close}
           onReveal={() => {}}
           onArchive={() => {}}
           onRestore={() => {}}
