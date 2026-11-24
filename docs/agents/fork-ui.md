@@ -220,7 +220,7 @@ Single project sessions archive the same way chats do (#200): the session row's 
 - Navigation (#227): on every desktop platform the sections are a pane on the left under the dialog's title, the content beside it (the header is `display: contents` on the surface's grid). Between 641px and 899px the pane is an icon rail (labels stay as `.settings-section-tab-label`, visually hidden, plus the `title` tooltip); at 640px and below the phone drill-down is unchanged. Windows keeps its Fluent accent bar and caption close, GNOME its round close. The list is one tab stop (`tabIndex` only on the selected row) and arrow keys / Home / End move within it. General's two columns are a container query on `.settings-section-host` (760px of section width), not a viewport breakpoint, since the pane takes 208px. Rules live in `app/native-theme.css`; `app/settings.css` stays upstream's.
 - A signed desktop update installs and relaunches the app, so `AppUpdatesSection` reports `busy` up to `SettingsPanel`, which keeps backdrop clicks and Escape from dismissing the dialog mid-upgrade. That is the reason for the `onBusyChange` prop; don't drop it when refactoring the panel.
 - `UpdateReminder` opens the panel at `general`, where the update status now lives. `components/fork-extractions.test.mjs` pins that the update/desktop code stays in those fork-owned files instead of being regrouped into `SettingsPanel.tsx`.
-- The dialog appears and disappears. Its entrance was already the app's shared one (`native-backdrop-in` on the scrim, `native-modal-in` on the sheet); what was missing is the exit — the panel was removed from the DOM on the click, so the sheet blinked out and the disappearance was never seen. `closeSettings` in `AppShell` sets `settingsClosing` (the panel's `is-closing` class on backdrop and surface, `pointer-events: none`), the shared reverse (`native-backdrop-out` / `native-modal-out`) plays, and the unmount happens after `SETTINGS_EXIT_MS` — `--dur-base`, the same length `DIRECTORY_PICKER_CLOSE_MS` uses. Opening any section during the exit cancels it, the timer is cleared on unmount, and `prefers-reduced-motion` turns both halves off. `components/SettingsPanel.animation.test.mjs` pins the mount, the classes and the keyframes; `e2e/settings-animation.mjs` measures them in Chromium.
+- The dialog appears and disappears. Its entrance was already the app's shared one (`native-backdrop-in` on the scrim, `native-modal-in` on the sheet); what was missing is the exit — the panel was removed from the DOM on the click, so the sheet blinked out and the disappearance was never seen. `closeSettings` in `AppShell` sets `settingsClosing` (the panel's `is-closing` class on backdrop and surface, `pointer-events: none`), the shared reverse (`native-backdrop-out` / `native-modal-out`) plays, and the unmount happens after `SETTINGS_EXIT_MS` — `--dur-base`, the same length `DIRECTORY_PICKER_CLOSE_MS` uses. **The exit is cancelled only by an open, and the cancel lives in `openSettings`, next to the state it changes.** It must not be an effect watching `[settingsClosing, settingsSection]`: for the whole exit the section *is* the one being closed, so such an effect cancelled every close the instant it started — the sheet snapped back into its entrance, which read as a dialog that would not close and had no animation at all. Every open routes through `openSettings` (the gear, the shortcuts, the sidebar, the composer's bare `/mcp`, the update reminder), the timer is cleared on unmount, and `prefers-reduced-motion` turns both halves off. `components/SettingsPanel.animation.test.mjs` pins the mount, the classes, the keyframes and the writers of the section state; `e2e/settings-animation.mjs` measures the CSS, and `e2e/settings-exit.mjs` (in `e2e/run.mjs`) drives the shell in a real page: open, close, mid-fade, gone, Escape, and an open during the exit that cancels it and closes normally afterwards.
 
 ## Topbar, chat column, and right panel — who contains whom
 Upstream segment D (0e36743) restructured `AppShell.tsx`'s main region in ways this fork's layout cannot survive; all three are pinned by `components/AppShell.right-panel-row.test.mjs`:
@@ -385,7 +385,26 @@ while the tab is visible. The key is a shared identity (`composerSyncKey`: a ses
 is dropped), the newest `updatedAt` wins, and a client applies a remote copy only when it
 is newer than its own last write, so typing is never overwritten by its own echo. A
 composer that only *loaded* a draft never pushes it: that content was written by the
-device that typed it. Sending clears the server's copy. See
+device that typed it. Sending clears the server's copy. Two rules keep the mirror from
+eating the composer it mirrors, and both came from real losses:
+
+- **The store keeps no empty draft.** An empty snapshot is written by the debounced
+  mirror right after a send cleared the composer; applied elsewhere it wipes a prompt
+  that was being typed. `pushComposerDraft` answers an empty composer with a DELETE, and
+  `writeComposerDraft` treats an empty write as the clear (never stale). The composer
+  also refuses a remote copy that is blank while it holds content
+  (`BLANK_DRAFT_SIGNATURE` in `components/ChatInput.tsx`).
+- **A draft the mirror cannot carry stays local.** A pasted screenshot is routinely
+  larger than the store's image cap, so a push used to store the prompt *without* the
+  screenshots and the composer's own 4s poll painted that trimmed copy back: the
+  attachments vanished mid-typing, with no reload and no send. `normalizeComposerDraft`
+  reports what the size guards refused, `writeComposerDraft` refuses such a write (the
+  route answers **413**), and `lib/composer-sync.ts` then stops pushing and polling that
+  composer for the tab's life. The user's composer, with its attachments, beats the
+  other device's copy.
+
+`lib/composer-sync.test.mjs`, `app/api/composer-draft/route.test.mjs` and
+`components/ChatInput.composer-sync.test.mjs` pin each half. See
 [fork-files-security](fork-files-security.md) for what the mirror may hold.
 
 ## The right panel opens on a terminal

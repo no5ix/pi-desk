@@ -12,6 +12,11 @@
 // - The writing device stamps `updatedAt`; the newest write wins on the server,
 //   and a device applies a remote copy only when it is newer than the last
 //   thing it typed itself — typing is never overwritten by an echo.
+// - An empty composer is a DELETE, never a write: the empty snapshot a send
+//   leaves behind must not land on a composer that has a prompt in it.
+// - A draft the mirror cannot carry (413: attachments past the caps) stops being
+//   mirrored for the tab's life. The composer keeps the user's attachments; the
+//   other device keeps the last copy that fitted.
 // - The poll is per sync key and only runs while the tab is visible.
 // - Nothing here throws at the composer: a draft that cannot sync is a draft
 //   that stays local, which is how it behaved before.
@@ -27,6 +32,19 @@ const POLL_INTERVAL_MS = 4_000;
 const pendingPushes = new Map<string, ComposerDraftSnapshot>();
 const pushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const listeners = new Map<string, Set<(snapshot: ComposerDraftSnapshot) => void>>();
+/**
+ * Composers the mirror cannot carry: the server answered that the attachments are
+ * larger than it may hold (a pasted screenshot is routinely bigger than the image
+ * cap). Such a composer stays local for the tab's life — the draft the user is
+ * editing beats the copy the other device has. Trimming it and mirroring the trim
+ * is what made attachments vanish: the composer polled its own shrunken copy back.
+ */
+const unmirrored = new Set<string>();
+
+/** Nothing in the composer. A send clears it, and the mirror clears its copy too. */
+function isBlankDraft(snapshot: { value: string; images: unknown[]; files: unknown[] }): boolean {
+  return snapshot.value.trim().length === 0 && snapshot.images.length === 0 && snapshot.files.length === 0;
+}
 
 function emit(key: string, snapshot: ComposerDraftSnapshot): void {
   for (const listener of listeners.get(key) ?? []) listener(snapshot);
@@ -41,6 +59,20 @@ async function sendPush(key: string): Promise<void> {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ key, ...snapshot }),
     });
+    if (response.status === 413) {
+      // The draft is too large for the mirror (the text cap, the attachments, the body
+      // cap). Stop mirroring this composer: the user keeps their work, and the other
+      // device keeps the last copy that fitted. Re-PUTting it every keystroke is
+      // traffic that answers the same way.
+      unmirrored.add(key);
+      pendingPushes.delete(key);
+      const timer = pushTimers.get(key);
+      if (timer) {
+        clearTimeout(timer);
+        pushTimers.delete(key);
+      }
+      return;
+    }
     if (response.status === 409) {
       // A newer draft is stored: show it, and stop pushing the old text.
       const data = await response.json().catch(() => null) as { draft?: ComposerDraftSnapshot } | null;
@@ -63,6 +95,14 @@ export function pushComposerDraft(
   snapshot: { value: string; images: ChatDraftImage[]; files: ChatDraftFile[] },
 ): number {
   const key = composerSyncKey(draftKey);
+  if (isBlankDraft(snapshot)) {
+    // The composer was sent. Its server copy goes with it, and no empty snapshot takes
+    // its place: a poll that hands an empty composer to a device that is typing wipes
+    // a prompt and its attachments off the screen.
+    clearComposerDraft(draftKey);
+    return Date.now();
+  }
+  if (unmirrored.has(key)) return 0;
   const stamped: ComposerDraftSnapshot = { ...snapshot, updatedAt: Date.now() };
   pendingPushes.set(key, stamped);
   const timer = pushTimers.get(key);
@@ -101,6 +141,10 @@ async function poll(key: string): Promise<void> {
 /** Receives the other devices' copies of this composer. */
 export function watchComposerDraft(draftKey: string, onRemote: (snapshot: ComposerDraftSnapshot) => void): () => void {
   const key = composerSyncKey(draftKey);
+  if (unmirrored.has(key)) {
+    // Its draft stays on this device: no polls, and so no copies to apply.
+    return () => {};
+  }
   let set = listeners.get(key);
   if (!set) {
     set = new Set();

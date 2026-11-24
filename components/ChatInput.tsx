@@ -631,6 +631,9 @@ function draftSignature(
   ]);
 }
 
+/** The signature of nothing: no text, no image, no file. */
+const BLANK_DRAFT_SIGNATURE = draftSignature("", [], []);
+
 function QueuedMessageRow({ kind, label, text }: { kind: "steer" | "follow-up"; label: string; text: string }) {
   return (
     <div
@@ -1411,11 +1414,31 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (!draftKey) return;
     return watchComposerDraft(draftKey, (remote) => {
       if (remote.updatedAt <= composerSyncStampRef.current) return;
-      composerSyncStampRef.current = remote.updatedAt;
-      const nextValue = remote.value;
       const nextImages = draftImagesToAttachedImages(remote.images);
       const nextFiles = remote.files;
-      syncedSignatureRef.current = draftSignature(nextValue, nextImages.map(imageToDraftImage), nextFiles);
+      const remoteSignature = draftSignature(remote.value, nextImages.map(imageToDraftImage), nextFiles);
+      const localSignature = draftSignature(
+        valueRef.current,
+        attachedImagesRef.current.map(imageToDraftImage),
+        attachedFilesRef.current,
+      );
+      if (remoteSignature === localSignature) {
+        // The composer's own content, seen from the other side: nothing to repaint.
+        composerSyncStampRef.current = remote.updatedAt;
+        syncedSignatureRef.current = remoteSignature;
+        return;
+      }
+      if (remoteSignature === BLANK_DRAFT_SIGNATURE && localSignature !== BLANK_DRAFT_SIGNATURE) {
+        // An empty copy landing on a composer that has a prompt in it. The store keeps
+        // no empty draft (lib/composer-draft-store.ts), so this is a copy from before a
+        // send, or a device behind by a clock: it must never wipe what the user is
+        // typing, which is how a prompt and its attachments used to vanish at the end
+        // of a run.
+        return;
+      }
+      composerSyncStampRef.current = remote.updatedAt;
+      const nextValue = remote.value;
+      syncedSignatureRef.current = remoteSignature;
       valueRef.current = nextValue;
       attachedImagesRef.current = nextImages;
       attachedFilesRef.current = nextFiles;

@@ -104,3 +104,44 @@ test("a body the size of an upload is refused before it is parsed", async () => 
   const badJson = await route.PUT(new Request("http://localhost/api/composer-draft", { method: "PUT", body: "{" }));
   assert.equal(badJson.status, 400);
 });
+
+test("a snapshot that lost attachments is refused, never stored trimmed", async () => {
+  clearAllComposerDrafts();
+  const t0 = Date.now();
+  writeComposerDraft("trimmed", { value: "before the screenshot", images: [], files: [], updatedAt: t0 - 5000 });
+  // A pasted screenshot is routinely larger than the store's image cap.
+  const huge = "A".repeat(400_001);
+  const result = writeComposerDraft("trimmed", {
+    value: "with a screenshot",
+    images: [{ mimeType: "image/png", data: huge, name: "shot.png" }],
+    files: [],
+    updatedAt: t0,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.dropped, 1, "the count names what the guards refused");
+  assert.equal(readComposerDraft("trimmed").value, "before the screenshot", "the stored draft is untouched");
+
+  const response = await put({
+    key: "trimmed",
+    value: "with a screenshot",
+    images: [{ mimeType: "image/png", data: huge }],
+    files: [],
+    updatedAt: t0,
+  });
+  // A "cannot sync" answer: the client stops mirroring this composer, so the user's
+  // composer keeps its attachments instead of repainting itself from the trim.
+  assert.equal(response.status, 413);
+  assert.equal((await response.json()).draft.value, "before the screenshot");
+  assert.equal(normalizeComposerDraft({ value: "ok", images: [], files: [], updatedAt: t0 }).dropped, 0,
+    "a draft that fits reports no drop");
+});
+
+test("the store keeps no empty draft: an empty write is the clear", () => {
+  clearAllComposerDrafts();
+  const t0 = Date.now();
+  writeComposerDraft("cleared", { value: "typed on the laptop", images: [], files: [], updatedAt: t0 - 1000 });
+  // The debounced echo of a send arrives with the send's stamp — a clear is never stale.
+  const cleared = writeComposerDraft("cleared", { value: "", images: [], files: [], updatedAt: t0 - 1000 });
+  assert.equal(cleared.ok, true);
+  assert.equal(readComposerDraft("cleared"), null, "no empty copy for a poll to paint over a typed composer");
+});
