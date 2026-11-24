@@ -174,8 +174,13 @@ test("the family chip counts subagents and side chats apart, in one button", () 
   assert.match(counter, /className="app-topbar-family-group app-topbar-family-group--side"[^>]*>\s*<SideChatIcon \/>/);
   assert.match(counter, /<path d="M21 12a8 8 0 0 1-8 8H5\.5a2 2 0 0 1-1\.4-3\.4A8 8 0 1 1 21 12z" \/>\s*<path d="M13 8\.5v7M9\.5 12h7" \/>/,
     "the side-chat glyph is the composer's and the sidebar's, not a new drawing");
-  assert.match(css, /\.app-topbar-family-group \+ \.app-topbar-family-group \{[^}]*margin-left: 5px;/,
-    "the groups sit apart: two sentences, not six numbers");
+  const groups = css.match(/\.app-topbar-family-group \+ \.app-topbar-family-group \{[^}]*\}/);
+  assert.ok(groups, "the groups sit apart: two sentences, not six numbers");
+  assert.match(groups[0], /margin-left: 10px;/);
+  // No rule between the groups: they are one control, and a divider inside a button reads
+  // as two controls (the row the user pointed at).
+  assert.ok(!groups[0].includes("border-left"), "no divider inside the one button");
+  assert.ok(!css.includes(".app-topbar-family-group--side::before"), "no divider pseudo-element");
   for (const loc of ["en", "zh-CN", "zh-TW"]) {
     const messages = readFileSync(new URL(`../lib/i18n/messages/${loc}.ts`, import.meta.url), "utf8");
     for (const key of ["chat.sideChatsTitle", "chat.sideChatsRunning"]) {

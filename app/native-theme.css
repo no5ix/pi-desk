@@ -3743,10 +3743,10 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   align-items: center;
   gap: 3px;
 }
+/* The groups sit apart by their own spacing, with no rule between them: the two groups
+   are one control, and a divider inside a button reads as two controls. */
 .app-topbar-family-group + .app-topbar-family-group {
-  margin-left: 5px;
-  padding-left: 7px;
-  border-left: var(--hairline) solid var(--border);
+  margin-left: 10px;
 }
 .app-topbar-family-group--side {
   color: var(--accent);

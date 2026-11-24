@@ -407,6 +407,13 @@ composer's / the sidebar's circle-and-plus), so the row reads
 control: two `<small role="button">` neighbours would be two targets for one action and two
 tab stops on a phone, and the accessible name is both sentences joined.
 
+**No rule is drawn between the two groups.** A vertical divider inside a single control
+reads as two controls, which is exactly what the row looked like; the 10px gap plus each
+group's own leading glyph (robot / circle-and-plus) is what separates them.
+`components/AppShell.topbar-branch.test.mjs` asserts the sibling rule carries
+`margin-left: 10px` and **no** `border-left`, and that no
+`.app-topbar-family-group--side::before` exists.
+
 **A side chat has no outcome.** Only a subagent relation carries a `status`; a conversation
 the user is typing into is not "completed" or "aborted". The side-chat group therefore
 states its count and its live runs (`{total} side chats · {running} running`), and there is
@@ -642,6 +649,9 @@ worktree 自己的路径没丢：项目 tip 的 `Path` 行就是正在工作的�
 `components/AppShell.worktree-project.test.mjs` 钉住解析与四处佩戴。
 
 **头部行的顺序是 `[文件夹] 项目  [分支] 分支  [机器人] ✓2 ⚠1 ↻3  [侧聊] 2 ↻1  [时钟] 11m5s  [上下文]`。** 家族运行的计数紧跟在分支后面（它们是工作的状态），时钟是这段状态的尾巴，上下文环收尾；时钟曾排在计数之前，整行读起来像以标签结束。`components/TopbarSubagents.tsx` 是**一个按钮、两个分组**：一个家族含两种成员（ADR 0007），`countSubagents` 与 `countSideChats` 分开计数 —— 委派运行与用户自己开的会话是两件事，混在一起的 “6 runs” 无法据以行动。每组以该类型在别处已使用的图标开头（Agents 面板的机器人头、输入框与侧栏的圆圈加号）。两组打开同一个面板，所以放在**一个**控件里：两个 `role="button"` 兄弟节点等于同一动作两个目标，手机上还多一次 Tab。可访问名是两句拼在一起。
+
+**两组之间不画分隔线**：一个按钮内部出现竖线，会被读成两个控件（就是用户指出的样子）。
+间隔只靠 10px `margin-left` 和每组自己的引导图标（机器人 / 圆圈加号）；测试断言兄弟规则只有 `margin-left: 10px`、**没有** `border-left`，且不存在 `.app-topbar-family-group--side::before`。
 
 **侧聊没有“结果”。** 只有 subagent 的 relation 带 `status`；用户正在输入的会话谈不上“已完成 / 已中止”。所以侧聊分组只报数量与正在运行的条数（`{total} 个侧聊 · {running} 运行中`），语言文件里不存在 `chat.sideChatsCompleted` / `chat.sideChatsAborted` —— 给会话画 ✓ 是编造数据，`components/AppShell.topbar-branch.test.mjs` 断言这两个 key 在三种语言中始终**不存在**。
 
