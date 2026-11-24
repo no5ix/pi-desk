@@ -71,6 +71,7 @@ const MEASURE = () => {
     const r = el.getBoundingClientRect();
     return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height };
   };
+  const menu = document.querySelector(".sidebar-project-context-menu");
   const rows = [];
   for (const row of document.querySelectorAll(".sidebar-project-context-menu-row--branch")) {
     const button = row.querySelector('button[role="menuitem"]');
@@ -80,18 +81,36 @@ const MEASURE = () => {
     const tagBox = tag ? box(tag) : null;
     rows.push({
       text: name.textContent,
+      branch: name.dataset.branch,
+      current: button.getAttribute("aria-current") === "true",
       name: { ...box(name), scrollWidth: name.scrollWidth, clientWidth: name.clientWidth },
+      // The name element is the row's flexible box, so its own width says nothing about
+      // the text inside it: the range is the text's measured width.
+      textWidth: Math.round(((() => { const range = document.createRange(); range.selectNodeContents(name); return range.getBoundingClientRect().width; })())),
+      oneLine: Math.round(box(name).height) < 20,
       button: box(button),
       tag: tagBox,
       tagText: tag ? tag.textContent : null,
+      tagScrolls: tag ? tag.scrollWidth > tag.clientWidth + 1 : null,
       actions,
       tagOverIcon: tagBox ? actions.some((a) => intersects(tagBox, a)) : false,
       tagPastButton: tagBox ? tagBox.right > box(button).right + 0.5 : false,
-      gapToIcons: tagBox ? actions[0].left - tagBox.right : null,
-      menuWidth: document.querySelector(".sidebar-project-context-menu").getBoundingClientRect().width,
+      gapToIcons: tagBox && actions.length ? actions[0].left - tagBox.right : null,
+      menuWidth: menu.getBoundingClientRect().width,
     });
   }
-  return rows;
+  // The tree's group rows: an arrow, a folder, the prefix, at a shallower depth
+  // than the branches under it.
+  const groups = Array.from(document.querySelectorAll(".sidebar-project-context-menu-branch-group")).map((row) => ({
+    label: row.querySelector(".sidebar-project-context-menu-branch-name").dataset.group,
+    text: row.querySelector(".sidebar-project-context-menu-branch-name").textContent,
+    expanded: row.getAttribute("aria-expanded"),
+    chevron: Boolean(row.querySelector(".sidebar-project-context-menu-branch-chevron")),
+    left: Math.round(row.getBoundingClientRect().left),
+    cut: row.querySelector(".sidebar-project-context-menu-branch-name").scrollWidth
+      > row.querySelector(".sidebar-project-context-menu-branch-name").clientWidth + 1,
+  }));
+  return { rows, groups, menuWidth: menu.getBoundingClientRect().width };
 };
 
 const browser = await chromium.launch();
@@ -100,47 +119,72 @@ const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
 const server = await serve(css);
 await page.goto(`http://127.0.0.1:${server.address().port}/`);
 await page.waitForSelector(".sidebar-project-context-menu-row--branch");
-const rows = await page.evaluate(MEASURE);
+const measured = await page.evaluate(MEASURE);
 server.close();
 
+const { rows, groups, menuWidth } = measured;
 assert.ok(rows.length >= 6, `every branch row renders (${rows.length})`);
-const menuWidth = rows[0].menuWidth;
-// 240 is the wide project menu; a scrolled menu reserves the scrollbar.
-assert.ok(menuWidth > 225 && menuWidth <= 240, `the chip's menu is the wide project menu (${menuWidth})`);
+const widest = rows.reduce((a, b) => (b.textWidth > a.textWidth ? b : a));
+// The panel is as wide as the longest row asks for, capped at the window: the menu
+// grew from 240px to the width of `conversation-list-optimization-9ec111`, and a
+// name that once wrapped in three lines is one line. 420 is the cap in the CSS.
+assert.ok(menuWidth > 240, `the panel took its rows' width, not the old 240px cap (${menuWidth})`);
+assert.ok(menuWidth <= 420 + 1, `and it stops at the cap (${menuWidth})`);
+assert.ok(widest.textWidth + 60 <= menuWidth,
+  `the longest name fits with its glyph and its icon column (${widest.branch}: ${widest.textWidth}px of text in a ${Math.round(menuWidth)}px panel)`);
 
 for (const row of rows) {
-  const label = row.text;
-  assert.equal(row.actions.length, 1, `${label}: one action icon — the worktree; the branch name is the switch`);
+  const label = row.branch;
+  // The row's own button is the switch, and the icons at its trailing edge are what
+  // only that row can do. The current branch has none: git refuses a worktree from
+  // the branch this folder is already on.
+  assert.equal(row.actions.length, row.current ? 0 : 1,
+    `${label}: ${row.actions.length} action icons — the worktree this branch can start, and the name is the switch`);
   assert.ok(!row.tagOverIcon, `${label}: the "${row.tagText}" tag does not overlap the row's icons`);
   assert.ok(!row.tagPastButton, `${label}: the "${row.tagText}" tag stays inside the row's button`);
   if (row.tag) {
+    assert.ok(!row.tagScrolls, `${label}: the "${row.tagText}" tag is shown whole, not as "${row.tagText.slice(0, 2)}…"`);
     assert.ok(row.gapToIcons >= 1, `${label}: ${row.gapToIcons.toFixed(1)}px between the tag and the icons`);
   }
   assert.ok(row.name.scrollWidth <= row.name.clientWidth + 1, `${label}: the name is not cut (${row.name.scrollWidth} > ${row.name.clientWidth})`);
-  assert.ok(row.button.right <= row.actions[0].left + 0.5, `${label}: the button ends where the icons start`);
+  assert.ok(row.button.right <= (row.actions[0]?.left ?? Number.POSITIVE_INFINITY) + 0.5, `${label}: the button ends where the icons start`);
 }
-  // The long names wrap — that is what leaves the tag its room — and a row stays
-  // a row: a branch name squeezed to one character per line is unreadable, and
-  // a menu of 500px rows is unusable.
-  const tall = rows.filter((row) => row.name.height > 90);
-  assert.equal(tall.length, 0, `no row is squeezed into a vertical strip (${tall.map((r) => `${r.text.slice(0, 20)}: ${Math.round(r.name.height)}px`).join(", ")})`);
-  assert.ok(rows.some((row) => row.name.height > 20), "a long branch name wraps to more than one line");
+// A name on one line, in a panel that made room for it: the old shape wrapped the
+// long ones to three lines and squeezed the tag out. The rows stay rows.
+const wrapped = rows.filter((row) => row.name.height > 20);
+assert.equal(wrapped.length, 0, `no name wraps in a panel this wide (${wrapped.map((r) => `${r.branch}: ${Math.round(r.name.height)}px`).join(", ")})`);
+const tall = rows.filter((row) => row.name.height > 90);
+assert.equal(tall.length, 0, `no row is squeezed into a vertical strip (${tall.map((r) => `${r.branch}: ${Math.round(r.name.height)}px`).join(", ")})`);
+
+// The tree: the prefixes are group rows of their own, open, with the arrow that
+// folds them, and their labels are whole words.
+assert.ok(groups.length >= 2, `the prefixes of the long names are groups (${groups.map((g) => g.label).join(", ")})`);
+for (const group of groups) {
+  assert.equal(group.expanded, "true", `${group.label}: a group starts open`);
+  assert.ok(group.chevron, `${group.label}: the row carries the arrow that folds it`);
+  assert.ok(!group.cut, `${group.label}: the prefix is not cut`);
+  assert.equal(group.text, group.label, `${group.label}: the row says the prefix, nothing else`);
+}
+const deepest = Math.max(...rows.map((row) => row.name.left));
+assert.ok(Math.min(...groups.map((group) => group.left)) < deepest,
+  "a group's row sits shallower than the branches under it");
+await page.screenshot({ path: `${out}/rows.png` });
 
 // The control: without the fix rules, the same measurement sees the overlap.
-// The row lost an action icon (the name is the switch now), so the control also takes
-// back the width that icon used to occupy: the menu falls to its narrow 168px form, the
-// width a phone's project menu has. Pressure restored, the unshrunken tag must reach the
-// icon again — a control that passes on an empty field proves nothing.
+// The panel goes back to the fixed 168px width the phone's project menu has, the
+// name loses its floor and its wrap, the tag loses its "never shrink, never break"
+// rule, and the row's button stops clipping. Pressure restored, the unshrunken tag
+// must reach the icons again — a control that passes on an empty field proves nothing.
 const unfixed = css
-  .replace(/\.sidebar-project-context-menu--wide \{([^}]*?)width: 240px;/, ".sidebar-project-context-menu--wide {$1width: 168px;")
+  .replace(/\.sidebar-project-context-menu--wide \{[\s\S]*?\}/, ".sidebar-project-context-menu--wide {\n  width: 168px;\n}")
   .replace(/\.sidebar-project-context-menu-branch-name \{[^}]*\}/g, "")
-  .replace(/\.sidebar-project-context-menu-branch-tag \{\n((?:[^}]*\n)*?)\}/, ".sidebar-project-context-menu-branch-tag {\n  margin-left: auto;\n  color: var(--text-dim);\n  font-family: var(--font-ui);\n  font-size: var(--fs-micro);\n}")
+  .replace(/\.sidebar-project-context-menu-branch-tag \{[\s\S]*?\}/, ".sidebar-project-context-menu-branch-tag {\n  margin-left: auto;\n  color: var(--text-dim);\n  font-family: var(--font-ui);\n  font-size: var(--fs-micro);\n}")
   .replace(/(\.sidebar-project-context-menu-row--branch > button\[role="menuitem"\] \{)([^}]*?)overflow: hidden;/, "$1$2");
 assert.notEqual(unfixed, css, "the control strips the rules the fix added");
 const oldServer = await serve(unfixed);
 await page.goto(`http://127.0.0.1:${oldServer.address().port}/`);
 await page.waitForSelector(".sidebar-project-context-menu-row--branch");
-const before = await page.evaluate(MEASURE);
+const before = await page.evaluate(MEASURE).then((measured) => measured.rows);
 oldServer.close();
 assert.ok(before.some((row) => row.tagOverIcon || row.tagPastButton),
   "the check can see the bug: without the rules, a tag lands on the icons");
@@ -245,7 +289,9 @@ openServer.close();
 await browser.close();
 
 console.log(
-  `branch menu: ${rows.length} rows at ${Math.round(menuWidth)}px, rows ${Math.round(Math.max(...rows.map((row) => row.name.height)))}px at the tallest, no tag/icon overlap, no clipped name; `
+  `branch menu: ${rows.length} rows at ${Math.round(menuWidth)}px (the panel grew to its longest name, capped at 420px), `
+  + `the longest name "${widest.branch}" is ${widest.textWidth}px of text, on one line, with nothing cut, `
+  + `${groups.length} prefix groups open with their arrows, no tag/icon overlap; `
   + `the open flow moves the visible panel ${fixed.movement}px (invisible while the fetch runs, placed for the height the list settles at, the edge at the chip locked) where the pre-fix flow moved it ${flash.movement}px; `
   + `the un-fixed CSS overlaps ${before.filter((row) => row.tagOverIcon || row.tagPastButton).length} of ${before.length} rows`,
 );

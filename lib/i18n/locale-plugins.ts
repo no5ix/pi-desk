@@ -203,6 +203,15 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
       "sidebar.branchInWorktreeTitle": "{branch} is already checked out in another worktree — open that worktree",
       "sidebar.remoteBranchTag": "remote",
       "sidebar.noOtherBranches": "No other branches",
+      /* The branch page's tree and its three glyphs. */
+      "sidebar.currentBranchTitle": "This folder is on {branch}",
+      "sidebar.mainCheckoutBranchTitle": "{branch} is checked out in the project's own folder — work there",
+      "sidebar.branchGroupExpand": "Expand the {group} branches",
+      "sidebar.branchGroupCollapse": "Collapse the {group} branches",
+      "sidebar.branchGroupCount": "{count} branches",
+      /* The new-worktree form says where the folder lands, next to the name it starts from. */
+      "sidebar.newWorktreeFrom": "Create a new branch based on “{branch}”, in the folder {path}",
+      "sidebar.newWorktreeInto": "Create a new branch in the folder {path}",
       "sidebar.uploadFilesTitle": "Upload files to the selected folder (project root if none)",
       "sidebar.searchAllHint": "Press Enter to search inside every conversation",
       "sidebar.chats": "Chats",
@@ -1161,6 +1170,15 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
       "sidebar.branchInWorktreeTitle": "{branch} 已在其他 worktree 检出，点击切换过去",
       "sidebar.remoteBranchTag": "远端",
       "sidebar.noOtherBranches": "没有其他分支",
+      /* 分支页的树形结构与三种图标。 */
+      "sidebar.currentBranchTitle": "当前目录就在 {branch} 上",
+      "sidebar.mainCheckoutBranchTitle": "{branch} 已在项目自己的目录检出，点击去那里工作",
+      "sidebar.branchGroupExpand": "展开 {group} 分支",
+      "sidebar.branchGroupCollapse": "折叠 {group} 分支",
+      "sidebar.branchGroupCount": "{count} 个分支",
+      /* 新建 worktree 的表单说出目录会落在哪里，以及它从哪个分支开始。 */
+      "sidebar.newWorktreeFrom": "基于「{branch}」新建分支，目录为 {path}",
+      "sidebar.newWorktreeInto": "在目录 {path} 新建分支",
       "sidebar.uploadFilesTitle": "上传到当前选中的文件夹（未选中时为项目根目录）",
       "sidebar.changedFiles": "{count} 个已修改文件",
       "sidebar.chats": "对话",
@@ -2351,6 +2369,15 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
       "sidebar.branchInWorktreeTitle": "{branch} 已在其他 worktree 檢出，點選切換過去",
       "sidebar.remoteBranchTag": "遠端",
       "sidebar.noOtherBranches": "沒有其他分支",
+      /* 分支頁的樹形結構與三種圖示。 */
+      "sidebar.currentBranchTitle": "目前目錄就在 {branch} 上",
+      "sidebar.mainCheckoutBranchTitle": "{branch} 已在專案自己的目錄檢出，點選到那裡工作",
+      "sidebar.branchGroupExpand": "展開 {group} 分支",
+      "sidebar.branchGroupCollapse": "摺疊 {group} 分支",
+      "sidebar.branchGroupCount": "{count} 個分支",
+      /* 新建 worktree 的表單說出目錄會落在哪裡，以及它從哪個分支開始。 */
+      "sidebar.newWorktreeFrom": "以「{branch}」為起點建立新分支，目錄為 {path}",
+      "sidebar.newWorktreeInto": "在目錄 {path} 建立新分支",
       "sidebar.chats": "對話",
       "sidebar.newChatTitle": "新增對話",
       "sidebar.noChats": "還沒有對話",

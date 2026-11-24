@@ -6,10 +6,10 @@ import { ProjectContextMenuPanel } from "@/components/ProjectContextMenu.tsx";
  *
  * The names in the screenshot that started this are long — a remote branch like
  * `claude/settings-layout-review-8265af` wrapped to three lines in the chip's
- * 240px menu, and the `remote` tag was pushed past the row's button and painted
- * over the branch and worktree icons that follow it. Only real layout shows
- * that, so this fixture mounts the real panel with the real CSS and the reported
- * branch names; e2e/branch-menu-rows.mjs measures the tag against the icons.
+ * 240px menu, and the `remote` tag — right-aligned in that button — was pushed
+ * past its edge and painted over the icons that follow it. Only real layout shows
+ * that, so this mounts the real panel with the real CSS and the reported branch
+ * names; e2e/branch-menu-rows.mjs measures the width, the names and the icons.
  */
 /**
  * Real strings, not translation keys: the widths are what this measures, and a
@@ -22,13 +22,26 @@ const TRANSLATED = {
   "sidebar.remoteBranchTag": "remote",
   "sidebar.worktrees": "Worktrees…",
   "sidebar.checkOutBranchTitle": "Check out {branch}",
+  "sidebar.switchBranchTitle": "Check out {branch} in the current checkout",
+  "sidebar.branchRemoteTitle": "Remote branch — checking it out creates a local tracking branch",
+  "sidebar.currentBranchTitle": "This folder is on {branch}",
+  "sidebar.mainCheckoutBranchTitle": "{branch} is checked out in the project's own folder — work there",
+  "sidebar.branchInWorktreeTitle": "{branch} is already checked out in another worktree — open that worktree",
   "sidebar.worktreeFromBranchTitle": "New worktree from {branch}",
+  "sidebar.removeWorktreeTitle": "Remove the worktree checkout at {path}",
+  "sidebar.branchGroupExpand": "Expand the {group} branches",
+  "sidebar.branchGroupCollapse": "Collapse the {group} branches",
+  "sidebar.branchGroupCount": "{count} branches",
   "sidebar.moreActions": "More actions",
   "sidebar.currentWorktreeTitle": "In {path}",
 };
 const t = (key, params) => {
   const text = TRANSLATED[key] ?? key;
-  return params ? text.replace("{branch}", String(params.branch)).replace("{path}", String(params.path ?? "")) : text;
+  if (!params) return text;
+  return Object.entries(params).reduce(
+    (acc, [name, value]) => acc.replace(new RegExp(`\\{${name}\\}`, "g"), String(value)),
+    text,
+  );
 };
 
 const REMOTE_BRANCHES = [
@@ -42,8 +55,8 @@ const REMOTE_BRANCHES = [
 
 const menu = {
   root: "/repo",
+  projectRoot: "/repo",
   isGit: true,
-  currentCwd: { path: "/repo", branch: "main", isMain: true },
   branches: ["main"],
   remoteBranches: REMOTE_BRANCHES,
   worktrees: [{ path: "/repo", branch: "main", isMain: true }],

@@ -13,6 +13,7 @@ const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "u
 const chip = readFileSync(new URL("./TopbarBranchChip.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const projectChip = readFileSync(new URL("./TopbarProjectChip.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const tip = readFileSync(new URL("./TopbarTip.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+const gitIcons = readFileSync(new URL("./GitIcons.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const hook = readFileSync(new URL("../hooks/useProjectBranch.ts", import.meta.url), "utf8");
 
 test("the title and the project line keep their positions in the title block", () => {
@@ -71,8 +72,10 @@ test("the project label opens the same tip with the folder it points at", () => 
   assert.match(projectChip, /className="app-topbar-project-hit"/);
   assert.match(projectChip, /aria-label=\{t\("chat\.projectTipTitle", \{ projectRoot: path \}\)\}/, "and says it to a screen reader");
   assert.match(projectChip, /\{open && path \? \(/, "no path, no tip");
-  assert.match(projectChip, /<svg width="13" height="13"[\s\S]*?m6 14 1\.5-2\.9/,
-    "the sidebar's folder glyph, so the header and the project tree read as one object");
+  assert.match(projectChip, /\{isWorktree && branchOwnsWorktreeFolder\(path, branch\) \? <WorktreeIcon size=\{13\} \/> : \(\s*<ProjectFolderIcon size=\{13\} \/>\s*\)\}/,
+    "the project label is the chip that says which folder this is: the checkout glyph in a linked worktree, the project folder everywhere else");
+  assert.match(gitIcons, /m6 14 1\.5-2\.9/,
+    "the sidebar's folder shape, so the header, the project tree and the branch list's project glyph are one drawing in one file");
   assert.match(css, /\.app-topbar-project-hit,\n\.app-topbar-branch-hit,\n\.app-topbar-context-hit \{/,
     "all three header controls share one styling block — a new chip joins the family, it does not grow its own");
 });
@@ -127,16 +130,23 @@ test("the hydration render shows no branch, so React keeps the tree", () => {
   assert.match(appShell, /<span className="app-topbar-subtitle-row">\n\s*(?:\/\*[^]*?\*\/\s*)?\{topBarProjectIcon \? \(/);
 });
 
-test("the branch name says which checkout it is: branch glyph, worktree glyph", () => {
-  // The same branch name can live in the repo and in a linked worktree, and the
-  // header is the only place a session says where it runs.
-  assert.match(chip, /\{isWorktree && branchOwnsWorktreeFolder\(projectRoot, branch\) \? <WorktreeIcon \/> : <BranchIcon \/>\}/,
-    "the worktree glyph is asked of the branch on the row: a linked folder switched to an ordinary branch wears the branch glyph");
-  assert.match(chip, /import \{ branchOwnsWorktreeFolder \} from "@\/lib\/worktree-folder";/);
+test("the branch name wears the branch glyph, and the folder is the words' job", () => {
+  // The screenshot: `[folder] pi-desk  [worktree] wt/wt-branch-picker-header-worktrees`.
+  // One row, the same glyph twice, and a claim about the folder made in front of a
+  // branch name — the project chip in front already says which folder this session
+  // works in, with its own tip. What sits in front of a branch is "this is a branch",
+  // and the branch glyph is the shape the sidebar, the composer's chip and the branch
+  // list all use for that. The folder fact stays in the words, where a phone can read it.
+  assert.match(chip, /<BranchIcon \/>\s*<span>\{branch\}<\/span>/,
+    "one glyph, the branch's, on every branch");
+  assert.ok(!chip.includes("WorktreeIcon"), "no worktree glyph in the branch chip");
+  assert.ok(!chip.includes("branchOwnsWorktreeFolder"), "and no folder rule for it to ask");
   assert.match(chip, /t\(isWorktree \? "chat\.gitWorktreeBranchTitle" : "chat\.gitBranchTitle",/, "and says it to a screen reader too");
+  assert.match(chip, /label=\{t\(isWorktree \? "chat\.branchTipWorktreeLabel" : "chat\.branchTipBranchLabel"\)\}/,
+    "the tip names the kind, in words");
   assert.match(appShell, /isWorktree=\{Boolean\(selectedSession\?\.isWorktree\)\}/, "the shell only says which kind this is");
-  assert.match(chip, /import \{ BranchIcon, WorktreeIcon \} from "\.\/GitIcons";/,
-    "the glyphs are the sidebar's own, shared with the composer's chip");
+  assert.match(chip, /import \{ BranchIcon \} from "\.\/GitIcons";/,
+    "the glyph is the sidebar's own, shared with the composer's chip and the branch list");
 });
 
 test("the project row carries the runs, then the clock, then the context", () => {

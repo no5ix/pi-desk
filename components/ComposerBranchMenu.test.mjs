@@ -39,6 +39,23 @@ test("a plain branch is checked out in this checkout as before", () => {
   assert.match(hookSource, /return \{ branch: checkedOut, worktreePath: null \};/);
 });
 
+test("a row's worktree button opens the new-worktree form for that branch", () => {
+  // The user's report: pressing the row's worktree button answered with a plain list of
+  // branch names. The form is the page that says which branch the new one starts from and
+  // which folder it lands in, so the button goes there and nowhere else.
+  assert.match(chipSource, /onCreateWorktreeFromBranch=\{openWorktreeForm\}/);
+  const form = chipSource.match(/const openWorktreeForm = useCallback\(\(from: string\) => \{[\s\S]*?\n  \}, \[actions\]\);/);
+  assert.ok(form, "the chip owns the step into the form");
+  assert.match(form[0], /setView\(NEW_WORKTREE_VIEW\);/, "the new-worktree page, not the branch list");
+  assert.match(form[0], /setBaseBranch\(from \|\| null\);/, "the row's branch is the base");
+  assert.match(chipSource, /worktreeBaseBranch=\{baseBranch\}/, "so the form can name what it starts from");
+  assert.match(chipSource, /actions\.create\(cwd, baseBranch \?\? undefined\)/, "and create from it");
+  // The branch page carries no "Worktrees…" item and no "back to Project actions": the
+  // worktree branches are rows of the list, and the native popup keeps its own page.
+  assert.ok(!chipSource.includes("onShowWorktrees="), "the list has no Worktrees… row to wire");
+  assert.ok(!chipSource.includes("onBackToActions="), "and no back row to wire");
+});
+
 test("the composer's branch chip follows the project a new session starts in", () => {
   // The bug: the project chip showed the new session's project while the branch
   // chip listed the previously selected session's project.
@@ -63,6 +80,25 @@ test("the new branch words exist in every language", () => {
   // The filter's value is the query; the worktree-opening tip names the branch.
   assert.match(messages["en"], /"sidebar\.noBranchMatches": "No branch matches “\{query\}”"/);
   assert.match(messages["en"], /"sidebar\.openWorktreeForBranchTitle": "\{branch\} is checked out in a worktree/);
+});
+
+test("every locale can say the branch tree's words", async () => {
+  // The tree's glyphs are only half the story: each row also says what it will do, and
+  // the new-worktree form's sentence carries a {branch} and a {path}.
+  const source = await readFile(new URL("../lib/i18n/locale-plugins.ts", import.meta.url), "utf8");
+  for (const key of [
+    "sidebar.currentBranchTitle",
+    "sidebar.mainCheckoutBranchTitle",
+    "sidebar.branchGroupExpand",
+    "sidebar.branchGroupCollapse",
+    "sidebar.branchGroupCount",
+    "sidebar.newWorktreeFrom",
+    "sidebar.newWorktreeInto",
+  ]) {
+    assert.equal(source.match(new RegExp(`"${key.replace(/\./g, "\\.")}":`, "g"))?.length, 3, `${key} in en, zh-CN and zh-TW`);
+  }
+  assert.match(source, /"sidebar\.newWorktreeFrom": "Create a new branch based on “\{branch\}”, in the folder \{path\}"/,
+    "the English sentence the user asked for, base branch and folder both");
 });
 
 test("the filter box is styled from the menu tokens, in the fork's theme file", async () => {

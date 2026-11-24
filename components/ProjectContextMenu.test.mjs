@@ -24,6 +24,7 @@ const cssSource = await readFile(new URL("../app/native-theme.css", import.meta.
 const ROOT = "/repo";
 const MAIN = { path: ROOT, branch: "main", isMain: true };
 const FEATURE = { path: "/repo-worktrees/feature", branch: "feature", isMain: false };
+const DEV = { path: "/repo-worktrees/dev", branch: "dev", isMain: false };
 
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
@@ -103,7 +104,7 @@ function render(overrides = {}) {
     projectRoot: ROOT,
     pos: { top: 0, left: 0 },
     view: "actions",
-    branchMenu: { root: ROOT, isGit: true, branches: ["main", "feature", "dev"], remoteBranches: ["remote-only"], worktrees: [MAIN, FEATURE], loaded: true },
+    branchMenu: { root: ROOT, projectRoot: ROOT, isGit: true, branches: ["main", "feature", "dev"], remoteBranches: ["remote-only"], worktrees: [MAIN, FEATURE, DEV], loaded: true },
     branchLoading: false,
     selectedCwd: FEATURE.path,
     switchingBranch: null,
@@ -138,30 +139,39 @@ test("the actions page is folder actions only", () => {
   assert.doesNotMatch(html, /sidebar-project-context-menu--wide/);
 });
 
-test("a branch row gets the composer chip's worktree button, and the plain row does not", () => {
+test("a branch row's worktree button opens the form, and only where a worktree can start", () => {
   const plain = render({ view: "branches" });
-  assert.ok(!plain.includes("sidebar-project-context-menu-branch-actions"), "the sidebar's own page keeps the plain row");
+  assert.ok(!plain.includes("sidebar-project-context-menu-branch-action\""), "the sidebar's own page gets no worktree button");
   const chip = render({ view: "branches", onCreateWorktreeFromBranch: () => {} });
   assert.match(chip, /sidebar-project-context-menu-row sidebar-project-context-menu-row--branch/);
-  // One button per branch: the worktree this branch can start. The row used to carry
-  // a git-branch glyph next to it that called the same `onSwitchBranch` as the branch
-  // name, and the user read the pair as two different actions. The name is the switch.
-  assert.equal(chip.match(/sidebar\.worktreeFromBranchTitle\(/g)?.length, 8, "four branches, each button named twice");
-  assert.equal(chip.match(/class="sidebar-project-context-menu-branch-action"/g)?.length, 4,
-    "exactly one action button per branch row");
+  // One button, on the rows where a worktree can start. The branch this folder is on and
+  // the branch a worktree already holds get none: git refuses both, and the row's name is
+  // the switch. The button is the way into the new-worktree form, the page that names the
+  // folder the branch will land in — it never opens a list of names.
+  assert.equal(chip.match(/class="sidebar-project-context-menu-branch-action"/g)?.length, 1,
+    "one action button, on the one branch that can start a worktree");
+  assert.equal(chip.match(/sidebar\.worktreeFromBranchTitle\(/g)?.length, 2, "the button is named (title and aria-label)");
   for (const key of ["sidebar.checkOutBranchTitle", "sidebar.openWorktreeForBranchTitle"]) {
     assert.ok(!chip.includes(key), `${key} belonged to the removed branch glyph`);
   }
-  // The name button is the switch, and it is the one that says what it will do.
+  // The name is the switch, and it is the one that says what it will do.
   assert.ok(chip.includes('aria-current="true"'), "the checked-out branch is marked in its own row");
+  assert.equal(chip.match(/sidebar\.currentBranchTitle\(/g)?.length, 1, "the current row says this folder is on it");
+  assert.equal(chip.match(/sidebar\.mainCheckoutBranchTitle\(/g)?.length, 1,
+    "the row for a branch the project's own folder holds names that folder");
   assert.equal(chip.match(/sidebar\.branchInWorktreeTitle\(/g)?.length, 1,
-    "the row for a branch a worktree holds names that worktree in the name button");
-  assert.equal(chip.match(/sidebar\.switchBranchTitle\(/g)?.length, 2, "the switchable rows name the switch");
-  // The worktree list hangs off the chip's branch page, where a checkout is switched or removed.
-  assert.ok(chip.includes(">sidebar.worktrees</"), "Worktrees… opens from the branch page");
-  assert.ok(!plain.includes(">sidebar.worktrees</"));
+    "the row of a branch a linked worktree holds names that worktree");
+  assert.equal(chip.match(/title="sidebar\.branchRemoteTitle"/g)?.length, 1, "the remote row says what checking it out does");
+  // A worktree is removed from the row of the branch it holds. The "Worktrees…" page is
+  // not a menu item any more: every branch with a folder of its own is in this list with
+  // the glyph that says so. The desktop shell keeps its native Worktrees… popup.
+  assert.equal(chip.match(/class="worktree-remove-button"/g)?.length, 1, "the linked worktree's row carries the removal");
+  assert.ok(chip.includes(`sidebar.removeWorktreeTitle(${DEV.path})`), "and names the folder it takes away");
+  assert.ok(!chip.includes(">sidebar.worktrees<"), "no Worktrees… row on the branch page");
+  assert.ok(!plain.includes(">sidebar.worktrees<"));
+  assert.ok(!chip.includes("sidebar.moreActions"), "the branch page opens on its own: no Project actions step back");
+  assert.ok(!chip.includes("sidebar-project-context-menu-back"), "and no back button");
 });
-
 test("the branch list narrows from its filter box once it is long", () => {
   const many = {
     root: ROOT, isGit: true,
@@ -191,30 +201,86 @@ test("the branch list narrows from its filter box once it is long", () => {
   assert.equal(filterBranchRows(rows, "   ").length, rows.length, "a blank query narrows nothing");
 });
 
-test("the remote tag never lands on the row's icons", async () => {
-  // The overlap the user screenshotted: a long name and the `remote` tag share
-  // the row's button, and the button's right edge is the icon column. The tag
-  // used to be pushed past that edge and painted over the branch/worktree glyphs.
+test("the row's tag stays a word, and the panel is as wide as its longest name", async () => {
+  // The shape the user screenshotted: a panel told to be 240px, a branch name wrapped in
+  // half, and the `worktree` tag squeezed to `w…`. Nothing in this panel may be cut — a
+  // branch name is the one thing on the screen that exists nowhere else.
   const css = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
   const chip = render({ view: "branches", onCreateWorktreeFromBranch: () => {} });
-  assert.match(chip, /<span class="sidebar-project-context-menu-branch-name">remote-only<\/span>/,
-    "the name is its own element, so it can be the flexible one");
+  assert.match(chip, /<span class="sidebar-project-context-menu-branch-name" data-branch="remote-only">remote-only<\/span>/,
+    "the name is its own element, and the row carries the full branch name for a test to read");
+  assert.match(css, /\.sidebar-project-context-menu--wide \{[\s\S]*?width: max-content;[\s\S]*?max-width: min\(420px, calc\(100vw - 16px\)\);/,
+    "the panel asks for its rows' width, capped at the window");
   assert.match(css, /\.sidebar-project-context-menu-branch-name \{[\s\S]*?min-width: 4em;[\s\S]*?overflow-wrap: anywhere;/,
-    "the name breaks anywhere and keeps a floor, so it is never squeezed to a strip");
-  assert.match(css, /\.sidebar-project-context-menu-branch-tag \{[\s\S]*?flex: 0 1 auto;[\s\S]*?text-overflow: ellipsis;/,
-    "the tag is the part that gives way");
+    "at the window's own edge a name breaks inside a word, so it is never squeezed to a strip");
+  assert.match(css, /\.sidebar-project-context-menu-branch-tag \{[\s\S]*?flex: 0 0 auto;[\s\S]*?white-space: nowrap;/,
+    "the tag keeps its word whole: it no longer ellipsizes");
   assert.match(css, /\.sidebar-project-context-menu-row--branch > button\[role="menuitem"\] \{[\s\S]*?overflow: hidden;/,
     "the last line of defence: the button clips, nothing reaches the icons");
   assert.match(css, /\.sidebar-project-context-menu-branch-actions \{[\s\S]*?flex: 0 0 auto;/);
+  // The new-worktree form ends in an absolute path: a folder the user is being
+  // asked to create is not a thing to cut in half.
+  assert.match(css, /\.sidebar-project-context-menu-worktree-hint \{[\s\S]*?overflow-wrap: anywhere;/);
 });
 
-test("the new-worktree page names the branch it starts from", () => {
+test("the branch list is the current branch, the worktree branches, then a tree of prefixes", () => {
+  const menu = {
+    root: ROOT, projectRoot: ROOT, isGit: true,
+    branches: [
+      "main", "wt-test",
+      "fix/a", "fix/b",
+      "wt/wt-test-icon-face",
+      "probe",
+      "feat/a-very-long-branch-name-for-the-header-worktrees",
+    ],
+    remoteBranches: [],
+    worktrees: [MAIN, { path: "/repo-worktrees/wt-test", branch: "wt-test", isMain: false }],
+    loaded: true,
+  };
+  const html = render({ view: "branches", branchMenu: menu, selectedCwd: MAIN.path, onCreateWorktreeFromBranch: () => {} });
+  const order = [...html.matchAll(/data-(branch|group)="([^"]+)"/g)].map((match) => `${match[1]}:${match[2]}`);
+  assert.deepEqual(order, [
+    "branch:main", "branch:wt-test",
+    "branch:probe",
+    "group:feat", "branch:feat/a-very-long-branch-name-for-the-header-worktrees",
+    "group:fix", "branch:fix/a", "branch:fix/b",
+    "group:wt", "branch:wt/wt-test-icon-face",
+  ], "the checkout's branch, then the branch with a folder of its own, then the rest: names that"
+    + " stand on their own, then the prefix groups in order, each with its branches under it");
+  // A leaf under a group is named by what the group's row did not already say; the row
+  // keeps the full name, which is what a git call takes.
+  assert.match(html, /<span class="sidebar-project-context-menu-branch-name" data-branch="wt\/wt-test-icon-face">wt-test-icon-face<\/span>/);
+  // The glyphs are the three facts in two voices: the accent for the branch this folder is
+  // on and for the branch with a worktree of its own, quiet ink for every other name and
+  // for every group.
+  assert.equal(html.match(/<span class="sidebar-project-context-menu-branch-mark">/g)?.length, 2);
+  // 5 ordinary branches (two of them under `fix`) and 3 groups: eight quiet glyphs.
+  assert.equal(html.match(/<span class="sidebar-project-context-menu-branch-mark is-plain">/g)?.length, 8);
+  assert.match(html, /data-branch="main">main<\/span>/, "the current row carries the whole name, not a suffix");
+  // Every group says it is open, and names the fold it offers.
+  assert.equal(html.match(/aria-expanded="true"/g)?.length, 3);
+  assert.ok(html.includes('aria-label="sidebar.branchGroupCollapse(fix)"'), "the arrow names the fold it offers");
+  assert.ok(html.includes('aria-label="sidebar.branchGroupCollapse(feat)"'));
+  assert.match(html, /class="sidebar-project-context-menu-branch-group" style="--branch-depth:0"/,
+    "a group is a row of its own, at its depth, with an arrow to fold it");
+  assert.match(html, /class="sidebar-project-context-menu-branch-chevron" aria-hidden="true"/, "the arrow is the arrow");
+  assert.ok(html.includes('sidebar-project-context-menu-row--branch sidebar-project-context-menu-row--tree" style="--branch-depth:1"'),
+    "a branch under a group is indented one step");
+});
+
+test("the new-worktree page names the branch it starts from and the folder it lands in", () => {
   const plain = render({ view: "new-worktree", newBranch: "test-upload" });
   assert.ok(!plain.includes("sidebar.newWorktreeFrom("), "from HEAD: no base sentence");
-  const from = render({ view: "new-worktree", newBranch: "test-upload", worktreeBaseBranch: "find-icons" });
-  assert.match(from, /sidebar-project-context-menu-hint">sidebar\.newWorktreeFrom\(find-icons\)</);
-  // Back is the worktree list, the page the form was opened from.
-  assert.match(from, /sidebar-project-context-menu-back[^>]*>[\s\S]*?sidebar\.switchWorktree</);
+  assert.match(plain, /sidebar-project-context-menu-worktree-hint">sidebar\.newWorktreeInto\(\/repo-worktrees\/test-upload\)</,
+    "without a base branch the sentence still names the folder");
+  const from = render({ view: "new-worktree", newBranch: "wt/wt-test-icon-face", worktreeBaseBranch: "fix/initial-heading-offset" });
+  assert.match(from, /sidebar-project-context-menu-worktree-hint">sidebar\.newWorktreeFrom\(fix\/initial-heading-offset,\/repo-worktrees\/wt-wt-test-icon-face\)</,
+    "the folder is the one addWorktree() will create, read off the name being typed");
+  // No "Switch worktree" page to step back to: the form is the page, and it closes with
+  // Escape, Cancel, or a click outside, like every other menu in the app.
+  assert.ok(!from.includes("sidebar-project-context-menu-back"), "no back button");
+  assert.ok(!from.includes("sidebar.switchWorktree"), "no title for the page it is not");
+  assert.ok(!from.includes('class="sidebar-project-context-menu-heading"'), "and no heading over one sentence");
 });
 
 test("an archived project's menu offers only restore and reveal", () => {
@@ -230,9 +296,11 @@ test("the worktree page switches, removes non-main checkouts and creates new one
   const html = render({ view: "worktrees" });
   assert.match(html, /sidebar-project-context-menu--wide/);
   assert.ok(html.includes("sidebar.switchWorktree"));
-  // One remove button, for the feature worktree only; main is never removable.
-  assert.equal(html.match(/worktree-remove-button/g)?.length, 1);
+  // One remove button per linked checkout; the main checkout is never removable.
+  assert.equal(html.match(/worktree-remove-button/g)?.length, 2);
   assert.ok(html.includes(`sidebar.removeWorktreeTitle(${FEATURE.path})`));
+  assert.ok(html.includes(`sidebar.removeWorktreeTitle(${DEV.path})`));
+  assert.ok(!html.includes(`sidebar.removeWorktreeTitle(${ROOT})`), "the project's own folder is not a checkout to remove");
   // Current-checkout semantics drive the shared selection pill; main keeps its tag.
   assert.match(html, /aria-current="true"><span class="sidebar-project-context-menu-label">feature<\/span>/);
   assert.match(html, /<span class="sidebar-project-context-menu-label">main<\/span><span class="sidebar-project-context-menu-branch-tag">sidebar.main<\/span>/);
@@ -243,7 +311,11 @@ test("a removal is confirmed in place, and a dirty checkout asks for force", () 
   const confirm = render({ view: "worktrees", confirmRemove: { path: FEATURE.path, force: false } });
   assert.ok(confirm.includes("sidebar.confirmRemoveWorktree"));
   assert.ok(confirm.includes("i18n.remove"));
-  assert.equal(confirm.match(/worktree-remove-button/g), null);
+  // The row that asked stops asking: its button is replaced by the strip, while the
+  // other checkouts keep theirs.
+  assert.equal(confirm.match(/worktree-remove-button/g)?.length, 1);
+  assert.ok(!confirm.includes(`sidebar.removeWorktreeTitle(${FEATURE.path})`), "the confirmed row has no button of its own");
+  assert.ok(confirm.includes(`sidebar.removeWorktreeTitle(${DEV.path})`));
   const force = render({ view: "worktrees", confirmRemove: { path: FEATURE.path, force: true } });
   assert.ok(force.includes("sidebar.forceRemoveCheckout"));
   assert.match(force, /sidebar-project-context-menu-danger[^>]*>sidebar.force</);
