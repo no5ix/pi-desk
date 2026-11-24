@@ -22,6 +22,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { useProjectBranch } from "@/hooks/useProjectBranch";
 import { useProjectWorktreeActions } from "@/hooks/useProjectWorktreeActions";
 import { canUseNativeMenu, menuPointBelow, type NativeMenuPoint } from "@/lib/desktop-menu";
+import { MENU_GAP, placeMenuWithinViewport } from "@/lib/menu-placement";
 import {
   fetchProjectBranchMenu,
   ProjectContextMenu,
@@ -36,6 +37,15 @@ const BRANCHES_VIEW: ProjectMenuView = "branches";
 const WORKTREES_VIEW: ProjectMenuView = "worktrees";
 const NEW_WORKTREE_VIEW: ProjectMenuView = "new-worktree";
 const MENU_WIDTH = 240;
+/**
+ * The height the branch list settles at, used only to choose the side the menu
+ * opens on. The composer sits at the bottom of the window, so a menu measured
+ * while it is still the loading shape says "there is room below"; the branch list
+ * then flips the same menu above, which reads as a flash. The menu's own
+ * `max-height` is `min(70vh, 560px)`, so that is the size placement starts from.
+ */
+const MENU_EXPECTED_HEIGHT =
+  typeof window === "undefined" ? 420 : Math.min(560, Math.round(window.innerHeight * 0.7));
 
 interface ComposerBranchChipProps {
   /** The composer's project folder — a new session starts in this checkout. */
@@ -91,11 +101,18 @@ export function ComposerBranchChip({
   const openMenu = useCallback((next: ProjectMenuView = BRANCHES_VIEW) => {
     const rect = buttonRef.current?.getBoundingClientRect();
     if (rect) {
-      setPos({
-        top: rect.bottom + 4,
-        left: Math.max(8, Math.min(rect.left, window.innerWidth - MENU_WIDTH - 8)),
-      });
-      setAnchor({ top: rect.top, bottom: rect.bottom, right: rect.left + MENU_WIDTH });
+      // Place for the size the menu ends at, not the size it is born at: the
+      // composer is at the bottom of the window, and a menu placed below the
+      // loading shape flips above when the branch list arrives. That flip is the
+      // flash the user saw, so the first paint already sits above.
+      const placed = placeMenuWithinViewport(
+        { top: rect.top, bottom: rect.bottom, right: rect.right },
+        { width: MENU_WIDTH, height: MENU_EXPECTED_HEIGHT },
+        { width: window.innerWidth, height: window.innerHeight },
+        { gap: MENU_GAP },
+      );
+      setPos(placed);
+      setAnchor({ top: rect.top, bottom: rect.bottom, right: rect.right });
     }
     setView(next);
     setOpen(true);

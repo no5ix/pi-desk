@@ -1555,14 +1555,25 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               </span>
             )}
           </button>
-          {/* A pinned project keeps its pin on the row at all times, in a slot of
-              its own just left of the hover-only "＋"/"…" pair, so the glyph never
-              shifts when the actions appear and every pinned row marks the same spot. */}
+          {/* A pinned project marks its row with a pin right behind the name, and
+              the pin is the way back out: clicking it unpins the project and the
+              glyph goes away with the pin state. It sits in the row's own line, so
+              the hover-only "＋"/"…" overlay never moves it. */}
           {pinned && (
-            <span className="sidebar-project-tree-pin" title={t("sidebar.pinProject")}>
+            <button
+              type="button"
+              className="sidebar-project-tree-pin"
+              data-no-drag
+              aria-label={t("sidebar.unpinProject")}
+              title={t("sidebar.unpinProject")}
+              onClick={(e) => {
+                e.stopPropagation();
+                setPinnedProjects((current) => toggleId(current, group.projectRoot));
+              }}
+            >
               <svg
                 className="session-item-pin"
-                aria-label={t("sidebar.pinProject")}
+                aria-hidden="true"
                 width="12"
                 height="12"
                 viewBox="0 0 24 24"
@@ -1574,7 +1585,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               >
                 <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
               </svg>
-            </span>
+            </button>
           )}
           {/* Hover-only overlay at the row's trailing edge: it covers the tail of a
               long name instead of reserving width the rest of the time. */}
@@ -2944,13 +2955,6 @@ function SessionItem({
               <rect x="5" y="7" width="14" height="11" rx="2" />
               <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
             </svg>
-          ) : isFork ? (
-            <svg className="session-item-glyph session-item-fork-glyph" aria-label={t("sidebar.forkRow")} role="img" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <circle cx="6" cy="5" r="2" />
-              <circle cx="18" cy="5" r="2" />
-              <circle cx="12" cy="19" r="2" />
-              <path d="M6 7v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7M12 12v5" />
-            </svg>
           ) : (
             <svg className="session-item-glyph" aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
@@ -2985,6 +2989,31 @@ function SessionItem({
             <span className="session-item-project" title={subtitle}>
               {subtitle}
             </span>
+          )}
+
+          {/* A fork is marked at the row's end, just left of the subagent count it
+              sits under — the row's left edge stays the plain chat bubble, so a
+              fork reads as a session that branched, not a different kind of row.
+              The title tooltip keeps naming the source session. */}
+          {isFork && (
+            <svg
+              className="session-item-glyph session-item-fork-glyph"
+              aria-label={t("sidebar.forkRow")}
+              role="img"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="var(--text-dim)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="6" cy="5" r="2" />
+              <circle cx="18" cy="5" r="2" />
+              <circle cx="12" cy="19" r="2" />
+              <path d="M6 7v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V7M12 12v5" />
+            </svg>
           )}
 
           {/* Fold toggle for the subagent runs and side chats below: folded

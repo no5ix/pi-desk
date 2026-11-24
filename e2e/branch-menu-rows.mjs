@@ -32,14 +32,25 @@ await build({
   logLevel: "warning",
 });
 const js = await readFile(`${out}/fixture.js`);
+await build({
+  entryPoints: ["e2e/branch-menu-open.fixture.jsx"],
+  bundle: true,
+  platform: "browser",
+  outfile: `${out}/open.js`,
+  jsx: "automatic",
+  alias: { "@": process.cwd() },
+  define: { "process.env.NODE_ENV": '"production"' },
+  logLevel: "warning",
+});
+const openJs = await readFile(`${out}/open.js`);
 const css = (await Promise.all(["app/globals.css", "app/settings.css", "app/native-theme.css"]
   .map((path) => readFile(path, "utf8")))).map((text) => text.replace(/^@import[^;]*;/gm, "")).join("\n");
 
-function serve(styles) {
+function serve(styles, script = "fixture.js") {
   const server = createServer((req, res) => {
     if (req.url === "/fixture.js") {
       res.setHeader("Content-Type", "text/javascript");
-      res.end(js);
+      res.end(script === "fixture.js" ? js : openJs);
       return;
     }
     if (req.url === "/styles.css") {
@@ -129,5 +140,39 @@ oldServer.close();
 assert.ok(before.some((row) => row.tagOverIcon || row.tagPastButton),
   "the check can see the bug: without the rules, a tag lands on the icons");
 
+// The browser stays open for the open-flow phase below.
+// The open flow, measured. The chip sits at the bottom of the window (the
+// composer's control row) and the branch list arrives 250ms after the click. A
+// menu placed for the loading shape lands below the chip and flips above when the
+// list lands — the flash the user reported. The menu must land on the side it
+// ends on, and stay inside the window as it grows.
+const openServer = await serve(css, "open.js");
+await page.goto(`http://127.0.0.1:${openServer.address().port}/`);
+await page.waitForSelector(".chat-branch-context");
+await page.click(".chat-branch-context");
+await page.waitForSelector(".sidebar-project-context-menu");
+const placement = () => page.evaluate(() => {
+  const menu = document.querySelector(".sidebar-project-context-menu").getBoundingClientRect();
+  const chip = document.querySelector(".chat-branch-context").getBoundingClientRect();
+  return {
+    side: menu.top < chip.top - 8 ? "above" : "below",
+    top: menu.top,
+    bottom: menu.bottom,
+    height: menu.height,
+    gap: chip.top - menu.bottom,
+    rows: document.querySelectorAll(".sidebar-project-context-menu-branch-name").length,
+    skeleton: document.querySelectorAll(".sidebar-project-context-menu-branch-skeleton").length,
+  };
+});
+const opened = await placement();
+assert.equal(opened.skeleton, 8, "the menu opens with the branch list's shape, not a thin loader");
+assert.equal(opened.side, "above", `a chip at the window's bottom opens above itself (${opened.top}px, ${Math.round(opened.height)}px)`);
+await page.waitForFunction(() => document.querySelectorAll(".sidebar-project-context-menu-branch-name").length >= 7, { timeout: 3000 });
+const settled = await placement();
+assert.equal(settled.side, "above", "the menu stays on that side when the list arrives — no flip, no flash");
+assert.ok(settled.gap >= -1, `the menu keeps clear of the chip (${settled.gap.toFixed(1)}px)`) ;
+assert.ok(settled.top >= 8 && settled.bottom <= 800 - 8 + 1, `the menu stays inside the window (${Math.round(settled.top)}..${Math.round(settled.bottom)})`);
+openServer.close();
 await browser.close();
-console.log(`branch menu: ${rows.length} rows at ${Math.round(menuWidth)}px, rows ${Math.round(Math.max(...rows.map((row) => row.name.height)))}px at the tallest, no tag/icon overlap, no clipped name; the un-fixed CSS overlaps ${before.filter((row) => row.tagOverIcon || row.tagPastButton).length} of ${before.length} rows`);
+
+console.log(`branch menu: ${rows.length} rows at ${Math.round(menuWidth)}px, rows ${Math.round(Math.max(...rows.map((row) => row.name.height)))}px at the tallest, no tag/icon overlap, no clipped name; opened ${opened.side} at ${Math.round(opened.top)}px and stayed ${settled.side} at ${Math.round(settled.top)}px; the un-fixed CSS overlaps ${before.filter((row) => row.tagOverIcon || row.tagPastButton).length} of ${before.length} rows`);

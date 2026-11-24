@@ -169,6 +169,10 @@ interface Props {
   onSelectProject?: () => void;
   /** Active project roots available to a new-session composer. */
   projectOptions?: string[];
+  /** Show the project chip at all. A session that has run is pinned to its
+   *  project — the header names it — so only a new-session composer gets the
+   *  chip; an inert copy under an open composer is noise. */
+  showProjectChip?: boolean;
   /** Switch the new-session composer to one of the active projects. */
   onProjectChange?: (projectRoot: string) => void;
   /** Fork: the project folder whose git branch the composer shows, for a new
@@ -868,6 +872,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   projectPath,
   onSelectProject,
   projectOptions = [],
+  showProjectChip,
   onProjectChange,
   branchChipCwd,
   onBranchSwitched,
@@ -3117,7 +3122,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {/* LEFT: project context + model selector (idle) or steer/followup toggle (streaming) */}
 
           <div style={{ flex: isNarrow ? "1 1 auto" : "0 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
-            {projectLabel && (
+            {/* Only a new session picks its project from the composer. Once a
+                session exists, its project is fixed and the header names it, so the
+                composer row drops the chip rather than showing a second, inert one. */}
+            {showProjectChip && projectLabel && (
               <ComposerProjectChip
                 menuRef={projectDropdownRef}
                 open={projectDropdownOpen}

@@ -40,6 +40,12 @@ export interface ProjectBranchMenuState {
 /** Which page of the DOM menu is showing. */
 export type ProjectMenuView = "actions" | "branches" | "worktrees" | "new-worktree";
 
+/**
+ * Rows in the branch page's loading shape. Eight is what the list shows once the
+ * branches arrive in a normal window, so the menu is born at the height it keeps.
+ */
+const BRANCH_SKELETON_ROWS = 8;
+
 /** A pending worktree removal; `force` once git said it needs --force. */
 export interface WorktreeRemoval {
   path: string;
@@ -375,7 +381,21 @@ export function ProjectContextMenuPanel({
       <>
         {back(t("sidebar.moreActions"), onBackToActions)}
         <div className="sidebar-project-context-menu-heading">{t("sidebar.switchBranch")}</div>
-        {loadingHint}
+        {/* The branch list arrives a moment after the menu opens. Showing a short
+            "…" line and growing into the list afterwards moves the menu (the
+            placement is recomputed from the measured height) — the composer chip
+            sits at the bottom of the window, so that growth flips it from below the
+            composer to above it, which reads as a flash. The list's shape is here
+            from the first paint instead, at the height it settles at. */}
+        {!loaded && (
+          <div className="sidebar-project-context-menu-branch-skeletons" aria-hidden="true">
+            {Array.from({ length: BRANCH_SKELETON_ROWS }, (_, index) => (
+              <div className="sidebar-project-context-menu-row sidebar-project-context-menu-row--branch" key={index}>
+                <span className="sidebar-project-context-menu-branch-skeleton" />
+              </div>
+            ))}
+          </div>
+        )}
         {loaded && data && (
           <>
             {data.isGit && (

@@ -1357,6 +1357,9 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       projectPath={chatOnly ? undefined : session?.projectRoot ?? session?.cwd ?? newSessionCwd}
       onSelectProject={chatOnly ? undefined : onSelectProject}
       projectOptions={chatOnly ? [] : projectOptions}
+      // Only a new session picks its project from the composer row; a session that
+      // has run is pinned to its project, and the header above names it.
+      showProjectChip={!chatOnly && isNew}
       onProjectChange={chatOnly ? undefined : onProjectChange}
       // Only a new session can still choose where it works, so only it gets the
       // branch chip; a session that has run is pinned to its own worktree.

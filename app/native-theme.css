@@ -452,6 +452,18 @@
   min-width: 4em;
   overflow-wrap: anywhere;
 }
+
+/* The branch page's loading shape: bars the height and rhythm of real branch
+   rows, so the menu opens at the height the list settles at and the placement
+   computed from it does not move when the branches arrive. */
+.sidebar-project-context-menu-branch-skeleton {
+  display: block;
+  height: 10px;
+  margin: 11px 10px;
+  border-radius: 5px;
+  flex: 1 1 auto;
+  background: var(--bg-hover);
+}
 .sidebar-project-context-menu-branch-actions {
   display: inline-flex;
   align-items: center;
@@ -2663,23 +2675,43 @@ html.dark .sidebar-view-switcher-thumb {
   padding-right: 52px;
 }
 
-/* A pinned project marks its row at all times, in a slot of its own: the "＋" and
-   "…" pair is a hover-only overlay, so the pin lives just left of it at a fixed
-   offset. It never moves when the buttons appear, every pinned row shows it in
-   the same place, and the row reserves the width so a long name stops before the
-   pin rather than under it. */
+/* A pinned project marks its row with a pin right behind the name, and clicking
+   that pin unpins the project (the glyph goes with the pin state). The row packs
+   its name to the left and the pin rides along with it; the "＋"/"…" pair is a
+   hover-only overlay at the row's trailing edge, so it never moves the pin. */
 .sidebar-project-tree-pin {
-  position: absolute;
-  top: 50%;
-  right: 56px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-dim);
-  transform: translateY(-50%);
-  pointer-events: none;
+  cursor: pointer;
 }
+
+.sidebar-project-tree-pin:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.sidebar-project-tree-pin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .sidebar-project-tree-row.is-pinned .sidebar-project-tree-row-main {
-  padding-right: 74px;
+  flex: 0 1 auto;
+}
+
+.sidebar-project-tree-row.is-pinned::after {
+  content: "";
+  flex: 1 1 auto;
 }
 
 /* No hover on touch: keep the actions reachable, and the row a finger-sized
@@ -2698,13 +2730,10 @@ html.dark .sidebar-view-switcher-thumb {
     padding-right: 52px;
   }
 
-  /* The actions are finger-sized here, so the pin's slot moves out past them. */
-  .sidebar-project-tree-row.is-pinned .sidebar-project-tree-pin {
-    right: 100px;
-  }
-
+  /* No hover here, so the pair is always painted; the name keeps clear of it and
+     the pin that rides right behind the name. */
   .sidebar-project-tree-row.is-pinned .sidebar-project-tree-row-main {
-    padding-right: 116px;
+    padding-right: 74px;
   }
 }
 
@@ -2924,6 +2953,8 @@ html.dark .sidebar-view-switcher-thumb {
    source (#237), and the glyph is what tells it from a plain session. */
 .session-item-glyph.session-item-fork-glyph {
   visibility: visible;
+  /* A fork is marked at the row's end, right before the subagent count. */
+  flex: 0 0 auto;
 }
 
 /* Fold toggle of a row's subagent runs and side chats: robot glyph, count,
@@ -3582,10 +3613,6 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   flex: 0 0 auto;
 }
 
-.app-topbar-subagents-total {
-  font-variant-numeric: tabular-nums;
-}
-
 .app-topbar-subagent-count {
   display: inline-flex;
   align-items: center;
@@ -3609,15 +3636,6 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
-}
-
-/* The sidebar's session status dot, at the caption size this row uses. */
-.app-topbar-subagent-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-  background: currentColor;
 }
 .native-icon-button,
 .native-toolbar-button {

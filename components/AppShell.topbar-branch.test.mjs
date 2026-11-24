@@ -105,6 +105,18 @@ test("the subagent counts are the active family's, and clicking opens the agents
     "only a subagent relation carries a status");
 });
 
+test("the chip prints the buckets, not a total", () => {
+  const counter = readFileSync(new URL("./TopbarSubagents.tsx", import.meta.url), "utf8");
+  // [subagent icon] [completed icon]N [aborted icon]N [running icon]N. The three
+  // buckets are the total; a number after the glyph only took width from the row.
+  assert.ok(!counter.includes("app-topbar-subagents-total"), "no total number");
+  assert.ok(!css.includes(".app-topbar-subagents-total"), "and no rule for it");
+  assert.match(counter, /<AgentIcon \/>\s*\{counts\.completed > 0 && \(/, "the glyph is followed by the completed bucket");
+  assert.match(counter, /className="app-topbar-subagent-count is-aborted"[\s\S]*?<svg/, "the aborted bucket carries the Agents panel's stop glyph");
+  assert.ok(!counter.includes("app-topbar-subagent-dot"), "the status dot is not the aborted icon");
+  assert.match(counter, /title=\{translate\("chat\.subagentsAborted", counts\)\}/, "each bucket says what it counts");
+});
+
 test("a full row wraps the counts to a second line, and the bar grows with them", () => {
   assert.match(css, /\.app-topbar-subtitle-row \{\n\s*flex-wrap: wrap;/, "the row wraps");
   assert.match(css, /\.app-topbar-subagents \{[\s\S]*?flex: 0 0 auto;/, "the chip is never squeezed away");

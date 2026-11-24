@@ -285,12 +285,28 @@ button's edge, where it painted over the icons — `e2e/branch-menu-rows.mjs` me
 the tag against the icons in a real browser, and its last pass removes the rules to
 prove the measurement can see that overlap.
 
+The chip places its menu for the size the list **settles at** (`MENU_EXPECTED_HEIGHT`
+through `placeMenuWithinViewport`), and the branch page is born with the list's shape
+(eight skeleton rows) instead of a thin loader. The composer sits at the bottom of the
+window, so a menu measured while it is short was placed below the chip and flipped above
+when the branch list arrived — a flash on every click. `e2e/branch-menu-rows.mjs` clicks a
+bottom-anchored chip, measures the side the menu is on before the data lands and after, and
+requires the same side both times.
+
+The composer's **project chip** is a new-session control only: `ChatInput` gates it on
+`showProjectChip`, which `ChatWindow` passes as `!chatOnly && isNew`. A session that has run
+is pinned to its project and the header above names it, so an inert copy under its composer
+is noise.
+
 The header's row reads `[folder] project  [branch|worktree icon] branch  [clock]  [subagents] N [✓] N [⚠] N [↻] N`. The glyph is the
 worktree one when the selected session runs in a linked worktree (`SessionInfo.isWorktree`),
 because the same branch name can live in the repo and in a worktree. The counts are the
 active family's subagent runs (`components/TopbarSubagents.tsx`,
-`countSubagents`): the subagent glyph and the total, then completed / aborted (aborted
-counts failed and stopped runs too) / running, in the sidebar's dot palette; clicking
+`countSubagents`): the subagent glyph, then completed / aborted (aborted counts failed
+and stopped runs too) / running, each with the Agents panel's own icon for that state
+(the check, its stopped mark, the pulsing runner) in the success / warning / accent
+colours. No total is printed — the three buckets are the total, and a number after the
+glyph only took width from the project and the branch. Clicking
 opens the Agents panel, and a session with no subagent runs renders nothing. The row
 wraps, and the counts are its last item, so on a phone, or behind a long project name,
 they take the second line; the topbar is a floor (`minHeight` in `AppShell`, `height:

@@ -11,8 +11,9 @@
 // runs that finished, failed, were aborted or stopped.
 //
 // The icons are the ones the rest of the app already uses for these states:
-// AgentIcon for the family, AgentRunningIcon (pulse) for a live run, and the
-// sidebar's status dot for a finished run, in its palette colours.
+// AgentIcon for the family, the panel's check for a completed run, its stopped
+// mark for one that ended early, and the pulsing AgentRunningIcon for a live one.
+// The totals are not printed: the three buckets are the total.
 
 import type { SessionFamily } from "@/lib/session-family";
 import type { TranslationParams } from "@/lib/i18n/types";
@@ -132,7 +133,6 @@ export function TopbarSubagents({
       }}
     >
       <AgentIcon />
-      <span className="app-topbar-subagents-total">{counts.total}</span>
       {counts.completed > 0 && (
         <span
           className="app-topbar-subagent-count is-completed"
@@ -147,7 +147,13 @@ export function TopbarSubagents({
           className="app-topbar-subagent-count is-aborted"
           title={translate("chat.subagentsAborted", counts)}
         >
-          <span className="app-topbar-subagent-dot" />
+          {/* The Agents panel's own stopped-run glyph, so the header's number and
+              the list's row say the same thing. */}
+          <span className="app-topbar-subagent-glyph">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" /><path d="M9 9h6v6H9z" />
+            </svg>
+          </span>
           <span>{counts.aborted}</span>
         </span>
       )}
