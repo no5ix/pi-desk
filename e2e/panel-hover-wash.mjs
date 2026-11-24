@@ -81,6 +81,19 @@ const measure = () => {
     strip: getComputedStyle(document.querySelector(".right-panel-tab-strip")).backgroundColor,
     // The control pass: the recipe the user saw through, measured in the same page.
     oldWash: getComputedStyle(document.querySelector(".old-wash-probe")).backgroundColor,
+    photo: (() => {
+      const computed = getComputedStyle(document.querySelector(".image-preview-close"));
+      return {
+        background: computed.backgroundColor,
+        image: computed.backgroundImage,
+        opacity: computed.opacity,
+        color: computed.color,
+        // The dialog's `::backdrop` is not reachable from script, so the fixture paints
+        // the same colour over a bright photo and the composite is done here.
+        stage: getComputedStyle(document.querySelector(".photo-stage")).backgroundColor,
+        photo: getComputedStyle(document.querySelector(".photo-under")).backgroundColor,
+      };
+    })(),
     dark: document.documentElement.classList.contains("dark"),
   };
 };
@@ -132,6 +145,46 @@ for (const theme of ["light", "dark"]) {
   const old = parseColor(rest.oldWash);
   assert.ok(old.alpha < 1, `${theme}: the control pass — the old color-mix wash is translucent (${rest.oldWash})`);
   console.log(`ok: ${theme} — base ${hover.button.background} + tint ${tintMatch[0]} → ${washed.red},${washed.green},${washed.blue} over strip ${rest.strip}; the old wash ${rest.oldWash}`);
+
+  // The image preview's close: clicking an attached image opens the photo in a dialog over
+  // a `rgba(0, 0, 0, .72)` backdrop, and upstream's hover plate is the palette's 4–5%
+  // overlay — over a dark backdrop that read as "a little bit transparent". The plate is
+  // solid in both states, and the hover is a step brighter.
+  const photoRest = parseColor(rest.photo.background);
+  assert.equal(photoRest.alpha, 1, `${theme}: at rest the plate over the photo is opaque (${rest.photo.background})`);
+  await page.hover(".image-preview-close");
+  await page.waitForTimeout(120);
+  const shot = await page.evaluate(measure);
+  const plate = parseColor(shot.photo.background);
+  assert.equal(Number(shot.photo.opacity), 1, `${theme}: the close never fades`);
+  assert.equal(plate.alpha, 1, `${theme}: the hovered plate over the photo is an opaque base (${shot.photo.background})`);
+  const photoTint = shot.photo.image.match(/rgba?\([^)]+\)/);
+  assert.ok(photoTint && shot.photo.image.startsWith("linear-gradient"),
+    `${theme}: the tint sits over that base (${shot.photo.image})`);
+  const photoPhoto = parseColor(shot.photo.photo);
+  const behind = composite(parseColor(shot.photo.stage), photoPhoto);
+  const painted = composite(parseColor(photoTint[0]), plate);
+  const photoDelta = Math.max(
+    Math.abs(painted.red - behind.red),
+    Math.abs(painted.green - behind.green),
+    Math.abs(painted.blue - behind.blue),
+  );
+  assert.ok(photoDelta >= 12,
+    `${theme}: the plate sits over the photo, it is not a window in it (${photoDelta} levels over ${behind.red},${behind.green},${behind.blue})`);
+  const photoBox = await page.locator(".photo-stage").boundingBox();
+  await page.screenshot({ path: `${out}/${theme}-photo-close.png`, clip: { x: photoBox.x, y: photoBox.y, width: photoBox.width, height: photoBox.height } });
+  await page.mouse.move(10, photoBox.y + photoBox.height + 20);
+
+  // The control pass: app/globals.css upstream, `.image-preview-close:hover { background:
+  // var(--bg-hover) }`. Measured in the same page: its alpha is under 1, so the assertion
+  // above is not blind.
+  await page.addStyleTag({ content: ".image-preview-close:hover { background: var(--bg-hover); }" });
+  await page.hover(".image-preview-close");
+  await page.waitForTimeout(120);
+  const upstream = parseColor((await page.evaluate(measure)).photo.background);
+  assert.ok(upstream.alpha < 1,
+    `${theme}: the control pass — upstream's hover plate is translucent (${(await page.evaluate(measure)).photo.background})`);
+  console.log(`ok: ${theme} — photo close base ${shot.photo.background} + tint ${photoTint[0]} → ${painted.red},${painted.green},${painted.blue} over the photo's backdrop ${behind.red},${behind.green},${behind.blue}; upstream's plate ${upstream.red},${upstream.green},${upstream.blue} / ${upstream.alpha}`);
 }
 
 await browser.close();

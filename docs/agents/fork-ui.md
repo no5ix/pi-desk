@@ -295,6 +295,16 @@ the strip, and a control pass proving the old `color-mix` recipe is translucent)
 `app/native-theme-hover.test.mjs` pins the declarations and forbids both the bare overlay
 and any `opacity` on a hover state.
 
+The same token is what **upstream** paints the image preview's close with:
+`app/globals.css` has `.image-preview-close:hover { background: var(--bg-hover) }`, and that
+button floats over the dialog's `rgba(0, 0, 0, .72)` backdrop — clicking an attached image
+in the composer, then touching the × at the top right, showed a plate that was "a little bit
+transparent" (the photo through the control). `app/globals.css` is upstream-owned and stays
+byte-identical, so the fork's override in `app/native-theme.css` lays the same
+opaque base + tint under it. Measured over the photo's backdrop: base alpha `1`, composite
+185 levels away from the backdrop, and a control pass installs upstream's rule to show its
+alpha is `0.04` — the check cannot pass by being blind.
+
 ## Conversation header: project, branch, and the running clock
 
 The title block (`app-topbar-title`) is the session title and, under it, one
@@ -413,6 +423,25 @@ group's own leading glyph (robot / circle-and-plus) is what separates them.
 `components/AppShell.topbar-branch.test.mjs` asserts the sibling rule carries
 `margin-left: 10px` and **no** `border-left`, and that no
 `.app-topbar-family-group--side::before` exists.
+
+**The chip and the ring are gray at rest and lit under the pointer.** An accent glyph and
+an accent ring sitting at the end of a row of muted labels read as two live controls that
+answer to nothing, and the chip that opens the Agents panel had no pressed state at all —
+no answer to "is this clickable". So:
+`.app-topbar-subagents` wears the row's pill (`padding: 1px 4px` and
+`background: var(--bg-hover)` on `:hover` **and** `:focus-visible`, the same wash the branch
+label takes — measured equal, not asserted equal by eyeball), its text goes `--text-muted`
+→ `--text`, and the **side-chat group** goes `--text-dim` → `--accent` while the chip is
+hovered or focused, glyph and count together.
+`e2e/topbar-project-row.mjs` reaches the chip by Tab (`document.activeElement` is the chip:
+one control, one tab stop) because programmatic focus is not `:focus-visible`.
+
+The context ring's colour is a token the stylesheet owns — `--ctx-ring`, rest
+`var(--text-dim)`, hover / focus / open tip `var(--accent)` — and the component paints the
+arc with `stroke="var(--ctx-ring)"`. **One state is painted in the component and is never
+gated on the pointer:** the high-risk red at `CTX_DANGER_PCT` (90%). A warning that needs a
+hover is a warning nobody sees, so `?danger=1` in the fixture asserts the arc is
+`var(--danger)` with no pointer on it.
 
 **A side chat has no outcome.** Only a subagent relation carries a `status`; a conversation
 the user is typing into is not "completed" or "aborted". The side-chat group therefore
@@ -652,6 +681,24 @@ worktree 自己的路径没丢：项目 tip 的 `Path` 行就是正在工作的�
 
 **两组之间不画分隔线**：一个按钮内部出现竖线，会被读成两个控件（就是用户指出的样子）。
 间隔只靠 10px `margin-left` 和每组自己的引导图标（机器人 / 圆圈加号）；测试断言兄弟规则只有 `margin-left: 10px`、**没有** `border-left`，且不存在 `.app-topbar-family-group--side::before`。
+
+**家族计数与上下文环默认是灰色，指针到达时才点亮。** 在一行灰字末尾放一个 accent 图标和
+一个 accent 圆环，看起来像两个随时可点的控件，而打开 Agents 面板的计数按钮此前完全没有按下态
+（无法回答“这能不能点”）。现在 `.app-topbar-subagents` 在 `:hover` **与** `:focus-visible` 都戴上
+头部行同一枚药丸（`padding: 1px 4px` + `background: var(--bg-hover)`，实测与分支标签的高亮背景相等），
+文字 `--text-muted` → `--text`，并且**侧聊分组**（图标 + 数量）随悬停 / 聚焦由 `--text-dim` → `--accent`。
+`e2e/topbar-project-row.mjs` 用 Tab 走到该控件并检查 `document.activeElement`（脚本聚焦不会触发
+`:focus-visible`），顺带证明它只有一个 tab 停靠点。上下文环的颜色交给样式表拥有：`--ctx-ring`
+静置 `var(--text-dim)`，悬停 / 聚焦 / 提示打开时 `var(--accent)`，组件只用 `stroke="var(--ctx-ring)"` 画弧。
+**唯一写在组件里、永不依赖指针的状态是阈值红**（`CTX_DANGER_PCT` = 90%）：需要悬停才出现的警告等于没人看见的警告，
+因此 fixture 的 `?danger=1` 断言无指针时弧线就是 `var(--danger)`。
+
+**图片预览的 × 也使用实心层。** `app/globals.css`（上游文件，逐字节一致）写的是
+`.image-preview-close:hover { background: var(--bg-hover) }`，而这个按钮浮在对话框
+`rgba(0, 0, 0, .72)` 的遮罩上：在输入框里点开附件图片、再把指针移到右上角的 ×，底板就“有点透明”
+（照片透过了控件）。fork 在 `app/native-theme.css` 里用同一套不透明底 + 渐变着色覆盖它。
+`e2e/panel-hover-wash.mjs` 在照片遮罩上实测：底板 alpha 为 `1`、合成结果与遮罩相差 185 级，
+并额外装回上游规则做对照（其 alpha 是 `0.04`），保证断言不是瞎的。
 
 **侧聊没有“结果”。** 只有 subagent 的 relation 带 `status`；用户正在输入的会话谈不上“已完成 / 已中止”。所以侧聊分组只报数量与正在运行的条数（`{total} 个侧聊 · {running} 运行中`），语言文件里不存在 `chat.sideChatsCompleted` / `chat.sideChatsAborted` —— 给会话画 ✓ 是编造数据，`components/AppShell.topbar-branch.test.mjs` 断言这两个 key 在三种语言中始终**不存在**。
 

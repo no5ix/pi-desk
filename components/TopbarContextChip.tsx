@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { contextPercent, contextUsageSummary, formatTokenWindow } from "@/lib/context-usage-summary";
 import { useI18n } from "@/hooks/useI18n";
 import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
@@ -27,7 +28,8 @@ interface TopbarContextChipProps {
  * where the app's own tip opens on hover, focus **or a tap** and the sentence
  * (`37.6% ctx · 161.8M tok`) is read complete instead of cut.
  *
- * The arc is the value: a ring filled to the percent, red at the high-risk threshold.
+ * The arc is the value: a ring filled to the percent, gray at rest and accent under the
+ * pointer, red at the high-risk threshold (red always, pointer or not).
  * With nothing to report — a session that has never run — the chip renders nothing, so
  * an empty ring never reads as a spinner.
  *
@@ -43,11 +45,13 @@ export function TopbarContextChip({ contextUsage, sessionStats }: TopbarContextC
   if (!contextUsage || summary === null) return null;
   const percent = contextUsage.percent;
   const pct = contextPercent(percent);
-  const color = percent === null
-    ? "var(--text-dim)"
-    : pct >= CTX_DANGER_PCT
-      ? "var(--danger)"
-      : "var(--accent)";
+  // The ring is gray at rest and lights up under the pointer (app/native-theme.css owns
+  // `--ctx-ring`: rest `--text-dim`, hover / focus / open tip `--accent`). The arc's fill
+  // is the value, so the row's end is not a permanent accent dot. One state is painted
+  // here and is never gated on the pointer: the high-risk red at the threshold — a
+  // warning that needs a hover is a warning nobody sees.
+  const danger = pct >= CTX_DANGER_PCT;
+  const ringStyle = danger ? ({ "--ctx-ring": "var(--danger)" } as CSSProperties) : undefined;
   const filled = RING_CIRCUMFERENCE * (pct / 100);
   const inWindow = contextUsage.tokens;
   return (
@@ -55,6 +59,7 @@ export function TopbarContextChip({ contextUsage, sessionStats }: TopbarContextC
       <button
         {...triggerProps}
         className="app-topbar-context-hit"
+        style={ringStyle}
         aria-label={t("chat.contextTipTitle", { summary })}
       >
         <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} aria-hidden="true">
@@ -64,7 +69,7 @@ export function TopbarContextChip({ contextUsage, sessionStats }: TopbarContextC
             cy={RING_SIZE / 2}
             r={RING_RADIUS}
             fill="none"
-            stroke={color}
+            stroke="var(--ctx-ring)"
             strokeWidth={RING_STROKE}
             strokeDasharray={`${filled} ${RING_CIRCUMFERENCE - filled}`}
             strokeLinecap="round"

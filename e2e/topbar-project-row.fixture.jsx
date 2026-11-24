@@ -1,8 +1,9 @@
 import { createRoot } from "react-dom/client";
-import { I18nProvider } from "@/hooks/useI18n";
+import { I18nProvider, useI18n } from "@/hooks/useI18n";
 import { TopbarBranchChip } from "@/components/TopbarBranchChip";
 import { TopbarProjectChip } from "@/components/TopbarProjectChip";
 import { TopbarContextChip } from "@/components/TopbarContextChip";
+import { TopbarSubagents } from "@/components/TopbarSubagents";
 
 /**
  * The conversation header's project row, in a real browser.
@@ -18,12 +19,15 @@ import { TopbarContextChip } from "@/components/TopbarContextChip";
  * widths, and puts the old rules back to prove the measurement sees the bug.
  */
 function TopbarRow() {
+  const { t } = useI18n();
   // `?long=1` is the case a phone cannot fit: a branch name and a path long enough that
   // the row cuts them to a stub, and the tips have to wrap to show them complete.
   // `?novalue=1` is a session that has never run: the context chip renders nothing.
   const params = new URLSearchParams(location.search);
   const long = params.get("long") === "1";
   const noUsage = params.get("novalue") === "1";
+  // `?danger=1` is a context at the high-risk threshold: its red is painted without a pointer.
+  const danger = params.get("danger") === "1";
   const branch = long
     ? "claude/conversation-list-optimization-and-header-widths-9ec111"
     : "feat/branch-picker-header-worktrees";
@@ -63,17 +67,16 @@ function TopbarRow() {
               </svg>
               11m5s
             </small>
-            <button type="button" className="app-topbar-subagents">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M12 7V4" />
-              </svg>
-              <span className="app-topbar-subagent-count is-completed">
-                <span className="app-topbar-subagent-glyph">✓</span>
-                <span>2</span>
-              </span>
-            </button>
+            {/* The real chip, not a drawing of it: the row's colours are the claim, and
+                they are decided by the component's own markup (one button, two groups). */}
+            <TopbarSubagents
+              subagents={{ total: 9, completed: 9, aborted: 0, running: 1 }}
+              sideChats={{ total: 3, completed: 0, aborted: 0, running: 0 }}
+              onOpenAgents={() => { window.__agentsOpened = (window.__agentsOpened ?? 0) + 1; }}
+              translate={t}
+            />
             <TopbarContextChip
-              contextUsage={noUsage ? null : { percent: 37.6, contextWindow: 1_000_000, tokens: 400_000 }}
+              contextUsage={noUsage ? null : { percent: danger ? 95 : 37.6, contextWindow: 1_000_000, tokens: 400_000 }}
               sessionStats={noUsage ? null : {
                 sessionId: "s", sessionIdShort: "s", sessionFile: "/tmp/s.jsonl", sessionName: null,
                 userMessages: 4, assistantMessages: 9, toolCalls: 21, toolResults: 21, totalMessages: 34,

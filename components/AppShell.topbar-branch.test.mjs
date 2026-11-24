@@ -174,6 +174,34 @@ test("the family chip counts subagents and side chats apart, in one button", () 
   assert.match(counter, /className="app-topbar-family-group app-topbar-family-group--side"[^>]*>\s*<SideChatIcon \/>/);
   assert.match(counter, /<path d="M21 12a8 8 0 0 1-8 8H5\.5a2 2 0 0 1-1\.4-3\.4A8 8 0 1 1 21 12z" \/>\s*<path d="M13 8\.5v7M9\.5 12h7" \/>/,
     "the side-chat glyph is the composer's and the sidebar's, not a new drawing");
+  // The chip is a control, so it takes the row's pill: hovering it washes both groups,
+  // the same way the branch's label does.
+  const chipRule = css.match(/\.app-topbar-subagents \{[^}]*\}/);
+  assert.ok(chipRule, "the chip has its rule");
+  assert.match(chipRule[0], /padding: 1px 4px;/, "the same pill the project and the branch wear");
+  assert.match(chipRule[0], /color: var\(--text-muted\);/, "muted at rest");
+  const chipHover = css.match(/\.app-topbar-subagents:hover \{[^}]*\}/);
+  assert.ok(chipHover, "hover has a rule");
+  assert.match(chipHover[0], /background: var\(--bg-hover\);/, "the row's wash, across the whole chip");
+  assert.match(chipHover[0], /color: var\(--text\);/);
+  // The side-chat group is gray in the row of gray glyphs — an accent glyph inside a chip
+  // that is one control reads as a second, live control — and the hover lights it.
+  const side = css.match(/\.app-topbar-family-group--side \{[^}]*\}/);
+  assert.ok(side, "the side group has a rest colour");
+  assert.match(side[0], /color: var\(--text-dim\);/, "gray at rest");
+  assert.ok(!/color: var\(--accent\);/.test(side[0]), "not accent at rest");
+  const sideLit = css.match(/\.app-topbar-subagents:hover \.app-topbar-family-group--side,[\s\S]*?\{[^}]*\}/);
+  assert.ok(sideLit, "the hover lights the side-chat glyph and its count");
+  assert.match(sideLit[0], /color: var\(--accent\);/);
+  assert.match(sideLit[0], /:focus-visible/, "and the keyboard does the same");
+  // The keyboard gets the pointer's answer, not a bare outline: the pill is the pressed
+  // state, and Tab reaches the chip exactly once.
+  const focusRule = css.match(/\.app-topbar-subagents:focus-visible \{[^}]*\}/);
+  assert.ok(focusRule, "focus has a rule");
+  assert.match(focusRule[0], /background: var\(--bg-hover\);/, "focus wears the pill");
+  assert.match(focusRule[0], /outline: 2px solid var\(--focus-ring\);/);
+  assert.match(css, /\.app-topbar-subagents:focus-visible \.app-topbar-family-group--side \{\s*color: var\(--accent\);\s*\}/,
+    "and lights the side-chat group");
   const groups = css.match(/\.app-topbar-family-group \+ \.app-topbar-family-group \{[^}]*\}/);
   assert.ok(groups, "the groups sit apart: two sentences, not six numbers");
   assert.match(groups[0], /margin-left: 10px;/);

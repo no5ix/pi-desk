@@ -11,6 +11,11 @@ import { test } from "node:test";
  * pointing at the × read as the glyph going faint — the control the user is about to
  * press is the one thing that must not look like it is disappearing.
  *
+ * The same token is what upstream's `.image-preview-close:hover` paints its plate with,
+ * over a `rgba(0,0,0,.72)` backdrop: the hovered × over the user's photo read as "a
+ * little bit transparent". `app/globals.css` is upstream-owned and byte-identical, so the
+ * fork's override in this file is what makes that plate solid.
+ *
  * Compositing the token with `color-mix` does not fix it: mixing a 5%-alpha colour with
  * an opaque one yields a layer that is about *half* transparent, so the panel kept
  * showing through the hovered button. The wash has to be an opaque base with the tint
@@ -31,6 +36,7 @@ for (const [selector, name] of [
   [".file-workbench-icon-button:hover:not(:disabled)", "the panel header's icon buttons"],
   [".right-panel-close:hover", "the panel's own close corner"],
   [".terminal-panel-header button:hover", "the terminal panel's header buttons"],
+  [".image-preview-close:hover", "the image preview's close, over a black backdrop"],
 ]) {
   test(`${name} paint an opaque hover wash`, () => {
     const hover = rule(selector);

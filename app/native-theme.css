@@ -3631,6 +3631,19 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   padding: 3px;
 }
 
+/* The ring is gray in a row of gray glyphs: the arc's fill, not its hue, is the value,
+   and a permanent accent dot at the end of the row pulls the eye off the branch. Hover,
+   focus, or an open tip lights it. One state stays ungated in the component: the
+   high-risk red at the threshold, which must not wait for a pointer nobody aims at. */
+.app-topbar-context-hit {
+  --ctx-ring: var(--text-dim);
+}
+.app-topbar-context-hit:hover,
+.app-topbar-context-hit:focus-visible,
+.app-topbar-context-hit[aria-describedby] {
+  --ctx-ring: var(--accent);
+}
+
 .app-topbar-project-hit:hover,
 .app-topbar-branch-hit:hover,
 .app-topbar-context-hit:hover,
@@ -3716,20 +3729,31 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   align-items: center;
   gap: 4px;
   line-height: 1.18;
+  /* The same pill the project and the branch wear: the chip is a control, so it takes
+     the row's hover wash across both of its groups. */
+  padding: 1px 4px;
   color: var(--text-muted);
+  background: none;
   cursor: pointer;
   border-radius: var(--radius-sm);
-  transition: color var(--dur-fast) var(--ease-native);
+  transition:
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native);
 }
 
 .app-topbar-subagents:hover {
+  background: var(--bg-hover);
   color: var(--text);
 }
 
 .app-topbar-subagents:focus-visible {
+  /* The keyboard gets the pointer's answer: the pill, plus the outline the row uses. */
+  background: var(--bg-hover);
+  color: var(--text);
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
+/* (The side-chat group's lit colour is the hover rule below, which covers both.) */
 
 .app-topbar-subagents svg {
   flex: 0 0 auto;
@@ -3748,7 +3772,15 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 .app-topbar-family-group + .app-topbar-family-group {
   margin-left: 10px;
 }
+/* Gray at rest: the row is a band of muted gray glyphs, and an accent glyph standing in
+   it reads as a second, live control inside a chip that is one control. Hover (or focus)
+   lights the side-chat group — glyph and count — so the pointer's arrival is what names
+   the kind. */
 .app-topbar-family-group--side {
+  color: var(--text-dim);
+}
+.app-topbar-subagents:hover .app-topbar-family-group--side,
+.app-topbar-subagents:focus-visible .app-topbar-family-group--side {
   color: var(--accent);
 }
 
@@ -7243,6 +7275,18 @@ html.dark {
   color: var(--text-muted);
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native);
+}
+
+/* The image preview's close, floating over a 72%-black backdrop: app/globals.css paints
+   its hover plate with `var(--bg-hover)`, a 4-5% wash, so hovering made the button a
+   window and the dark backdrop showed through the plate — "a little bit transparent",
+   the same failure as the panel header's buttons. Solid base, the tint on top: the plate
+   is solid in both states, and hover is a step brighter. (app/globals.css is
+   upstream-owned and byte-identical, so the override lives in this file.) */
+.image-preview-close:hover {
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--bg-hover), var(--bg-hover));
+  color: var(--text);
 }
 
 .right-panel-close:hover {

@@ -158,7 +158,11 @@ for (const width of [1920, 1200, 960, 700]) {
 }
 
 // The tips: hover on desktop, and a tap on a phone, where the native tooltip a phone
-// never shows used to be the only way to see the name.
+// never shows used to be the only way to see the name. Measured wide on purpose: the
+// claims are "below the header" and "inside the window at 1920", and a row that wraps
+// (the family chip is wide) moves the anchor, not the tip.
+await page.setViewportSize({ width: 1920, height: 900 });
+await page.waitForTimeout(80);
 await page.hover(".app-topbar-branch-hit");
 const hovered = await page.evaluate(MEASURE);
 assert.ok(hovered.tip, "hover opens the tip");
@@ -279,6 +283,113 @@ await dormant.goto(`${url}?novalue=1`);
 await dormant.waitForSelector(".app-topbar-branch-hit");
 assert.equal((await dormant.evaluate(MEASURE)).context, null, "no usage, no chip");
 await dormant.close();
+
+// The family chip and the context ring are quiet in the row and lit under the pointer.
+// The user's complaint: an accent side-chat glyph and an accent ring at the end of the
+// row read as two live controls, and the chip that opens the Agents panel had no pressed
+// state at all — no answer to "is this clickable".
+await page.setViewportSize({ width: 1440, height: 900 });
+await page.goto(url);
+await page.waitForSelector(".app-topbar-family-group--side");
+const CHIP = () => {
+  const probe = document.createElement("span");
+  probe.style.display = "none";
+  document.body.append(probe);
+  const token = (value) => {
+    probe.style.color = value;
+    return getComputedStyle(probe).color;
+  };
+  const tokens = {
+    muted: token("var(--text-muted)"),
+    dim: token("var(--text-dim)"),
+    text: token("var(--text)"),
+    accent: token("var(--accent)"),
+    danger: token("var(--danger)"),
+  };
+  probe.remove();
+  const chip = document.querySelector(".app-topbar-subagents");
+  const chipBox = chip.getBoundingClientRect();
+  const arc = document.querySelectorAll(".app-topbar-context-hit svg circle")[1];
+  return {
+    chipBackground: getComputedStyle(chip).backgroundColor,
+    chipColor: getComputedStyle(chip).color,
+    groups: [...chip.querySelectorAll(".app-topbar-family-group")].map((group) => {
+      const box = group.getBoundingClientRect();
+      return {
+        color: getComputedStyle(group).color,
+        inside: box.left >= chipBox.left - 0.5 && box.right <= chipBox.right + 0.5
+          && box.top >= chipBox.top - 0.5 && box.bottom <= chipBox.bottom + 0.5,
+      };
+    }),
+    arcAttr: arc.getAttribute("stroke"),
+    arcStroke: getComputedStyle(arc).stroke,
+    branchBackground: getComputedStyle(document.querySelector(".app-topbar-branch-hit")).backgroundColor,
+    tokens,
+  };
+};
+const quiet = await page.evaluate(CHIP);
+assert.equal(quiet.chipBackground, "rgba(0, 0, 0, 0)", "at rest the chip carries no plate");
+assert.equal(quiet.chipColor, quiet.tokens.muted, "muted, like the row's other labels");
+assert.equal(quiet.groups.length, 2, "the one button holds two groups");
+assert.equal(quiet.groups[1].color, quiet.tokens.dim, "the side-chat glyph and its count are gray at rest");
+assert.equal(quiet.arcAttr, "var(--ctx-ring)", "the ring paints with the row's token");
+assert.equal(quiet.arcStroke, quiet.tokens.dim, "and it is gray at rest too");
+assert.ok(quiet.groups.every((group) => group.inside), "both groups sit in the chip's box, so one wash covers them");
+await page.screenshot({ path: `${out}/chips-quiet.png`, clip: { x: 0, y: 0, width: 1440, height: 90 } });
+
+await page.hover(".app-topbar-subagents");
+await page.waitForTimeout(160);
+const lit = await page.evaluate(CHIP);
+assert.notEqual(lit.chipBackground, "rgba(0, 0, 0, 0)", "hover gives the chip the row's pill");
+assert.ok(lit.chipBackground.startsWith("rgba(") && !lit.chipBackground.endsWith(", 0)"),
+  `the pill is the palette's translucent wash (${lit.chipBackground}), the one the topbar's vibrancy needs`);
+assert.equal(lit.groups[1].color, lit.tokens.accent, "the side-chat group lights up under the pointer");
+assert.notEqual(lit.groups[0].color, lit.tokens.dim, "the subagent group brightens with it");
+assert.equal(lit.arcStroke, lit.tokens.dim, "the ring is not lit by a hover on the chip");
+await page.screenshot({ path: `${out}/chips-hover.png`, clip: { x: 0, y: 0, width: 1440, height: 90 } });
+await page.mouse.move(10, 860);
+await page.waitForTimeout(160);
+
+// "A background like the branch has": measured on the branch itself, hovered.
+await page.hover(".app-topbar-branch-hit");
+await page.waitForTimeout(160);
+const branchLit = await page.evaluate(CHIP);
+await page.keyboard.press("Escape");
+await page.mouse.move(10, 860);
+await page.waitForTimeout(160);
+assert.equal(lit.chipBackground, branchLit.branchBackground,
+  `the chip's hover pill is the branch's own (${lit.chipBackground} = ${branchLit.branchBackground})`);
+
+await page.hover(".app-topbar-context-hit");
+await page.waitForTimeout(160);
+const ring = await page.evaluate(CHIP);
+assert.equal(ring.arcStroke, ring.tokens.accent, "the ring lights when the pointer reaches it");
+assert.equal(ring.chipBackground, "rgba(0, 0, 0, 0)", "and the chip is quiet again once the pointer leaves");
+await page.mouse.move(10, 860);
+await page.waitForTimeout(160);
+
+// The keyboard gets the same answer as the pointer, so the focus arrives as a Tab
+// (programmatic focus is not `:focus-visible` for a pointer-driven page).
+let onChip = false;
+for (let step = 0; step < 14 && !onChip; step += 1) {
+  await page.keyboard.press("Tab");
+  onChip = await page.evaluate(() => Boolean(document.activeElement?.classList.contains("app-topbar-subagents")));
+}
+assert.ok(onChip, "the chip is reachable by Tab (one control, one tab stop)");
+await page.waitForTimeout(120);
+const focused = await page.evaluate(CHIP);
+assert.notEqual(focused.chipBackground, "rgba(0, 0, 0, 0)", "focus wears the pill");
+assert.equal(focused.groups[1].color, focused.tokens.accent, "and lights the side-chat group");
+await page.mouse.move(600, 860);
+
+// The one state that never waits for a pointer: the high-risk red.
+const hot = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+await hot.goto(`${url}?danger=1`);
+await hot.waitForSelector(".app-topbar-context-hit");
+const warned = await hot.evaluate(CHIP);
+assert.equal(warned.arcStroke, warned.tokens.danger, "a context at the threshold is red with no pointer on it");
+await hot.close();
+
 await touch.close();
 
 // The controls: the two rules that produced the photographs.

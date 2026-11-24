@@ -60,8 +60,14 @@ test("nothing is shown when there is nothing to report", () => {
   assert.match(chip, /if \(!contextUsage || summary === null\) return null;/,
     "a session that has never run gets no ring: an empty one reads as a spinner");
   assert.match(chip, /const CTX_DANGER_PCT = 90;/);
-  assert.match(chip, /pct >= CTX_DANGER_PCT\s*\n?\s*\?\s*"var\(--danger\)"/, "the high-risk arc is red");
-  assert.match(chip, /stroke=\{color\}/);
+  // The arc's colour is a token the stylesheet owns, so the row's states live in one
+  // place; the one colour painted here is the high-risk red, which is never gated on the
+  // pointer — a warning that needs a hover is a warning nobody sees.
+  assert.match(chip, /const danger = pct >= CTX_DANGER_PCT;/);
+  assert.match(chip, /\{ "--ctx-ring": "var\(--danger\)" \} as CSSProperties/);
+  assert.match(chip, /stroke="var\(--ctx-ring\)"/, "the arc paints with the row's token");
+  assert.ok(!/stroke=\{color\}/.test(chip), "no colour picked per render");
+  assert.doesNotMatch(chip, /: "var\(--accent\)"/, "the ring is not accent at rest");
 });
 
 test("the chip is styled with the row's other controls", () => {
@@ -71,6 +77,14 @@ test("the chip is styled with the row's other controls", () => {
     assert.ok(css.includes(selector), `the row's control rule covers the context chip (${selector.split("\n")[0]}…)`);
   }
   assert.match(css, /\.app-topbar-context \{[^}]*flex: 0 0 auto;/, "the ring never shrinks: the project name is what gives way");
+  // Gray at rest, lit under the pointer: a permanent accent dot at the end of the row
+  // pulls the eye off the branch, and the arc's fill — not its hue — is the value.
+  const ringRest = css.match(/\.app-topbar-context-hit \{\s*--ctx-ring: var\(--text-dim\);\s*\}/);
+  assert.ok(ringRest, "the ring is gray at rest, like the row's other glyphs");
+  const ringLit = css.match(/\.app-topbar-context-hit:hover,[\s\S]*?\{\s*--ctx-ring: var\(--accent\);\s*\}/);
+  assert.ok(ringLit, "hover lights the ring");
+  assert.match(ringLit[0], /:focus-visible,/, "and the keyboard lights it");
+  assert.match(ringLit[0], /\[aria-describedby\]/, "and a phone's tap keeps it lit while the tip is open");
   const value = css.slice(css.indexOf(".app-topbar-tip-value {"), css.indexOf("}", css.indexOf(".app-topbar-tip-value {")));
   assert.ok(value.includes("white-space: normal") && value.includes("overflow-wrap: anywhere"),
     "the tip's value never ellipsizes: it carries what the row cut");
