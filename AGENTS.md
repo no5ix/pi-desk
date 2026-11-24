@@ -142,6 +142,16 @@ Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
   `PI_WEB_DESKTOP_BUILD=1 node_modules/next/dist/bin/next build --webpack` then
   `E2E_SERVER_MODE=start PI_WEB_DESKTOP_BUILD=1 node e2e/run.mjs` (`next.config.ts` swaps
   `distDir` to `.next-desktop`, which is gitignored).
+- **npm 11 blocks dependency install scripts by default.** `npm ci` then prints
+  "N packages have install scripts not yet covered by allowScripts" and silently skips
+  them, so a fresh install leaves `node-pty` (the desktop terminals), `esbuild`,
+  `unrs-resolver` and `protobufjs` unstaged and the app fails in ways that look like repo
+  bugs. The approvals are pinned per version in `package.json`'s `allowScripts`
+  (`npm install-scripts approve <pkg>` writes them; `npm install-scripts ls` lists the
+  gaps). Keep that field in the tree, review it when dependencies move, and never blanket
+  `approve --all`. Run `npm ci` only with the dev server stopped: it removes
+  `node_modules` under the running server, and a first `npm run dev` from this shell hits
+  the `__NEXT_PRIVATE_*` trap above.
 - A worktree's `node_modules` can lag the lockfile (created before an SDK bump), which
   fails tests that pin newer SDK behaviour. `npm test` runs `npm run check:deps` first and
   stops with the mismatched packages; `npm ci` fixes it.
