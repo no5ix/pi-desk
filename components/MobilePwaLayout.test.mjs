@@ -62,7 +62,10 @@ test("contains chat content and inputs within the mobile viewport", () => {
   assert.match(cssSource, /\.markdown-code-block \{[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;/);
   assert.match(chatWindowSource, /overflow-x-hidden overflow-y-scroll/);
   assert.match(chatWindowSource, /maxHeight: "min\(760px, 100%\)"/);
-  assert.match(chatInputSource, /flex: compact \? "none" : 1,\s*minWidth: 0,\s*width: "100%",/);
+  // The composer's text area is a full-width block inside the card and keeps the
+  // height its auto-grow logic computed (`flex: 1` in a column is a zero basis and
+  // clips it), so a phone never gets a sideways-scrolling or clipped composer.
+  assert.match(chatInputSource, /flex: "none",\s*minWidth: 0,\s*width: "100%",/);
 });
 
 test("prevents iOS focus zoom from widening the layout", () => {

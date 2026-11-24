@@ -72,7 +72,12 @@ test("server supports the automation command set end to end", () => {
 test("narrow screens keep Stop one tap away while streaming", () => {
   const html = render({ isStreaming: true });
   assert.equal((html.match(/data-action="stop"/g) ?? []).length, 1);
-  assert.ok(html.indexOf('data-action="stop"') < html.indexOf('class="chat-composer-controls"'), "Stop stays in the editor, outside collapsed controls");
+  const stopAt = html.indexOf('data-action="stop"');
+  const actionsAt = html.indexOf('class="chat-composer-actions"');
+  const controlsAt = html.indexOf('class="chat-composer-controls"');
+  assert.ok(actionsAt >= 0, "the card holds one control row");
+  assert.ok(stopAt > actionsAt, "Stop is in the card's control row, in reach of the text");
+  assert.ok(stopAt > controlsAt, "Stop sits outside the controls a phone folds behind More");
   assert.match(html, /aria-label="Stop agent"/);
   assert.doesNotMatch(html, /composer-stop-button/);
 });

@@ -126,7 +126,9 @@ try{
   await page.getByRole('listbox').screenshot({path:`test-results/ui-send/selection-reasoning-${theme}-${width}.png`});
   await page.keyboard.press('Escape');
   await page.locator('textarea').click();
-  await page.getByRole('button',{name:'Change model',exact:true}).click();await assertRowGaps(page.getByRole('listbox').locator('.app-option-row'),'actual model choices');
+  // The composer's model chip is icon-only, so its accessible name carries the
+  // model it points at as well as the action.
+  await page.getByRole('button',{name:/Change model/}).first().click();await assertRowGaps(page.getByRole('listbox').locator('.app-option-row'),'actual model choices');
   await assertChoiceGeometry(page.getByRole('listbox'),page.getByRole('listbox').locator('.app-option-row'),'actual models');await page.keyboard.press('Escape');
   const input=page.locator('textarea');await input.fill('');await input.press('ArrowUp');
   const history=page.locator('.app-suggestion-menu');await history.waitFor();await assertRowGaps(history.locator('button'),'actual input history');

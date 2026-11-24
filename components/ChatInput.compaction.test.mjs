@@ -30,8 +30,11 @@ function render(props) {
 
 test("auto-compaction mid-run stays visible with a stop control", () => {
   const html = render({ isStreaming: true, isCompacting: true });
-  assert.match(html, /Compacting…/);
+  // The row is icon-only: the running compaction is the danger-tinted stop button,
+  // and its title says what a label used to.
   assert.match(html, /title="Stop compaction"/);
+  assert.match(html, /color:var\(--danger\)/);
+  assert.doesNotMatch(html, />Compacting…</);
 });
 
 test("manual compact is offered from the session menu when idle and hidden while merely streaming", () => {
@@ -40,9 +43,9 @@ test("manual compact is offered from the session menu when idle and hidden while
   // can be what puts it there.
   const idle = render({ isStreaming: false });
   assert.match(idle, /aria-label="Session automation"/);
-  assert.doesNotMatch(idle, /Compacting…/);
+  assert.doesNotMatch(idle, /title="Stop compaction"/);
 
   const streaming = render({ isStreaming: true, isCompacting: false });
   assert.doesNotMatch(streaming, /aria-label="Session automation"/);
-  assert.doesNotMatch(streaming, /Compacting…/);
+  assert.doesNotMatch(streaming, /title="Stop compaction"/);
 });

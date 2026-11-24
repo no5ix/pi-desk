@@ -308,8 +308,11 @@ test("keeps the model selector visible when a model error leaves no options", ()
     ),
   );
 
-  assert.match(html, />No models</);
-  assert.match(html, /title="No available models"/);
+  // The row is icon-only: the chip's words — the model it holds and the action —
+  // are in title and aria-label, and nothing is printed beside the icon.
+  assert.match(html, /title="No models — No available models"/);
+  assert.match(html, /aria-label="No models — No available models"/);
+  assert.doesNotMatch(html, />No models</);
 });
 
 test("renders the read-only tool preset as the active selection", () => {
@@ -327,9 +330,9 @@ test("renders the read-only tool preset as the active selection", () => {
     ),
   );
 
-  // The chip shows the preset's display name, not its settings id.
+  // The button is icon-only; title names the preset, and the settings id is not shown.
   assert.match(html, /title="Change tool preset: Read-only"/);
-  assert.match(html, />Read-only<\/span>/);
+  assert.doesNotMatch(html, />Read-only<\/span>/);
 });
 
 test("renders the empty tool preset as Chat only", () => {
@@ -348,7 +351,7 @@ test("renders the empty tool preset as Chat only", () => {
   );
 
   assert.match(html, /title="Change tool preset: Chat only"/);
-  assert.match(html, />Chat only<\/span>/);
+  assert.doesNotMatch(html, />Chat only<\/span>/);
 });
 
 test("renders the compact composer with the standard Send button and no session controls", () => {
@@ -389,10 +392,12 @@ test("shows and locks the optimistic model while a switch is pending", () => {
     ),
   );
 
-  assert.match(html, /title="Switching model"/);
+  // Icon-only: the optimistic model rides in the title, and the chip stays spinning
+  // and disabled while the switch is pending.
+  assert.match(html, /title="DeepSeek V4 Flash — Switching model"/);
   assert.match(html, /aria-busy="true"/);
   assert.match(html, /disabled=""/);
-  assert.match(html, />DeepSeek V4 Flash</);
+  assert.doesNotMatch(html, />DeepSeek V4 Flash</);
   assert.match(html, /animation:spin 0\.8s linear infinite/);
 });
 

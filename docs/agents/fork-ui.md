@@ -81,11 +81,29 @@ history or modify the outbox. A clear-generation guard rejects late attachment
 read/conversion results and revokes discarded image preview URLs. Cancel remains
 a separate, non-destructive action that only leaves history-edit mode.
 
-## Composer session row: project, model, context, controls
-The row under the input card (`className="chat-composer-controls"`) carries the
-project chip, the model chip, the context-usage ring and — on a phone — the More
-controls button. On a phone it is a grid with exactly TWO children (the wide
-spacer is rendered only on the flex tier), so its template is
+## Composer: one card, one control row
+The card is a column (`.chat-composer-editor` is `flexDirection: "column"`): the text
+area is a full-width block on top, and one row (`.chat-composer-actions`) below it
+carries the attach button, the session controls
+(`className="chat-composer-controls"`) and Send, in that order. Nothing sits beside the
+typing, so a long prompt is typed across the card, and every control that acts on the
+draft is within reach of it. Send stays the row's last child, so its disc keeps sharing
+the card's bottom-right arc (measured by `e2e/composer-geometry.mjs`). The text area is
+`flex: "none"` — in a column `flex: 1` is a zero basis and clips the auto-grow height to
+`minHeight`, which is the regression `components/MobilePwaLayout.test.mjs` pins.
+
+The controls in that row are icon-only: the reasoning level, the tool preset and the
+model chip print no words, and each is a 32px square (`--control-h-lg`). The words are
+not lost — they live in `title` and `aria-label` (`"Change reasoning level: medium"`,
+`"Change tool preset: Chat only"`, `"<model name> — Change model"`, the compaction stop
+button carries `"Stop compaction · Compacting (2/3)…"`), which is what a screen reader
+and hover read. `ModelSelector` takes `iconOnly` for this; the `field` variant (Settings,
+model dialogs) keeps its label. The project and branch chips keep their text: they name
+which folder and which branch a session is in, which is identity, not a setting.
+
+The row under the card no longer exists; the same controls live inside it. On a phone
+`.chat-composer-controls` is a grid with exactly TWO children (the wide spacer is
+rendered only on the flex tier), so its template is
 `minmax(0, 1fr) auto`: the left cell takes the free width and shrinks, the
 controls keep their own `auto` track. With an `auto` first track the grid sizes
 that column to the model chip's untruncated max-content, the controls cell
@@ -93,12 +111,17 @@ collapses to `0px`, and its button (squeezed to 16px in a zero-width track)
 paints on top of the context ring — the reported iPhone 16 Pro Max overlap.
 Both tiers keep the left cell shrinkable (`flex: "1 1 auto"` narrow,
 `"0 1 auto"` wide, `minWidth: 0`), so a squeezed desktop window (workspace panel
-open) truncates the model label instead of pushing the controls out of the row.
+open) truncates the row instead of pushing the controls out of it. The phone folds
+the settings into a More popover on an absolutely positioned cell — that is why
+`e2e/composer-geometry.mjs` measures the row's spread over the buttons that are in
+flow, not over the popup's.
 
 The model trigger's cap must be a shrink, not only a ceiling: the toolbar variant
 uses `max-width: min(220px, 100%)`. A bare `220px` left a 220px box past the
 shrunken 207px root and onto the ring. The label span (`flex: 1`, `minWidth: 0`,
-ellipsis) is the part that gives way; the ring and the More button keep
+ellipsis) is the part that gives way; in the composer it is not rendered at all
+(`iconOnly` swaps the cap for a 32px square with `maxWidth: "none"`), so the cap
+rule belongs to a labelled toolbar chip. The ring and the More button keep
 `flexShrink: 0`. Pinned by `components/ChatInput.composer-row.test.mjs`. Verify
 on a real session with a long model id and a live context ring, at 320–640px and
 at desktop widths with the workspace panel open, in Chromium and WebKit.
@@ -434,7 +457,10 @@ uninitialized `const`). The toggle also raises a phone's keyboard through
 
 - 输入框只保留一个圆形主操作：空闲时发送；运行中且草稿为空时停止（方块）；运行中有文字或附件时，点击或发送快捷键都加入“完成后发送”队列。不要重新引入 Steer / Follow-up 双按钮或底栏重复的 Stop。
 - `ComposerOutbox` 把待发送消息贴在输入框上沿；每条消息支持立即发送、取回编辑、删除。窄窗口操作使用图标和完整无障碍标签，触屏点击范围至少 44px；不使用彩色描边区分队列模式。
-- 待发送行的文字与排队图标之间留左侧间距：行 `gap` 加 `.composer-outbox-preview` 的 6px `padding-left`，桌面实测 14px，使多条消息沿自己的左边距成列，而不是文字顶到图标边缘。`e2e/composer-outbox.mjs` 量取文字起点相对图标（窄窗口图标隐藏时相对行左缘）的距离。
+- 待发送行的文字与排队图标之间留左侧间距：行 `gap` 加 `.composer-outbox-preview` 的 6px `padding-left`，桌面实测 14px，使多条消息沿自己的左边距成列，而不是文字顶到图标边缘。`e2e/composer-outbox.mjs` 量取文字起点相对图标（窄窗口图标隐藏时相对输入卡片左缘）的距离。
+- 输入卡片是一列：文本域在上、独占整行宽度，下一行依次是 `+` 附件按钮、会话控件（`.chat-composer-controls`）、发送按钮。控件不再摆在卡片下方，长文本横贯卡片输入，操作就在文字手边。文本域用 `flex: "none"`，因为列布局里 `flex: 1` 等于零基准，会把自适应高度压回 `minHeight`（`components/MobilePwaLayout.test.mjs` 钉住）。
+- 这一行的控件只有图标：推理级别、工具预设、模型选择都不显示文字，统一 32px 方按钮（`--control-h-lg`）；文字搬进 `title` 与 `aria-label`（`"Change reasoning level: medium"`、`"Change tool preset: Chat only"`、`"<模型名> — Change model"`、压缩停止按钮是 `"Stop compaction · Compacting (2/3)…"`）。`ModelSelector` 用 `iconOnly` 属性进入这种形态，Settings 与模型对话框的 `field` 形态保留文字标签。项目与分支标签保留文字：它们说明的是“哪个目录、哪个分支”，属于身份，不是设置。
+- 发送按钮仍是行内最后一个控件，保持与卡片右下圆角同心；`e2e/composer-geometry.mjs` 在 12/14/20/24px 字号、深浅色、1280/390/320 宽度下量取：文本域宽度等于卡片内宽、行内按钮同一水平线（手机 More 弹层是绝对定位，不计入）、控件按钮无文字且 `title` 非空、发送圆与卡片圆弧圆心重合。
 - 立即发送通过 SDK prompt admission 的 `steer` 在下一个可接收指令的时机引导当前任务，不承诺强制中断正在进行的工具调用。编辑通过 `restoreSubmission` 合并到原会话草稿，保留已有输入与图片。
 - 验证：`node e2e/composer-outbox.mjs`，覆盖深浅色、1280/390/320 宽度、换行同心圆角、排队/编辑/删除/引导、页面刷新及停止后的队列状态。
 

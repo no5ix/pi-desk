@@ -52,8 +52,43 @@ test("the model chip never outgrows the cell that holds it", () => {
 });
 
 test("the row itself cannot widen the page", () => {
-  const rule = css.slice(css.indexOf(".chat-composer-controls {"), css.indexOf("}", css.indexOf(".chat-composer-controls {")));
+  // `\n` anchors the real rule: `.chat-composer-actions > .chat-composer-controls`
+  // contains the same name and is found first.
+  const start = css.indexOf("\n.chat-composer-controls {");
+  assert.ok(start >= 0, "the controls row keeps its own rule");
+  const rule = css.slice(start, css.indexOf("}", start));
   for (const declaration of ["min-width: 0;", "max-width: 100%;"]) {
     assert.ok(rule.includes(declaration), `the composer row keeps ${declaration}`);
   }
+  assert.match(css, /html\[data-keyboard-open\] \.chat-composer-controls/, "the phone hides the row's controls while the keyboard is up");
+});
+
+test("the card keeps one control row: attach, the session controls, then Send", () => {
+  // The user asked for the text area to own the card's width and for every control
+  // that used to sit under the composer to share the Send row, icon-only.
+  const attachAt = chatInput.indexOf('className="native-toolbar-button composer-attach-button"');
+  const rowAt = chatInput.indexOf('className="chat-composer-actions"');
+  const controlsAt = chatInput.indexOf('className="chat-composer-controls"');
+  // The send button's className is conditional (the compact composer has no
+  // composer-send-button), so match the class list, not the attribute.
+  const sendAt = chatInput.indexOf('"native-primary-button composer-send-button"');
+  const textareaAt = chatInput.indexOf('className="chat-input-textarea"');
+  assert.ok(rowAt > 0 && attachAt > rowAt, "the attach button is in the control row");
+  assert.ok(controlsAt > attachAt, "the session controls follow the attach button");
+  assert.ok(sendAt > controlsAt, "Send is the row's last control, in the card's corner");
+  assert.ok(textareaAt < rowAt, "the text area is above the row, not beside a control");
+  assert.match(chatInput, /flexDirection: "column",\n              gap: compact \? 8 : 0,\n              alignItems: "stretch"/,
+    "the editor is a column: the text, then the row");
+  // Icon-only controls: the words (the level, the preset) live in title/aria-label.
+  const reasoning = chatInput.slice(chatInput.indexOf('aria-expanded={thinkingDropdownOpen}'), chatInput.indexOf("chat.thinkingHeading"));
+  assert.match(reasoning, /padding: 0,\n                    width: "var\(--control-h-lg\)"/, "the reasoning button is a square icon button");
+  assert.doesNotMatch(reasoning, /\{runSettingsLabel\}/, "the reasoning level is not printed");
+  const tools = chatInput.slice(chatInput.indexOf('aria-expanded={toolDropdownOpen}'), chatInput.indexOf("chat.toolsHeading"));
+  assert.doesNotMatch(tools, /\{toolPresetLabel\}<\/span>/, "the tool preset is not printed");
+  assert.match(chatInput, /title=\{t\("chat\.changeToolPreset"\) \+ `: \$\{toolPresetLabel\}`\}/, "the preset is named in the title");
+  // The model chip follows the same rule, with the model's name in its title.
+  assert.match(chatInput, /iconOnly/, "the composer's model chip is icon-only");
+  assert.match(modelSource, /const triggerTitle = iconOnly \? `\$\{currentName\} — \$\{buttonTitle\}` : buttonTitle/,
+    "the model's name rides in the title and aria-label");
+  assert.match(modelSource, /\{!iconOnly && <span/, "the name is only printed when the label is asked for");
 });

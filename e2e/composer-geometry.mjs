@@ -9,23 +9,77 @@ export async function checkComposerGeometry(page) {
   const previousSize = await card.evaluate(el => el.style.getPropertyValue('--chat-content-font-size'));
   const heights = [];
   try {
-    // Empty placeholder, entered text and the first line of a tall draft must
-    // stay centered on the SVG, across the supported font-size range.
+    // The text area owns the card's whole width and every control shares one row
+    // under it. Across the supported font sizes: the row is one row, the text is a
+    // full-width block above it, the control buttons print no words, and an empty
+    // box never grows a scrollbar.
     for (const size of [12, 14, 20, 24]) {
       await card.evaluate((el, size) => el.style.setProperty('--chat-content-font-size', `${size}px`), size);
       for (const draft of ['', '给 Pi 发消息…', 'First line\nSecond line\nThird line']) {
         await input.fill(draft);
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-        const alignment = await card.evaluate(el => {
-          const text = el.querySelector('textarea'), svg = el.querySelector('.composer-attach-button svg');
-          const style = getComputedStyle(text), box = text.getBoundingClientRect(), icon = svg.getBoundingClientRect();
-          return { delta: icon.y + icon.height / 2 - (box.y + parseFloat(style.paddingTop) + parseFloat(style.lineHeight) / 2),
-            placeholderLine: parseFloat(getComputedStyle(text, '::placeholder').lineHeight), line: parseFloat(style.lineHeight),
-            overflow: text.scrollHeight - text.clientHeight };
+        const layout = await card.evaluate(el => {
+          const text = el.querySelector('textarea');
+          const actions = el.querySelector('.chat-composer-actions');
+          const cardBox = el.getBoundingClientRect();
+          const box = text.getBoundingClientRect();
+          const rowBox = actions.getBoundingClientRect();
+          const cardStyle = getComputedStyle(el);
+          const editorStyle = getComputedStyle(el.querySelector('.chat-composer-editor'));
+          const inset = parseFloat(cardStyle.paddingLeft) + parseFloat(cardStyle.borderLeftWidth);
+          // Buttons inside a popup (the phone's More strip floats above the row on an
+          // absolutely positioned cell) are not in the row; the ones in flow are.
+          const inPopup = (button) => {
+            let node = button.parentElement;
+            while (node && node !== actions) {
+              const position = getComputedStyle(node).position;
+              if (position === 'absolute' || position === 'fixed') return true;
+              node = node.parentElement;
+            }
+            return false;
+          };
+          const centres = [...actions.querySelectorAll('button')]
+            .filter((button) => !inPopup(button))
+            .map((button) => {
+              const r = button.getBoundingClientRect();
+              return r.y + r.height / 2;
+            });
+          // Every option-menu control in the row (reasoning, tools, model) must be
+          // icon-only: no words printed, the state carried in the title.
+          const labelled = [...actions.querySelectorAll('.chat-composer-controls button[aria-haspopup="listbox"]')]
+            .map(b => ({
+              name: b.getAttribute('aria-label') || 'control',
+              text: b.textContent.trim(),
+              title: b.getAttribute('title') || '',
+            }));
+          return {
+            widthGap: cardBox.width - box.width - inset * 2
+              - parseFloat(editorStyle.paddingLeft) - parseFloat(editorStyle.paddingRight),
+            rowSpread: centres.length ? Math.max(...centres) - Math.min(...centres) : 99,
+            flowCount: centres.length,
+            textAboveRow: box.bottom <= rowBox.top + 0.5,
+            placeholderLine: parseFloat(getComputedStyle(text, '::placeholder').lineHeight),
+            line: parseFloat(getComputedStyle(text).lineHeight),
+            overflow: text.scrollHeight - text.clientHeight,
+            labelled,
+          };
         });
-        assert.ok(Math.abs(alignment.delta) < 0.6, `Attach and first line must align at ${size}px: ${JSON.stringify(alignment)}`);
-        assert.ok(Math.abs(alignment.placeholderLine - alignment.line) < 0.1, 'Placeholder must use the actual text line height');
-        if (!draft) assert.ok(alignment.overflow <= 1, `Empty input must not have a vertical scrollbar at ${size}px / ${page.viewportSize().width}px: ${JSON.stringify(alignment)}`);
+        assert.ok(Math.abs(layout.widthGap) < 1, `The text area spans the card at ${size}px: ${JSON.stringify(layout)}`);
+        assert.ok(layout.rowSpread < 1, `Attach, the controls and Send share one row at ${size}px: spread ${layout.rowSpread}`);
+        assert.ok(layout.flowCount >= 2, `The row holds at least the attach button and Send at ${size}px: ${layout.flowCount}`);
+        assert.ok(layout.textAboveRow, `The text sits above the control row at ${size}px: ${JSON.stringify(layout)}`);
+        if (page.viewportSize().width >= 700) {
+          // A phone folds these into the More menu, so only the wide passes can
+          // demand they are in the row. The model chip is not always there (a chat
+          // session, an empty model list), the reasoning and tools controls are.
+          assert.ok(layout.labelled.length >= 2, `Reasoning and tools are in the row at ${size}px: ${JSON.stringify(layout.labelled)}`);
+        }
+        for (const control of layout.labelled) {
+          assert.equal(control.text, "", `The ${control.name} button is icon-only at ${size}px`);
+          assert.ok((control.title || "").length > 0, `The ${control.name} button names its state in the title at ${size}px`);
+        }
+        assert.ok(Math.abs(layout.placeholderLine - layout.line) < 0.1, 'Placeholder must use the actual text line height');
+        if (!draft) assert.ok(layout.overflow <= 1, `Empty input must not have a vertical scrollbar at ${size}px / ${page.viewportSize().width}px: ${JSON.stringify(layout)}`);
         if (size === 14) {
           const theme=await page.locator('html').evaluate(el=>el.classList.contains('dark')?'dark':'light');
           const width=page.viewportSize().width;

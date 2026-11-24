@@ -26,6 +26,13 @@ interface ModelSelectorProps {
   isAutoSelection?: boolean;
   ariaLabel?: string;
   variant?: "toolbar" | "field";
+  /**
+   * Icon only, for a row that has no room for words (the composer's control row,
+   * shared with attach and Send). The model's name, which the chip used to print,
+   * moves into `title` and `aria-label` so it is still readable — by hover, and by
+   * a screen reader.
+   */
+  iconOnly?: boolean;
   placement?: "up" | "auto";
   /** The model new sessions start with; its row gets a filled star. */
   defaultValue?: { provider: string; modelId: string } | null;
@@ -66,6 +73,7 @@ export function ModelSelector({
   isAutoSelection = false,
   ariaLabel,
   variant = "toolbar",
+  iconOnly = false,
   placement = "up",
   defaultValue,
   onSetDefault,
@@ -93,6 +101,8 @@ export function ModelSelector({
     ? sortedOptions.find((option) => option.modelId === value.modelId && option.provider === value.provider)?.name ?? value.modelId
     : emptyLabel ?? (sortedOptions.length > 0 ? "Select model" : "No models"));
   const buttonTitle = busy ? "Switching model" : locked ? currentName : sortedOptions.length > 0 || onClear ? "Change model" : "No available models";
+  // With no label to read, the trigger says the model's own name (hover and a11y tree).
+  const triggerTitle = iconOnly ? `${currentName} — ${buttonTitle}` : buttonTitle;
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -148,6 +158,14 @@ export function ModelSelector({
         maxWidth: isMobile ? "100%" : "min(220px, 100%)",
         height: 32,
         padding: isMobile ? "8px 10px" : "8px 12px",
+        ...(iconOnly ? {
+          // A square icon button, the size every other control in the row is.
+          width: 32,
+          maxWidth: "none",
+          gap: 0,
+          padding: 0,
+          justifyContent: "center",
+        } : null),
         overflow: "hidden",
         border: "none",
         borderRadius: "var(--radius-md)",
@@ -185,12 +203,12 @@ export function ModelSelector({
     >
       <button
         type="button"
-        aria-label={ariaLabel ?? buttonTitle}
+        aria-label={ariaLabel ?? triggerTitle}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-busy={busy || undefined}
         disabled={locked}
-        title={buttonTitle}
+        title={triggerTitle}
         style={buttonStyle}
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
@@ -229,7 +247,7 @@ export function ModelSelector({
             <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
           </svg>
         )}
-        <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentName}</span>
+        {!iconOnly && <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentName}</span>}
         {variant === "field" && (
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-dim)" }}>
             <polyline points="6 9 12 15 18 9" />
