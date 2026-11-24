@@ -143,6 +143,23 @@ test("a branch row gets the composer chip's two buttons, and the plain row does 
   assert.ok(!plain.includes(">sidebar.worktrees</"));
 });
 
+test("the remote tag never lands on the row's icons", async () => {
+  // The overlap the user screenshotted: a long name and the `remote` tag share
+  // the row's button, and the button's right edge is the icon column. The tag
+  // used to be pushed past that edge and painted over the branch/worktree glyphs.
+  const css = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+  const chip = render({ view: "branches", onCreateWorktreeFromBranch: () => {} });
+  assert.match(chip, /<span class="sidebar-project-context-menu-branch-name">remote-only<\/span>/,
+    "the name is its own element, so it can be the flexible one");
+  assert.match(css, /\.sidebar-project-context-menu-branch-name \{[\s\S]*?min-width: 4em;[\s\S]*?overflow-wrap: anywhere;/,
+    "the name breaks anywhere and keeps a floor, so it is never squeezed to a strip");
+  assert.match(css, /\.sidebar-project-context-menu-branch-tag \{[\s\S]*?flex: 0 1 auto;[\s\S]*?text-overflow: ellipsis;/,
+    "the tag is the part that gives way");
+  assert.match(css, /\.sidebar-project-context-menu-row--branch > button\[role="menuitem"\] \{[\s\S]*?overflow: hidden;/,
+    "the last line of defence: the button clips, nothing reaches the icons");
+  assert.match(css, /\.sidebar-project-context-menu-branch-actions \{[\s\S]*?flex: 0 0 auto;/);
+});
+
 test("the new-worktree page names the branch it starts from", () => {
   const plain = render({ view: "new-worktree", newBranch: "test-upload" });
   assert.ok(!plain.includes("sidebar.newWorktreeFrom("), "from HEAD: no base sentence");

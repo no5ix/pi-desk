@@ -276,6 +276,15 @@ composer was sitting in, once removed, sends the composer to the project's main
 checkout. The sidebar's "…" menu keeps folder actions only: `Switch branch` and
 `Worktrees…` are gone from it, DOM and native, so the app has one branching surface.
 
+A branch row is `[name] [remote|worktree tag]` inside one button, with the two
+action icons after it. The name is the flexible element (`min-width: 4em`,
+`overflow-wrap: anywhere`) and the tag is the element that gives way (it shrinks and
+ellipsizes); the button clips. A long name like
+`claude/conversation-list-optimization-9ec111` used to push the `remote` tag past the
+button's edge, where it painted over the icons — `e2e/branch-menu-rows.mjs` measures
+the tag against the icons in a real browser, and its last pass removes the rules to
+prove the measurement can see that overlap.
+
 The header's row reads `[folder] project  [branch|worktree icon] branch  [clock]  [subagents] N [✓] N [⚠] N [↻] N`. The glyph is the
 worktree one when the selected session runs in a linked worktree (`SessionInfo.isWorktree`),
 because the same branch name can live in the repo and in a worktree. The counts are the

@@ -411,7 +411,7 @@ export function ProjectContextMenuPanel({
                         ? t("sidebar.branchRemoteTitle")
                         : t("sidebar.switchBranchTitle", { branch: name })}
                   >
-                    <span>{name}</span>
+                    <span className="sidebar-project-context-menu-branch-name">{name}</span>
                     {holder && <span className="sidebar-project-context-menu-branch-tag">worktree</span>}
                     {remote && !holder && <span className="sidebar-project-context-menu-branch-tag">{t("sidebar.remoteBranchTag")}</span>}
                     {switching && <span className="sidebar-project-context-menu-branch-spinner" aria-hidden="true">↻</span>}

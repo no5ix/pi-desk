@@ -382,7 +382,15 @@
   font-family: var(--font-ui);
 }
 .sidebar-project-context-menu-branch-tag {
+  /* The tag is short (`remote`, `worktree`, `main`) and it is the part that
+     gives way: it shrinks and ellipsizes, so the branch name keeps its width. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 6em;
   margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-dim);
   font-family: var(--font-ui);
   font-size: var(--fs-micro);
@@ -429,12 +437,27 @@
   align-items: center;
   gap: 6px;
   font-family: var(--font-mono);
+  /* The name and the `remote` / `worktree` tag share this box. Clipping is the
+     last line of defence: the row's two icons sit right after it, and a tag
+     that outgrows the box used to paint on top of them. */
+  overflow: hidden;
+}
+
+/* A long name like claude/settings-layout-review-8265af has to give way, not
+   the tag: `overflow-wrap: anywhere` lets it break inside a word, while the
+   4em floor stops the flex line from squeezing a branch name into a vertical
+   strip when the tag is wide. The tag is the thing that ellipsizes. */
+.sidebar-project-context-menu-branch-name {
+  flex: 1 1 auto;
+  min-width: 4em;
+  overflow-wrap: anywhere;
 }
 .sidebar-project-context-menu-branch-actions {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
   gap: 0;
+  padding-left: 4px;
 }
 .sidebar-project-context-menu .sidebar-project-context-menu-branch-action {
   display: flex;
