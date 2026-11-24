@@ -9,10 +9,15 @@
 // and drives them through hooks/useProjectWorktreeActions.ts, so the branch
 // list, the "Fetch from remote" row, the worktree list and the new-worktree
 // form are the same code the sidebar's "…" menu has always used. The chip adds
-// the two buttons per branch the composer wants: the branch icon checks that
-// branch out in this checkout; the worktree icon makes a branch from it in
+// the two buttons per branch: the branch icon checks that branch out in this
+// checkout — or, when a worktree already holds it, takes the session to that
+// worktree; the worktree icon makes a branch from it in
 // `<repo>-worktrees/<branch>` and moves this new session into that folder,
 // leaving the checkout the composer was opened from on its own branch.
+//
+// A click opens the app's menu, not the OS popup: the row carries buttons, and
+// a long branch list is narrowable from its filter box. The desktop shell keeps
+// the native popup on right-click.
 //
 // ChatInput (upstream-owned) mounts this and nothing else: the branch name, the
 // git calls and the menu state all live here.
@@ -155,6 +160,12 @@ export function ComposerBranchChip({
       close();
       onBranchSwitched?.(switched);
     },
+    onBranchInWorktree: (_cwd, _branch, path) => {
+      // The branch lives in that worktree: the project label stays, the session
+      // works in that folder, and the header's branch icon becomes the worktree's.
+      close();
+      onWorktreeSelected?.(path);
+    },
   });
 
   const openWorktreeForm = useCallback((from: string) => {
@@ -204,10 +215,11 @@ export function ComposerBranchChip({
       t,
       onWorktrees: showWorktrees,
       onSwitch: (_root, name, loaded) => {
-        void actions.switchBranch(cwd, name, loaded, cwd).then((ok) => {
-          // A native popup has no place left for git's answer; the DOM menu at
-          // the same point carries it.
-          if (ok === null) openMenuAt(BRANCHES_VIEW, at);
+        void actions.switchBranch(cwd, name, loaded, cwd).then((result) => {
+          // A native popup has no place left for git's answer; the DOM menu at the
+          // same point carries it. A branch that lives in another worktree is a
+          // success (the session moved there), so there is nothing left to show.
+          if (result.branch === null && result.worktreePath === null) openMenuAt(BRANCHES_VIEW, at);
         });
       },
       onFetch: (root) => void actions.fetchBranches(root),
@@ -233,10 +245,9 @@ export function ComposerBranchChip({
     }
     actions.reset();
     setBaseBranch(null);
-    if (canUseNativeMenu()) {
-      openNativeMenu();
-      return;
-    }
+    // The app's own menu, on every platform: a branch row carries two buttons,
+    // which a native popup cannot host. The desktop shell keeps the OS popup for
+    // the right-click, where a plain list of names is what a pointer wants.
     openMenu();
   }
 
@@ -255,6 +266,13 @@ export function ComposerBranchChip({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={openChipMenu}
+        onContextMenu={(event) => {
+          if (!canUseNativeMenu()) return;
+          event.preventDefault();
+          actions.reset();
+          setBaseBranch(null);
+          openNativeMenu();
+        }}
       >
         <BranchIcon />
         <span>{branch}</span>

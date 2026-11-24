@@ -14,6 +14,8 @@
 import { AppCombobox } from "./AppCombobox";
 import { BranchIcon, WorktreeIcon } from "./GitIcons";
 import type { RefObject } from "react";
+import { useState } from "react";
+import { useRef } from "react";
 import { createPortal } from "react-dom";
 import { isImeComposing } from "@/lib/ime";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
@@ -45,6 +47,19 @@ export type ProjectMenuView = "actions" | "branches" | "worktrees" | "new-worktr
  * branches arrive in a normal window, so the menu is born at the height it keeps.
  */
 const BRANCH_SKELETON_ROWS = 8;
+/** Below this many branches, reading the list is faster than typing in a box. */
+const BRANCH_FILTER_THRESHOLD = 6;
+
+/**
+ * The branch list narrowed by the filter box: a case-insensitive substring of the
+ * branch name, across local and remote rows alike. A blank query keeps the list as
+ * the server sent it (the order the user reads from the top: current branch first).
+ */
+export function filterBranchRows<T extends { name: string }>(rows: T[], query: string): T[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return rows;
+  return rows.filter((row) => row.name.toLowerCase().includes(needle));
+}
 
 /** A pending worktree removal; `force` once git said it needs --force. */
 export interface WorktreeRemoval {
@@ -308,6 +323,16 @@ export function ProjectContextMenuPanel({
   const data = branchMenu?.root === projectRoot ? branchMenu : null;
   const loaded = Boolean(data?.loaded);
   const checkout = data ? currentCheckout(data.worktrees, selectedCwd) : undefined;
+  // The branch page's filter text. A menu opened on another page (or re-opened)
+  // starts with an empty box: a leftover word would hide branches silently.
+  const [branchFilter, setBranchFilter] = useState("");
+  const lastViewRef = useRef(view);
+  if (lastViewRef.current !== view) {
+    // Leaving the branch page drops the filter: coming back must not show a list
+    // quietly narrowed by a word typed a page ago.
+    lastViewRef.current = view;
+    setBranchFilter("");
+  }
   const loadingHint = branchLoading && !loaded && (
     <div className="sidebar-project-context-menu-hint">…</div>
   );
@@ -377,6 +402,15 @@ export function ProjectContextMenuPanel({
       </>
     );
   } else if (view === "branches") {
+    // The list a project can have: 4 branches, or 40. The filter box is what
+    // makes the long case usable, so it appears once the list is long enough to
+    // need it (and the menu stays a plain list for a small repository).
+    const branchRows = [
+      ...data?.branches.map((name) => ({ name, remote: false })) ?? [],
+      ...data?.remoteBranches.map((name) => ({ name, remote: true })) ?? [],
+    ];
+    const needle = branchFilter.trim().toLowerCase();
+    const visibleRows = filterBranchRows(branchRows, branchFilter);
     body = (
       <>
         {back(t("sidebar.moreActions"), onBackToActions)}
@@ -411,8 +445,18 @@ export function ProjectContextMenuPanel({
                 <span>{fetching ? t("sidebar.fetchingBranches") : t("sidebar.fetchBranches")}</span>
               </button>
             )}
-            {[...data.branches.map((name) => ({ name, remote: false })),
-              ...data.remoteBranches.map((name) => ({ name, remote: true }))]
+            {data.isGit && branchRows.length > BRANCH_FILTER_THRESHOLD && (
+              <input
+                className="sidebar-project-context-menu-filter"
+                type="text"
+                value={branchFilter}
+                placeholder={t("sidebar.filterBranches")}
+                aria-label={t("sidebar.filterBranches")}
+                title={t("sidebar.filterBranchesTitle")}
+                onChange={(event) => setBranchFilter(event.target.value)}
+              />
+            )}
+            {visibleRows
               .map(({ name, remote }) => {
                 const isCurrent = checkout?.branch === name;
                 const holder = data.worktrees.find((w) => w.branch === name && w.path !== checkout?.path);
@@ -440,7 +484,8 @@ export function ProjectContextMenuPanel({
                 if (!onCreateWorktreeFromBranch) return row;
                 // The composer's chip: the name checks the branch out, and the two
                 // buttons after it say what else the same branch can become — a
-                // checkout here, or a worktree of its own next to the folder.
+                // checkout here, a worktree of its own next to the folder, or (when a
+                // worktree already holds it) that checkout itself.
                 return (
                   <div key={`${remote ? "remote:" : "local:"}${name}`} className="sidebar-project-context-menu-row sidebar-project-context-menu-row--branch">
                     {row}
@@ -449,8 +494,12 @@ export function ProjectContextMenuPanel({
                         type="button"
                         className="sidebar-project-context-menu-branch-action"
                         disabled={switchingBranch !== null || isCurrent}
-                        title={t("sidebar.checkOutBranchTitle", { branch: name })}
-                        aria-label={t("sidebar.checkOutBranchTitle", { branch: name })}
+                        title={holder
+                          ? t("sidebar.openWorktreeForBranchTitle", { branch: name })
+                          : t("sidebar.checkOutBranchTitle", { branch: name })}
+                        aria-label={holder
+                          ? t("sidebar.openWorktreeForBranchTitle", { branch: name })
+                          : t("sidebar.checkOutBranchTitle", { branch: name })}
                         onClick={() => onSwitchBranch(name)}
                       >
                         <BranchIcon />
@@ -471,6 +520,9 @@ export function ProjectContextMenuPanel({
               })}
             {data.branches.length === 0 && data.remoteBranches.length === 0 && (
               <div className="sidebar-project-context-menu-hint">{t("sidebar.noOtherBranches")}</div>
+            )}
+            {needle && visibleRows.length === 0 && (
+              <div className="sidebar-project-context-menu-hint">{t("sidebar.noBranchMatches", { query: branchFilter.trim() })}</div>
             )}
             {/* The composer's chip is the app's one branching surface, so the
                 worktree list (switch a checkout, remove one) hangs off it too. */}

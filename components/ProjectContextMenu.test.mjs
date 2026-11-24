@@ -11,6 +11,7 @@ const {
   ProjectContextMenuPanel,
   createProjectWorktree,
   currentCheckout,
+  filterBranchRows,
   fetchProjectBranchMenu,
   fetchRemoteBranches,
   removeProjectWorktree,
@@ -127,10 +128,16 @@ test("a branch row gets the composer chip's two buttons, and the plain row does 
   assert.ok(!plain.includes("sidebar-project-context-menu-branch-actions"), "the sidebar's own page keeps the plain row");
   const chip = render({ view: "branches", onCreateWorktreeFromBranch: () => {} });
   assert.match(chip, /sidebar-project-context-menu-row sidebar-project-context-menu-row--branch/);
-  // One pair per branch: check it out, or make a worktree from it. Each button
-  // names itself twice (title and aria-label), so four branches mean eight hits.
-  assert.equal(chip.match(/sidebar\.checkOutBranchTitle\(/g)?.length, 8, "main, feature, dev, remote-only");
+  // One pair per branch: check it out (or open the worktree that already holds it),
+  // and the worktree it can start. Each button names itself twice (title and
+  // aria-label), so four branches mean eight worktree hits and six checkout hits:
+  // `main` is checked out in the main checkout, so its branch button opens that folder.
+  assert.equal(chip.match(/sidebar\.checkOutBranchTitle\(/g)?.length, 6, "feature, dev, remote-only");
+  assert.equal(chip.match(/sidebar\.openWorktreeForBranchTitle\(/g)?.length, 2, "main lives in another worktree");
   assert.equal(chip.match(/sidebar\.worktreeFromBranchTitle\(/g)?.length, 8);
+  const mainButton = chip.match(/<button[^>]*sidebar\.openWorktreeForBranchTitle\(main\)[^>]*>/);
+  assert.ok(mainButton, "the branch held in a worktree gets the worktree-opening button");
+  assert.ok(!/disabled/.test(mainButton[0]), "opening the worktree that holds it is allowed");
   // The branch already checked out (the render's selectedCwd is the feature
   // worktree) cannot be checked out again.
   const featureButton = chip.match(/<button[^>]*sidebar\.checkOutBranchTitle\(feature\)[^>]*>/);
@@ -141,6 +148,35 @@ test("a branch row gets the composer chip's two buttons, and the plain row does 
   // The worktree list hangs off the chip's branch page, where a checkout is switched or removed.
   assert.ok(chip.includes(">sidebar.worktrees</"), "Worktrees… opens from the branch page");
   assert.ok(!plain.includes(">sidebar.worktrees</"));
+});
+
+test("the branch list narrows from its filter box once it is long", () => {
+  const many = {
+    root: ROOT, isGit: true,
+    branches: ["main", "feature", "dev", "claude/settings-layout-review-8265af", "fix/a", "fix/b", "fix/c"],
+    remoteBranches: ["origin/only"],
+    worktrees: [MAIN, FEATURE],
+    loaded: true,
+  };
+  const long = render({ view: "branches", branchMenu: many, onCreateWorktreeFromBranch: () => {} });
+  assert.ok(long.includes("sidebar-project-context-menu-filter"), "a seven-branch list gets a filter box");
+  assert.ok(long.includes('aria-label="sidebar.filterBranches"'), "the box is named");
+  const short = render({ view: "branches", onCreateWorktreeFromBranch: () => {} });
+  assert.ok(!short.includes("sidebar-project-context-menu-filter"), "a four-branch list is read, not filtered");
+
+  // The matcher itself: case-insensitive substring, local and remote rows alike,
+  // and a blank query changes nothing (the order the list arrives in).
+  const rows = [
+    { name: "main", remote: false },
+    { name: "Claude/Settings-Layout-Review", remote: false },
+    { name: "fix/main-bak", remote: false },
+    { name: "only-on-remote", remote: true },
+  ];
+  assert.deepEqual(filterBranchRows(rows, "main").map((r) => r.name), ["main", "fix/main-bak"]);
+  assert.deepEqual(filterBranchRows(rows, "  CLAUDE/settings ").map((r) => r.name), ["Claude/Settings-Layout-Review"]);
+  assert.deepEqual(filterBranchRows(rows, "remote").map((r) => r.name), ["only-on-remote"]);
+  assert.equal(filterBranchRows(rows, "nope").length, 0);
+  assert.equal(filterBranchRows(rows, "   ").length, rows.length, "a blank query narrows nothing");
 });
 
 test("the remote tag never lands on the row's icons", async () => {

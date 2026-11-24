@@ -592,6 +592,10 @@ export const zhTWLocale: LocalePlugin = {
     "sidebar.create": "建立",
     // 輸入框的分支按鈕：列出的分支變成工作的兩種方式。
     "sidebar.checkOutBranchTitle": "在目前簽出中切換到 {branch}",
+    "sidebar.openWorktreeForBranchTitle": "{branch} 已在某個 worktree 中簽出 — 直接到該目錄工作",
+    "sidebar.filterBranches": "篩選分支",
+    "sidebar.filterBranchesTitle": "輸入以縮小清單",
+    "sidebar.noBranchMatches": "沒有符合「{query}」的分支",
     "sidebar.worktreeFromBranchTitle": "從 {branch} 新增 worktree",
     "sidebar.newWorktreeFrom": "以「{branch}」為起點新增分支，並放在獨立目錄中。",
     "sidebar.worktreeCreated": "worktree「{branch}」已就緒：{path}",

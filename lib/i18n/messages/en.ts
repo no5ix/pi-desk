@@ -592,6 +592,10 @@ export const enLocale: LocalePlugin = {
     "sidebar.create": "Create",
     // The composer's branch chip: two ways a listed branch becomes the work.
     "sidebar.checkOutBranchTitle": "Check out {branch} in this checkout",
+    "sidebar.openWorktreeForBranchTitle": "{branch} is checked out in a worktree — work in that folder",
+    "sidebar.filterBranches": "Filter branches",
+    "sidebar.filterBranchesTitle": "Type to narrow the list",
+    "sidebar.noBranchMatches": "No branch matches “{query}”",
     "sidebar.worktreeFromBranchTitle": "New worktree from {branch}",
     "sidebar.newWorktreeFrom": "Branch “{branch}” starts the new branch, in a folder of its own.",
     "sidebar.worktreeCreated": "Worktree “{branch}” is ready at {path}",

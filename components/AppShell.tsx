@@ -3215,7 +3215,7 @@ export function AppShell() {
                 : undefined}
               projectOptions={selectedSession || isChatWorkspaceActive ? [] : availableProjectRoots}
               onProjectChange={selectedSession || isChatWorkspaceActive ? undefined : handleProjectChangeFromComposer}
-              onBranchChipCwd={!isChatWorkspaceActive && !selectedSession && !pageOpen ? activeCwd : null}
+              onBranchChipCwd={!isChatWorkspaceActive && !selectedSession && !pageOpen ? newSessionCwd ?? activeCwd : null}
               onBranchSwitched={handleComposerBranchSwitched}
               onComposerWorktreeCreated={handleComposerWorktreeCreated}
               onComposerWorktreeSelected={handleComposerWorktreeSelected}

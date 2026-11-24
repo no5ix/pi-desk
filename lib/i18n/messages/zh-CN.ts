@@ -592,6 +592,10 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.create": "创建",
     // 输入框的分支按钮：列出的分支变成工作的两种方式。
     "sidebar.checkOutBranchTitle": "在当前检出中切换到 {branch}",
+    "sidebar.openWorktreeForBranchTitle": "{branch} 已在某个 worktree 中检出 — 直接到那个目录工作",
+    "sidebar.filterBranches": "筛选分支",
+    "sidebar.filterBranchesTitle": "输入以缩小列表",
+    "sidebar.noBranchMatches": "没有匹配“{query}”的分支",
     "sidebar.worktreeFromBranchTitle": "从 {branch} 新建 worktree",
     "sidebar.newWorktreeFrom": "以「{branch}」为起点新建分支，并放在独立目录中。",
     "sidebar.worktreeCreated": "worktree「{branch}」已就绪：{path}",

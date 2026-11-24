@@ -453,6 +453,30 @@
   overflow-wrap: anywhere;
 }
 
+/* A project can carry forty branches, and the list is only usable if it can be
+   narrowed. The same mono shape as the worktree form's field, one step quieter:
+   this box filters the list, it does not ask for an answer. */
+.sidebar-project-context-menu-filter {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% - 12px);
+  margin: 2px 6px 4px;
+  padding: 5px 8px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-sm);
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.sidebar-project-context-menu-filter:focus {
+  border-color: var(--accent);
+}
+.sidebar-project-context-menu-filter::placeholder {
+  color: var(--text-dim);
+}
+
 /* The branch page's loading shape: bars the height and rhythm of real branch
    rows, so the menu opens at the height the list settles at and the placement
    computed from it does not move when the branches arrive. */
@@ -5728,7 +5752,7 @@ html.dark {
   align-items: center;
   gap: 2px;
   min-width: 0;
-  margin-top: var(--composer-inset);
+  /* margin-top: var(--composer-inset); */
 }
 
 .chat-composer-actions > .chat-composer-controls {
@@ -5739,7 +5763,8 @@ html.dark {
 
 .chat-composer-editor > .chat-input-textarea {
   box-sizing: border-box;
-  padding: 0;
+  padding-right: 3px;
+  margin: 8px;
 }
 
 /* Focus only lifts the hairline a step; the caret already says where typing

@@ -25,12 +25,18 @@ interface ProjectWorktreeCallbacks {
   onWorktreeRemoved: (projectRoot: string, path: string) => void;
   /** A branch was checked out in `cwd`. */
   onBranchSwitched?: (cwd: string, branch: string) => void;
+  /**
+   * A branch the user picked is checked out in *another* worktree, so it cannot be
+   * checked out here. The row's tip promises that worktree, so the caller takes the
+   * session there (`path`) - the project stays the same, the folder changes.
+   */
+  onBranchInWorktree?: (cwd: string, branch: string, path: string) => void;
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export function useProjectWorktreeActions({
-  onBranchesFetched, onWorktreeCreated, onWorktreeRemoved, onBranchSwitched,
+  onBranchesFetched, onWorktreeCreated, onWorktreeRemoved, onBranchSwitched, onBranchInWorktree,
 }: ProjectWorktreeCallbacks) {
   const [busy, setBusy] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -112,24 +118,26 @@ export function useProjectWorktreeActions({
 
   /**
    * Checks `branch` out in `cwd`'s checkout. A branch that belongs to another
-   * worktree answers with git's own refusal — the worktree list is the way
-   * there — so the caller passes the branch lists it is showing.
+   * worktree cannot be checked out here, so the caller is told to take that
+   * worktree instead (the row's tip promises exactly that) and git is never asked.
+   * The caller passes the branch lists it is showing.
    */
   const switchBranch = useCallback(async (
     cwd: string,
     branch: string,
     loaded?: ProjectBranchMenuState,
     checkoutOf?: string,
-  ): Promise<string | null> => {
-    if (switchingBranch) return null;
+  ): Promise<{ branch: string | null; worktreePath: string | null }> => {
+    if (switchingBranch) return { branch: null, worktreePath: null };
     setSwitchingBranch(branch);
     setError(null);
     let failure: string | null = null;
     let checkedOut: string | null = null;
+    let worktreePath: string | null = null;
     try {
       const holder = loaded?.worktrees.find((w) => w.branch === branch && w.path !== (checkoutOf ?? cwd));
       if (holder) {
-        failure = `Branch '${branch}' is already checked out at ${holder.path}`;
+        worktreePath = holder.path;
       } else {
         const res = await fetch("/api/worktrees", {
           method: "PUT",
@@ -150,12 +158,16 @@ export function useProjectWorktreeActions({
     }
     if (failure) {
       setError(failure);
-      return null;
+      return { branch: null, worktreePath: null };
     }
     setError(null);
+    if (worktreePath) {
+      onBranchInWorktree?.(cwd, branch, worktreePath);
+      return { branch: null, worktreePath };
+    }
     if (checkedOut) onBranchSwitched?.(cwd, checkedOut);
-    return checkedOut;
-  }, [onBranchSwitched, switchingBranch]);
+    return { branch: checkedOut, worktreePath: null };
+  }, [onBranchSwitched, onBranchInWorktree, switchingBranch]);
 
   return {
     busy,

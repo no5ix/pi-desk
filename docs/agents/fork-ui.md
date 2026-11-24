@@ -359,6 +359,36 @@ composer was sitting in, once removed, sends the composer to the project's main
 checkout. The sidebar's "…" menu keeps folder actions only: `Switch branch` and
 `Worktrees…` are gone from it, DOM and native, so the app has one branching surface.
 
+The chip opens the **app's** menu on click, on every platform: a branch row carries two
+buttons, which a native popup cannot host, and a long list wants a box to narrow it. The
+desktop shell keeps the OS popup for the **right-click**, where a plain list of names is
+what a pointer wants (`onContextMenu` → `showNativeProjectBranchMenu`). The chip reads
+`newSessionCwd ?? activeCwd` (`AppShell`'s `onBranchChipCwd`): the folder the composer's
+project chip names. Reading `activeCwd` alone listed the *previously selected* session's
+branches under a chip labelled with the new session's project.
+
+A branch checked out in **another** worktree cannot be checked out here, and git's refusal
+is a useless answer, so `useProjectWorktreeActions.switchBranch` never asks git: it finds
+the holder and calls `onBranchInWorktree`, and the chip selects that worktree — the header's
+project label does not change, the session works in that folder, and the header's branch
+glyph becomes the worktree's (`SessionInfo.isWorktree`). The row says it twice: the name's
+tip ("… is already checked out in another worktree — open that worktree") and the icon's
+title ("… is checked out in a worktree — work in that folder", `sidebar.openWorktreeForBranchTitle`).
+`switchBranch` resolves to `{ branch, worktreePath }`: the native path reopens the DOM menu
+at the same point only when **both** are null, because a worktree move is a success with
+nothing to report.
+
+Above a list longer than `BRANCH_FILTER_THRESHOLD` (6 branches) the branch page carries a
+filter box (`sidebar.filterBranches`): a case-insensitive substring of the branch name across
+local and remote rows alike (`filterBranchRows`, exported and unit-tested), a hint that names
+the query when nothing matches, and a filter dropped when the page changes — a word typed a
+page ago must not hide branches silently. The box is not a `menuitem`, so the page's arrow
+keys keep walking the branches, it never takes the caret on open, and Escape stays the menu's
+(it closes the page, as it closes every menu: `useMenuNavigation` stops the key before the
+box can see it, so a keydown handler on the input would never run). `e2e/branch-menu-filter.mjs`
+types into a twelve-branch fixture and reads the rows back; its `?short=1` pass requires the
+box to be **absent** for three branches, so the check cannot pass by always having a box.
+
 A branch row is `[name] [remote|worktree tag]` inside one button, with the two
 action icons after it. The name is the flexible element (`min-width: 4em`,
 `overflow-wrap: anywhere`) and the tag is the element that gives way (it shrinks and
