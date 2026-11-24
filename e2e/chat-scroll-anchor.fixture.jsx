@@ -30,7 +30,7 @@ function Row({ index }) {
   const [grown, setGrown] = useState(false);
   useEffect(() => {
     if (!GROW) return undefined;
-    const timer = window.setTimeout(() => setGrown(true), 180);
+    const timer = window.setTimeout(() => setGrown(true), GROW_DELAY);
     return () => window.clearTimeout(timer);
   }, []);
   return (
@@ -49,8 +49,16 @@ function Row({ index }) {
   );
 }
 
-const GROW = typeof window !== "undefined" && new URL(window.location.href).searchParams.get("grow") === "1";
-const BROKEN = typeof window !== "undefined" && new URL(window.location.href).searchParams.get("broken") === "1";
+const PARAMS = typeof window !== "undefined" ? new URL(window.location.href).searchParams : new URLSearchParams();
+const GROW = PARAMS.get("grow") === "1";
+const BROKEN = PARAMS.get("broken") === "1";
+/**
+ * When the content above the anchor grows, and for how long the anchor keeps
+ * re-attaching. The defaults are the app's; `?growDelay=900&windowMs=600` is the
+ * control pass: a window shorter than the growth leaves the reader 220px away.
+ */
+const GROW_DELAY = Number(PARAMS.get("growDelay")) || 180;
+const ANCHOR_WINDOW = Number(PARAMS.get("windowMs")) || CHAT_SCROLL_ANCHOR_WINDOW_MS;
 
 export function Fixture() {
   const [oldest, setOldest] = useState(200);
@@ -72,7 +80,7 @@ export function Fixture() {
       };
     });
     const picked = pickScrollAnchor(measured, container.clientHeight);
-    anchorRef.current = picked ? { ...picked, until: Date.now() + CHAT_SCROLL_ANCHOR_WINDOW_MS } : null;
+    anchorRef.current = picked ? { ...picked, until: Date.now() + ANCHOR_WINDOW } : null;
   }, []);
 
   const applyAnchor = useCallback((container) => {
@@ -140,7 +148,7 @@ export function Fixture() {
     const timer = window.setTimeout(() => {
       anchorRef.current = null;
       observer.disconnect();
-    }, CHAT_SCROLL_ANCHOR_WINDOW_MS);
+    }, ANCHOR_WINDOW);
     return () => {
       observer.disconnect();
       window.clearTimeout(timer);

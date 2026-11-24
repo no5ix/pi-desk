@@ -793,11 +793,14 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       candidate instanceof HTMLElement && candidate.dataset.entryId === position.anchorEntryId
     ));
     if (element instanceof HTMLElement) {
+      // An app-driven jump owns the viewport: the prepend's anchor is done.
+      scrollAnchorRef.current = null;
       scrollToMessage(element, position.anchorOffset);
       setPendingScrollRestore(null);
       return;
     }
     if (restoreAnchorReady) {
+      scrollAnchorRef.current = null;
       scrollToBottom("instant");
       setPendingScrollRestore(null);
     }
@@ -836,6 +839,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     const selector = `[data-entry-id="${CSS.escape(pendingSearchScroll.entryId)}"]`;
     const element = scrollContainerRef.current?.querySelector<HTMLElement>(searchMessage?.role === "user" ? selector : `${selector} [data-search-target]`);
     if (element) {
+      scrollAnchorRef.current = null;
       scrollToMessage(element);
       element.animate([
         { backgroundColor: "var(--bg-selected)" },

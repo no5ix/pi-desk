@@ -15,8 +15,14 @@ export function getNextVisibleCount(currentVisibleCount: number, pageSize = VISI
   return currentVisibleCount + pageSize;
 }
 
-/** How long a prepend keeps re-attaching the viewport to its anchor row. */
-export const CHAT_SCROLL_ANCHOR_WINDOW_MS = 600;
+/**
+ * How long a prepend keeps re-attaching the viewport to its anchor row. Sized to
+ * outlast what grows the content *above* after the page lands: the highlight queue
+ * hands a long reply to Prism, an image reports its intrinsic size, a Mermaid block
+ * renders. Measured live, a 600 ms window left a 90px drift on a page whose content
+ * grew around the second mark.
+ */
+export const CHAT_SCROLL_ANCHOR_WINDOW_MS = 1500;
 
 /** One rendered message row, measured against the scroller's own box. */
 export interface ChatScrollRow {

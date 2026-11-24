@@ -128,7 +128,7 @@ const check = (ok, message) => {
   if (!ok) fails.push(message);
 };
 
-async function pages(caseName, query, { expectStable }) {
+async function pages(caseName, query, { expectStable, settle = 900 }) {
   const page = await browser.newPage({ viewport: { width: 900, height: 760 } });
   await page.goto(`${BASE}/?${query}`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".chat-scroll-container [data-entry-id]");
@@ -137,7 +137,7 @@ async function pages(caseName, query, { expectStable }) {
   const steps = [];
   for (let i = 0; i < 3; i += 1) {
     const before = await page.evaluate(SCROLL_TO_TOP);
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(settle);
     const after = await page.evaluate(MEASURE, before.id);
     steps.push({ before, after, shift: after.top - before.top, added: after.rows - before.rows });
   }
@@ -166,6 +166,14 @@ async function pages(caseName, query, { expectStable }) {
 const fixed = await pages("anchored", "grow=1", { expectStable: true });
 const broken = await pages("broken", "grow=1&broken=1", { expectStable: false });
 await pages("no-growth", "", { expectStable: true });
+// The window has to outlast the growth. Measured live, a 600ms window left 90px
+// of drift on a page whose content grew around the second mark (Prism, an image's
+// intrinsic size), because the anchor expired before the content did.
+const late = await pages("late-growth", "grow=1&growDelay=900", { expectStable: true, settle: 1400 });
+const lateShort = await pages("late-window-600", "grow=1&growDelay=900&windowMs=600", {
+  expectStable: false,
+  settle: 1400,
+});
 
 // The rule the app ships, as a browser reads it.
 const probe = await browser.newPage({ viewport: { width: 900, height: 760 } });
@@ -192,8 +200,9 @@ if (fails.length) {
   for (const f of fails) console.log("FAIL:", f);
   process.exit(1);
 }
+const maxShift = (steps) => Math.max(...steps.map((step) => Math.abs(step.shift)));
 console.log(
   `PASS: a prepended page keeps the reader on the row they were reading (max shift `
-  + `${Math.max(...fixed.map((s) => Math.abs(s.shift)))}px over 3 pages, with content growing above the anchor); `
-  + `without the re-attach the same pages throw the view ${Math.max(...broken.map((s) => Math.abs(s.shift)))}px away`,
+  + `${maxShift(fixed)}px over 3 pages, ${maxShift(late)}px when the content above grows 900ms later — `
+  + `without the re-attach the same pages throw the view ${maxShift(broken)}px away, and a 600ms anchor window ${maxShift(lateShort)}px away)`,
 );

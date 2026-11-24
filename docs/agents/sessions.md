@@ -57,8 +57,14 @@ The chat renders the last `visibleCount` rows, kept at least the loaded message 
   distance stays as the fallback for a window whose rows are all off-screen. It is not
   enough on its own: a page lands before deferred code highlighting, images, and a Mermaid
   render have grown the content above, so a `ResizeObserver` on the content box re-applies
-  the anchor for `CHAT_SCROLL_ANCHOR_WINDOW_MS` (600 ms), and `onWheel` / `onTouchStart` /
-  `onKeyDown` on the scroller drop it the moment the user scrolls — their scroll wins.
+  the anchor for `CHAT_SCROLL_ANCHOR_WINDOW_MS`, and `onWheel` / `onTouchStart` /
+  `onKeyDown` on the scroller drop it the moment the user scrolls — their scroll wins. An
+  app-driven jump (restoring a saved position, a search hit, landing at the tail) clears it
+  too, so nothing pulls the reader back to the older page. The window is **1500 ms**
+  because it has to outlast the growth, not the fetch: at 600 ms a page whose content grew
+  around the second mark left 90 px of drift, measured live. `e2e/chat-scroll-anchor.mjs`
+  carries both sides — `?growDelay=900` (the anchor holds, 0 px) and `?growDelay=900&windowMs=600`
+  (the reader lands 2,640 px away).
   `.chat-scroll-container` sets `overflow-anchor: none` (fork CSS) because the browser
   anchors the same prepend and the two mechanisms stack. Measured in
   `e2e/chat-scroll-anchor.mjs` (three pages, rows growing after they land, max shift 0px;

@@ -39,8 +39,8 @@ test("content that grows above the anchor is absorbed, and the user's own scroll
   // re-applied for a window keyed to the content box.
   assert.match(source, /new ResizeObserver\(\(\) => applyScrollAnchor\(container\)\)/);
   assert.match(source, /observer\.observe\(content\)/);
-  assert.match(lib, /export const CHAT_SCROLL_ANCHOR_WINDOW_MS = 600;/,
-    "the window is bounded: a stale anchor must never keep steering the viewport");
+  assert.match(lib, /export const CHAT_SCROLL_ANCHOR_WINDOW_MS = 1500;/,
+    "the window is bounded, and sized past the second mark: a 600ms window left 90px of drift on a page whose content grew late");
   assert.match(source, /if \(Date\.now\(\) > anchor\.until\) \{\n      scrollAnchorRef\.current = null;/,
     "the anchor expires on its own, not only when the observer's timer runs");
   const openTag = source.indexOf('className="chat-scroll-container');
@@ -64,4 +64,15 @@ test("a session switch drops the previous session's anchor", () => {
   assert.match(reset, /scrollAnchorRef\.current = null;/,
     "a leftover anchor would steer the next session's first paint");
   assert.match(reset, /prevScrollDistanceRef\.current = null;/);
+});
+
+test("an app-driven jump owns the viewport, and ends the prepend's anchor", () => {
+  // Restoring a saved position, jumping to a search hit, or landing at the tail
+  // are the app moving the view on purpose. An anchor still re-attaching would
+  // pull the reader back to the older page and fight the jump.
+  const restore = block("  useLayoutEffect(() => {\n    const position = pendingScrollRestore;");
+  assert.ok(restore.indexOf("scrollAnchorRef.current = null;") < restore.indexOf("scrollToMessage(element, position.anchorOffset)"));
+  assert.ok(restore.indexOf("scrollAnchorRef.current = null;") < restore.indexOf('scrollToBottom("instant")'));
+  const search = block("  useLayoutEffect(() => {\n    if (!pendingSearchScroll");
+  assert.ok(search.indexOf("scrollAnchorRef.current = null;") < search.indexOf("scrollToMessage(element);"));
 });
