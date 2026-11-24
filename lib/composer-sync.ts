@@ -27,7 +27,9 @@ import { composerSyncKey, type ComposerDraftSnapshot } from "./composer-draft-st
 export type { ComposerDraftSnapshot };
 
 const PUSH_DEBOUNCE_MS = 700;
-const POLL_INTERVAL_MS = 4_000;
+/** Exported for the test that waits out a full poll: a watcher that must go quiet is
+ *  only provable over one interval. */
+export const POLL_INTERVAL_MS = 4_000;
 
 const pendingPushes = new Map<string, ComposerDraftSnapshot>();
 const pushTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -40,6 +42,22 @@ const listeners = new Map<string, Set<(snapshot: ComposerDraftSnapshot) => void>
  * is what made attachments vanish: the composer polled its own shrunken copy back.
  */
 const unmirrored = new Set<string>();
+/**
+ * The newest stamp this device handed to its own composer, per sync key. The composer's
+ * echo guard compares a remote copy against it, so it must never fall behind a copy the
+ * server can still hand back. A key that stopped being mirrored used to answer `0`, and
+ * every keystroke of the composer that owns it reset the guard to "nothing of mine is on
+ * the server"; the poll that was still running then repainted the composer with the last
+ * snapshot the store had accepted — the queued text from before the screenshots the user
+ * had just uploaded, with their typing and their images thrown away.
+ */
+const localStamps = new Map<string, number>();
+/** A stamp for this device's own write: never behind the last one, never in the past. */
+function nextStamp(key: string): number {
+  const stamp = Math.max(Date.now(), (localStamps.get(key) ?? 0) + 1);
+  localStamps.set(key, stamp);
+  return stamp;
+}
 
 /** Nothing in the composer. A send clears it, and the mirror clears its copy too. */
 function isBlankDraft(snapshot: { value: string; images: unknown[]; files: unknown[] }): boolean {
@@ -100,10 +118,14 @@ export function pushComposerDraft(
     // its place: a poll that hands an empty composer to a device that is typing wipes
     // a prompt and its attachments off the screen.
     clearComposerDraft(draftKey);
-    return Date.now();
+    return nextStamp(key);
   }
-  if (unmirrored.has(key)) return 0;
-  const stamped: ComposerDraftSnapshot = { ...snapshot, updatedAt: Date.now() };
+  if (unmirrored.has(key)) {
+    // Not mirrored, and still this device's own text: the stamp moves so the guard keeps
+    // refusing the server's older copy, which is the whole point of staying local.
+    return nextStamp(key);
+  }
+  const stamped: ComposerDraftSnapshot = { ...snapshot, updatedAt: nextStamp(key) };
   pendingPushes.set(key, stamped);
   const timer = pushTimers.get(key);
   if (timer) clearTimeout(timer);
@@ -151,19 +173,26 @@ export function watchComposerDraft(draftKey: string, onRemote: (snapshot: Compos
     listeners.set(key, set);
   }
   set.add(onRemote);
+  // A 413 marks the key mid-session, while this watcher's interval is already running;
+  // the registration check above cannot un-register it, so the tick does. A composer
+  // that stopped being mirrored must stop polling, or the last snapshot the store
+  // accepted comes back and repaints the composer over what the user is typing.
+  const stop = () => {
+    clearInterval(timer);
+    document.removeEventListener("visibilitychange", onVisible);
+    set!.delete(onRemote);
+  };
   const tick = () => {
+    if (unmirrored.has(key)) return stop();
     if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
     void poll(key);
   };
   const onVisible = () => {
+    if (unmirrored.has(key)) return stop();
     if (document.visibilityState === "visible") void poll(key);
   };
   const timer = setInterval(tick, POLL_INTERVAL_MS);
   document.addEventListener("visibilitychange", onVisible);
   void poll(key);
-  return () => {
-    clearInterval(timer);
-    document.removeEventListener("visibilitychange", onVisible);
-    set!.delete(onRemote);
-  };
+  return stop;
 }

@@ -136,6 +136,23 @@ test("a snapshot that lost attachments is refused, never stored trimmed", async 
     "a draft that fits reports no drop");
 });
 
+test("a snapshot the guards refuse is a 413, not a 'newer draft' 409", async () => {
+  clearAllComposerDrafts();
+  const t0 = Date.now();
+  writeComposerDraft("refused", { value: "the stored draft", images: [], files: [], updatedAt: t0 - 5000 });
+  // A whole snapshot past a cap — a prompt larger than the text cap, a Word file's text
+  // past the total size. The guards answer with no `dropped` count, and the route used to
+  // read that as "you lost to a newer draft": a 409 carrying the stored copy, which the
+  // composer's mirror paints. A composer the mirror cannot carry must be told so.
+  const tooLong = "y".repeat(200_001);
+  const result = writeComposerDraft("refused", { value: tooLong, images: [], files: [], updatedAt: t0 });
+  assert.equal(result.ok, false);
+  assert.equal(result.refused, true, "the refusal is named, so the route can answer 413");
+  const response = await put({ key: "refused", value: tooLong, images: [], files: [], updatedAt: t0 });
+  assert.equal(response.status, 413, "a snapshot the mirror cannot carry is 'cannot sync'");
+  assert.equal((await response.json()).draft.value, "the stored draft");
+  assert.equal(readComposerDraft("refused").value, "the stored draft", "the stored draft is untouched");
+});
 test("the store keeps no empty draft: an empty write is the clear", () => {
   clearAllComposerDrafts();
   const t0 = Date.now();

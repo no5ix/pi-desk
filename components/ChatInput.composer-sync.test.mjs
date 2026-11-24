@@ -10,8 +10,11 @@ import { test } from "node:test";
  * the user was typing in, and their text and attachments were gone — seen at the end
  * of a run, with no reload and no send of the draft, because the server's copy was
  * the composer's own content minus the screenshots the size guards had dropped, and
- * then the empty snapshot a send leaves behind. `lib/composer-sync.test.mjs` and
- * `app/api/composer-draft/route.test.mjs` pin the server and the client's writes;
+ * then the empty snapshot a send leaves behind. The same wipe showed up mid-run: a
+ * queued message edited back into the composer, screenshots uploaded, a few seconds of
+ * typing, and the composer snapped back to the queued text with no images — the 413
+ * that made the composer local had also zeroed its echo stamp. `lib/composer-sync.test.mjs`
+ * and `app/api/composer-draft/route.test.mjs` pin the server and the client's writes;
  * this pins what the composer accepts.
  */
 
@@ -39,8 +42,8 @@ test("a copy from the other devices is painted only when the composer can take i
 test("the composer's mirror writes only what this device changed", () => {
   // The echo guard the mirror depends on: what the composer loaded on mount, or after a
   // key change, is not this device's edit, so it is never pushed back.
-  assert.match(chatInput, /if \(syncedSignatureRef\.current === signature\) return;\s*\n\s*syncedSignatureRef\.current = signature;\s*\n\s*composerSyncStampRef\.current = pushComposerDraft\(draftKey, draft\);/,
-    "a push happens on a real change, and its stamp is remembered");
+  assert.match(chatInput, /if \(syncedSignatureRef\.current === signature\) return;\s*\n\s*syncedSignatureRef\.current = signature;[\s\S]*?const stamp = pushComposerDraft\(draftKey, draft\);\s*\n\s*if \(stamp > composerSyncStampRef\.current\) composerSyncStampRef\.current = stamp;/,
+    "a push happens on a real change, its stamp is remembered, and the guard only ever moves forward — a composer the mirror refused (413) owns its own writing, so the snapshot the store accepted last cannot be painted back over it");
   assert.match(chatInput, /syncedSignatureRef\.current = draftSignature\(nextValue, nextImages\.map\(imageToDraftImage\), nextFiles\);\s*\n\s*composerSyncStampRef\.current = 0;/,
     "a loaded draft is not this device's write");
   assert.match(chatInput, /if \(draftKey\) clearComposerDraft\(draftKey\);/,
