@@ -723,6 +723,22 @@ is worth knowing when a panel refuses to look round: the install's
 `<agentDir>/desktop/custom.css` loads after every app stylesheet, and an id-scoped block
 like `#panel-layer .agent-session-panel { border-radius: 0 !important }` in it still wins
 the cascade (a bare single-class rule no longer does).
+
+**The three read-only cards the More button opens** (system prompt, tools, session stats)
+wear the same `.app-menu` surface and open under the button, at the conversation column's
+right end (`placeHeaderCard`, `lib/top-panel-placement.ts`). The prompt is prose and the
+tool list is two panes, so each keeps a reading width (`SYSTEM_PROMPT_PANEL_WIDTH` 680,
+`TOOLS_PANEL_WIDTH` 780). The **session stats card fills the column** (`"fill"`): three
+columns of numbers want the horizontal space the conversation has, and capping it at 900
+left a 900px card in a 2081px column with its Tokens numbers cut off the right edge — the
+card's `overflow: hidden` makes an over-wide column invisible, not scrollable. So the
+numbers columns are `minmax(…, max-content)` tracks that hug the card's right edge (a wide
+column never pushes a value away from its label), the first column takes the slack because
+it carries the long paths, and below `SESSION_STATS_STACK_WIDTH` the card stacks into one
+column. The compact rows keep `max-content max-content` tracks for the same reason.
+`components/AppShell.topbar-branch.test.mjs` pins the placement and the tracks;
+live at 2342/1440/900/390 the card's `scrollWidth` equals its width and the page never
+scrolls sideways.
 A running row leads with the header's subagent head (`AgentRunningIcon`, exported, at row
 size, pulsing), not a spinner: one shape for one state.
 The row

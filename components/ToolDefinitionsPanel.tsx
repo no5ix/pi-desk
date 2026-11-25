@@ -118,7 +118,17 @@ export function ToolDefinitionsPanel({ loading, tools, translate }: Props) {
   const fields = selectedTool ? getToolParameterFields(selectedTool.parameters) : [];
 
   return (
-    <div className="tool-definitions-panel">
+    <div className="tool-definitions-panel app-menu">
+      {/* One head for the card: what it is, and how many tools it lists. The list column
+          and the detail pane sit below it, so the card opens on a line and not on two
+          panes with no name. */}
+      <div className="tool-definitions-head">
+        <strong className="tool-definitions-title">{translate("tools.label")}</strong>
+        <span className="tool-definitions-hint">{translate("tools.title")}</span>
+        {declaredTools && declaredTools.length > 0 && (
+          <span className="tool-definitions-count" title={translate("tools.title")}>{declaredTools.length}</span>
+        )}
+      </div>
       <nav className="tool-definitions-sidebar" aria-label={translate("tools.title")}>
         <div className="tool-definitions-list">
           {declaredTools && declaredTools.length > 0 ? declaredTools.map((tool) => {
@@ -212,14 +222,14 @@ export function ToolDefinitionsPanel({ loading, tools, translate }: Props) {
       </section>
 
       <style>{`
+        /* The card's surface, its head and the list's rows are the app's menu tokens in
+           app/native-theme.css; only the two-pane layout and the reading styles stay here. */
         .tool-definitions-panel {
           display: grid;
           grid-template-columns: clamp(112px, 26%, 220px) minmax(0, 1fr);
           height: min(600px, 75dvh);
           min-height: 240px;
           overflow: hidden;
-          background: var(--bg-panel);
-          border-bottom: 1px solid var(--border);
         }
         .tool-definitions-sidebar,
         .tool-definition-detail {
