@@ -756,7 +756,14 @@
      visible pixel beside the separator. */
   width: 1px;
 }
-.panel-resize-handle:hover::after,
+/* Pointer-over must not brighten the divider between a sidebar and the
+   conversation: the panels' own hairline is the whole line, so upstream's
+   hover tint paints a stray highlight over a separator that is already there.
+   Only the states that say "this target is live" tint it — keyboard focus
+   (the separator is tabbable and resizes with the arrows) and an active drag. */
+.panel-resize-handle:hover::after {
+  background: transparent;
+}
 .panel-resize-handle:focus-visible::after {
   background: color-mix(in srgb, var(--border) 92%, var(--text-muted));
 }
@@ -10644,13 +10651,15 @@ html.native-desktop :is(
   }
 }
 
-/* The panel edge is the shell boundary; give its resize target a soft hover
-   state without pretending there is a floating card. */
+/* The panel edge is the shell boundary; its resize target stays invisible and
+   tints only while focused from the keyboard or dragged, never on pointer-over
+   (the same rule as the sidebar divider above). The `!important` pair is needed
+   because the upstream hover tint outranks the fork base layer. */
 @media (min-width: 960px) {
-  .right-panel-resize-handle:not(:hover):not(:focus-visible):not(.is-resizing)::after {
+  .right-panel-resize-handle:not(:focus-visible):not(.is-resizing)::after {
     background: transparent !important;
   }
-  .right-panel-resize-handle:is(:hover, :focus-visible, .is-resizing)::after {
+  .right-panel-resize-handle:is(:focus-visible, .is-resizing)::after {
     background: color-mix(in srgb, var(--separator) 68%, var(--text-muted)) !important;
   }
 }

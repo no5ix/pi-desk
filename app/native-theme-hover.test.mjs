@@ -73,3 +73,27 @@ test("the header's project, branch and context chips lift their label and their 
   assert.ok(chip, "the three chips share one base rule");
   assert.match(chip, /transition: background [^,]+, color [^;]+;/, "the lift is animated with the wash, not after it");
 });
+
+test("a panel divider the pointer crosses is not highlighted", () => {
+  // `.panel-resize-handle` is a 12px invisible hit target straddling the pane boundary
+  // (`margin: 0 -6px`); the visible line is the panels' own hairline. Upstream tints its
+  // `::after` on :hover, :focus-visible and .is-resizing alike, so crossing the sidebar /
+  // conversation edge lit up the separator that was already there. The tint belongs to the
+  // two states that say "this target is live": keyboard focus (the separator is tabbable
+  // and the arrows resize it) and an active drag.
+  const hover = rule(".panel-resize-handle:hover::after");
+  assert.ok(hover, ".panel-resize-handle:hover::after is answered — upstream's rule wins by cascade if it is not");
+  assert.match(hover, /background: transparent;/, "pointer-over paints nothing over the hairline");
+  assert.ok(!/color-mix/.test(hover), "no tint of any strength on hover");
+  assert.match(css, /\.panel-resize-handle:focus-visible::after \{\n\s*background: color-mix\(in srgb, var\(--border\) 92%, var\(--text-muted\)\);/, "a keyboard-focused divider stays lit");
+  assert.match(css, /\.panel-resize-handle\.is-resizing::after \{\n\s*background: color-mix\(in srgb, var\(--border\) 80%, var\(--text-muted\)\);/, "a dragged divider stays lit");
+  // The right panel's pair above 960px outranks upstream with `!important`; the `:not()`s
+  // are what keep the higher-specificity transparent rule from beating the tinted one.
+  assert.match(css, /\.right-panel-resize-handle:not\(:focus-visible\):not\(\.is-resizing\)::after \{\n\s*background: transparent !important;/,
+    "the panel edge's divider is transparent except on focus and drag");
+  assert.match(css, /\.right-panel-resize-handle:is\(:focus-visible, \.is-resizing\)::after \{\n\s*background: color-mix\(in srgb, var\(--separator\) 68%, var\(--text-muted\)\) !important;/,
+    "and its focus / drag tint survives upstream's rule");
+  assert.ok(!css.includes(".right-panel-resize-handle:not(:hover):not(:focus-visible):not(.is-resizing)::after"),
+    "the old pair tinted :hover — the pointer-over highlight the user reported");
+  assert.ok(!/\.panel-resize-handle:hover::after[^{}]*\{[^}]*background:\s*color-mix/.test(css), "no hover tint anywhere in the fork theme");
+});

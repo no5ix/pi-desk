@@ -39,7 +39,8 @@ manual merge, run it yourself.
    - *New fork classes:* project tree and its context menu, empty-sidebar add button, session
      loading hint, conversation navigator, file-tree pane, column resize handles, settings
      entry menu, General-tab intro/updates/choice rows.
-   - *Overrides of upstream rules:* `.panel-resize-handle::after` (1px line, softer tints),
+   - *Overrides of upstream rules:* `.panel-resize-handle::after` (1px line; tinted on
+     keyboard focus and drag only — pointer-over never brightens the divider),
      `.file-panel-expand-button` (borderless 28px chip), mobile `.right-panel-container`
      (`!important` pinning), `.skill-version-value` colour, settings dialog size, backdrop and
      radius, two-column General at ≥880px.
