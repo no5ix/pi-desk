@@ -213,6 +213,20 @@
   stay silent; a dialog pushes once per dialog and at most once per session per ten
   minutes, because the MCP trust prompts at session start are the buzzes people hear with
   nothing running.
+- **A run's end is `agent_settled`, and a run in the middle of a streak is still news.**
+  The completion announce used to be gated on "the session is idle and its composer outbox
+  is empty", which is not the end of a run: with several tasks queued in a row, the runs
+  that finished first announced nothing on any channel (push, ntfy, the Mac's row) and only
+  the streak's last run was announced, and a run that settled into an auto-compaction or a
+  steering message waited for the whole post-run pipeline. `lib/rpc-manager.ts` now pairs
+  `agent_start` with `agent_settled` (`agentRunNeedsCompletion` / `agentRunSettled`) and
+  announces on the settle, clearing the span so the next run reports its own.
+  `isRunning()` is the wrong question there: a `steer` settles its prompt promise in the
+  middle of the run that is streaming, so announcing on that path announces an answer that
+  has not arrived (the tests: "a steering prompt that settles mid-run announces nothing",
+  "a finished task announces while the next queued task is still waiting"). The subagent
+  rule is untouched — a run that leaves subagents at work is still silent (#1434), and a
+  report's own run is still skipped by its mark.
 
 ## Selective pi-web backport (#1730, #1731, #1739, #1742, pi 1.6.0)
 - **A PR is not one thing, and a fork without the half is not a failed port.**

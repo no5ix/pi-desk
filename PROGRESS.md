@@ -1,3 +1,50 @@
+# PROGRESS — a finished task announces at once, even while other tasks are running
+Branch `feat/branch-picker-header-worktrees`. The report: "when there's several task running,
+and one of them was finished while other's still running, it should also pop out the
+notifications, but now it didn't".
+**Implemented; the full unit suite (`4737 pass / 0 fail`), `tsc --noEmit` and `eslint` pass.**
+## What changed
+| File | Now |
+| --- | --- |
+| `lib/rpc-manager.ts` | The announce fires on the run's own `agent_settled`, not on "session idle + empty outbox" |
+| `lib/rpc-manager-shutdown.test.mjs` | A queued next task announces the finished one; a steer settling mid-run announces nothing |
+| `lib/rpc-manager.test.mjs` | The subagent wrapper settles its turn at the run's settle, once |
+| `docs/agents/fork-files-security.md`, `DECISIONS.md` | The rule and its reason |
+## Implementation state
+* **The gate was the wrong question.** `notifyAgentRunCompleteIfIdle()` returned while
+  `isRunning()` was true **or** the composer outbox held a prompt — so tasks sent in a row
+  announced only their **last** run, and a run that settled into an auto-compaction, a
+  steering message, or a second running session stayed silent on the phone push, ntfy and
+  the Mac's Notification Center row.
+* **`agentRunNeedsCompletion` (set at `agent_start`) is now paired with `agentRunSettled`
+  (set at `agent_settled`, where pi's SDK has already cleared `isStreaming`).**
+  `notifyAgentRunComplete()` announces when both are set and clears both, so one
+  `agent_start` announces exactly once and `finishPrompt()`'s call is a safety net.
+* **`isRunning()` is out of the gate.** A `steer`/`followUp` prompt settles its promise in
+  the middle of the run that is streaming; gating on the session's state announced *that*
+  as a finished task. The `composerQueue.snapshot().length` term is gone — an outbox item
+  is the next task, not this one.
+* **The span is per run:** `runStartedAt` is cleared with the announce, so the queued run
+  that follows reports how long the task it finished took.
+* **Untouched on purpose:** the subagent rules (#1434 — a run that leaves subagents at work
+  is silent, a report's own run is skipped by its mark), `suppressCompletionNotifications`,
+  the per-run dedupe key, the 5-minute staleness window, the aborted/failed silence, and the
+  shared per-session notification tag.
+## Verification
+* `node --experimental-strip-types --test …` (the whole `npm test` glob set) —
+  **4737 pass, 0 fail, 1 skipped**.
+* `node_modules/.bin/tsc --noEmit` clean; `eslint` clean on the three touched files.
+* No e2e run: the change is server-side run bookkeeping, and the queue's own e2e
+  (`e2e/composer-outbox.mjs`) drives the client outbox, which is untouched.
+## Next
+* Push the branch (the tree also holds the user's own in-progress pins work in
+  `lib/app-prefs.ts`, `lib/session-ui-state-shared.ts`, `lib/sidebar-pins.ts` — not staged).
+* If the user means the **phone**: two finished runs of the *same* session inside ten
+  seconds share one push tag, so the second replaces the first quietly
+  (`lib/notification-tags.ts`). Making the tag per run is a separate call.
+
+---
+
 # PROGRESS — the worktree glyph is the folder's, in all three places
 Branch `feat/branch-picker-header-worktrees`. The task is the user's two screenshots
 (`pic1`, `pic2`): clicking a branch that lives in a worktree (`main-bak` in

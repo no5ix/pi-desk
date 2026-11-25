@@ -458,6 +458,14 @@ export class AgentSessionWrapper {
   private activeMutatingCommands = 0;
   private sessionReplacement: "fork" | "clone" | null = null;
   private agentRunNeedsCompletion = false;
+  /**
+   * Whether the run that set `agentRunNeedsCompletion` has settled. `agent_settled` is the
+   * SDK's word for "this run is over" (it clears `isStreaming` before emitting it), so it —
+   * not "the session went idle" — is the moment a finished task becomes news: a queued
+   * follow-up, a steer, a compaction, or another running session keeps `isRunning()` true
+   * long after the answer landed, and the task that arrived in the middle of that was silent.
+   */
+  private agentRunSettled = false;
   // Whether the last run ended because it was stopped (pi 1.1's `agent_settled.aborted`), not finished.
   private lastRunAborted = false;
   private promptAdmissionTail: Promise<void> = Promise.resolve();
@@ -743,6 +751,7 @@ export class AgentSessionWrapper {
       this.lastEventAt = Date.now();
       if (event.type === "agent_start") {
         this.agentRunNeedsCompletion = true;
+        this.agentRunSettled = false;
         this.runStartedAt ??= Date.now();
         this.lastRunAborted = false;
         // Cross-window liveness: idle → running must reach other windows'
@@ -751,7 +760,10 @@ export class AgentSessionWrapper {
       }
       if (event.type === "auto_retry_start") this.retrying = true;
       if (event.type === "auto_retry_end" || event.type === "agent_start") this.retrying = false;
-      if (event.type === "agent_settled") this.lastRunAborted = event.aborted === true;
+      if (event.type === "agent_settled") {
+        this.lastRunAborted = event.aborted === true;
+        this.agentRunSettled = true;
+      }
       if (event.type === "agent_end") {
         this.lastRunOutcome = agentRunOutcome(event);
         invalidateSessionListCache();
@@ -791,7 +803,7 @@ export class AgentSessionWrapper {
         // _finishCancelledRetry), so the last one still says "error"; the SDK reports the Stop here.
         if (event.aborted === true) this.lastRunOutcome = { status: "aborted" };
         this.composerQueue.wake();
-        this.notifyAgentRunCompleteIfIdle();
+        this.notifyAgentRunComplete();
       }
     });
     this.resetIdleTimer();
@@ -847,14 +859,30 @@ export class AgentSessionWrapper {
     }
   }
 
-  private notifyAgentRunCompleteIfIdle(): void {
+  /**
+   * Announce the run that has just settled, once per `agent_start`.
+   *
+   * A finished task is news at the moment its own run ends, whatever else is in flight:
+   * the composer's next queued task, a steering message, the post-run compaction, a second
+   * session that keeps running. The gate used to be "the session is idle and its outbox is
+   * empty", so sending three tasks in a row announced only the last one — the two runs that
+   * finished while the streak went on were silent on every channel. What is worth waiting
+   * for is the run, and `agent_settled` says it is over; `isRunning()` is not that question
+   * (a prompt admitted as a steer settles its promise in the middle of the run that is
+   * streaming, and announcing *that* would announce an answer that has not arrived).
+   */
+  private notifyAgentRunComplete(): void {
+    // Nothing runs: the next `agent_start` pins a fresh start for its own span.
     if (!this.isRunning()) this.runStartedAt = null;
-    if (!this.agentRunNeedsCompletion || this.isRunning() || this.composerQueue.snapshot().length) return;
+    if (!this.agentRunNeedsCompletion || !this.agentRunSettled) return;
     // The run's span, read before the fields are cleared: the completion listeners say
     // "The task lasted 0h18m13s, started at 10:04:34, and ended at 10:22:47", and a run
     // this process never saw `agent_start` for has no span to say.
     const runStartedAt = this.runStartedAt;
     this.agentRunNeedsCompletion = false;
+    this.agentRunSettled = false;
+    // Cleared with the run: the run that follows it — a queued follow-up, a report, a
+    // steering message — gets its own span, and says how long the task it finished took.
     this.runStartedAt = null;
     this.retrying = false;
     const finishedAt = Date.now();
@@ -1563,7 +1591,9 @@ export class AgentSessionWrapper {
             // contains the session id and the sidebar spinner never stops.
             notifyRunningChange();
             this.composerQueue.wake();
-            this.notifyAgentRunCompleteIfIdle();
+            // The run announced itself at `agent_settled`; this is the safety net for a run
+            // whose settle event arrived while this prompt's admission was still held.
+            this.notifyAgentRunComplete();
           };
 
           this.pendingPromptCount += 1;
