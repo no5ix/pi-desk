@@ -50,6 +50,39 @@ function hasFocusedEditableElement(): boolean {
 // settles on instead of the mid-animation one.
 const SETTLE_DELAYS_MS = [48, 120, 240, 420, 720];
 
+// The settle chain's last step. Until it has passed, every reading of the visual
+// viewport is a frame of the keyboard's own animation, so it is only ever taller
+// than the height the keyboard ends at.
+export const KEYBOARD_STABLE_MS = SETTLE_DELAYS_MS[SETTLE_DELAYS_MS.length - 1];
+
+/**
+ * The height to apply for the keyboard, of the reading in front of us.
+ *
+ * iOS opens the keyboard over a third of a second, and every re-read in that
+ * window is a frame of the slide: the visual viewport starts at the full height
+ * and ends above the keyboard. Applying each reading as it lands makes the
+ * composer travel up past its place and fall back into it — the jump the user
+ * called "it moved up too much and then moved down a little bit". While the
+ * window is open the height only ever moves to the smallest reading; after it,
+ * a taller viewport is real news (the keyboard changed shape, an IME bar went
+ * away) and is applied.
+ */
+export function settleKeyboardViewportHeight({
+  appliedHeight,
+  candidateHeight,
+  keyboardOpen,
+  msSinceKeyboardOpen,
+}: {
+  appliedHeight: number | null;
+  candidateHeight: number;
+  keyboardOpen: boolean;
+  msSinceKeyboardOpen: number;
+}): number {
+  if (!keyboardOpen || appliedHeight === null) return candidateHeight;
+  if (candidateHeight >= appliedHeight && msSinceKeyboardOpen < KEYBOARD_STABLE_MS) return appliedHeight;
+  return candidateHeight;
+}
+
 /**
  * Keep the app height aligned with the visual viewport while a mobile keyboard
  * is open. iOS standalone PWAs can leave 100dvh at the layout viewport height,
@@ -64,6 +97,10 @@ export function useViewportHeight(): void {
     let frameId: number | null = null;
     const settleTimers = new Set<number>();
     let settleChainRunning = false;
+    // The height written while the keyboard is open, and when the keyboard opened.
+    // The settle window reads them, so the composer's travel is one way.
+    let appliedKeyboardHeight: number | null = null;
+    let keyboardOpenedAt = Number.NEGATIVE_INFINITY;
 
     const update = () => {
       frameId = null;
@@ -74,11 +111,21 @@ export function useViewportHeight(): void {
         viewportScale: viewport.scale,
       });
       if (keyboardOpen) {
-        root.style.setProperty("--app-viewport-height", `${viewport.height}px`);
+        if (appliedKeyboardHeight === null) keyboardOpenedAt = Date.now();
+        const height = settleKeyboardViewportHeight({
+          appliedHeight: appliedKeyboardHeight,
+          candidateHeight: viewport.height,
+          keyboardOpen,
+          msSinceKeyboardOpen: Date.now() - keyboardOpenedAt,
+        });
+        appliedKeyboardHeight = height;
+        root.style.setProperty("--app-viewport-height", `${height}px`);
         // CSS collapses secondary composer chrome while typing so the few
         // hundred pixels above the keyboard go to the conversation.
         root.dataset.keyboardOpen = "true";
       } else {
+        appliedKeyboardHeight = null;
+        keyboardOpenedAt = Number.NEGATIVE_INFINITY;
         root.style.removeProperty("--app-viewport-height");
         delete root.dataset.keyboardOpen;
       }

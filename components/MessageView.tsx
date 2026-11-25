@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState, useRef, useEffect, useMemo, useContext } from "react";
+import { memo, useState, useRef, useEffect, useMemo, useContext, type RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
@@ -1093,6 +1093,27 @@ function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent
   return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} artifacts>{block.text}</SafeMarkdownBody>;
 }
 
+/** The three dots that end a collapsed thinking's first line. The CSS ellipsis
+ *  paints one `…`, which on a mono line reads as the text's own punctuation; the
+ *  three marks are what says "this goes on". */
+export const THINKING_MORE_MARKER = "•••";
+
+/** True while the element's text is cut by its own box, re-measured when the box
+ *  changes (a rotation, a panel resize, a longer streamed line). */
+function useIsTextClipped(ref: RefObject<HTMLElement | null>): boolean {
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const measure = () => setClipped(node.scrollWidth > node.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [ref]);
+  return clipped;
+}
+
 export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex, expandByDefault = false, latestReply = false }: {
   block: ThinkingContent;
   duration?: number;
@@ -1126,6 +1147,11 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
   const tRef = useRef(t);
   tRef.current = t;
   const preview = getThinkingPreview(block.thinking);
+  // The preview is the text's first line (to 240 characters). Anything behind it —
+  // a line break, or more characters — is what the marker stands for.
+  const previewHasMore = block.thinking.trim().length > preview.length;
+  const previewRef = useRef<HTMLSpanElement>(null);
+  const previewClipped = useIsTextClipped(previewRef);
 
   // A is the newest while it streams and stays open after it ends with nothing following
   // it. The moment B starts, A is history and closes on its own: the conversation keeps
@@ -1178,7 +1204,9 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
   }, [expanded, block.deferred, content, sessionId, entryId, blockIndex]);
 
   return (
-    <div style={{
+    <div
+      className="thinking-card"
+      style={{
       display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
       borderRadius: "var(--radius-md)",
       padding: "6px 10px",
@@ -1217,8 +1245,15 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
       >
         <ThinkingIcon active={expanded} />
         {!expanded && (
-          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span
+            ref={previewRef}
+            className="thinking-preview"
+            data-clipped={previewClipped ? "true" : undefined}
+          >
             {preview ? <ReactMarkdown allowedElements={[]} unwrapDisallowed skipHtml>{preview}</ReactMarkdown> : "..."}
+            {previewHasMore && !previewClipped && (
+              <span className="thinking-preview-dots" aria-hidden="true">{THINKING_MORE_MARKER}</span>
+            )}
           </span>
         )}
       </button>
@@ -2139,6 +2174,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
   return (
     <div style={{ marginBottom: 16 }}>
       <div
+        className="custom-message-card"
         style={{
           border: "none",
           borderRadius: "var(--radius-md)",
@@ -2211,7 +2247,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
         )}
 
         {contentExpanded ? (
-          <div style={{ padding: "6px 9px" }}>
+          <div className="custom-message-body" style={{ padding: "6px 9px" }}>
             {images.length > 0 && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: text ? 8 : 0 }}>
                 {images.map((img, i) => {
@@ -2255,6 +2291,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             card does: the Copy and details row belongs to the text it reports. */}
         {(contentExpanded || !collapsesByDefault) && (
         <div
+          className="custom-message-footer"
           style={{
             display: "flex",
             alignItems: "center",

@@ -97,6 +97,10 @@ const measure = () => {
       const el = document.querySelector(".chat-composer-controls");
       return { ...rect(el), display: getComputedStyle(el).display };
     })(),
+    sideChat: (() => {
+      const el = document.querySelector(".composer-side-chat-button");
+      return { ...rect(el), display: getComputedStyle(el).display };
+    })(),
     send: rect(send),
     sendRadius: sendStyle.borderRadius,
     sendSize: { w: send.getBoundingClientRect().width, h: send.getBoundingClientRect().height },
@@ -112,8 +116,11 @@ const port = await new Promise((resolve) => server.listen(0, "127.0.0.1", () => 
 await page.goto(`http://127.0.0.1:${port}/`);
 await page.waitForSelector(".composer-send-button");
 
-// A phone with the on-screen keyboard up is the state in the screenshot: the controls
-// strip is hidden, and that is where the row used to collapse.
+// A phone with the on-screen keyboard up is the state in the screenshot. The row used
+// to lose its controls there — the fork hid the strip, and the composer kept only `+`
+// and Send — so the keyboard state is measured against the resting one, control by
+// control: the row keeps what it has, in the place it already had it.
+const geometry = {};
 for (const state of ["rest", "keyboard"]) {
   await page.evaluate((on) => {
     if (on) document.documentElement.setAttribute("data-keyboard-open", "true");
@@ -121,6 +128,7 @@ for (const state of ["rest", "keyboard"]) {
   }, state === "keyboard");
   await page.waitForTimeout(150);
   const m = await page.evaluate(measure);
+  geometry[state] = m;
   const cardRightInner = m.card.right - m.insetRight;
   const cardLeftInner = m.card.left + m.inset;
 
@@ -156,19 +164,33 @@ for (const state of ["rest", "keyboard"]) {
   assert.ok(m.scrollWidth <= m.viewport, `${state}: the page does not scroll sideways (${m.scrollWidth} of ${m.viewport})`);
 
   if (state === "keyboard") {
-    assert.equal(m.controls.display, "none", "the keyboard's rule hides the session controls");
+    // The row is whole under the keyboard: the session controls keep their box, the
+    // side-chat bubble keeps its own, and neither moves.
+    assert.notEqual(m.controls.display, "none", "the keyboard hides no session control");
+    assert.ok(m.controls.w > 0 && m.controls.h > 0, `the session controls keep a box (${Math.round(m.controls.w)}×${Math.round(m.controls.h)})`);
+    assert.ok(m.sideChat.w > 0 && m.sideChat.h > 0, `the side-chat bubble keeps a box (${Math.round(m.sideChat.w)}×${Math.round(m.sideChat.h)})`);
+    for (const part of ["controls", "sideChat", "send"]) {
+      const rest = geometry.rest[part];
+      for (const axis of ["x", "y", "w"]) {
+        assert.ok(Math.abs(m[part][axis] - rest[axis]) <= 1.5,
+          `the keyboard leaves the ${part}'s ${axis} alone (${Math.round(m[part][axis])} of ${Math.round(rest[axis])})`);
+      }
+    }
     await page.screenshot({ path: `${out}/keyboard.png`, clip: { x: 0, y: Math.max(0, m.card.y - 8), width: 390, height: m.card.h + 16 } });
-    // The control pass: with Send's `margin-left: auto` removed — the rule that keeps the
-    // corner when the filler is gone — Send leaves the corner. Without this, the check
-    // above could pass on a card that is simply narrow.
-    await page.addStyleTag({ content: ".chat-composer-actions > .composer-send-button { margin-left: 0 !important; }" });
+    // The control pass: the corner is bought, not given. Two rules hold it — the strip's
+    // fill (`flex: 1 1 auto`, the row's flex filler) and Send's `margin-left: auto` — so
+    // take both away and the row packs to the left. Without this, the checks above could
+    // pass on a card that is simply narrow.
+    await page.addStyleTag({ content: ".chat-composer-actions > .chat-composer-controls { flex: 0 0 auto !important; margin-right: 0 !important; } .chat-composer-actions > .composer-send-button { margin-left: 0 !important; }" });
     await page.waitForTimeout(120);
     const loose = await page.evaluate(measure);
     const gap = cardRightInner - loose.send.right;
-    assert.ok(gap > 24, `the control pass: without the rule, Send drifts ${Math.round(gap)}px from the corner`);
+    assert.ok(gap > 24, `the control pass: without the fill and the auto margin, Send drifts ${Math.round(gap)}px from the corner`);
     await page.screenshot({ path: `${out}/keyboard-broken.png`, clip: { x: 0, y: Math.max(0, m.card.y - 8), width: 390, height: m.card.h + 16 } });
     await page.evaluate(() => {
-      for (const node of document.querySelectorAll("style")) if (node.textContent.includes("composer-send-button")) node.remove();
+      for (const node of document.querySelectorAll("style")) {
+        if (node.textContent.includes("chat-composer-controls") || node.textContent.includes("composer-send-button")) node.remove();
+      }
     });
     await page.waitForTimeout(120);
     const back = await page.evaluate(measure);

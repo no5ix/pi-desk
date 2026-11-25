@@ -2414,7 +2414,10 @@ html.dark .sidebar-view-switcher-thumb {
   flex: 0 0 auto;
   align-items: center;
   gap: 4px;
-  margin: 0 10px 6px;
+  /* The box is a field you type in; the section header below it is the start of
+     the list. 6px read as one block — the field's own 28px and the 26px header
+     row need a real seam, so the box carries 12px below it. */
+  margin: 0 10px 12px;
 }
 
 .sidebar-search-icon {
@@ -2526,7 +2529,7 @@ html.dark .sidebar-view-switcher-thumb {
 }
 
 .sidebar-chats-header {
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
 /* The section title doubles as the fold toggle, like a project row. */
@@ -6068,12 +6071,12 @@ html.dark {
   margin-right: 15px;
 }
 
-/* Send keeps the card's bottom-right corner even when the phone hides the controls strip.
-   The strip is the row's flex filler, so the keyboard-open rule
-   (`html[data-keyboard-open] .chat-composer-controls { display: none }`) collapsed the
-   filler and the row packed every control to the left: measured on WebKit at 390px, Send
-   sat at x=130 of a card that ends at 366, with 200px of empty card beside it. `auto`
-   pins the corner with the strip there or not, and changes nothing when it is. */
+/* Send keeps the card's bottom-right corner in every state of the strip. The strip is
+   the row's flex filler, and the row used to lose that filler under the phone's keyboard
+   (the fork hid the strip there, and the user asked for the controls back): with the
+   filler gone the row packed every control to the left — measured on WebKit at 390px, Send
+   sat at x=130 of a card that ends at 366, with 200px of empty card beside it. `auto` pins
+   the corner with the strip there, hidden, or grown, and changes nothing when it is. */
 .chat-composer-actions > .composer-send-button {
   margin-left: auto;
 }
@@ -9111,15 +9114,16 @@ span.linenumber {
   transform: scale(0.94);
 }
 
-/* Mobile keyboard collapse: upstream's rule in globals.css targets
-   .chat-input-controls, but the fork's composer chrome carries its own class
-   (see .chat-composer-controls above); hide it under the same conditions so
-   the on-screen keyboard does not cover it. */
-@media (max-width: 640px), (pointer: coarse) and (max-height: 500px) {
-  html[data-keyboard-open] .chat-composer-controls {
-    display: none !important;
-  }
-}
+/* Mobile keyboard: upstream's rule in globals.css hides `.chat-input-controls`
+   under the keyboard, and the fork's composer chrome carries its own class
+   (.chat-composer-controls). It used to be hidden the same way, and that is what
+   the phone's user saw: with the keyboard up, the composer kept only `+` and Send
+   — the More button (the strip with the model, the reasoning, the tools) and the
+   side-chat bubble vanished, and Send slid over the empty band to the corner. The
+   keyboard leaves the card's own row room on a phone, so the row stays whole: the
+   controls keep their place, the side-chat bubble keeps *its* place, and nothing
+   moves when the keyboard opens. The strip's other chrome (the status shelf, the
+   project bar, the composer's padding) still collapses upstream. */
 
 /* ---- Branch navigator: summarized switch -------------------------------------
    Rows of other branches offer "Summarize & switch" next to the plain click. It
@@ -12297,13 +12301,11 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
 
 .message-meta { cursor: default; }
 
-/* Upstream fades the whole button to 0.28, so the prose shows through it. */
+/* Upstream fades the whole button to 0.28, so the prose shows through it. The disc's
+   surface, edge and shadow are the phone pass's rules further down. */
 .chat-scroll-to-bottom.is-visible {
   opacity: 1;
-  border: var(--hairline) solid var(--border);
-  background: var(--bg);
   color: var(--text-muted);
-  box-shadow: var(--shadow-popover);
 }
 
 /* Prose scrolling under the composer fades out instead of being cut. */
@@ -13708,4 +13710,127 @@ a:focus-visible {
 
 .message-assistant .tool-call-open:hover {
   background: var(--bg-selected) !important;
+}
+
+/* ==========================================================================
+   A block is a surface, and a cut line says so (2026-11-26, phone pass)
+
+   A report, a code fence and a collapsed thinking all sat on the page in the
+   page's own colour, so they read as prose: the user's words were "the subagent
+   report should use a background color different from the page" and the same for
+   a fence. The recessed panel tone (`--bg-panel`: #f0f0f1 light, #19191a dark,
+   against the reading canvas's #ffffff / #242424) is the step the app already
+   uses for a sidebar, so it is the step these blocks take. The hairline stays
+   away — the conversation is one surface with filled blocks, no outlines.
+   ========================================================================== */
+
+/* One name for the fence's body, so the component's inline `pre` colour, the
+   Mermaid block and the wrapper agree. `--bg-panel` resolves where it is used,
+   so this single declaration follows every theme. */
+:root {
+  --code-surface: var(--bg-panel);
+}
+
+.markdown-code-block {
+  background: var(--code-surface);
+}
+
+.mermaid-block {
+  background: var(--code-surface);
+}
+
+/* A finished subagent's report is a body of text the user reads, so it is one
+   panel: header, body, footer in the recessed tone. The components paint their
+   own fills inline, so this needs `!important`. */
+.custom-message-card,
+.custom-message-body,
+.custom-message-footer {
+  background: var(--bg-panel) !important;
+}
+
+/* The report's text is a thinking card's reading type, not the 13px terminal
+   type upstream's card uses: same mono size, same weight, same leading. */
+.markdown-custom-message {
+  font-size: calc(11px + var(--chat-font-size-offset, 0px));
+  font-weight: var(--fw-regular);
+  line-height: 1.5;
+}
+
+/* The scroll-to-latest disc: the hairline made it read as a form control and
+   the shadow was too quiet to lift it off moving prose. A floating control:
+   no edge, a drop that is obvious over text and over a code fence alike. */
+.chat-scroll-to-bottom.is-visible {
+  border: 0;
+  background: var(--bg-panel);
+  box-shadow:
+    0 3px 10px rgba(0, 0, 0, 0.45),
+    0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* A collapsed thinking: its glyph stands on the same left edge as the clock of
+   the row above (the card's own 10px inset pushed it in), and the first line
+   ends with the three marks that say "this goes on" — the CSS ellipsis paints
+   one `…`, which on a mono line reads as the text's own punctuation. The marks
+   are pinned to the box's right edge over the cut, on the card's own fill. */
+.message-assistant .thinking-card {
+  padding-left: 0 !important;
+}
+
+.thinking-preview {
+  position: relative;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+.thinking-preview[data-clipped="true"]::after {
+  content: "•••";
+  position: absolute;
+  right: 0;
+  padding-left: 8px;
+  background: var(--bg);
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.thinking-preview-dots {
+  padding-left: 4px;
+  letter-spacing: 1px;
+}
+
+/* Settings on a phone: a list of rows, iOS-style. The separator begins under the
+   label's first letter, and no row carries a line under its icon; the group's
+   last row ends without one. Upstream draws a full-width `border-bottom`
+   (settings.css is byte-identical), so the zero is named here. */
+.settings-phone-home-item {
+  position: relative;
+  border-bottom: 0;
+}
+
+.settings-phone-home-item:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  /* 18px of row padding + a 20px icon + the row's 14px gap: the label's ink. */
+  left: 52px;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--separator);
+}
+
+/* The composer's lift, when the keyboard raises it.
+   `hooks/useViewportHeight.ts` follows the visual viewport, and iOS slides the
+   keyboard in over a third of a second: the hook re-reads the height through the
+   slide (its settle chain) and the app's height — the flex column the composer
+   sits at the end of — lands on every one of those readings. Named, that travel
+   is an animation; unanimated, the composer jumped to a mid-slide height and
+   settled back into its own, which is the "it moved up too much and then moved
+   down a little bit" the phone showed. The transition is scoped to the keyboard
+   being open, so a desktop window resize and a panel drag stay immediate. */
+@media (max-width: 640px), (pointer: coarse) and (max-height: 500px) {
+  html[data-keyboard-open] .app-shell {
+    transition: height var(--dur-base) var(--ease-native);
+  }
 }

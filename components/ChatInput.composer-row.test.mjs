@@ -68,7 +68,12 @@ test("the row itself cannot widen the page", () => {
   for (const declaration of ["min-width: 0;", "max-width: 100%;"]) {
     assert.ok(rule.includes(declaration), `the composer row keeps ${declaration}`);
   }
-  assert.match(css, /html\[data-keyboard-open\] \.chat-composer-controls/, "the phone hides the row's controls while the keyboard is up");
+  // The keyboard used to hide this strip (the fork's own rule), which left the phone's
+  // composer with only `+` and Send: the model, the reasoning and the tools had no way
+  // in while typing, and the side-chat bubble vanished with them. The strip stays, so
+  // nothing in the row moves when the keyboard opens.
+  assert.ok(!/html\[data-keyboard-open\] \.chat-composer-controls\s*\{[^}]*display: none/.test(css),
+    "the phone keeps the row's controls while the keyboard is up");
 });
 
 test("the card keeps one control row: attach, the session controls, then Send", () => {
@@ -137,9 +142,10 @@ test("the card has no clear button, and its row is quiet", async () => {
   assert.match(active, /color: var\(--text\);/, "it says so in the glyph's colour");
   assert.doesNotMatch(active, /background/, "and grows no background of its own");
   assert.match(cssRule(css, ".composer-attach-button") ?? "", /background: none;/, "at rest the button is bare");
-  // The phone's keyboard hides the controls strip, and the strip is the row's flex
-  // filler: with it gone every control packed to the left, Send included (WebKit, 390px:
-  // Send at x=130 of a card ending at 366). `auto` keeps Send in the card's corner.
+  // The row's flex filler is the controls strip. It used to be hidden under the
+  // keyboard, and with it gone every control packed to the left, Send included (WebKit,
+  // 390px: Send at x=130 of a card ending at 366). `auto` keeps Send in the card's
+  // corner for the strip's other states, and for any rule that hides it later.
   const sendRule = cssRule(css, ".chat-composer-actions > .composer-send-button");
   assert.ok(sendRule && sendRule.includes("margin-left: auto"),
     "Send stays at the card's bottom-right corner with the strip hidden or shown");

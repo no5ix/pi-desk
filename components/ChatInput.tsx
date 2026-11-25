@@ -71,6 +71,8 @@ import { ComposerDeviceCopies } from "./ComposerDeviceCopies";
 import { SideChatPlusIcon } from "./SideChatIcon";
 import { AgentRunningIcon } from "./TopbarSubagents";
 import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
+import { useComposerCaret } from "@/hooks/useComposerCaret";
+import { armComposerCaret, isTouchPointer } from "@/lib/composer-caret";
 
 
 export interface AttachedImage {
@@ -958,6 +960,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : {};
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The phone's keyboard lifts the composer by shrinking the app, and WebKit paints
+  // the caret where the field stood before the travel: this puts it back.
+  useComposerCaret(textareaRef);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
@@ -3008,6 +3013,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <div
             ref={composerRef}
             className="chat-composer"
+            onPointerDown={(event) => {
+              // The card is the editor's box: a finger's tap anywhere in it that is not a
+              // control puts the caret in the text, and the keyboard that comes with the
+              // tap has a caret to show.
+              if (!isTouchPointer(event.nativeEvent)) return;
+              const target = event.target as HTMLElement | null;
+              if (target?.closest("button, input, select, textarea, [data-no-drag]")) return;
+              armComposerCaret(textareaRef.current);
+            }}
             // Tints the card's hairline (native-theme.css): a shell command, or a
             // run that will take this message as a steer / follow-up.
             data-state={compact ? undefined : bashMode ? "bash" : undefined}
@@ -3032,6 +3046,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <textarea
             ref={textareaRef}
             className="chat-input-textarea"
+            onPointerDown={(event) => {
+              // A finger's tap is the only reason iOS accepts for raising its keyboard,
+              // and a tap on a field WebKit already counts as focused is no focus event
+              // at all: the keyboard comes up with no caret. Arm it inside the gesture.
+              if (isTouchPointer(event.nativeEvent)) armComposerCaret(textareaRef.current);
+            }}
             aria-label={compact ? t("chat.quoteQuestion") : undefined}
             value={value}
             onChange={(e) => {

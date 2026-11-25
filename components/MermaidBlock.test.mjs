@@ -80,7 +80,7 @@ test("CodeBlock owns the pre background without a competing shorthand", () => {
     const html = renderCode({ code: "const x = 1;", lang: "javascript", isStreaming });
     const pre = html.match(/<pre\b[^>]*>/)?.[0];
     assert.ok(pre);
-    assert.match(pre, /background-color:color-mix/);
+    assert.match(pre, /background-color:var\(--code-surface\)/, "the fence's fill is the token the stylesheet re-points per theme");
     assert.doesNotMatch(pre, /(?:[;\"]|^)background:/);
   }
 });

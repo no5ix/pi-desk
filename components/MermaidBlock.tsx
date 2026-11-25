@@ -395,7 +395,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
             fontSize: "calc(12.5px + var(--chat-font-size-offset, 0px))",
             lineHeight: 1.62,
             overflowX: "auto",
-            backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+            backgroundColor: "var(--code-surface)",
           }}
         >
           <code style={{ fontFamily: "var(--font-mono)" }}>{code}</code>
@@ -414,7 +414,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
             // The wrapper draws the frame; the theme carries no border or background.
             border: "none",
             borderRadius: 0,
-            backgroundColor: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",
+            backgroundColor: "var(--code-surface)",
           }}
           codeTagProps={{ style: { fontFamily: "var(--font-mono)" } }}
         >

@@ -23,9 +23,17 @@ export async function checkCodeBackground(page) {
         const host = document.querySelector(".markdown-code-block");
         if (!host) return false;
         const probe = document.createElement("div");
-        probe.style.backgroundColor = "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))";
+        probe.style.backgroundColor = "var(--code-surface)";
         host.append(probe);
         const expected = getComputedStyle(probe).backgroundColor;
+        // The point of the token: a fence stands off the page it sits on. The 8 % mix
+        // this file used to pin measured 1 point per channel, which is no step at all.
+        const pageColor = getComputedStyle(document.querySelector(".markdown-body") || document.body).backgroundColor;
+        const channels = (value) => (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+        const a = channels(expected);
+        const b = channels(pageColor);
+        const distance = Math.max(...a.map((v, i) => Math.abs(v - b[i])));
+        if (distance < 6) throw new Error(`a code fence must stand off the page it sits on (${expected} vs ${pageColor})`);
         probe.remove();
         const nodes = [...document.querySelectorAll(".markdown-code-block pre")];
         return nodes.length === 2 && nodes.every((node) => (

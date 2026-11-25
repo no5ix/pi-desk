@@ -129,10 +129,16 @@ test("collapses secondary composer chrome while the mobile keyboard is open", ()
   assert.match(viewportHookSource, /delete root\.dataset\.keyboardOpen/);
   // Every selector the keyboard rules target must exist on the element it
   // means; a renamed class would otherwise leave the rule silently dead.
-  // The fork's composer chrome carries its own class; native-theme.css adds
-  // the keyboard rule for it next to upstream's .chat-input-controls one.
+  // The fork's composer chrome carries its own class. It used to be hidden under
+  // the keyboard as upstream hides its own row, and the phone's user asked for that
+  // back: with the strip hidden the composer kept only `+` and Send, so the model,
+  // the reasoning, the tools and the side-chat bubble were unreachable while typing.
+  // The rule is gone; the row's geometry must survive the keyboard, so what is pinned
+  // here is the row's own fill and Send's corner.
   assert.match(chatInputSource, /className="chat-composer-controls"/);
-  assert.match(nativeThemeSource, /html\[data-keyboard-open\] \.chat-composer-controls \{\s*display: none !important;/);
+  assert.doesNotMatch(nativeThemeSource, /html\[data-keyboard-open\] \.chat-composer-controls \{\s*display: none/);
+  assert.match(nativeThemeSource, /\.chat-composer-actions > \.chat-composer-controls \{[\s\S]*?flex: 1 1 auto;/);
+  assert.match(nativeThemeSource, /\.chat-composer-actions > \.composer-send-button \{[\s\S]*?margin-left: auto;/);
   assert.match(chatInputSource, /className=\{compact \? undefined : "chat-input-shell"\}/);
   assert.match(chatWindowSource, /className="chat-window chat-content /);
   // Phone landscape exceeds the 640px breakpoint but has the least height.

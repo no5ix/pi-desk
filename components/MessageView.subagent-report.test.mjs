@@ -38,8 +38,9 @@ test("a subagent report is collapsed by default, and its header is the toggle", 
   assert.doesNotMatch(card, /borderBottom: contentExpanded/,
     "no divider under the header, folded or open: the header and the body read as one flat card");
   assert.match(card, /title=\{t\(contentExpanded \? "chat\.collapseSubagentReport" : "chat\.expandSubagentReport"\)\}/);
-  // Folded, the card is its header alone: no body, no Copy row.
-  assert.match(card, /\{contentExpanded \? \(\s*<div style=\{\{ padding: "6px 9px" \}\}>[\s\S]*?\) : isHiddenDisplay \? \(/,
+  // Folded, the card is its header alone: no body, no Copy row. The body's div carries
+  // the class the stylesheet fills (`custom-message-body`), so the pin allows attributes.
+  assert.match(card, /\{contentExpanded \? \(\s*<div[^>]*padding: "6px 9px"[^>]*>[\s\S]*?\) : isHiddenDisplay \? \(/,
     "the collapsed preview line stays what it was for a hidden extension message, and a folded report shows nothing");
   assert.match(card, /A collapsed report shows nothing but its header[\s\S]*?\{\(contentExpanded \|\| !collapsesByDefault\) && \(/,
     "the Copy and details row belongs to the text it reports");
