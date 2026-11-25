@@ -127,13 +127,13 @@ test("a phone folds the rail above the list, and the blocks are told apart by co
   assert.match(picker, /className="directory-picker-action is-emphasis"/, "New directory is the accent chip");
   assert.match(picker, /className="directory-picker-action is-secondary"/, "Cancel is the neutral chip");
   assert.match(css, /\.directory-picker-back:focus-visible,[\s\S]*?box-shadow: inset 0 0 0 2px var\(--accent\);/, "a borderless control still shows the keyboard on it");
-  // Asked after a screenshot of the path field mid-typing: "when I typing, don't highlight it".
-  // The window focuses the field on open, so the heavy ring sat there the whole time a path
-  // was typed; a typed-into field takes the soft ring and a deeper chip.
+  // Asked after a screenshot of the focused field: "when I focus it, don't give it a border".
+  // The window focuses the path field on open, so any ring around it is a line the user
+  // stares at while typing; a focused field only deepens its own chip.
   for (const selector of [".directory-picker-path:focus-visible", ".directory-picker-filter:focus-visible"]) {
-    assert.doesNotMatch(rule(selector), /2px var\(--accent\)[; ]/, `${selector} keeps no hard accent ring`);
-    assert.match(rule(selector), /inset 0 0 0 2px var\(--accent-border\)/, `${selector} is still marked for the keyboard`);
-    assert.match(rule(selector), /color-mix\(in srgb, var\(--text\) 7%, var\(--bg-panel\)\)/, `${selector} deepens its chip while focused`);
+    assert.doesNotMatch(rule(selector), /inset|2px var\(--accent\)/, `${selector} shows no ring`);
+    assert.match(rule(selector), /box-shadow: none/, `${selector} clears the ring the chips keep`);
+    assert.match(rule(selector), /color-mix\(in srgb, var\(--text\) 12%, var\(--bg-panel\)\)/, `${selector} deepens its chip while focused`);
   }
   assert.ok(!picker.includes("borderBottom") && !picker.includes("borderTop"),
     "no divider line is set inline on a band");
