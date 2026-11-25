@@ -62,10 +62,19 @@ test("the panel's stylesheet is the menu surface: rounded, shadowed, no rules dr
   const panel = cssRule(".agent-session-panel");
   assert.ok(panel, "the panel has a fork rule of its own");
   assert.doesNotMatch(panel, /border:|--hairline|border-color/, "no hairline of its own: `.app-menu` carries the separator and the shadow");
-  // The panel docks against the conversation column, so the adopted user stylesheet
-  // squares it: the rounded corner used to float a panel that reads as one surface.
-  // `.app-menu` still paints its own shadow; only the corner is the panel's own call.
-  assert.match(panel, /border-radius: 0 !important;/, "the one radius the panel owns: flush with the column it docks into");
+  // The card hangs below the header's count, so it takes the surface every other popup
+  // wears: the menu's radius, the elevated surface, the popover shadow. The tail of this
+  // stylesheet used to square it (`border-radius: 0`) and repaint it with the topbar's
+  // translucent `--bg-panel`, which left a grey sheet with right angles and no shadow —
+  // the panel the user called ugly. The compound selector outranks a single-class rule.
+  const card = css.match(/\.agent-session-panel\.app-menu \{[^}]*\}/);
+  assert.ok(card, "the panel names the shared menu surface in its own stylesheet");
+  assert.match(card[0], /border-radius: var\(--menu-radius\) !important;/, "a rounded rectangle, the app menu's radius");
+  assert.match(card[0], /box-shadow: var\(--shadow-popover\) !important;/, "the app menu's shadow, so the card floats");
+  assert.match(card[0], /background: var\(--surface-elevated\) !important;/, "an elevated surface, not the chrome's translucent ink");
+  assert.ok(!/^\.agent-session-panel \{[^}]*border-radius: 0/m.test(css), "nothing squares the card from behind");
+  assert.ok(!/^\.agent-session-panel \{[^}]*background: var\(--bg-panel\)/m.test(css),
+    "and nothing repaints it with the topbar's ink");
   const row = cssRule(".agent-row");
   assert.ok(row, "the row has a fork rule of its own");
   assert.match(row, /border: 0;/, "rows carry no divider: the list draws no rules inside it");

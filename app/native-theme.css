@@ -11734,6 +11734,16 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
    the user pointed at — the `.app-menu` surface every popup uses: a rounded card in the
    menu's own shadow with rounded rows floating in it. The class carries the surface, the
    rules below lay out what is inside it, and nothing is drawn as a line again. */
+/* The three things the card is judged on, stated where the panel is laid out: the
+   selector names `.app-menu` too, so it outranks any single-class rule that tries to
+   square the card, flatten its surface or drop its shadow again (the tail of this
+   stylesheet did exactly that). A rounded rectangle in the menu's shadow, floating
+   below the header — which is what the user asked for and what every other popup is. */
+.agent-session-panel.app-menu {
+  border-radius: var(--menu-radius) !important;
+  background: var(--surface-elevated) !important;
+  box-shadow: var(--shadow-popover) !important;
+}
 .agent-session-panel {
   display: flex;
   flex-direction: column;
@@ -13111,15 +13121,15 @@ html.dark {
 }
 
 /* The read-only panels that dock beside the conversation: the panel's own ink,
-  and the two edges that face the conversation. */
+  and the two edges that face the conversation. The Agents panel is NOT in this group:
+  it is a card that hangs below the header's count, so the app menu's rounded, shadowed
+  surface owns it (`.agent-session-panel.app-menu`). Squaring it here — what this rule
+  used to do with `border-radius: 0` and the topbar's translucent `--bg-panel` — left a
+  grey sheet with right angles, floating on the page with no shadow. */
 .session-info-popover {
   background: var(--bg-panel) !important;
   border-bottom: var(--hairline) solid var(--border) !important;
   border-left: var(--hairline) solid var(--border) !important;
-}
-.agent-session-panel {
-  background: var(--bg-panel) !important;
-  border-radius: 0 !important;
 }
 .system-prompt-panel {
   background: var(--bg-panel) !important;

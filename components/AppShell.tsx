@@ -122,6 +122,7 @@ import { addSideTab, pruneSideTabs, readSideTabs, SIDE_TABS_KEY, writeSideTabs, 
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
 import { archivedProjectRootFor, restoreProjectRoot } from "@/lib/archived-projects";
 import { getProjectDisplayName } from "@/lib/project-display";
+import { AGENT_PANEL_EDGE_GUTTER, placeAgentsPanel } from "@/lib/top-panel-placement";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
 /** A page covering the chat area, named by `?view=`. */
@@ -136,7 +137,9 @@ type AutoNameStatus =
   | { kind: "success" }
   | { kind: "error"; message: string };
 const FILE_TREE_DEFAULT_WIDTH = 300;
-const AGENT_PANEL_WIDTH = 420;
+// The Agents panel's width and its drop live in lib/top-panel-placement.ts, where the
+// placement is measured: a card hangs below the header and keeps a gutter from the
+// column's edges, so its corners and its shadow sit on the page.
 const FILE_TREE_MIN_WIDTH = 220;
 const FILE_TREE_MAX_WIDTH = 520;
 const FILE_TREE_PREVIEW_MIN_WIDTH = 240;
@@ -523,6 +526,10 @@ export function AppShell() {
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const [pendingQuotePrompt, setPendingQuotePrompt] = useState<{ sessionId: string; text: string } | null>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
+  // The header's subagent count, which opens the Agents panel. The card is placed under
+  // this chip, so the shell has to know where it is; it is null when the family is empty
+  // (the chip renders nothing) and the placement falls back to centring under the header.
+  const topbarSubagentsRef = useRef<HTMLElement | null>(null);
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
   const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
@@ -599,7 +606,7 @@ export function AppShell() {
 
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
-  const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number; floating?: boolean } | null>(null);
 
   useEffect(() => {
     if (!sessionHasBranches) {
@@ -776,18 +783,11 @@ export function AppShell() {
       const left = topBarRect.left;
       const available = topBarRect.width;
       if (activeTopPanel === "agents") {
-        const width = Math.min(AGENT_PANEL_WIDTH, available);
-        // Away from the sidebar, and under the count it opens from. A popover keeps to the
-        // side its control sits (components/SessionStatsPopover.tsx anchors top-right); the
-        // subagent count lives at the row's right end, while this panel was pinned to the
-        // topbar's left edge — so on a desktop or a pad a 420px card landed on top of the
-        // project tree, the one place a user is not reading a run. A phone's topbar is the
-        // whole width, where `available` already caps the panel and this stays at 0.
-        setTopPanelPos({
-          top: topBarRect.bottom,
-          left: Math.max(topBarRect.left, topBarRect.right - width),
-          width,
-        });
+        // A card, so it opens where its control is: under the header's subagent count on
+        // a desktop or a pad, centred under the header on a phone (lib/top-panel-
+        // placement.ts). `topbarSubagentsRef` is null when the family is empty — no chip,
+        // no anchor, so the placement centres.
+        setTopPanelPos(placeAgentsPanel(topBarRect, topbarSubagentsRef.current?.getBoundingClientRect() ?? null, isMobile));
         return;
       }
       setTopPanelPos({ top: topBarRect.bottom, left, width: available });
@@ -796,7 +796,7 @@ export function AppShell() {
     const ro = new ResizeObserver(update);
     ro.observe(topBarRef.current);
     return () => ro.disconnect();
-  }, [activeTopPanel]);
+  }, [activeTopPanel, isMobile]);
 
   // Files unmount when inactive; workspace terminals stay mounted until closed.
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
@@ -2580,6 +2580,7 @@ export function AppShell() {
                     sideChats={topBarSideChats}
                     onOpenAgents={() => toggleTopPanel("agents")}
                     translate={translate}
+                    anchorRef={topbarSubagentsRef}
                   />
                 )}
                 {/* The live clock after the counts: how long the running task has
@@ -2982,8 +2983,12 @@ export function AppShell() {
               top: topPanelPos.top,
               left: topPanelPos.left,
               width: topPanelPos.width,
-              maxHeight: `calc(100dvh - ${topPanelPos.top}px)`,
-              overflowY: "auto",
+              // A card keeps its own gutter at the bottom; a sheet fills the column.
+              maxHeight: `calc(100dvh - ${topPanelPos.top}px${topPanelPos.floating ? ` - ${AGENT_PANEL_EDGE_GUTTER}px` : ""})`,
+              // The sheet scrolls in its own layer. A card does not: its list scrolls
+              // inside the panel (AgentSessionPanel), and a scroll container here would
+              // clip the shadow on the left, the right and the bottom.
+              overflowY: topPanelPos.floating ? "visible" : "auto",
               zIndex: 500,
             }}>
               {activeTopPanel === "agents" && activeSessionFamily && selectedSession && (

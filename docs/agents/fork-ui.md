@@ -685,16 +685,35 @@ opens the Agents panel, and a session with no subagent runs renders nothing. The
 one `.app-menu` surface — the rounded card, the separator and `--shadow-popover` every
 popup already uses — and not a box welded to the topbar: no hairline down its sides, no rule
 under the header, none under the search box, none under a row. Its rows are flat and rounded
-and the selected one is a wash with an inset accent bar (`--menu-selection-color`); its
+and the selected one is a wash with an inset accent bar (`--menu-selection-color`);
 delete confirmation and steer field are inset strips. The filter box lives in the header row
-with the title and the counts (the `> 8` gate is unchanged). The panel is placed under the
-count it opens from, at the topbar's **right** edge: pinned to the topbar's left edge, the
-420px card sat on top of the project tree on a desktop and a pad, which is where nobody is
-reading a run. A running row leads with the header's subagent head (`AgentRunningIcon`,
-exported, at row size, pulsing), not a spinner: one shape for one state. One local caveat is
-worth knowing when a panel refuses to look round: the install's `<agentDir>/desktop/custom.css`
-loads after every app stylesheet, and a block like
-`.agent-session-panel { border-radius: 0 !important }` in it wins the cascade.
+with the title and the counts (the `> 8` gate is unchanged).
+
+The card's surface and its place are both measured (`e2e/agents-panel-card.mjs`, real
+CSS and real components at 1440 / 834 / 390): a rounded rectangle (`--menu-radius`), the
+menu's shadow, `--surface-elevated` ink, and a
+layer that never scrolls (`overflowY: "visible"`) because a scroll container clips the
+shadow on the left, the right and the bottom. The tail of `app/native-theme.css` used to
+undo all of that with `.agent-session-panel { background: var(--bg-panel) !important;
+border-radius: 0 !important }` — the sheet in the user's screenshot — so the panel now
+states the three things itself as `.agent-session-panel.app-menu` (0,2,0), which no
+single-class rule can beat. Placement is `placeAgentsPanel` in
+`lib/top-panel-placement.ts` (pure, `lib/top-panel-placement.test.mjs`), and it anchors
+on `topbarSubagentsRef` — the chip publishes its box through `anchorRef`, which is the
+only reason the card knows where the count is. A desktop and a pad open the card **under
+the count**, its left edge in line with it, clamped so its right edge stays inside the
+conversation column (pinned to the topbar's right edge, the 420px card sat on the file
+panel, a screen from the control that opened it). A phone's row wraps and the count can
+land anywhere, so there the card **centres on the page** below the header, the way the
+phone's other popups read. Both keep `AGENT_PANEL_DROP_GAP` under the header and
+`AGENT_PANEL_EDGE_GUTTER` from the edges: a card flush with a window edge loses the
+shadow on that side, which is the flat look the card is meant to escape. One local caveat
+is worth knowing when a panel refuses to look round: the install's
+`<agentDir>/desktop/custom.css` loads after every app stylesheet, and an id-scoped block
+like `#panel-layer .agent-session-panel { border-radius: 0 !important }` in it still wins
+the cascade (a bare single-class rule no longer does).
+A running row leads with the header's subagent head (`AgentRunningIcon`, exported, at row
+size, pulsing), not a spinner: one shape for one state.
 The row
 wraps, and the counts are its last item, so on a phone, or behind a long project name,
 they take the second line; the topbar is a floor (`minHeight` in `AppShell`, `height:
