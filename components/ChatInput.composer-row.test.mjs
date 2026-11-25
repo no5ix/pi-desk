@@ -261,3 +261,39 @@ test("the row's glyphs are one cluster, and a phone's strip sits behind the atta
   assert.match(chatInput, /modelDisplayName \? \`\$\{t\("chat\.changeModel"\)\}: \$\{modelDisplayName\}\` : null,/);
   assert.match(chatInput, /aria-label=\{t\("chat\.moreControls"\)\}/, "the accessible name stays the short one");
 });
+
+test("the phone's strip appears and disappears with a transition, in and out", () => {
+  // The strip used to blink: the closed phone row kept the strip mounted and flipped its
+  // `display`, so opening and the close control's tap swapped the glyphs in one frame.
+  // The animation is CSS on that same flip, and the two pieces it needs are the point of
+  // this test: `display` is a discrete property, so an exit needs `transition-behavior:
+  // allow-discrete` (without it the strip is gone before a frame of the fade), and an
+  // entry needs `@starting-style` (a browser skips the transition on the first style
+  // update after `display: none`). Firefox parses allow-discrete without transitioning
+  // `display` (bug 1882408): there the strip fades in and closes at once.
+  assert.match(chatInput, /className="composer-controls-strip"/, "the strip carries its own class");
+  assert.match(chatInput, /data-strip-open=\{isNarrow \? \(controlsMenuOpen \? "true" : "false"\) : undefined\}/,
+    "and names its tier and state, so the desktop's inline row never animates");
+  const strip = cssRule(css, ".composer-controls-strip[data-strip-open]");
+  assert.ok(strip, "the strip's animation has a rule of its own in the fork's stylesheet");
+  assert.match(strip, /transition:\s*\n?\s*display [^,]+,\s*\n\s*opacity/, "display is in the transition list, so the exit keeps the box long enough to fade");
+  assert.match(strip, /\n  transition-behavior: allow-discrete;/,
+    "allow-discrete is its own declaration: in the shorthand an older engine drops the whole transition");
+  assert.doesNotMatch(strip, /transition:[^;]*allow-discrete/, "never inside the transition shorthand");
+  assert.match(strip, /transform-origin: left bottom;/,
+    "it grows out of the More button's edge, the corner it is anchored to");
+  const closed = cssRule(css, '.composer-controls-strip[data-strip-open="false"]');
+  assert.ok(closed, "the closed state carries the exit values");
+  assert.match(closed, /opacity: 0;/);
+  assert.match(closed, /translate: 0 6px;/, "and the strip sinks back toward the glyph that opens it");
+  assert.match(closed, /pointer-events: none;/,
+    "the fading strip keeps its box, so it must not eat the taps aimed at the row under it");
+  assert.match(css, /@starting-style \{\s*\n\s*\.composer-controls-strip\[data-strip-open="true"\] \{\s*\n\s*opacity: 0;/,
+    "the entry transitions from the closed values");
+  const reducedAt = css.indexOf("@media (prefers-reduced-motion: reduce) {\n  .composer-controls-strip");
+  assert.ok(reducedAt > 0, "reduced motion is handled");
+  const reduced = css.slice(reducedAt, reducedAt + 900);
+  assert.match(reduced, /translate: none;\s*\n\s*scale: none;\s*\n\s*transition-duration: var\(--dur-fast\);/,
+    "no travel, a shorter fade");
+  assert.match(reduced, /@starting-style/, "including the entry's starting style");
+});
