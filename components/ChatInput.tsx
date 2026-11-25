@@ -76,6 +76,12 @@ interface Props {
   /** Files picked with "+": images and other files. Without it the picker takes images only. */
   onAttachFiles?: (files: File[]) => void;
   onAbort: () => void;
+  /** A subagent run of this conversation is live while the main session is idle (a
+   *  background run, a queued one). The disc is Stop, not the send arrow: the run is
+   *  the one thing here the user can act on, and an idle arrow asked for a prompt. */
+  subagentsRunning?: boolean;
+  /** Stop the conversation's live subagent runs (the Agents panel's Stop, per run). */
+  onAbortSubagents?: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   /** C1: while a run streams, send the draft to a new side chat instead (no images, as `/side`). */
   onSideChat?: (message: string) => void;
@@ -850,7 +856,7 @@ export function ModelScopeWarningBanner({
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAttachFiles, onAbort, onSteer, onSideChat, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
+  onSend, onAttachFiles, onAbort, subagentsRunning, onAbortSubagents, onSteer, onSideChat, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   defaultModel, onSetDefaultModel,
   onCompact, onAbortCompaction, isCompacting, compactError, compactNotice, compactResult, summarizationRetry, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
@@ -1600,7 +1606,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText || attachedImages.length > 0 || attachedFiles.length > 0;
   const canSend = canQueueStreamingMessage && !workspaceUnavailable;
-  const showStop = isStreaming && !canQueueStreamingMessage;
+  // Stop covers the family's live runs, not only this session's turn: a background
+  // subagent leaves the main session idle, and an idle composer answered an empty card
+  // with a send arrow while a run was going. With a draft in the card the arrow keeps
+  // its meaning (queue into a run, send into an idle session).
+  const showStop = (isStreaming || Boolean(subagentsRunning)) && !canQueueStreamingMessage;
+  const stopRuns = () => {
+    // A running turn owns the disc and its Stop cascades to the children it waits on
+    // (lib/subagent-runtime.ts aborts the wait with the parent). Only an idle session
+    // needs the per-run route.
+    if (isStreaming) onAbort();
+    else onAbortSubagents?.();
+  };
   // Warn when images are attached but the selected model is known not to accept
   // image input (#584), including a resolved default. Unknown models stay silent.
   const showImageUnsupportedWarning = (
@@ -2322,7 +2339,35 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (!isMobile) setControlsMenuOpen(false);
   }, [isMobile]);
 
-
+  // The row's four glyphs are one cluster. On a desktop or a pad the model chip joins
+  // the reasoning / tools / automation group, and the whole cluster sits behind the
+  // attach button; the phone keeps the chip in its own cell, because its group lives
+  // inside "More" and a model picker hidden behind a second tap is the one control a
+  // phone cannot spare. Visible always, busy while a switch is pending; a switch during
+  // a run applies from its next request (C2).
+  const modelControl = (modelOptions.length > 0 || model || modelError) && onModelChange ? (
+    <ModelSelector
+      options={modelOptions}
+      value={model}
+      onChange={onModelChange}
+      busy={modelSwitching}
+      isAutoSelection={isAutoModelSelection}
+      // The row is icon-only, like the reasoning and tools buttons; the model's
+      // name rides in the button's title and aria-label.
+      iconOnly
+      defaultValue={defaultModel}
+      onSetDefault={onSetDefaultModel}
+    />
+  ) : null;
+  // A virtual model routes each request; show where the latest response went, like pi's footer.
+  const routedModelHint = routedModel && routedModelName ? (
+    <span
+      className="routed-model-hint"
+      title={t("chat.routedModelHint", { model: `${routedModel.provider}/${routedModel.id}${routedModel.thinkingLevel ? ` • ${routedModel.thinkingLevel}` : ""}` })}
+    >
+      → {routedModelName}{routedModel.thinkingLevel && !isNarrow ? ` • ${routedModel.thinkingLevel}` : ""}
+    </span>
+  ) : null;
 
   return (
     <fieldset
@@ -3127,43 +3172,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 onWorktreeRemoved={onComposerWorktreeRemoved}
               />
             )}
-            {/* Model selector — visible always, busy while a switch is pending; a switch during a run applies from its next request (C2) */}
-            {(modelOptions.length > 0 || model || modelError) && onModelChange && (
-              <ModelSelector
-                options={modelOptions}
-                value={model}
-                onChange={onModelChange}
-                busy={modelSwitching}
-                isAutoSelection={isAutoModelSelection}
-                // The row is icon-only, like the reasoning and tools buttons; the model's
-                // name rides in the button's title and aria-label.
-                iconOnly
-                defaultValue={defaultModel}
-                onSetDefault={onSetDefaultModel}
-              />
-            )}
-            {/* A virtual model routes each request; show where the latest response went, like pi's footer. */}
-            {routedModel && routedModelName && (
-              <span
-                className="routed-model-hint"
-                title={t("chat.routedModelHint", { model: `${routedModel.provider}/${routedModel.id}${routedModel.thinkingLevel ? ` • ${routedModel.thinkingLevel}` : ""}` })}
-              >
-                → {routedModelName}{routedModel.thinkingLevel && !isNarrow ? ` • ${routedModel.thinkingLevel}` : ""}
-              </span>
-            )}
+            {/* The phone keeps the chip in this cell, beside its project and branch
+                chips; a desktop and a pad put it in the group below. */}
+            {isNarrow && modelControl}
+            {isNarrow && routedModelHint}
           </div>
 
-          {/* spacer */}
-          {!isNarrow && <div style={{ flex: 1 }} />}
-
-          {/* RIGHT: thinking + tools preset + compact + sound (idle) | Stop + sound (streaming) */}
+          {/* THE CLUSTER: model + reasoning + tools preset + automation (a running
+              compaction takes its own cell in the run), then the spacer, so the glyphs
+              sit together at the row's left and Send keeps the card's corner. */}
           <div ref={controlsMenuRef} style={{
             flex: "0 0 auto",
             display: "flex",
             alignItems: "center",
             justifyContent: "flex-end",
             position: "relative",
-            marginLeft: isNarrow ? 0 : "auto",
+            marginLeft: 0,
           }}>
             {isNarrow && (
               <button
@@ -3219,6 +3243,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 backdropFilter: "blur(10px)",
               } : null),
             }}>
+            {/* The model is the cluster's first cell on a desktop or a pad: four glyphs
+                in one run behind the attach button, the chip collapsed into the group
+                the phone opens as "More". */}
+            {!isNarrow && modelControl}
             {/* Keep reasoning and Config as separate, consistent option menus. */}
             {(onThinkingLevelChange || chatOnly) && (
               <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
@@ -3483,7 +3511,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </button>
             )}
             </div>
+            {!isNarrow && routedModelHint}
           </div>
+
+          {/* spacer */}
+          {!isNarrow && !compact && <div style={{ flex: 1 }} />}
 
         </div>}
           {/* No "clear the composer" button: the text is a textarea, and selecting it and
@@ -3505,7 +3537,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             type="button"
             className={compact ? "native-primary-button" : "native-primary-button composer-send-button"}
             data-action={showStop ? "stop" : isStreaming ? "queue" : "send"}
-            onClick={showStop ? onAbort : isStreaming ? () => void sendQueued(onFollowUp ? "followup" : "steer") : handleSend}
+            onClick={showStop ? stopRuns : isStreaming ? () => void sendQueued(onFollowUp ? "followup" : "steer") : handleSend}
             disabled={!showStop && (!canSend || (isStreaming && !onFollowUp && !onSteer))}
             title={t(showStop ? "chat.stopAgent" : isStreaming ? "chat.queueMessage" : "chat.send")}
             aria-label={t(showStop ? "chat.stopAgent" : isStreaming ? "chat.queueMessage" : "chat.send")}

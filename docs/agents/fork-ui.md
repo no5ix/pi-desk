@@ -101,6 +101,16 @@ and hover read. `ModelSelector` takes `iconOnly` for this; the `field` variant (
 model dialogs) keeps its label. The project and branch chips keep their text: they name
 which folder and which branch a session is in, which is identity, not a setting.
 
+The four icon controls are **one cluster**, and on a desktop or a pad the cluster starts
+behind the attach `+`: the model chip collapses into the group that the phone opens as
+"More" — model, reasoning, tool preset, session automation, in that order — and the row's
+spacer sits *after* the group, as a child of `.chat-composer-actions` (not inside
+`.chat-composer-controls`), so the strip is no longer pushed to the card's right edge.
+The chip is built once (`modelControl`) and placed by tier, never copied. A phone keeps
+it in the left cell and the settings in the popover: a model picker one tap deep is the
+control a phone cannot spare. `components/ChatInput.composer-row.test.mjs` pins the
+order, the single `<ModelSelector>`, and that the strip has no `marginLeft: "auto"`.
+
 The card has no "clear the composer" button: a textarea is selected and deleted, so a
 trash icon asked for a click to do what the keyboard already does, in a row that carries
 the controls with no key equivalent. `chat.clearDraft` left the three locales with it and
@@ -146,8 +156,9 @@ is what lifts it clear; being scroll content, it only exists at the tail. The sa
 owns `overflow-anchor: none` pins it (`components/ChatWindow.scroll-anchor.test.mjs`).
 
 The row under the card no longer exists; the same controls live inside it. On a phone
-`.chat-composer-controls` is a grid with exactly TWO children (the wide spacer is
-rendered only on the flex tier), so its template is
+`.chat-composer-controls` is a grid with exactly TWO children (the wide spacer is a
+sibling in `.chat-composer-actions` and is rendered only on the wide, non-compact tier),
+so its template is
 `minmax(0, 1fr) auto`: the left cell takes the free width and shrinks, the
 controls keep their own `auto` track. With an `auto` first track the grid sizes
 that column to the model chip's untruncated max-content, the controls cell
@@ -227,7 +238,7 @@ with an 8px gap. Menu and Delete-key entry points share this confirmation, inclu
 the optional chat-folder checkbox; Shift+click retains its existing bypass. Keep the
 dialog open while deleting, with local errors and retry, and restore row focus on cancel.
 
-Session rows render the "…" action menu when `(hovered || touchMode)` — `touchMode` is a post-mount `matchMedia("(hover: none)")` check, so hover styling is untouched on desktop and rename/delete stay reachable on touch. The composer's single circular action shows Stop while a run is active and the draft is empty; typing switches it to queued Send, including on narrow screens. Escape remains available to stop while drafting. Rename/delete failures use the global shell notice shelf (`appNotify.error` with `sidebar.renameFailed` / `sidebar.deleteFailed`) instead of being swallowed.
+Session rows render the "…" action menu when `(hovered || touchMode)` — `touchMode` is a post-mount `matchMedia("(hover: none)")` check, so hover styling is untouched on desktop and rename/delete stay reachable on touch. The composer's single circular action shows Stop while a run is active and the draft is empty; typing switches it to queued Send, including on narrow screens. A live subagent run counts as a run: a background run leaves the main session idle, and an empty card that offered a send arrow while the header read `↻1` sent the user into the Agents panel for the only Stop in the app — so `subagentsRunning` (the family's running set, `components/AppShell.tsx`) puts the square back, and `stopRuns` calls the session's abort for a live turn (its signal already ends the children it waits on) or the per-run `POST /api/subagents/[id] {action:"abort"}` when the session is idle. Escape follows the same order. Side chats are conversations the user drives, never runs to stop, so they stay out of the set. Escape remains available to stop while drafting. Rename/delete failures use the global shell notice shelf (`appNotify.error` with `sidebar.renameFailed` / `sidebar.deleteFailed`) instead of being swallowed.
 Message-row copy/edit/fork actions use CSS hover/focus-within reveal instead of JS hover state, and are always visible under `(hover: none)`. They must remain pointer-enabled when focused so keyboard tabbing does not land on invisible controls.
 While a session runs, in-session "Edit from here" stays visible but disabled with the Esc hint; fork stays available because it copies to an independent file.
 
