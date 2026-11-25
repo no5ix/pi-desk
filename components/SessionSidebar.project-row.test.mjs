@@ -29,7 +29,12 @@ test("a pinned project is its yellow folder icon, with no pin button in the row"
 test("a fork is marked at the row's end, before the subagent count", async () => {
   const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
   const fork = sidebar.indexOf("session-item-fork-glyph");
-  const title = sidebar.indexOf('className="session-item-title"');
+  // Match the title's class token, not one literal attribute: a span that marks a
+  // pin by the title's ink spells the class as a template literal, and a missed
+  // indexOf returns -1 — a -1 end makes the `leading` slice below run to the end of
+  // the file, and the leading-glyph assertions then read the whole component.
+  const title = sidebar.search(/className=\{?["`]session-item-title/);
+  assert.ok(title > 0, "the row carries its title span");
   const toggle = sidebar.indexOf("session-item-children-toggle");
   assert.ok(fork > title, "the mark follows the title, it does not push it right");
   assert.ok(toggle > fork, "and sits right before the subagent count");
