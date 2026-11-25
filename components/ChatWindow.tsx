@@ -374,7 +374,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     sessionIdRef, scrollContainerRef,
     lastUserMsgRef, promptAnchorActive,
     branchSummaryPending, handleAbortBranchSummary, routedModel,
-    handleSend, handleAbort, handleAbortRetry, startSideChat, handleFork, handleEditContent, cancelEdit, handleModelChange,
+    handleSend, handleAbort, handleAbortRetry, startSideChat, handleBranchInNewChat, handleEditContent, cancelEdit, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction, handleQueuedMessageAction,
     retryLoad,
     dismissModelScopeWarnings,
@@ -1720,8 +1720,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                     onOpenSession={onOpenSession}
                     entryId={entryIds[idx]}
                     searchBlock={entryIds[idx] === pendingSearchScroll?.entryId ? searchBlock : undefined}
-                    onFork={bashRunning || isNew ? undefined : handleFork}
                     forking={forkingEntryId === entryIds[idx]}
+                    onBranchInNewChat={bashRunning || isNew ? undefined : handleBranchInNewChat}
                     onEditContent={handleEditContent}
                     editDisabled={sessionBusy}
                     onCancelEdit={cancelEdit}

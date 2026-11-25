@@ -198,6 +198,10 @@ test("only the session-mount load probes disk for external appends", () => {
 test("forking stays available during a run while in-session branch switches wait for it", () => {
   const forkSource = source.slice(
     source.indexOf("  const handleFork = useCallback"),
+    source.indexOf("  const handleBranchInNewChat = useCallback"),
+  );
+  const branchSource = source.slice(
+    source.indexOf("  const handleBranchInNewChat = useCallback"),
     source.indexOf("  const handleNavigate = useCallback"),
   );
   const leafChangeSource = source.slice(
@@ -205,9 +209,11 @@ test("forking stays available during a run while in-session branch switches wait
     source.indexOf("  const handleModelChange = useCallback"),
   );
 
-  // Fork copies into a new file, so only a shell command blocks it; the
-  // in-session edit still waits because pi refuses navigate_tree mid-run.
-  assert.match(chatWindowSource, /onFork=\{bashRunning \|\| isNew \? undefined : handleFork\}/);
+  // Branching out copies finished entries into a new file, so only a shell command
+  // blocks it; the in-session edit still waits because pi refuses navigate_tree mid-run.
+  assert.match(chatWindowSource, /onBranchInNewChat=\{bashRunning \|\| isNew \? undefined : handleBranchInNewChat\}/,
+    "a reply's Branch in new chat is offered during a run, and hidden only with no file to copy");
+  assert.match(branchSource, /if \(bashRunningRef\.current\) return;/, "the shell guard, as Fork's");
   assert.match(chatWindowSource, /onEditContent=\{handleEditContent\}/);
   assert.match(chatWindowSource, /editDisabled=\{sessionBusy\}/);
   assert.match(messageViewSource, /disabled=\{editBlocked\}/);
@@ -226,13 +232,16 @@ test("forking stays available during a run while in-session branch switches wait
   assert.equal((appShellSource.match(/locked=\{branchSwitchLocked\}/g) ?? []).length, 1);
 });
 
-test("first user messages expose both branch actions and edit before their own entry", () => {
+test("branch actions and edit travel to every message, by role and not by position", () => {
   const navigateSource = source.slice(
     source.indexOf("  const handleNavigate = useCallback"),
     source.indexOf("  const handleLeafChange = useCallback"),
   );
 
-  assert.match(chatWindowSource, /onFork=\{bashRunning \|\| isNew \? undefined : handleFork\}/);
+  assert.match(chatWindowSource, /onBranchInNewChat=\{bashRunning \|\| isNew \? undefined : handleBranchInNewChat\}/,
+    "every finished reply is offered the branch-out, the first turn included");
+  assert.doesNotMatch(chatWindowSource, /onFork=\{/,
+    "the prompt row has no branch chip: one entry point, on the reply a new chat continues from");
   assert.doesNotMatch(chatWindowSource, /idx === 0 && msg\.role === "user"/);
   assert.doesNotMatch(chatWindowSource, /prevAssistantEntryId/);
   assert.match(navigateSource, /type: "navigate_tree",\s*targetId: entryId/);

@@ -2143,6 +2143,34 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setForkingEntryId(null);
     }
   }, [addNotice, onSessionForked, t]);
+  /**
+   * "Branch in new chat" on a finished reply: pi's `fork_branch` copies the branch
+   * that ends at this entry — the reply itself included — into a new session file,
+   * and leaves this session running (unlike `fork`, which copies only what comes
+   * before the entry, and unlike `clone`, which refuses mid-turn). The browser moves
+   * to the copy, as with the sidebar's Fork.
+   */
+  const handleBranchInNewChat = useCallback(async (entryId: string) => {
+    if (bashRunningRef.current) return;
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    setForkingEntryId(entryId);
+    try {
+      const result = await sendAgentCommand<{ cancelled?: boolean; newSessionId?: string }>(sid, {
+        type: "fork_branch",
+        entryId,
+      });
+      const { cancelled, newSessionId } = result ?? {};
+      if (!cancelled && newSessionId) {
+        onSessionForked?.(newSessionId);
+      }
+    } catch (e) {
+      console.error("Branch in new chat failed:", e);
+      addNotice({ type: "error", message: t("chat.forkFailed", { error: e instanceof Error ? e.message : String(e) }) });
+    } finally {
+      setForkingEntryId(null);
+    }
+  }, [addNotice, onSessionForked, t]);
 
   const handleNavigate = useCallback(async (entryId: string): Promise<boolean> => {
     if (bashRunningRef.current) return false;
@@ -3167,7 +3195,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     lastUserMsgRef, pendingScrollToUserRef, initialScrollDoneRef,
     // Actions
     branchSummaryPending, handleAbortBranchSummary, routedModel,
-    handleSend, handleAbort, handleAbortRetry, startSideChat, handleFork, handleNavigate, handleModelChange,
+    handleSend, handleAbort, handleAbortRetry, startSideChat, handleFork, handleBranchInNewChat, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction, handleQueuedMessageAction,
     handleRecallQueue,
     handleBuiltinSlashCommand,

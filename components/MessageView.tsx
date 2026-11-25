@@ -213,7 +213,13 @@ interface Props {
   onOpenSession?: (sessionId: string) => void;
   entryId?: string;
   searchBlock?: AssistantContentBlock;
-  onFork?: (entryId: string) => void;
+  /**
+   * The footer's "Branch in new chat" on a finished reply: pi's `fork_branch` at
+   * this entry, so the copy carries the conversation through this reply and the
+   * current session keeps running. Only a saved session gets the button.
+   */
+  onBranchInNewChat?: (entryId: string) => void;
+  /** This message's branch request is in flight; the button shows "Creating…". */
   forking?: boolean;
   onEditContent?: (message: UserMessage, entryId: string) => void;
   /** Shared with MessageView so the disabled reason can travel with the button. */
@@ -297,12 +303,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, cwd, onOpenFile, onOpenFileDiff, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs, expandLatestThinking }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, cwd, onOpenFile, onOpenFileDiff, onOpenSession, entryId, searchBlock, onBranchInNewChat, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs, expandLatestThinking }: Props) {
   if (message.role === "user") {
-    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} editDisabled={editDisabled} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
+    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onEditContent={onEditContent} editDisabled={editDisabled} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} cwd={cwd} onOpenFile={onOpenFile} onOpenFileDiff={onOpenFileDiff} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} turnDurationMs={turnDurationMs} expandLatestThinking={expandLatestThinking} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} cwd={cwd} onOpenFile={onOpenFile} onOpenFileDiff={onOpenFileDiff} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} onBranchInNewChat={onBranchInNewChat} forking={forking} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} turnDurationMs={turnDurationMs} expandLatestThinking={expandLatestThinking} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -331,7 +337,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.onOpenSession === next.onOpenSession
     && prev.entryId === next.entryId
     && prev.searchBlock === next.searchBlock
-    && prev.onFork === next.onFork
+    && prev.onBranchInNewChat === next.onBranchInNewChat
     && prev.forking === next.forking
     && prev.onEditContent === next.onEditContent
     && prev.onCancelEdit === next.onCancelEdit
@@ -347,13 +353,11 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.turnDurationMs === next.turnDurationMs;
 });
 
-function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing }: {
+function UserMessageView({ message, cwd, onOpenFile, entryId, onEditContent, editDisabled, onCancelEdit, isEditing }: {
   message: UserMessage;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
   entryId?: string;
-  onFork?: (entryId: string) => void;
-  forking?: boolean;
   onEditContent?: (message: UserMessage, entryId: string) => void;
   editDisabled?: boolean;
   onCancelEdit?: () => void;
@@ -400,7 +404,6 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
     : "";
 
   const time = formatTime(message.timestamp, locale);
-  const canFork = !!entryId && !!onFork;
   const copyTarget = commandText ?? content;
   // Editing is a new user submission, not a replay of SDK transport metadata.
   // Build a copy with cleaned text while preserving every non-text attachment;
@@ -536,7 +539,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
       </div>
 
       {/* Bottom row: action buttons + timestamp */}
-      {(time || canFork || canEdit || true) && (
+      {(time || canEdit || canCancelEdit || true) && (
         <div style={{
           display: "flex", alignItems: "center", justifyContent: "flex-end",
           gap: 6, marginTop: 3,
@@ -573,10 +576,10 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                {copied ? t("i18n.copied") : t("i18n.copy")}
             </button>
           </div>
-          {(canFork || canEdit || canCancelEdit) && (
+          {(canEdit || canCancelEdit) && (
             <div
               className="user-msg-actions"
-              style={{ opacity: forking || canCancelEdit ? 1 : undefined }}
+              style={{ opacity: canCancelEdit ? 1 : undefined }}
             >
               {canEdit && !canCancelEdit && (
                 <button
@@ -628,34 +631,6 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   {t("i18n.cancel")}
                 </button>
               )}
-              {canFork && (
-                <button
-                  onClick={() => { onFork!(entryId!); }}
-                  disabled={forking}
-                   title={forking ? t("i18n.creatingSession") : t("i18n.newSessionTitle")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    padding: "3px 8px", height: "var(--control-h-sm)",
-                    background: "none", border: "none",
-                    borderRadius: "var(--radius-sm)",
-                    color: forking ? "var(--accent)" : "var(--text-dim)",
-                    cursor: forking ? "not-allowed" : "pointer",
-                    fontSize: "var(--fs-micro)", fontWeight: "var(--fw-regular)",
-                    whiteSpace: "nowrap",
-                    transition: "color var(--dur-fast) var(--ease-native)",
-                  }}
-                  onMouseEnter={(e) => { if (!forking) e.currentTarget.style.color = "var(--accent)"; }}
-                  onMouseLeave={(e) => { if (!forking) e.currentTarget.style.color = "var(--text-dim)"; }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="6" y1="3" x2="6" y2="15" />
-                    <circle cx="18" cy="6" r="3" />
-                    <circle cx="6" cy="18" r="3" />
-                    <path d="M18 9a9 9 0 0 1-9 9" />
-                  </svg>
-                   {forking ? t("i18n.creating") : t("i18n.newSession")}
-                </button>
-              )}
             </div>
           )}
           {time && <span className="message-meta" style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)" }}>{time}</span>}
@@ -685,6 +660,8 @@ function AssistantMessageView({
   onOpenModelSettings,
   turnDurationMs,
   expandLatestThinking,
+  onBranchInNewChat,
+  forking,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -698,6 +675,8 @@ function AssistantMessageView({
   sessionId?: string;
   entryId?: string;
   searchBlock?: AssistantContentBlock;
+  onBranchInNewChat?: (entryId: string) => void;
+  forking?: boolean;
   writtenFiles?: WrittenFile[];
   onCompact?: () => void;
   isCompacting?: boolean;
@@ -730,6 +709,9 @@ function AssistantMessageView({
   const truncated = isAssistantTruncated(message, { isStreaming });
   const unansweredTruncation = truncated && !hasAssistantAnswer(message);
   const [copied, setCopied] = useState(false);
+  // A finished, saved reply has an entry to branch from; the streaming tail has none
+  // (its entry is not on disk, and forking it would copy a half answer).
+  const canBranchInNewChat = !isStreaming && !!entryId && !!onBranchInNewChat;
   const streamStartRef = useRef<number | null>(null);
   const [tps, setTps] = useState<number | null>(null);
   const blockItemsRef = useRef(blockItems);
@@ -1002,7 +984,7 @@ function AssistantMessageView({
           <button
             onClick={copyContent}
              title={t("i18n.copyMessage")}
-            className="message-copy-action"
+            className="message-copy-action message-assistant-action"
             aria-live="polite"
             style={{
               display: "flex", alignItems: "center", gap: 4,
@@ -1028,7 +1010,43 @@ function AssistantMessageView({
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
               </svg>
             )}
-             {copied ? t("i18n.copied") : t("i18n.copy")}
+             {/* The label is a span so a phone under 380px can drop it and keep the
+                 glyph (globals.css `message-action-label`); the title carries the words. */}
+             <span className="message-action-label">{copied ? t("i18n.copied") : t("i18n.copy")}</span>
+          </button>
+        )}
+        {/* "Branch in new chat", the chip beside Copy: pi's `fork_branch` at this
+            entry, so the new session starts with the conversation through this
+            answer — the report included — and this chat keeps running. The footer's
+            own row, because the report is what a new chat wants to continue from. */}
+        {canBranchInNewChat && (
+          <button
+            onClick={() => { onBranchInNewChat!(entryId!); }}
+            disabled={forking}
+            title={forking ? t("i18n.creatingSession") : t("i18n.branchInNewChatTitle")}
+            className="message-assistant-action"
+            aria-live="polite"
+            style={{
+              display: "flex", alignItems: "center", gap: 4,
+              padding: "3px 8px", height: "var(--control-h-sm)",
+              background: "none", border: "none",
+              borderRadius: "var(--radius-sm)",
+              color: forking ? "var(--accent)" : "var(--text-dim)",
+              cursor: forking ? "not-allowed" : "pointer",
+              fontSize: "var(--fs-micro)", fontWeight: "var(--fw-regular)",
+              whiteSpace: "nowrap",
+              transition: "color var(--dur-fast) var(--ease-native)",
+            }}
+            onMouseEnter={(e) => { if (!forking) e.currentTarget.style.color = "var(--accent)"; }}
+            onMouseLeave={(e) => { if (!forking) e.currentTarget.style.color = "var(--text-dim)"; }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="6" y1="3" x2="6" y2="15" />
+              <circle cx="18" cy="6" r="3" />
+              <circle cx="6" cy="18" r="3" />
+              <path d="M18 9a9 9 0 0 1-9 9" />
+            </svg>
+            <span className="message-action-label">{forking ? t("i18n.creating") : t("i18n.branchInNewChat")}</span>
           </button>
         )}
         {/* How long this turn took, between Copy and the timestamp: the task is over

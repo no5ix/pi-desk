@@ -6553,7 +6553,9 @@ html.dark {
 .message-user:hover .user-msg-actions,
 .message-user:focus-within .user-msg-actions,
 .message-assistant:hover .message-copy-action,
-.message-assistant:focus-within .message-copy-action {
+.message-assistant:focus-within .message-copy-action,
+.message-assistant:hover .message-assistant-action,
+.message-assistant:focus-within .message-assistant-action {
   opacity: 1;
   pointer-events: auto;
 }
@@ -6561,7 +6563,8 @@ html.dark {
 @media (hover: none) {
   .message-copy-actions,
   .user-msg-actions,
-  .message-copy-action {
+  .message-copy-action,
+  .message-assistant-action {
     opacity: 1;
     pointer-events: auto;
   }
@@ -6574,14 +6577,17 @@ html.dark {
 .message-user:hover .user-msg-actions,
 .message-user:focus-within .user-msg-actions,
 .message-assistant:hover .message-copy-action,
-.message-assistant:focus-within .message-copy-action {
+.message-assistant:focus-within .message-copy-action,
+.message-assistant:hover .message-assistant-action,
+.message-assistant:focus-within .message-assistant-action {
   pointer-events: auto !important;
 }
 
 @media (hover: none) {
   .message-copy-actions,
   .user-msg-actions,
-  .message-copy-action {
+  .message-copy-action,
+  .message-assistant-action {
     pointer-events: auto !important;
   }
 }
@@ -6623,6 +6629,12 @@ html.dark {
 
 .message-assistant-footer {
   margin-top: 7px !important;
+  /* Copy, "Branch in new chat", the turn's duration and the time: on a phone these
+     chips are wider than the column, and a nowrap row pushed the timestamp past
+     the right edge. The row wraps; the time keeps its own `margin-left: auto`, so
+     a wrap drops it under the chips, on the right. */
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 
 .process-details {
@@ -13645,12 +13657,15 @@ a:focus-visible {
   background: var(--bg-selected) !important;
 }
 
-/* A reply's Copy chip. The accent it takes while copied is the component's. */
-.message-assistant .message-copy-action {
+/* A reply's footer chips: its Copy and "Branch in new chat". The accent each takes
+   (copied, creating) is the component's. */
+.message-assistant .message-copy-action,
+.message-assistant .message-assistant-action {
   background: var(--bg-subtle) !important;
 }
 
-.message-assistant .message-copy-action:hover {
+.message-assistant .message-copy-action:hover,
+.message-assistant .message-assistant-action:hover:not(:disabled) {
   background: var(--bg-selected) !important;
 }
 

@@ -5,11 +5,12 @@ import { createJiti } from "jiti";
 
 const { getLocalePlugin, getSupportedLocales } = await createJiti(import.meta.url).import("../lib/i18n/registry.ts");
 
-// The finished turn's length sits in the assistant footer between Copy and the timestamp:
-// `Copy 0h31m10s      Nov 21 11:46PM`. The number is computed over the message list by
-// ChatWindow (getTurnDurationMs in lib/turn-duration.ts, which is not a per-message
-// property) and shown only on the reply that closes the turn — the one that carries the
-// footer timestamp — and never while streaming.
+// The finished turn's length sits in the assistant footer between the "Branch in new
+// chat" chip and the timestamp: `Copy  Branch in new chat  0h31m10s   Nov 21 11:46PM`.
+// The number is computed over the message list by ChatWindow (getTurnDurationMs in
+// lib/turn-duration.ts, which is not a per-message property) and shown only on the reply
+// that closes the turn — the one that carries the footer timestamp — and never while
+// streaming.
 
 const chatWindow = readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const messageView = readFileSync(new URL("./MessageView.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -37,14 +38,16 @@ test("the value travels to the footer of the reply that closes the turn", () => 
     "MessageView is memoized with a hand-written comparator: an unlisted prop never updates");
 });
 
-test("the footer order is Copy, the duration, then the timestamp", () => {
+test("the footer order is Copy, Branch in new chat, the duration, then the timestamp", () => {
   const footer = messageView.match(/<div className="message-assistant-footer"[\s\S]*?\n      <\/div>/);
   assert.ok(footer, "assistant footer found");
-  const copyAt = footer[0].indexOf('className="message-copy-action"');
+  const copyAt = footer[0].indexOf('className="message-copy-action message-assistant-action"');
+  const branchAt = footer[0].indexOf('className="message-assistant-action"');
   const durationAt = footer[0].indexOf('className="message-turn-duration"');
   const timeAt = footer[0].indexOf('className="message-meta"');
-  assert.ok(copyAt > 0 && durationAt > 0 && timeAt > 0, "all three controls render");
-  assert.ok(copyAt < durationAt && durationAt < timeAt, "Copy, duration, timestamp — the two existing controls keep their places");
+  assert.ok(copyAt > 0 && branchAt > 0 && durationAt > 0 && timeAt > 0, "all four controls render");
+  assert.ok(copyAt < branchAt && branchAt < durationAt && durationAt < timeAt,
+    "Copy, Branch in new chat, duration, timestamp — the two existing controls keep their places");
   assert.match(footer[0], /marginLeft: "auto"/, "the timestamp stays pinned to the right edge");
   assert.match(footer[0], /\{formatTurnDurationCompact\(turnDurationMs\)\}/,
     "the compact `1h50m`: the footer is read at a glance, and a task's hours and minutes are the whole story");
