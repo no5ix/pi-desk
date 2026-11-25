@@ -234,14 +234,30 @@ The rule: **a composer menu takes an explicit width and is placed inside the box
 show** — the visual viewport intersected with every ancestor that clips horizontally (the
 conversation column is the clipper that decides the left edge), each edge kept 16px clear for
 the shadow. A desktop menu still hangs left from the button, a phone from its left edge, and a
-menu is never wider than the box. Vertically the same rule already ran on the composer
-(`getVisibleTopBoundary` in `components/ChatInput.tsx`, #63); this is it turned sideways.
+menu is never wider than the box. Vertically the same rule runs the other way, in the same
+module (`getVisibleTopBoundary`, `getTopbarBoundary`, `getUpwardMenuMaxHeight`, #63): an upward
+menu is capped to the space between its anchor and the boundary above it — the top of every
+ancestor that clips vertically, and the app topbar's bottom edge, which is a sibling of the chat
+column and is drawn above it.
 All of it lives in `lib/composer-panel-placement.ts` (`composerPanelBounds`,
 `placeComposerPanel`, `composerPanelAnchoring` — null when nothing can be measured, so a
-server render keeps the plain `right: 0` / `left: 0`), and the three menus pass their width
-constant (`COMPOSER_RUN_MENU_WIDTH` / `COMPOSER_TOOL_MENU_WIDTH` / `COMPOSER_AUTOMATION_MENU_WIDTH`).
+server render keeps the plain `right: 0` / `left: 0`), and the menus pass their width
+constant (`COMPOSER_RUN_MENU_WIDTH` / `COMPOSER_TOOL_MENU_WIDTH` / `COMPOSER_AUTOMATION_MENU_WIDTH`
+/ the project chip's `PROJECT_MENU_WIDTH`).
 The z-indexes stayed as they are: a menu clamped to the column cannot reach the sidebar, so
 there is no layer war to win.
+
+The composer's project chip (`components/ComposerProjectChip.tsx`) is where the vertical half
+bites: its list is the composer's longest (every recent project, and on a phone one 44px row per
+project) and it was capped by nothing but its own `min(60vh, 420px)`. On a phone in Safari the
+two viewports disagree — `60vh` reads the layout viewport (the whole page, 956px), while the app
+sizes its shell to the visual viewport the browser's bars shrink — so the cap was taller than
+the space above the chip and the list grew up into the header, which painted over the filter box
+and the current project. The panel is now capped by the measured space, floors at the composer's
+120px, and scrolls internally. `e2e/project-chip-menu.mjs` mounts the real chip in the app's
+chrome with that split reproduced (a tall page, a short shell) and asks every row whether it is
+painted below the header and inside the window; `?broken=1` serves the pre-fix panel and measures
+the covered row, so the check keeps its teeth.
 
 `lib/composer-panel-placement.test.mjs` pins the collapse, the sidebar as the limit, the
 narrow-column cap, the phone's gutter and the wiring; the geometry was measured in a browser

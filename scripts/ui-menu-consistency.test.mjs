@@ -60,7 +60,7 @@ test("a menu yields to a scroll only when that scroll moves its own control", as
   // any of them shut themselves on the chat's auto-scroll while a session streams.
   // A component with such a listener must ask `scrollMovesAnchor` first; a file that only
   // re-places what it anchors (no closing) is listed here as the exception.
-  const REPOSIZES_INSTEAD = ["ChatInput.tsx", "ChatWindow.tsx", "TopbarTip.tsx"];
+  const REPOSIZES_INSTEAD = ["ChatInput.tsx", "ChatWindow.tsx", "TopbarTip.tsx", "ComposerProjectChip.tsx"];
   const offenders = [];
   let guarded = 0;
   for (const path of await components()) {

@@ -20,8 +20,9 @@
  *   decides the left edge is the column itself — a composer menu stops at the sidebar's
  *   edge instead of disappearing under it. The gutter keeps the menu's shadow on the page.
  *
- * Vertically the composer already clamps its menus (`getVisibleTopBoundary` in
- * `components/ChatInput.tsx`, #63); this module is the same rule turned sideways.
+ * Vertically the same rule runs the other way, and lives here too: a composer menu that
+ * grows up is capped to the space between its anchor and the boundary above it
+ * (`getVisibleTopBoundary` / `getUpwardMenuMaxHeight`, #63).
  */
 
 /** Clear space kept from every edge the menu can be clipped by. */
@@ -138,4 +139,78 @@ export function composerPanelAnchoring(
   const placed = placeComposerPanel(rect, preferredWidth, bounds, options);
   if (!(placed.width > 0)) return null;
   return { left: placed.left - rect.left, width: placed.width };
+}
+
+/** The space kept between an upward menu's top edge and whatever bounds it from above. */
+export const UPWARD_MENU_GAP = 8;
+
+/**
+ * The height a menu that grows up from `menuBottom` may take: the distance down to
+ * `visibleTop`, less the gap.
+ *
+ * A menu is short enough by the time its rows are few (the Reasoning menu is six rows), so
+ * the cap only bites on a long list — and a long list is exactly what reaches the boundary.
+ * A menu taller than the space paints past it, and the boundary is the app's own chrome,
+ * which is drawn above the menu: the leading rows are cut and cannot be scrolled to.
+ */
+export function getUpwardMenuMaxHeight(
+  menuBottom: number,
+  visibleTop: number,
+  gap = UPWARD_MENU_GAP,
+): number {
+  return Math.max(0, Math.floor(menuBottom - visibleTop - gap));
+}
+
+/** A box in viewport CSS pixels, as a DOM rectangle reports it. */
+interface Rect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * The bottom edge of every `.app-topbar` that can cover a popup at `element`.
+ *
+ * The topbar is a sibling of the chat column, never an ancestor of the composer, so a walk
+ * over the composer's clippers cannot see it: on a short viewport an upward menu clamped
+ * only to the viewport top opens underneath the topbar and its leading items are covered
+ * (#63). Only a bar drawn above the popup counts — one beside it (the phone's split
+ * layouts) or below must not shrink the menu.
+ */
+export function getTopbarBoundary(element: { getBoundingClientRect(): Rect }): number {
+  if (typeof document === "undefined") return 0;
+  const rect = element.getBoundingClientRect();
+  let boundary = 0;
+  for (const topbar of document.querySelectorAll<HTMLElement>(".app-topbar")) {
+    const topbarRect = topbar.getBoundingClientRect();
+    const overlapsHorizontally = rect.left < topbarRect.right && rect.right > topbarRect.left;
+    // Only a topbar drawn above the menu can clip it; one beside (mobile
+    // split layouts) or below must not shrink the menu.
+    const sitsAbove = topbarRect.bottom <= rect.bottom;
+    if (overlapsHorizontally && sitsAbove) {
+      boundary = Math.max(boundary, topbarRect.bottom + topbar.clientTop);
+    }
+  }
+  return boundary;
+}
+
+/**
+ * The top edge a composer menu can paint at: the visual viewport, every ancestor that
+ * clips vertically (the chat column is one, and its box starts under the topbar), and the
+ * bottom edge of a topbar that overlaps the menu horizontally.
+ */
+export function getVisibleTopBoundary(element: HTMLElement): number {
+  let visibleTop = window.visualViewport?.offsetTop ?? 0;
+
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const overflowY = window.getComputedStyle(parent).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "hidden" || overflowY === "clip") {
+      visibleTop = Math.max(visibleTop, parent.getBoundingClientRect().top + parent.clientTop);
+    }
+  }
+
+  visibleTop = Math.max(visibleTop, getTopbarBoundary(element));
+
+  return visibleTop;
 }
