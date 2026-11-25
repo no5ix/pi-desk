@@ -800,7 +800,11 @@ and the buttons `justify-self: end`, so "Running" and "Completed" start on one c
 row: with the state and the buttons in one `auto` track, and every row a grid of its own, the
 main row's state (a side-chat button beside it) began ~80px left of a finished run's (no
 button) and the states read as two columns. A row with nothing to do draws no actions track
-(`hasActions`) and its state stays in the same column. The main agent's head glyph keeps the
+(`hasActions`) and its state stays in the same column. Every state leads with a glyph, the
+main agent's **Current** included: it takes the running row's head (`AgentRunningIcon` at 14px)
+with `pulse={false}`, because the 1.6s opacity cycle belongs to a live run and the row the app
+stands on is not one. The bare word was the only state in the list with nothing in front of it.
+The main agent's head glyph keeps the
 chrome's ink (`.agent-row.is-main .agent-row-icon`). Delete confirmation and the steer field
 are inset strips (`.agent-panel-strip`), not ruled-off bands.
 The filter box lives in the header row with the title and the counts (the `> 8` gate is
@@ -817,8 +821,13 @@ layer that never scrolls (`overflowY: "visible"`) because a scroll container cli
 shadow on the left, the right and the bottom. The same run measures the rows: the current row's
 background is transparent and its shadow `none`, every other row's title and subtitle are
 shallower ink than its own (the colours are read as they land on the card, so a 62% wash counts
-as the shallower colour it paints), and the states' left edges agree to 1px and never reach the
-row's buttons. The tail of `app/native-theme.css` used to
+as the shallower colour it paints), and the states' left edges agree to 1px and keep a column's
+gap (≥16px) from the row's buttons. The old one-track layout is proven by what it does to the
+tracks, not to the labels: its states sit flush against the row's right edge and a row's buttons
+land **in front of** its own state. (It used to be scored as a 20px+ spread of the states' left
+edges, which only existed because the labels had unequal widths; once every state led with a
+glyph, three near-identical labels scored 3px and the probe went blind. The fixture therefore
+passes the side-chat handlers the app passes, so the main row carries its `+`.) The tail of `app/native-theme.css` used to
 undo all of that with `.agent-session-panel { background: var(--bg-panel) !important;
 border-radius: 0 !important }` — the sheet in the user's screenshot — so the panel now
 states the three things itself as `.agent-session-panel.app-menu` (0,2,0), which no
@@ -1009,7 +1018,7 @@ worktree 自己的路径没丢：项目 tip 的 `Path` 行就是正在工作的�
 
 **头部行的顺序是 `[文件夹] 项目  [分支] 分支  [机器人] ✓2 ⚠1 ↻3  [侧聊] 2 ↻1  [时钟] 11m5s  [上下文]`。** 家族运行的计数紧跟在分支后面（它们是工作的状态），时钟是这段状态的尾巴，上下文环收尾；时钟曾排在计数之前，整行读起来像以标签结束。`components/TopbarSubagents.tsx` 是**一个按钮、两个分组**：一个家族含两种成员（ADR 0007），`countSubagents` 与 `countSideChats` 分开计数 —— 委派运行与用户自己开的会话是两件事，混在一起的 “6 runs” 无法据以行动。每组以该类型在别处已使用的图标开头（Agents 面板的机器人头、输入框与侧栏的圆圈加号）。两组打开同一个面板，所以放在**一个**控件里：两个 `role="button"` 兄弟节点等于同一动作两个目标，手机上还多一次 Tab。可访问名是两句拼在一起。
 
-**引导的机器人头比计数的图标大很多（17px 对 11px）**：在 11px 时它比旁边的数字还小，行首的标签看起来像一个计数桶；用户要的是引导图标，不是运行中的图标。描边用较轻的 1.55：在 17px 上画出 1.1px 的线，比 11px 图标的 0.87px 略重（标签正该如此），而本文件在 12px 之后用的 1.75 会画出 1.24px，紧挨着 11px 图标时显粗。计数图标（对勾、停止、运行头）与侧聊气泡保持 11px —— 计数图标的尺寸属于它所计数的那个数字，而 `AgentRunningIcon` 是 Agents 面板行图标的默认尺寸。药丸随之变高（15px → 19px），`placeAgentsPanel` 读的是药丸的实时盒子，面板会跟着走。测试钉住 `width="17" height="17"` 与 `strokeWidth="1.55"`，以及运行头的 `{ size = 11 }` 默认值。
+**引导的机器人头比计数的图标大很多（17px 对 11px）**：在 11px 时它比旁边的数字还小，行首的标签看起来像一个计数桶；用户要的是引导图标，不是运行中的图标。描边用较轻的 1.55：在 17px 上画出 1.1px 的线，比 11px 图标的 0.87px 略重（标签正该如此），而本文件在 12px 之后用的 1.75 会画出 1.24px，紧挨着 11px 图标时显粗。计数图标（对勾、停止、运行头）与侧聊气泡保持 11px —— 计数图标的尺寸属于它所计数的那个数字，而 `AgentRunningIcon` 是 Agents 面板行图标的默认尺寸。药丸随之变高（15px → 19px），`placeAgentsPanel` 读的是药丸的实时盒子，面板会跟着走。测试钉住 `width="17" height="17"` 与 `strokeWidth="1.55"`，以及运行头的 `{ size = 11 }` 默认值（该图标另有 `pulse`，默认 `true`：Agents 面板的 “Current” 借同一颗头，但以 `pulse={false}` 静止地画 —— 闪烁属于正在运行的执行）。
 
 **两组之间不画分隔线**：一个按钮内部出现竖线，会被读成两个控件（就是用户指出的样子）。
 间隔只靠 10px `margin-left` 和每组自己的引导图标（机器人 / 圆圈加号）；测试断言兄弟规则只有 `margin-left: 10px`、**没有** `border-left`，且不存在 `.app-topbar-family-group--side::before`。

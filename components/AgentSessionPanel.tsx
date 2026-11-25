@@ -176,7 +176,16 @@ function AgentRow({
       </span>
       <span className={`agent-row-status${running ? " is-running" : ""}`} style={{ color: main && !running ? "var(--text-dim)" : statusColor(status) }}>
         {(main || side) && !running ? (
-          main && selected ? t("agentSwitcher.current") : null
+          main && selected ? (
+            <>
+              {/* The same head the running row leads with, at rest (`pulse={false}`): the
+                  panel drew the glyph only beside a live "Running", so the row that says
+                  "Current" — the one conversation the app is standing on — was the only
+                  state in the list with no glyph in front of it. */}
+              <AgentRunningIcon size={14} pulse={false} />
+              <span>{t("agentSwitcher.current")}</span>
+            </>
+          ) : null
         ) : (
           <>
             <StatusIcon status={status} />

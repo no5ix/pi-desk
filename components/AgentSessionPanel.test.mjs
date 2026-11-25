@@ -58,6 +58,16 @@ test("a running row leads with the header's subagent head, not a spinner", () =>
   assert.match(source, /return <AgentRunningIcon size=\{14\} \/>;/, "one glyph, at row size");
   assert.doesNotMatch(source, /className="animate-spin"/, "no spinner left in the panel");
 });
+
+test("the main agent's Current label leads with the same head, at rest", () => {
+  // Every state in the list had a glyph in front of it except the row the app is standing
+  // on: "Completed", "Failed", "Running" all led with one, and "Current" was bare text.
+  const current = source.match(/main && selected \? \(\s*<>[\s\S]*?<\/>\s*\)/);
+  assert.ok(current, "the main row's label is a glyph and a word, not a bare word");
+  assert.match(current[0], /<AgentRunningIcon size=\{14\} pulse=\{false\} \/>/,
+    "the running row's head at row size, and `pulse={false}`: a static row must not blink");
+  assert.match(current[0], /t\("agentSwitcher\.current"\)/);
+});
 test("the panel's stylesheet is the menu surface: rounded, shadowed, no rules drawn inside", () => {
   const panel = cssRule(".agent-session-panel");
   assert.ok(panel, "the panel has a fork rule of its own");
@@ -181,6 +191,13 @@ test("running sub-agents expose steer and stop controls wired to the runtime rou
   assert.equal((html.match(/aria-label="Stop sub-agent"/g) ?? []).length, 1);
   assert.equal((html.match(/aria-label="Steer sub-agent"/g) ?? []).length, 1);
   assert.ok(runningRow.length > 0);
+  // The main row's "Current" is drawn, not only written: a head, then the word, and the
+  // head is not pulsing (the panel opens on this row; nothing here is a live subagent run).
+  const atCurrent = html.indexOf(">Current<");
+  assert.ok(atCurrent > 0, "the main row still says Current in words");
+  const mainStatus = html.slice(html.lastIndexOf("agent-row-status", atCurrent), atCurrent);
+  assert.match(mainStatus, /<svg\b/, "the head glyph sits in front of the word");
+  assert.ok(!mainStatus.includes("agent-status-icon--pulse"), "and it sits there at rest");
 });
 
 test("control actions POST to the subagent runtime endpoint", () => {

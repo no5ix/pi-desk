@@ -212,7 +212,7 @@ test("the family chip counts subagents and side chats apart, in one button", () 
   assert.match(leadHead[0], /strokeWidth="1\.55"/, "the larger box keeps its stroke light");
   assert.ok(!leadHead[0].includes('strokeWidth="1.75"'), "the head is not left on the 13px stroke rule at 17px");
   assert.ok(!leadHead[0].includes('width="11"'), "the head is not left at the bucket size");
-  assert.match(counter, /export function AgentRunningIcon\(\{ size = 11 \}/,
+  assert.match(counter, /export function AgentRunningIcon\(\{ size = 11(, pulse = true)? \}/,
     "the running head still defaults to the header's 11px");
   assert.match(counter, /<AgentRunningIcon \/>/, "the header draws it at that default: the running glyph did not grow");
   assert.match(counter, /<svg\s+width="11"\s+height="11"\s+viewBox="0 0 12 12"/, "the completed check stays at 11px");
