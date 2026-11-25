@@ -97,8 +97,8 @@ test("every locale can say the branch tree's words", async () => {
   ]) {
     assert.equal(source.match(new RegExp(`"${key.replace(/\./g, "\\.")}":`, "g"))?.length, 3, `${key} in en, zh-CN and zh-TW`);
   }
-  assert.match(source, /"sidebar\.newWorktreeFrom": "Create a new branch based on “\{branch\}”, in the folder \{path\}"/,
-    "the English sentence the user asked for, base branch and folder both");
+  assert.match(source, /"sidebar\.newWorktreeFrom": "Create a new branch based on “\{branch\}”, in the folder"/,
+    "the English sentence the user asked for: the base branch inside it, the folder on the row below");
 });
 
 test("the filter box is styled from the menu tokens, in the fork's theme file", async () => {
