@@ -435,7 +435,8 @@ holds two kinds of member (ADR 0007, `lib/session-family.ts`), and `countSubagen
 `countSideChats` read them apart — a delegated run and a conversation the user opened are
 different facts, and "6 runs" that mixes them says nothing a user can act on. Each group
 leads with the glyph its kind already wears elsewhere (the Agents panel's head, and the
-composer's / the sidebar's circle-and-plus), so the row reads
+side-chat bubble `components/SideChatIcon.tsx` draws for the composer, the sidebar, a tab
+and the panel), so the row reads
 `[robot] ✓2 ⚠1 ↻3  [side] 2 ↻1`. Both groups open the same panel, so they live in **one**
 control: two `<small role="button">` neighbours would be two targets for one action and two
 tab stops on a phone, and the accessible name is both sentences joined.
@@ -454,7 +455,7 @@ the sidebar, the panel and the Settings icon, and that the running eyes stay `M8
 
 **No rule is drawn between the two groups.** A vertical divider inside a single control
 reads as two controls, which is exactly what the row looked like; the 10px gap plus each
-group's own leading glyph (robot / circle-and-plus) is what separates them.
+group's own leading glyph (robot / the shared side-chat bubble) is what separates them.
 `components/AppShell.topbar-branch.test.mjs` asserts the sibling rule carries
 `margin-left: 10px` and **no** `border-left`, and that no
 `.app-topbar-family-group--side::before` exists.
@@ -686,8 +687,18 @@ one `.app-menu` surface — the rounded card, the separator and `--shadow-popove
 popup already uses — and not a box welded to the topbar: no hairline down its sides, no rule
 under the header, none under the search box, none under a row. Its rows are flat and rounded
 and the selected one is a wash with an inset accent bar (`--menu-selection-color`);
-delete confirmation and steer field are inset strips. The filter box lives in the header row
-with the title and the counts (the `> 8` gate is unchanged).
+delete confirmation and steer field are inset strips. **The main agent's row is outside
+that selection** (`.agent-row.is-main.is-selected` is `background: transparent`,
+`box-shadow: none`, with the pointer's `--bg-hover` kept): the list always opens on it and
+the row says "Current" in words, so a wash and a blue bar on the row that is never *not*
+selected highlighted nothing and made the panel's first row the loudest thing in it. A row
+the user actually switched to (a side chat, a run) still takes the wash and the bar.
+The filter box lives in the header row with the title and the counts (the `> 8` gate is
+unchanged) and is a **quiet filled field**: `border: 0` and a tint of the theme's own ink
+(`color-mix(in srgb, var(--text) 8%, transparent)`) — `--surface-muted` is a white wash that
+vanishes on the `--surface-elevated` card — and its `:focus` / `:focus-visible` rule paints
+nothing, so typing in it raises no accent border and no ring: the box is already a shape and
+the caret is the position (`components/AgentSessionPanel.test.mjs` asserts both).
 
 The card's surface and its place are both measured (`e2e/agents-panel-card.mjs`, real
 CSS and real components at 1440 / 834 / 390): a rounded rectangle (`--menu-radius`), the

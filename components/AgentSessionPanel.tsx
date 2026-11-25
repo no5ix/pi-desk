@@ -6,6 +6,7 @@ import { useI18n } from "@/hooks/useI18n";
 import type { SessionInfo, SubagentSessionStatus } from "@/lib/types";
 import { isImeComposing } from "@/lib/ime";
 import { AgentRunningIcon } from "./TopbarSubagents";
+import { SideChatIcon, SideChatPlusIcon } from "./SideChatIcon";
 
 interface Props {
   rootSession: SessionInfo;
@@ -140,7 +141,7 @@ function AgentRow({
       role="option"
       aria-selected={selected}
       tabIndex={0}
-      className={`agent-row${selected ? " is-selected" : ""}`}
+      className={`agent-row${main ? " is-main" : ""}${selected ? " is-selected" : ""}`}
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -155,9 +156,7 @@ function AgentRow({
             <circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" />
           </svg>
         ) : side ? (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 12a8 8 0 0 1-8 8H5.5a2 2 0 0 1-1.4-3.4A8 8 0 1 1 21 12z" />
-          </svg>
+          <SideChatIcon size={16} strokeWidth={1.75} />
         ) : (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
@@ -213,9 +212,7 @@ function AgentRow({
         )}
         {onNewSideChat && (
           <RowButton title={t("sideChat.new")} disabled={newSideChatPending} onClick={onNewSideChat}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 12a8 8 0 0 1-8 8H5.5a2 2 0 0 1-1.4-3.4A8 8 0 1 1 21 12z" /><path d="M13 8.5v7M9.5 12h7" />
-            </svg>
+            <SideChatPlusIcon size={15} strokeWidth={1.8} />
           </RowButton>
         )}
         {onToggleTab && (

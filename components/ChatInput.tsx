@@ -61,6 +61,7 @@ import type { ChatAccessControls } from "@/hooks/useChatAccess";
 import { ComposerProjectChip, getProjectLabel } from "./ComposerProjectChip";
 import { ComposerBranchChip } from "./ComposerBranchMenu";
 import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
+import { SideChatPlusIcon } from "./SideChatIcon";
 import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
 
 
@@ -3497,9 +3498,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               title={t("chat.sideChatHint")}
               aria-label={t("chat.sideChat")}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 12a8 8 0 0 1-8 8H5.5a2 2 0 0 1-1.4-3.4A8 8 0 1 1 21 12z" /><path d="M13 8.5v7M9.5 12h7" />
-              </svg>
+              <SideChatPlusIcon size={16} strokeWidth={1.8} />
             </button>
           )}
           <button
