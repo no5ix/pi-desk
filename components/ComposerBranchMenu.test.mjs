@@ -104,9 +104,20 @@ test("every locale can say the branch tree's words", async () => {
 test("the filter box is styled from the menu tokens, in the fork's theme file", async () => {
   const css = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
   const rule = css.slice(css.indexOf(".sidebar-project-context-menu-filter {"), css.indexOf("}", css.indexOf(".sidebar-project-context-menu-filter {")));
-  for (const declaration of ["font-family: var(--font-mono);", "border: 0;", "border-radius: var(--radius-sm);", "background: var(--bg-selected);"]) {
+  for (const declaration of [
+    "font-family: var(--font-mono);",
+    "border: 0;",
+    "border-radius: var(--radius-sm);",
+    "background: color-mix(in srgb, var(--menu-selection-color) 14%, var(--surface-elevated));",
+  ]) {
     assert.ok(rule.includes(declaration), `the filter box keeps ${declaration}`);
   }
+  assert.ok(!rule.includes("background: var(--bg-selected)"),
+    "the field is not the ink gray the current-branch row paints behind itself: in that gray the box and the list's first row read as one block");
+  assert.match(css, /\.native-popover input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\):not\(\.sidebar-project-context-menu-filter\)/,
+    "the popover's input wash skips this field: --surface-muted is a white wash on the panel's own white, which paints the box away");
+  assert.match(css, /\.sidebar-project-context-menu-filter:focus \{[\s\S]*?background: color-mix\(in srgb, var\(--menu-selection-color\) 22%, var\(--surface-elevated\)\);/,
+    "the focused field deepens its own tint");
   assert.ok(!rule.includes("border: var(--hairline)"), "the box carries no border: in a flat panel a bordered box reads as a form field");
   assert.match(css, /\.sidebar-project-context-menu-filter:focus \{[\s\S]*?outline: 2px solid var\(--accent\);/,
     "the box shows the accent only while it has the caret");
