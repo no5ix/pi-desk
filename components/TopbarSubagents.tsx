@@ -139,17 +139,22 @@ function AgentIcon() {
 }
 
 /**
- * The running subagent: the head with its eyes lit.
+ * The subagent head, and by default the running one: the head with its eyes lit.
  *
  * Exported because it is the app's one answer to "this run is going". The header counts
  * with it at 11px; the Agents panel used to spin a circle in the row, so the same state
  * had two shapes ten pixels apart, and the circle said nothing about a subagent. The size
  * is a prop for that reason: a row glyph and a header glyph cannot share one pixel size.
+ *
+ * `pulse` is a prop because the same head now labels a state that is not running: the
+ * Agents panel's "Current" row wants the head that names an agent, and the 1.6s opacity
+ * cycle beside a word that says "this is the conversation you are in" reads as live work.
+ * At rest the glyph is the identical shape, only unanimated.
  */
-export function AgentRunningIcon({ size = 11 }: { size?: number }) {
+export function AgentRunningIcon({ size = 11, pulse = true }: { size?: number; pulse?: boolean }) {
   return (
     <svg
-      className="agent-status-icon--pulse"
+      className={pulse ? "agent-status-icon--pulse" : undefined}
       width={size}
       height={size}
       viewBox="0 0 24 24"

@@ -78,6 +78,8 @@ const MEASURE = () => {
       statusLeft: Math.round(box(status).left),
       statusRight: Math.round(box(status).right),
       actionsLeft: actions ? Math.round(box(actions).left) : null,
+      actionsRight: actions ? Math.round(box(actions).right) : null,
+      rowRight: Math.round(box(row).right),
       background: cs.backgroundColor,
       shadow: cs.boxShadow,
     };
@@ -159,6 +161,10 @@ try {
     const lefts = m.rows.map((row) => row.statusLeft);
     const spread = Math.max(...lefts) - Math.min(...lefts);
     assert.ok(spread <= 1, `${shape.name}: Running and Completed start on one column (spread ${spread}px: ${lefts.join(", ")})`);
+    const gaps = m.rows.filter((row) => row.actionsLeft !== null)
+      .map((row) => row.actionsLeft - row.statusRight);
+    assert.ok(gaps.length >= 2 && gaps.every((gap) => gap >= 16),
+      `${shape.name}: a state and its row's buttons keep a column's gap (${gaps.join("px, ")}px)`);
     for (const row of m.rows) {
       if (row.actionsLeft !== null) {
         assert.ok(row.statusRight <= row.actionsLeft,
@@ -184,6 +190,11 @@ try {
       const rows = [...document.querySelectorAll(".agent-row")].map((row) => ({
         selected: row.classList.contains("is-selected"),
         statusLeft: Math.round(row.querySelector(".agent-row-status").getBoundingClientRect().left),
+        statusRight: Math.round(row.querySelector(".agent-row-status").getBoundingClientRect().right),
+        actionsRight: row.querySelector(".agent-row-actions")
+          ? Math.round(row.querySelector(".agent-row-actions").getBoundingClientRect().right)
+          : null,
+        rowRight: Math.round(row.getBoundingClientRect().right),
         background: getComputedStyle(row).backgroundColor,
         shadow: getComputedStyle(row).boxShadow,
         title: getComputedStyle(row.querySelector(".agent-row-title")).color,
@@ -191,10 +202,21 @@ try {
       style.remove();
       return rows;
     });
-    const oldLefts = oldRows.map((row) => row.statusLeft);
-    const oldSpread = Math.max(...oldLefts) - Math.min(...oldLefts);
-    assert.ok(oldSpread > 20,
-      `${shape.name}: the one-track layout scattered the states ${oldSpread}px apart, so the measurement sees the fix`);
+    // The old layout's defect, measured where it does not depend on how wide a label's
+    // words are. Each row sized its own last `auto` track, so the state was pushed
+    // against the row's right edge and a row that carries buttons had them land in front
+    // of its own state — the state's column did not exist. (The earlier claim here
+    // measured the states' left edges, which only scattered because the labels had
+    // unequal widths: once every state led with a glyph, three near-identical labels
+    // scored 3px and the probe went blind.)
+    const oldGlue = oldRows.map((row) => row.rowRight - row.statusRight);
+    assert.ok(oldGlue.every((gap) => gap >= 0 && gap <= 12),
+      `${shape.name}: the one-track layout pins every state to the row's right edge (${oldGlue.join("px, ")}px), so the measurement sees the fix`);
+    const oldButtonRows = oldRows.filter((row) => row.actionsRight !== null);
+    assert.ok(oldButtonRows.length >= 2,
+      `${shape.name}: the fixture gives the card rows with buttons, so a shared track has something to break`);
+    assert.ok(oldButtonRows.every((row) => row.actionsRight < row.statusLeft),
+      `${shape.name}: and its buttons land in front of the row's own state (${oldButtonRows.map((r) => `${r.actionsRight} < ${r.statusLeft}`).join(" | ")})`);
     const oldSelected = oldRows.find((row) => row.selected);
     assert.ok(!/rgba\(0, 0, 0, 0\)|transparent/.test(oldSelected.background),
       `${shape.name}: and it saw the old wash on the current row (${oldSelected.background})`);

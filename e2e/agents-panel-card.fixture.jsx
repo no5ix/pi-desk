@@ -117,6 +117,17 @@ function Workbench() {
             selectedSessionId={ROOT.id}
             runningSessionIds={RUNNING}
             onSelectSession={() => {}}
+            // The props the app really passes (AppShell): the main row carries the side-chat
+            // "+", a running row carries steer and Stop. The row geometry the measurement is
+            // about is the buttons' as much as the labels': in the old one-track layout the
+            // buttons pushed a row's state left of a row without them, which is the scattering
+            // the last pass has to see. A fixture without them measures three labels and sees
+            // the states line up for the wrong reason — and equal-width labels (every state now
+            // leads with a glyph) make that blind probe pass.
+            openSideTabIds={new Set()}
+            onToggleSideTab={() => {}}
+            onNewSideChat={async () => null}
+            onDeleteSideChat={async () => null}
           />
         </div>
       )}
