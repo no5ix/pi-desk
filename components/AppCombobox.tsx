@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState, type InputHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import { isImeComposing } from "@/lib/ime";
+import { scrollMovesAnchor } from "@/lib/menu-placement";
 
 type AppComboboxProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "list" | "role"> & {
   value: string;
@@ -31,11 +32,16 @@ export function AppCombobox({ value, onValueChange, options, onKeyDown, onFocus,
       close();
     };
     document.addEventListener("pointerdown", outside);
-    document.addEventListener("scroll", outside, true);
+    // A scroll shuts the suggestions away only when it carries the field off. The chat
+    // scrolls itself while a session streams, and that closed the list mid-typing.
+    const onScroll = (event: Event) => {
+      if (scrollMovesAnchor(event.target, inputRef.current)) close();
+    };
+    document.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("pointerdown", outside);
-      document.removeEventListener("scroll", outside, true);
+      document.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", close);
     };
   }, [open]);

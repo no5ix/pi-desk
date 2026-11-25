@@ -474,3 +474,19 @@ test("a side chat row carries the composer's side-chat glyph", () => {
   assert.match(sessionItemSource, /isSideChat \? t\("sideChat\.title"\) : null,/,
     "the row's tip says which row is a side chat");
 });
+
+test("a sidebar menu is not closed by a scroll that leaves its button where it is", () => {
+  // On a running session page the chat pane scrolls itself on every streamed chunk. The
+  // menus' window-wide capture listener heard that scroll and shut the Projects "..."
+  // menu about a second after every open, and the Chats menu and a row's menu with it.
+  for (const [trigger, label] of [
+    ["projectViewMenuButtonRef", "the Projects header's menu"],
+    ["chatsMenuButtonRef", "the Chats header's menu"],
+    ["menuButtonRef", "a session row's menu"],
+  ]) {
+    assert.match(source, new RegExp(`scrollMovesAnchor\\([a-z]+\\.target, ${trigger}\\.current\\)`),
+      `${label} keeps its menu open for a foreign scroll`);
+  }
+  assert.doesNotMatch(source, /addEventListener\("scroll", (close|closeOnViewportChange|onScrollOrResize), true\)/,
+    "no menu listens to every scroll in the window any more");
+});

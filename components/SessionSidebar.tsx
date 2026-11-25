@@ -69,7 +69,7 @@ import {
 } from "@/lib/archived-projects";
 import { useMenuPlacement } from "@/hooks/useMenuPlacement";
 import { SideChatPlusIcon } from "./SideChatIcon";
-import type { MenuAnchor } from "@/lib/menu-placement";
+import { scrollMovesAnchor, type MenuAnchor } from "@/lib/menu-placement";
 
 function sessionListUrl(summary: boolean, force: boolean): string {
   if (summary) return "/api/sessions?summary=1";
@@ -751,14 +751,20 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       setProjectViewMenuOpen(false);
       setProjectViewMenuPos(null);
     };
+    // Only a scroller that carries the button away closes the menu. On a running session
+    // page the chat scrolls itself on every streamed chunk, and this window-wide listener
+    // cut the Projects "…" menu off about a second after every open.
+    const onScroll = (event: Event) => {
+      if (scrollMovesAnchor(event.target, projectViewMenuButtonRef.current)) closeOnViewportChange();
+    };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
-    window.addEventListener("scroll", closeOnViewportChange, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", closeOnViewportChange);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("scroll", closeOnViewportChange, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", closeOnViewportChange);
     };
   }, [projectViewMenuOpen, projectViewMenuPos]);
@@ -778,14 +784,19 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !isImeComposing(event)) close();
     };
+    // A scroll closes the menu only when it carries the button away — the chat scrolls
+    // itself while a session runs, and that is not news for a menu in the sidebar.
+    const onScroll = (event: Event) => {
+      if (scrollMovesAnchor(event.target, chatsMenuButtonRef.current)) close();
+    };
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
-    window.addEventListener("scroll", close, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", close);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", close);
     };
   }, [chatsMenuOpen, chatsMenuPos]);
@@ -2823,15 +2834,20 @@ function SessionItem({
       setMenuOpen(false);
     };
     const onKeyDown = (ev: KeyboardEvent) => { if (ev.key === "Escape" && !isImeComposing(ev)) setMenuOpen(false); };
+    // A row's menu is anchored inside the sidebar's own scroll pane, so that pane moving
+    // detaches it. The chat pane streaming is not: it closed this menu a second after open.
+    const onScroll = (ev: Event) => {
+      if (scrollMovesAnchor(ev.target, menuButtonRef.current)) setMenuOpen(false);
+    };
     const onScrollOrResize = () => setMenuOpen(false);
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
-    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("scroll", onScroll, true);
     window.addEventListener("resize", onScrollOrResize);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onScrollOrResize);
     };
   }, [menuOpen]);
