@@ -200,6 +200,21 @@ test("the family chip counts subagents and side chats apart, in one button", () 
     const source = readFileSync(new URL(file, import.meta.url), "utf8").replace(/\s+/g, " ");
     assert.ok(head.test(source), `${file} draws the same head, so the header is not the odd one`);
   }
+  // The head leads its group, so it is drawn a step above the buckets' glyphs (13 vs 11):
+  // at the bucket size the row's label read smaller than the count beside it, like one
+  // more bucket. The state glyphs stay 11px on purpose — a bucket's glyph belongs to the
+  // number it counts, and the running head is the Agents panel's row glyph at its default.
+  const leadHead = counter.match(/function AgentIcon\(\) \{[\s\S]*?\n\}/);
+  assert.ok(leadHead, "the chip's kind glyph is a component of its own");
+  assert.match(leadHead[0], /width="13" height="13"/, "the family's head is a size above the buckets");
+  assert.match(leadHead[0], /strokeWidth="1\.75"/, "the larger box thins its stroke, the way AgentRunningIcon does past 12px");
+  assert.ok(!leadHead[0].includes('width="11"'), "the head is not left at the bucket size");
+  assert.match(counter, /export function AgentRunningIcon\(\{ size = 11 \}/,
+    "the running head still defaults to the header's 11px");
+  assert.match(counter, /<AgentRunningIcon \/>/, "the header draws it at that default: the running glyph did not grow");
+  assert.match(counter, /<svg\s+width="11"\s+height="11"\s+viewBox="0 0 12 12"/, "the completed check stays at 11px");
+  assert.match(counter, /<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"/,
+    "the aborted stop stays at 11px");
   // The chip is a control, so it takes the row's pill: hovering it washes both groups,
   // the same way the branch's label does.
   const chipRule = css.match(/\.app-topbar-subagents \{[^}]*\}/);
