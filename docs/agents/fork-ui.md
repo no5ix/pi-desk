@@ -495,6 +495,15 @@ them is going right now". `AppShell.topbar-branch.test.mjs` asserts the head's p
 the sidebar, the panel and the Settings icon, and that the running eyes stay `M8 13h2` /
 `M14 13h2`.
 
+**The leading head is drawn a step above the buckets (13px vs 11px).** At the buckets' size
+the head read smaller than the count beside it, so the row's label looked like one more
+bucket; the user asked for the leading robot, not for the running one. The state glyphs —
+the check, the stop, the running head — and the side-chat bubble stay at 11px: a bucket's
+glyph belongs to the number it counts, and `AgentRunningIcon` is the Agents panel's row glyph
+at its default size. The test pins the head at `width="13" height="13"` with
+`strokeWidth="1.75"` (the file's stroke rule past 12px) and the running head's
+`{ size = 11 }` default, so the next tweak cannot grow the buckets by accident.
+
 **No rule is drawn between the two groups.** A vertical divider inside a single control
 reads as two controls, which is exactly what the row looked like; the 10px gap plus each
 group's own leading glyph (robot / the shared side-chat bubble) is what separates them.
@@ -917,6 +926,8 @@ worktree 自己的路径没丢：项目 tip 的 `Path` 行就是正在工作的�
 `components/AppShell.worktree-project.test.mjs` 钉住解析与四处佩戴。
 
 **头部行的顺序是 `[文件夹] 项目  [分支] 分支  [机器人] ✓2 ⚠1 ↻3  [侧聊] 2 ↻1  [时钟] 11m5s  [上下文]`。** 家族运行的计数紧跟在分支后面（它们是工作的状态），时钟是这段状态的尾巴，上下文环收尾；时钟曾排在计数之前，整行读起来像以标签结束。`components/TopbarSubagents.tsx` 是**一个按钮、两个分组**：一个家族含两种成员（ADR 0007），`countSubagents` 与 `countSideChats` 分开计数 —— 委派运行与用户自己开的会话是两件事，混在一起的 “6 runs” 无法据以行动。每组以该类型在别处已使用的图标开头（Agents 面板的机器人头、输入框与侧栏的圆圈加号）。两组打开同一个面板，所以放在**一个**控件里：两个 `role="button"` 兄弟节点等于同一动作两个目标，手机上还多一次 Tab。可访问名是两句拼在一起。
+
+**引导的机器人头比计数的图标大一号（13px 对 11px）**：在 11px 时它比旁边的数字还小，行首的标签看起来像一个计数桶；用户要的是引导图标，不是运行中的图标。计数图标（对勾、停止、运行头）与侧聊气泡保持 11px —— 计数图标的尺寸属于它所计数的那个数字，而 `AgentRunningIcon` 是 Agents 面板行图标的默认尺寸。测试钉住 `width="13" height="13"` 与 `strokeWidth="1.75"`（本文件超过 12px 的描边规则），以及运行头的 `{ size = 11 }` 默认值。
 
 **两组之间不画分隔线**：一个按钮内部出现竖线，会被读成两个控件（就是用户指出的样子）。
 间隔只靠 10px `margin-left` 和每组自己的引导图标（机器人 / 圆圈加号）；测试断言兄弟规则只有 `margin-left: 10px`、**没有** `border-left`，且不存在 `.app-topbar-family-group--side::before`。

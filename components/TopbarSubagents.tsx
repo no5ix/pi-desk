@@ -112,16 +112,23 @@ function CheckIcon() {
   );
 }
 
-/* The app's subagent head, at header size: the leading glyph on a subagent's sidebar
-   row, the head in the Agents panel's rows (components/AgentSessionPanel.tsx) and the
-   Settings › Agents icon all draw these same paths, and the header's kind glyph drew a
-   different head — an antenna ball and vertical-bar eyes — ten pixels from all three.
-   One shape, one meaning: the knobbed head says "this family delegates runs". The
-   running head below is shared the other way — the panel imports that one, at row
-   size, so a running run has one shape. */
+/* The app's subagent head, at the size that leads a group: the leading glyph on a
+   subagent's sidebar row, the head in the Agents panel's rows
+   (components/AgentSessionPanel.tsx) and the Settings › Agents icon all draw these same
+   paths, and the header's kind glyph drew a different head — an antenna ball and
+   vertical-bar eyes — ten pixels from all three. One shape, one meaning: the knobbed
+   head says "this family delegates runs". The running head below is shared the other
+   way — the panel imports that one, at row size, so a running run has one shape.
+
+   The head is drawn a step above the buckets' 11px (13px, with the file's stroke rule
+   for a glyph over 12px): it names the group, and at the bucket size it read smaller
+   than the count sitting beside it, so the row's label looked like one more bucket. The
+   state glyphs — the check, the stop, the running head — stay at 11px on purpose: a
+   bucket's glyph sits *inside* the number it counts, and `AgentRunningIcon` is shared
+   with the Agents panel's rows at its default size. */
 function AgentIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="5" y="7" width="14" height="11" rx="2" />
       <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
     </svg>
