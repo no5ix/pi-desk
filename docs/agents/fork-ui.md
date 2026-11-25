@@ -101,15 +101,21 @@ and hover read. `ModelSelector` takes `iconOnly` for this; the `field` variant (
 model dialogs) keeps its label. The project and branch chips keep their text: they name
 which folder and which branch a session is in, which is identity, not a setting.
 
-The four icon controls are **one cluster**, and on a desktop or a pad the cluster starts
-behind the attach `+`: the model chip collapses into the group that the phone opens as
-"More" — model, reasoning, tool preset, session automation, in that order — and the row's
-spacer sits *after* the group, as a child of `.chat-composer-actions` (not inside
-`.chat-composer-controls`), so the strip is no longer pushed to the card's right edge.
-The chip is built once (`modelControl`) and placed by tier, never copied. A phone keeps
-it in the left cell and the settings in the popover: a model picker one tap deep is the
-control a phone cannot spare. `components/ChatInput.composer-row.test.mjs` pins the
-order, the single `<ModelSelector>`, and that the strip has no `marginLeft: "auto"`.
+The icon controls are **one cluster in every tier**: model, reasoning, tool preset,
+session automation, in that order, starting behind the attach `+`. On a desktop or a pad
+the cluster is in the row; on a phone the row shows one More button behind `+` and the
+cluster is the strip that button opens — the model chip collapsed into it (the 2026-11-25
+ask: the phone's row used to be `+`, the model glyph, the chips, Send, with the other three
+behind More; the ask was for the model to join the group and for More to sit behind `+`).
+The row's spacer sits *after* the group, as a child of `.chat-composer-actions` (not inside
+`.chat-composer-controls`), so the strip is never pushed to the card's right edge, and on a
+phone the strip is absolutely positioned from the More button's **left** edge (`left: 0`;
+anchored right it opens off the card). The chip is built once (`modelControl`) and placed in
+the cluster, never copied and never by tier. Since a closed phone row prints no model name,
+the More button's `title` carries it (`"More controls · Change model: <name>"`; its
+`aria-label` stays the short sentence). `components/ChatInput.composer-row.test.mjs` pins
+the order, the single `<ModelSelector>`, the strip's left anchor, and that the strip has no
+`marginLeft: "auto"`.
 
 The card has no "clear the composer" button: a textarea is selected and deleted, so a
 trash icon asked for a click to do what the keyboard already does, in a row that carries
@@ -159,11 +165,15 @@ The row under the card no longer exists; the same controls live inside it. On a 
 `.chat-composer-controls` is a grid with exactly TWO children (the wide spacer is a
 sibling in `.chat-composer-actions` and is rendered only on the wide, non-compact tier),
 so its template is
-`minmax(0, 1fr) auto`: the left cell takes the free width and shrinks, the
-controls keep their own `auto` track. With an `auto` first track the grid sizes
-that column to the model chip's untruncated max-content, the controls cell
-collapses to `0px`, and its button (squeezed to 16px in a zero-width track)
-paints on top of the context ring — the reported iPhone 16 Pro Max overlap.
+`auto minmax(0, 1fr)`: the controls take the `auto` track and lead the row (the phone's
+More button stands right behind `+`), the chips' cell takes the free width in the 1fr
+track. The chips' cell is the strip's first JSX child and the controls' second, and
+`order` (2 / 1) is what puts them in that visual order — `order` moves the box, not the
+tab order. An `auto` first track is safe only because the model chip left the chips' cell:
+with an untruncated model name in an `auto` first track, that column sizes to the chip's
+max-content, the controls cell collapses to `0px`, and its button (squeezed to 16px in a
+zero-width track) paints on top of the context ring — the reported iPhone 16 Pro Max
+overlap.
 Both tiers keep the left cell shrinkable (`flex: "1 1 auto"` narrow,
 `"0 1 auto"` wide, `minWidth: 0`), so a squeezed desktop window (workspace panel
 open) truncates the row instead of pushing the controls out of it. The phone folds
@@ -180,6 +190,13 @@ rule belongs to a labelled toolbar chip. The ring and the More button keep
 `flexShrink: 0`. Pinned by `components/ChatInput.composer-row.test.mjs`. Verify
 on a real session with a long model id and a live context ring, at 320–640px and
 at desktop widths with the workspace panel open, in Chromium and WebKit.
+
+The strip is one run of 32px glyphs with 1px between them: the icon-only model control
+sizes to its glyph (`ModelSelector`'s root takes `width: undefined` and `flex: 0 0 auto`
+when `iconOnly` — the labelled chip's `width: 100%` is the strip's own width in there, and
+it put a 22px gap after the model glyph), and the control that closes the strip keeps its
+36px box (`.composer-controls-close { flex-shrink: 0 }`; it was squeezed to 15px once the
+strip grew). Measured in Chromium and WebKit at 390px.
 
 ## Conversation find
 
@@ -827,6 +844,7 @@ uninitialized `const`). The toggle also raises a phone's keyboard through
 - 待发送行的文字与排队图标之间留左侧间距：行 `gap` 加 `.composer-outbox-preview` 的 6px `padding-left`，桌面实测 14px，使多条消息沿自己的左边距成列，而不是文字顶到图标边缘。`e2e/composer-outbox.mjs` 量取文字起点相对图标（窄窗口图标隐藏时相对输入卡片左缘）的距离。
 - 输入卡片是一列：文本域在上、独占整行宽度，下一行依次是 `+` 附件按钮、会话控件（`.chat-composer-controls`）、发送按钮。控件不再摆在卡片下方，长文本横贯卡片输入，操作就在文字手边。文本域用 `flex: "none"`，因为列布局里 `flex: 1` 等于零基准，会把自适应高度压回 `minHeight`（`components/MobilePwaLayout.test.mjs` 钉住）。
 - 这一行的控件只有图标：推理级别、工具预设、模型选择都不显示文字，统一 32px 方按钮（`--control-h-lg`）；文字搬进 `title` 与 `aria-label`（`"Change reasoning level: medium"`、`"Change tool preset: Chat only"`、`"<模型名> — Change model"`、压缩停止按钮是 `"Stop compaction · Compacting (2/3)…"`）。`ModelSelector` 用 `iconOnly` 属性进入这种形态，Settings 与模型对话框的 `field` 形态保留文字标签。项目与分支标签保留文字：它们说明的是“哪个目录、哪个分支”，属于身份，不是设置。
+- 手机的控件条收在“更多控件”按钮里，而这个按钮紧跟在 `+` 背件按钮后面（2026-11-25 要求：模型 chip 也收进弹层，More 不再摆在卡片右缘）。`.chat-composer-controls` 在手机是 `auto minmax(0, 1fr)` 两列栅格，靠 `order`（控件 1、标签格 2）换视觉顺序（Tab 顺序不变）；弹层绝对定位在 More 的**左**缘（`left: 0`，靠右锚会开去卡片外）。收起时行内不写模型名，所 More 的 `title` 带上它（`"更多控件 · 更换模型：<名>"`），`aria-label` 仍是短句。`iconOnly` 的 `ModelSelector` 根节点宽度随字形（`width: undefined`、`flex: 0 0 auto`），关闭按钮 `flex-shrink: 0` 保住 36px —— 弹层里五个 32px 字形必须 1px 相连（Chromium 与 WebKit 在 390px 实测：模型后曾有 22px 空隔，关闭按钮被压到 15px）。`components/ChatInput.composer-row.test.mjs` 钉住。
 - 发送按钮仍是行内最后一个控件，保持与卡片右下圆角同心；`e2e/composer-geometry.mjs` 在 12/14/20/24px 字号、深浅色、1280/390/320 宽度下量取：文本域宽度等于卡片内宽、行内按钮同一水平线（手机 More 弹层是绝对定位，不计入）、控件按钮无文字且 `title` 非空、发送圆与卡片圆弧圆心重合。
 - 手机键盘弹起时 `.chat-composer-controls` 被 `html[data-keyboard-open]` 隐藏，而它正是这一行的弹性填充块：填充消失后整行靠左堆叠，发送按钮离开卡片右下角（WebKit 390px 实测 Send 在 x=130，卡片右边界 366，右边留出一条空带 —— 就是用户发来的手机 Safari 截图）。`.chat-composer-actions > .composer-send-button { margin-left: auto }` 让 Send 在有控件条和没有控件条时都钉在角上。`e2e/composer-ios.mjs` 用 **WebKit** 量这条（Chromium 的手机模拟看不出这类问题），带对照 pass（移除该规则 Send 漂移约 200px）并断言 fixture 的 class 链与 `ChatInput` 一致，防止 fixture 与被测对象漂移。
 - 文本域的宽度来自这一列的 `align-items: stretch`，不是 `width: 100%`：卡片内缩是它的 padding（再加编辑器左侧 4px），整宽 *加上* 水平 margin 会把文字推出卡片右边界 8px（手机上光标落在边框里）。被拉伸时 margin 只能内缩，所以 `ChatInput` 不设行内宽度，规则是 `width: auto; margin: 8px 0 0`。这个配对是承重的：该 bug 曾因样式表里一次手改 margin 而复现，`components/ChatInput.composer-row.test.mjs` 钉住 `width: auto` 且禁止 `margin: 8px;`。

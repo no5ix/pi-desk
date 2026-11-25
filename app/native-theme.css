@@ -10399,6 +10399,10 @@ html.native-desktop :is(
   background: var(--bg-hover);
   border: 0;
   border-left: var(--hairline) solid color-mix(in srgb, var(--border) 72%, transparent);
+  /* The strip is one row of fixed glyphs; the control that closes it keeps its own
+     36px box (it was squeezed to 15px, a 14px glyph with no touch margin, when the
+     model chip grew the row past the strip's max-content). */
+  flex-shrink: 0;
   transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native);
 }
 .composer-controls-close:hover {
