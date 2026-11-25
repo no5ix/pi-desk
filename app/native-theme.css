@@ -5938,8 +5938,9 @@ html.dark {
 .chat-composer-actions > .chat-composer-controls {
   flex: 1 1 auto;
   min-width: 0;
-  /* padding: 0 6px 0 0; */
   padding: 0;
+  /* The strip is the row's flex filler, so the inset in front of Send lives here: the
+     controls end 15px before the disc instead of touching it. */
   margin-right: 15px;
 }
 
@@ -5958,9 +5959,11 @@ html.dark {
   padding-right: 13px;
   /* The width comes from the column's `align-items: stretch`, not from `width: 100%`:
      a full width and a horizontal margin together pushed the text 8px past the card's
-     right edge (the phone's Safari showed the caret in the border), and the margin is
-     the card's inset. Stretched, a margin can only inset. Keep the top margin vertical
-     only — that pairing is the invariant the width is bought with. */
+     right edge (the phone's Safari showed the caret in the border). Stretched, a margin
+     can only inset — that pairing is the invariant, and it is what lets the margins carry
+     the card's insets: the 8px on the left stands the text's ink on the `+` glyph's left
+     edge (the glyph stays centered in its disc below), the 18px below is the room above
+     the control row, and the 13px of right padding keeps the caret off the card's edge. */
   width: auto;
   margin: 8px 0 18px 8px;
 }
@@ -6172,15 +6175,10 @@ html.dark {
   background: none;
   color: var(--text-muted);
 }
-/* The `+` and the prompt share one vertical edge. The disc is centered — and with no
-   disc painted (background: none) the only ink in it is the glyph, which sat 10px to the
-   right of the text's own left edge, so the row's two left ends read as two columns.
-   Left-aligning the glyph inside the (unchanged, touch-sized) disc puts the ink on the
-   text's line; the Send disc keeps its centered arrow, because the card's bottom-right
-   arc is built around it. */
-/* .composer-attach-button > svg {
-  flex: 0 0 auto;
-} */
+/* The `+` stays centered in its (unchanged, touch-sized) disc: a finger aims at the disc,
+   and the Send disc keeps the same centered arrow. The row's two left ends meet as ink —
+   the prompt's first character on the glyph's left edge — at the textarea's own 8px left
+   margin above, not by pushing the glyph out of its disc. */
 
 .composer-attach-button[data-active] {
   /* Attached files are the state, and the glyph says so in full colour. No disc: the
