@@ -4889,6 +4889,14 @@ html.dark {
   background: var(--bg-panel);
 }
 
+/* The path field and the filter are chips like the rest, and their tone lives in CSS (not
+   inline) so a focused one can shift. A field is typed into, and the window focuses it on
+   open: a hard accent ring there is a shout that sits in the window the whole time a path
+   is typed, so a focused field takes a quiet `--accent-border` ring and a deeper chip. */
+.directory-picker-path {
+  background: var(--bg-panel);
+}
+
 .directory-picker-filter {
   flex: 1;
   min-width: 90px;
@@ -4903,7 +4911,8 @@ html.dark {
 }
 
 .directory-picker-filter:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent-border);
+  background: color-mix(in srgb, var(--text) 7%, var(--bg-panel));
 }
 
 .directory-picker-toggle {
@@ -13272,12 +13281,16 @@ html.dark {
 .directory-picker-entry {
   border-radius: 0 !important;
 }
+/* Typing, not tabbing: the path field and the filter are focused by the window and typed
+   into, so their cue is a soft ring and a deeper chip, never the heavy accent ring. */
 .directory-picker-path:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--accent) !important;
+  box-shadow: inset 0 0 0 2px var(--accent-border) !important;
+  background: color-mix(in srgb, var(--text) 7%, var(--bg-panel)) !important;
   border: 0 !important;
 }
 .directory-picker-filter:focus-visible {
-  box-shadow: inset 0 0 0 2px var(--accent) !important;
+  box-shadow: inset 0 0 0 2px var(--accent-border) !important;
+  background: color-mix(in srgb, var(--text) 7%, var(--bg-panel)) !important;
   border: 0 !important;
 }
 
