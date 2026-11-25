@@ -48,10 +48,12 @@ interface PlacesResponse {
   error?: string;
 }
 
+/* The folder window carries no hairlines at all: the shadow is its edge over the scrim,
+   the blocks are told apart by tone, and a control is a filled chip, never an outlined box. */
 const panelSurfaceStyle: CSSProperties = {
   overflow: "hidden",
   background: "var(--bg)",
-  border: "var(--hairline) solid var(--border)",
+  border: 0,
   borderRadius: "var(--radius-lg)",
   boxShadow: "var(--shadow-dialog)",
 };
@@ -59,7 +61,7 @@ const panelSurfaceStyle: CSSProperties = {
 const textInputStyle: CSSProperties = {
   height: 36,
   padding: "0 10px",
-  border: "var(--hairline) solid var(--border)",
+  border: 0,
   borderRadius: "var(--radius-sm)",
   outline: "none",
   background: "var(--bg-panel)",
@@ -82,11 +84,12 @@ const primaryActionStyle: CSSProperties = {
   fontWeight: "var(--fw-semibold)",
 };
 
+/* The background of a footer button is its only affordance now that nothing is outlined,
+   so it lives in app/native-theme.css (`.is-secondary` / `.is-emphasis`), where the hover
+   and focus states can reach it — an inline background would beat every :hover rule. */
 const secondaryActionStyle: CSSProperties = {
   ...actionButtonStyle,
-  border: "var(--hairline) solid var(--border)",
-  background: "none",
-  color: "var(--text-muted)",
+  border: 0,
 };
 
 /** How the list is ordered, remembered across pickers. */
@@ -519,7 +522,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
         </div>
 
         <form className="directory-picker-pathbar" onSubmit={handlePathSubmit} style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, padding: "10px 14px" }}>
-          <button className="directory-picker-back" type="button" onClick={() => void navigateTo(parentDirectory ?? undefined)} disabled={loading || !canNavigateUp} title={t("directoryPicker.goToParent")} aria-label={t("directoryPicker.goToParent")} style={{ width: 36, height: 36, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg-hover)", color: "var(--text-muted)", cursor: canNavigateUp ? "pointer" : "default", opacity: canNavigateUp ? 1 : 0.45 }}>
+          <button className="directory-picker-back" type="button" onClick={() => void navigateTo(parentDirectory ?? undefined)} disabled={loading || !canNavigateUp} title={t("directoryPicker.goToParent")} aria-label={t("directoryPicker.goToParent")} style={{ width: 36, height: 36, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: 0, borderRadius: "var(--radius-sm)", cursor: canNavigateUp ? "pointer" : "default", opacity: canNavigateUp ? 1 : 0.45 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="m18 15-6-6-6 6" />
             </svg>
@@ -548,7 +551,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
             type="submit"
             disabled={loading || !pathInput.trim()}
             title={t("directoryPicker.goToDirectory")}
-            style={{ minWidth: 58, height: 36, padding: "0 12px", border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)", background: "var(--bg-hover)", color: "var(--text-muted)", cursor: loading || !pathInput.trim() ? "default" : "pointer", opacity: loading || !pathInput.trim() ? 0.6 : 1 }}
+            style={{ minWidth: 58, height: 36, padding: "0 12px", border: 0, borderRadius: "var(--radius-sm)", cursor: loading || !pathInput.trim() ? "default" : "pointer", opacity: loading || !pathInput.trim() ? 0.6 : 1 }}
           >
             {t("directoryPicker.go")}
           </button>
@@ -713,7 +716,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
 
         <div className="directory-picker-footer" style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexShrink: 0, padding: "10px 18px" }}>
           <button
-            className="directory-picker-action"
+            className="directory-picker-action is-emphasis"
             type="button"
             onClick={() => {
               setCreateOpen(true);
@@ -724,7 +727,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
           >
             {t("directoryPicker.newDirectory")}
           </button>
-          <button className="directory-picker-action" type="button" onClick={requestClose} disabled={busy || closing} style={{ ...secondaryActionStyle, cursor: busy ? "default" : "pointer" }}>{t("i18n.cancel")}</button>
+          <button className="directory-picker-action is-secondary" type="button" onClick={requestClose} disabled={busy || closing} style={{ ...secondaryActionStyle, cursor: busy ? "default" : "pointer" }}>{t("i18n.cancel")}</button>
           <button
             className="directory-picker-action"
             type="button"
@@ -791,7 +794,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
                     {creating ? t("directoryPicker.creating") : t("directoryPicker.create")}
                   </button>
                   <button
-                    className="directory-picker-action"
+                    className="directory-picker-action is-secondary"
                     type="button"
                     onClick={closeCreateDialog}
                     disabled={creating}

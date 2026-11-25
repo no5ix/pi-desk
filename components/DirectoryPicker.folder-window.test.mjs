@@ -113,8 +113,21 @@ test("a phone folds the rail above the list, and the blocks are told apart by co
   for (const selector of [".directory-picker-toolbar", ".directory-picker-footer", ".directory-picker-main", ".directory-picker-sheet-header", ".directory-picker-header", ".directory-picker-pathbar"]) {
     assert.doesNotMatch(rule(selector), /border/, `${selector} is a block, not a box`);
   }
-  // The window's own outline is its shape over the scrim, and the controls keep theirs.
-  assert.match(picker, /border: "var\(--hairline\) solid var\(--border\)"/, "the panel keeps its outline");
+  // No hairlines anywhere: the shadow is the window's edge over the scrim, and every
+  // control is a filled chip. Asked after a screenshot — the panel's outlines read as a grid.
+  assert.ok(!picker.includes("var(--hairline) solid var(--border)"), "the window and its controls keep no outline");
+  assert.match(picker, /border: 0,/, "the inline styles switch every border off");
+  for (const selector of [".directory-picker-filter", ".directory-picker-toggle", ".directory-picker-toolbar .app-select-trigger"]) {
+    assert.doesNotMatch(rule(selector), /border: var\(--hairline\)/, `${selector} is a chip, not an outlined box`);
+  }
+  // With no line left, the background is a footer button's only affordance, and the two
+  // secondary actions must not read as one control: "New directory" is the accent chip.
+  assert.match(rule(".directory-picker-action.is-secondary"), /color-mix\(in srgb, var\(--text\) 14%, var\(--surface-elevated\)\)/, "the neutral chip is a solid wash over an opaque base");
+  assert.match(rule(".directory-picker-action.is-emphasis"), /color-mix\(in srgb, var\(--accent\)/);
+  assert.match(picker, /className="directory-picker-action is-emphasis"/, "New directory is the accent chip");
+  assert.match(picker, /className="directory-picker-action is-secondary"/, "Cancel is the neutral chip");
+  assert.match(css, /\.directory-picker-back:focus-visible,[\s\S]*?box-shadow: inset 0 0 0 2px var\(--accent\);/, "a borderless control still shows the keyboard on it");
+  assert.match(rule(".directory-picker-path:focus-visible"), /box-shadow: inset 0 0 0 2px var\(--accent\) !important;/, "and so does the path field");
   assert.ok(!picker.includes("borderBottom") && !picker.includes("borderTop"),
     "no divider line is set inline on a band");
 
