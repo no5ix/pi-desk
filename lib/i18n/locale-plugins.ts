@@ -210,9 +210,12 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
       "sidebar.branchGroupExpand": "Expand the {group} branches",
       "sidebar.branchGroupCollapse": "Collapse the {group} branches",
       "sidebar.branchGroupCount": "{count} branches",
-      /* The new-worktree form says where the folder lands, next to the name it starts from. */
-      "sidebar.newWorktreeFrom": "Create a new branch based on “{branch}”, in the folder {path}",
-      "sidebar.newWorktreeInto": "Create a new branch in the folder {path}",
+      /* The new-worktree form says where the folder lands, next to the name it starts
+         from. The sentence stops at "the folder": the path itself is a row of its own
+         (components/ProjectContextMenu.tsx), because a path this long is cut in half on
+         a sentence's last line. */
+      "sidebar.newWorktreeFrom": "Create a new branch based on “{branch}”, in the folder",
+      "sidebar.newWorktreeInto": "Create a new branch in the folder",
       "sidebar.uploadFilesTitle": "Upload files to the selected folder (project root if none)",
       "sidebar.searchAllHint": "Press Enter to search inside every conversation",
       "sidebar.chats": "Chats",
@@ -1178,9 +1181,10 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
       "sidebar.branchGroupExpand": "展开 {group} 分支",
       "sidebar.branchGroupCollapse": "折叠 {group} 分支",
       "sidebar.branchGroupCount": "{count} 个分支",
-      /* 新建 worktree 的表单说出目录会落在哪里，以及它从哪个分支开始。 */
-      "sidebar.newWorktreeFrom": "基于「{branch}」新建分支，目录为 {path}",
-      "sidebar.newWorktreeInto": "在目录 {path} 新建分支",
+      /* 新建 worktree 的表单说出目录会落在哪里，以及它从哪个分支开始。
+         句子停在「目录为」：路径自己占一行，这么长的路径写在句尾一定会被截断。 */
+      "sidebar.newWorktreeFrom": "基于「{branch}」新建分支，目录为",
+      "sidebar.newWorktreeInto": "新建分支，目录为",
       "sidebar.uploadFilesTitle": "上传到当前选中的文件夹（未选中时为项目根目录）",
       "sidebar.changedFiles": "{count} 个已修改文件",
       "sidebar.chats": "对话",
@@ -2378,9 +2382,10 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
       "sidebar.branchGroupExpand": "展開 {group} 分支",
       "sidebar.branchGroupCollapse": "摺疊 {group} 分支",
       "sidebar.branchGroupCount": "{count} 個分支",
-      /* 新建 worktree 的表單說出目錄會落在哪裡，以及它從哪個分支開始。 */
-      "sidebar.newWorktreeFrom": "以「{branch}」為起點建立新分支，目錄為 {path}",
-      "sidebar.newWorktreeInto": "在目錄 {path} 建立新分支",
+      /* 新建 worktree 的表單說出目錄會落在哪裡，以及它從哪個分支開始。
+         句子停在「目錄為」：路徑自己佔一行，這麼長的路徑寫在句尾一定會被截斷。 */
+      "sidebar.newWorktreeFrom": "以「{branch}」為起點建立新分支，目錄為",
+      "sidebar.newWorktreeInto": "建立新分支，目錄為",
       "sidebar.chats": "對話",
       "sidebar.newChatTitle": "新增對話",
       "sidebar.noChats": "還沒有對話",

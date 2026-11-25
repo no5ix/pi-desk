@@ -29,6 +29,7 @@ import {
   type BranchRow,
 } from "@/lib/branch-tree";
 import { worktreeDirNameForBranch } from "@/lib/worktree-folder";
+import { shortenPath } from "@/lib/display-path";
 import { isImeComposing } from "@/lib/ime";
 import { MENU_MAX_HEIGHT_CSS } from "@/lib/menu-placement";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
@@ -822,9 +823,19 @@ export function ProjectContextMenuPanel({
             a click outside closes the menu the way every other menu in the app
             closes. A page of a menu is not a screen with its own back button. */}
         <div className="sidebar-project-context-menu-hint sidebar-project-context-menu-worktree-hint">
-          {worktreeBaseBranch
-            ? t("sidebar.newWorktreeFrom", { branch: worktreeBaseBranch, path: folder })
-            : t("sidebar.newWorktreeInto", { path: folder })}
+          <div className="sidebar-project-context-menu-worktree-sentence">
+            {worktreeBaseBranch
+              ? t("sidebar.newWorktreeFrom", { branch: worktreeBaseBranch })
+              : t("sidebar.newWorktreeInto")}
+          </div>
+          {/* The folder gets the second row to itself. It is an absolute path (with
+              the `…` that stands for the name not typed yet) and a folder one is being
+              asked to create is not a thing to cut in half at the end of a sentence;
+              `~` for the home folder is the shape every other path label in the app
+              uses, and the whole path stays in the row's title. */}
+          <div className="sidebar-project-context-menu-worktree-path" title={folder}>
+            {shortenPath(folder)}
+          </div>
         </div>
         <div className="sidebar-project-context-menu-form">
           <AppCombobox

@@ -253,9 +253,11 @@ test("the row's tag stays a word, and the panel is as wide as its longest name",
   assert.match(css, /\.sidebar-project-context-menu-row--branch > button\[role="menuitem"\] \{[\s\S]*?overflow: hidden;/,
     "the last line of defence: the button clips, nothing reaches the icons");
   assert.match(css, /\.sidebar-project-context-menu-branch-actions \{[\s\S]*?flex: 0 0 auto;/);
-  // The new-worktree form ends in an absolute path: a folder the user is being
-  // asked to create is not a thing to cut in half.
+  // The new-worktree form ends in an absolute path on a row of its own: a folder the
+  // user is being asked to create is not a thing to cut in half.
   assert.match(css, /\.sidebar-project-context-menu-worktree-hint \{[\s\S]*?overflow-wrap: anywhere;/);
+  assert.match(css, /\.sidebar-project-context-menu-worktree-path \{[\s\S]*?font-family: var\(--font-mono\);[\s\S]*?overflow-wrap: anywhere;/,
+    "the path row is mono and breaks inside a word, so a long folder is read whole");
 });
 
 test("the branch list is the current branch, the worktree branches, then a tree of prefixes", () => {
@@ -306,11 +308,34 @@ test("the branch list is the current branch, the worktree branches, then a tree 
 test("the new-worktree page names the branch it starts from and the folder it lands in", () => {
   const plain = render({ view: "new-worktree", newBranch: "test-upload" });
   assert.ok(!plain.includes("sidebar.newWorktreeFrom("), "from HEAD: no base sentence");
-  assert.match(plain, /sidebar-project-context-menu-worktree-hint">sidebar\.newWorktreeInto\(\/repo-worktrees\/test-upload\)</,
-    "without a base branch the sentence still names the folder");
+  // Two rows: the sentence (with the base branch inside it when there is one), then
+  // the folder on its own line. One line carrying both was the sentence the user
+  // screenshotted cut off mid-path.
+  assert.match(plain, /sidebar-project-context-menu-worktree-hint">\s*<div class="sidebar-project-context-menu-worktree-sentence">sidebar\.newWorktreeInto<\/div>/,
+    "without a base branch the sentence is short and carries no path");
   const from = render({ view: "new-worktree", newBranch: "wt/wt-test-icon-face", worktreeBaseBranch: "fix/initial-heading-offset" });
-  assert.match(from, /sidebar-project-context-menu-worktree-hint">sidebar\.newWorktreeFrom\(fix\/initial-heading-offset,\/repo-worktrees\/wt-wt-test-icon-face\)</,
-    "the folder is the one addWorktree() will create, read off the name being typed");
+  assert.match(from, /sidebar-project-context-menu-worktree-sentence">sidebar\.newWorktreeFrom\(fix\/initial-heading-offset\)<\/div>/,
+    "the sentence names the base branch and stops at the folder");
+  for (const [html, path] of [
+    [plain, "/repo-worktrees/test-upload"],
+    [from, "/repo-worktrees/wt-wt-test-icon-face"],
+  ]) {
+    assert.match(html, new RegExp(`sidebar-project-context-menu-worktree-path" title="${path.replace(/[/]/g, "\\/")}">${path.replace(/[/]/g, "\\/")}<\/div>`),
+      "the folder is the one addWorktree() will create, read off the name being typed, whole and in its title");
+  }
+  // A folder under the home folder is shown in the app's `~` shape, like every other
+  // path label; the row's title keeps the absolute path for the git call's reader.
+  const home = render({
+    view: "new-worktree",
+    projectRoot: "/Users/tester/auto-toc",
+    branchMenu: {
+      root: "/Users/tester/auto-toc", projectRoot: "/Users/tester/auto-toc", isGit: true,
+      branches: ["main"], remoteBranches: [], worktrees: [], loaded: true,
+    },
+    newBranch: "main-bak2",
+  });
+  assert.match(home, /sidebar-project-context-menu-worktree-path" title="\/Users\/tester\/auto-toc-worktrees\/main-bak2">~\/auto-toc-worktrees\/main-bak2<\/div>/,
+    "the home folder collapses to ~ on screen, never in the path that gets posted");
   // No "Switch worktree" page to step back to: the form is the page, and it closes with
   // Escape, Cancel, or a click outside, like every other menu in the app.
   assert.ok(!from.includes("sidebar-project-context-menu-back"), "no back button");

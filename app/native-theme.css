@@ -498,9 +498,19 @@
 .sidebar-project-context-menu-row--branch button[aria-current="true"] .sidebar-project-context-menu-branch-name {
   font-weight: var(--fw-semibold);
 }
-/* The new-worktree form's sentence ends in an absolute path: a folder the user
-   is being asked to create is the one thing here that must not be cut. */
+/* The new-worktree form's sentence names the base branch and stops; the folder
+   it lands in is the row underneath. A folder the user is being asked to create
+   is the one thing here that must not be cut, and a path on a sentence's last
+   line is always cut in a panel this narrow. */
 .sidebar-project-context-menu-worktree-hint {
+  overflow-wrap: anywhere;
+}
+.sidebar-project-context-menu-worktree-sentence {
+  color: var(--text-muted);
+}
+.sidebar-project-context-menu-worktree-path {
+  margin-top: 3px;
+  font-family: var(--font-mono);
   overflow-wrap: anywhere;
 }
 
