@@ -11405,6 +11405,13 @@ html.native-desktop :is(
   background: var(--surface-elevated);
 }
 
+/* The first card rides straight under the page title: upstream zeroes the
+   first section's top margin, which pins the card's edge to the heading. The
+   card is a filled surface, so it needs the section's own breathing room. */
+.settings-appearance > .settings-general-title + .settings-general-section {
+  margin-top: 26px;
+}
+
 .settings-appearance-controls {
   padding: 16px 20px;
   border-radius: var(--radius-lg);
