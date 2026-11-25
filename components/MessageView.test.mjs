@@ -207,6 +207,36 @@ test("keeps generic input for extra write arguments, empty or non-text content, 
   }
 });
 
+test("shows a tool result's coloured output as plain text, not escape-code boxes", () => {
+  const block = {
+    type: "toolCall",
+    toolCallId: "call-bash-eslint",
+    toolName: "bash",
+    input: { command: "node_modules/.bin/eslint hooks/useSessionUiState.ts" },
+  };
+  const result = {
+    role: "toolResult",
+    toolCallId: block.toolCallId,
+    toolName: "bash",
+    content: [{
+      type: "text",
+      text: "\x1b[0m\x1b[33m\x1b[1m✖ 2 problems (0 errors, 2 warnings)\x1b[22m\x1b[39m\x1b[0m",
+    }],
+  };
+  clearExpandedToolCalls();
+  setToolCallExpanded(block.toolCallId, true);
+  try {
+    const html = renderMessage({ role: "assistant", content: [block] }, {
+      toolResults: new Map([[block.toolCallId, result]]),
+    });
+    const text = textOf(html);
+    assert.ok(text.includes("✖ 2 problems (0 errors, 2 warnings)"));
+    assert.ok(!text.includes("\x1b["), "the plain-text pane shows no escape-code boxes");
+  } finally {
+    clearExpandedToolCalls();
+  }
+});
+
 test("renders subagents as standard tool calls with only an extra session button", () => {
   const block = {
     type: "toolCall",

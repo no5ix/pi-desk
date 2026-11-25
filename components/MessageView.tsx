@@ -6,6 +6,7 @@ import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
 import { ThinkingIcon } from "./ThinkingIcon";
 import { copyText } from "@/lib/clipboard";
+import { stripAnsi } from "@/lib/ansi";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
@@ -1288,8 +1289,12 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
     ? resultContent.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("\n")
     : null;
   const resultText = mcpLabel && joinedResultText !== null ? prettyMcpResultText(joinedResultText) : joinedResultText;
+  // This pane is plain text, so a command's colour escapes (eslint, tsc, jest) would
+  // render as escape-code boxes and an escape-only result would look like output.
+  // The interactive bash pane is the place that colours them (AnsiText).
+  const resultDisplayText = resultText === null ? null : stripAnsi(resultText);
   const resultImages = getMessageImages(resultContent);
-  const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
+  const resultIsEmpty = resultDisplayText === null ? false : (resultDisplayText.trim() === "(no output)" || resultDisplayText.trim() === "");
   const isError = (result?.isError ?? false)
     || (isApplyPatchToolName(block.toolName) && applyPatchResultHasFailures(result?.details));
   const subagent = isSubagentToolDetails(result?.details) ? result.details : null;
@@ -1422,7 +1427,7 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
       {/* ── Paired result — only shown when expanded ── */}
       {expanded && result && patchFiles && isError && (
         <PairedResult
-          text={resultText ?? ""}
+          text={resultDisplayText ?? ""}
           isEmpty={resultIsEmpty}
           isError={isError}
         />
@@ -1434,7 +1439,7 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
           />
         ) : (!resultIsEmpty || resultImages.length === 0) && (
           <PairedResult
-            text={resultText ?? ""}
+            text={resultDisplayText ?? ""}
             isEmpty={resultIsEmpty}
             isError={isError}
           />
