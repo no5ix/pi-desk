@@ -861,17 +861,31 @@ export function AppShell() {
     () => sideTabs.filter((tab) => tab.parentId === familyRootId),
     [familyRootId, sideTabs],
   );
-  const panelTabs: Tab[] = useMemo(() => orderPanelTabs([...fileTabs, ...terminalTabs.map((tab) => ({
-    id: tab.id,
-    label: getFileName(tab.cwd) || tab.cwd,
-    filePath: tab.cwd,
-    kind: "terminal" as const,
-    closing: Boolean(tab.closing),
-  })), ...artifactTabs.map(artifactPanelTab), ...visibleSideTabs.map((tab) => {
+  // Two shells in one project: the strip names both by the folder, so the second reads
+  // as the first. Shells in the same folder are numbered in the order they were opened;
+  // a lone shell keeps the folder's name alone.
+  const terminalPanelTabs = useMemo(() => {
+    const perCwd = new Map<string, number>();
+    for (const tab of terminalTabs) perCwd.set(tab.cwd, (perCwd.get(tab.cwd) ?? 0) + 1);
+    const seen = new Map<string, number>();
+    return terminalTabs.map((tab) => {
+      const name = getFileName(tab.cwd) || tab.cwd;
+      const n = (seen.get(tab.cwd) ?? 0) + 1;
+      seen.set(tab.cwd, n);
+      return {
+        id: tab.id,
+        label: (perCwd.get(tab.cwd) ?? 1) > 1 ? `${name} ${n}` : name,
+        filePath: tab.cwd,
+        kind: "terminal" as const,
+        closing: Boolean(tab.closing),
+      };
+    });
+  }, [terminalTabs]);
+  const panelTabs: Tab[] = useMemo(() => orderPanelTabs([...fileTabs, ...terminalPanelTabs, ...artifactTabs.map(artifactPanelTab), ...visibleSideTabs.map((tab) => {
     const member = familyMembers?.find((session) => session.id === tab.sessionId);
     const label = member ? sideChatTitle(member, translate("sideChat.title"), familyMembers ?? []) : translate("sideChat.title");
     return { id: `agent:${tab.sessionId}`, label, filePath: label, kind: "side" as const };
-  })], panelTabOrder), [fileTabs, terminalTabs, artifactTabs, visibleSideTabs, familyMembers, translate, panelTabOrder]);
+  })], panelTabOrder), [fileTabs, terminalPanelTabs, artifactTabs, visibleSideTabs, familyMembers, translate, panelTabOrder]);
   const activeSideTab = visibleSideTabs.find((tab) => `agent:${tab.sessionId}` === activeFileTabId) ?? null;
   // A closed tab leaves the saved order, so reopening it appends it like any new tab.
   const panelTabIds = panelTabs.map((tab) => tab.id).join("\n");
@@ -1855,9 +1869,14 @@ export function AppShell() {
     });
   }, [handleOpenFile, selectedSession?.id]);
 
-  const handleOpenTerminal = useCallback((cwd: string) => {
+  const handleOpenTerminal = useCallback((cwd: string, options?: { newTab?: boolean }) => {
     if (isChatWorkspaceActive) return;
-    const existing = terminalTabs.find((tab) => tab.cwd === cwd);
+    // The tab strip's `+` asks for a shell, so it gets one. It used to reuse the tab
+    // this project already had: on a phone with one terminal open, the button's tap
+    // moved the focus into that shell's input field and the strip stayed exactly as it
+    // was, which is the "the + does nothing" the user reported. Opening the panel is
+    // the other case, and it keeps the project's existing shell.
+    const existing = options?.newTab ? undefined : terminalTabs.find((tab) => tab.cwd === cwd);
     const tab = existing ?? newTerminalTab(cwd);
     if (!existing) setTerminalTabs((tabs) => [...tabs, tab]);
     setActiveFileTabId(tab.id);
@@ -3593,7 +3612,7 @@ export function AppShell() {
               activeTabId={activeFileTabId ?? ""}
               onSelectTab={setActiveFileTabId}
               onCloseTab={handleCloseFileTab}
-              onNewTerminal={visibleProjectCwd ? () => handleOpenTerminal(visibleProjectCwd) : undefined}
+              onNewTerminal={visibleProjectCwd ? () => handleOpenTerminal(visibleProjectCwd, { newTab: true }) : undefined}
               onReorderTab={(source, target, after) => setPanelTabOrder(movePanelTab(panelTabs.map((tab) => tab.id), source, target, after))}
             />
           </div>

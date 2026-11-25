@@ -13834,3 +13834,24 @@ a:focus-visible {
     transition: height var(--dur-base) var(--ease-native);
   }
 }
+
+/* The panel's header buttons are finger-sized. The strip's `+` (a new shell) and the
+   file-list toggle are 28px boxes — a thumb lands beside them, and on a phone the
+   28px box of a control whose tap shows no visible change reads as a dead button.
+   The strip is 48px tall, so 36px of button fits with its 5px padding. Both are
+   raised together: the row's two icon buttons stay one size. */
+@media (pointer: coarse) {
+  .right-panel-tab-strip > .file-tree-toggle,
+  .file-tab-add,
+  .file-workbench-icon-button {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+
+  /* The `+` sits in an anchor sized to the button; a 36px box in a 28px anchor
+     overflows its own row and the strip's overflow fades cut it. */
+  .file-tab-add-anchor {
+    height: 36px;
+  }
+}
