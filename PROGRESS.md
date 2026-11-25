@@ -202,3 +202,45 @@ disjoint regions — and only the composer needed a human.
 * Push `feat/branch-picker-header-worktrees` (it tracks `origin/`).
 * The two worktrees (`wt-…`, `wt-2wt-…`) still hold their branch checkouts; removing them
   is the user's call, as their branches are now inside the feature branch.
+
+## Pins follow the user, not the browser
+
+**What changed**
+| File | Now |
+| --- | --- |
+| `lib/sidebar-pins.ts` (new) | The pure pin layer: the pinned sets read from the server's session UI state, and the requests that push a browser's retired `pi-web:pinned-*` pins onto the server once |
+| `hooks/useSidebarPins.ts` (new) | The sidebar's pins as a hook: reads, optimistic toggles, the one-time migration, the visibility re-read, the failure reason for the notice |
+| `hooks/useSessionUiState.ts` | `lastErrorRef` (the reason of the write that just failed, readable from its `.then`); a revision named while a GET is open is chased, so news is never lost behind a slow read |
+| `components/SessionSidebar.tsx` | Chats, project sessions and projects pin through the server; the running frames' `sessionUiStateRevision` goes to `noteRevision()`; a refused pin raises `sidebar.uiStateFailed` |
+| `lib/session-ui-state.ts`, `app/api/agent/running/events/route.ts` | `subscribeSessionUiStateChange()`; a write that lands pushes `{ type: "ui-state", sessionUiStateRevision }` on the running stream, and every running frame carries the revision |
+| `lib/app-prefs.ts`, `lib/session-ui-state-shared.ts` | The three `pinned*` keys are migration-only plus `pinsMigratedToServer`; `MAX_PROJECT_STRING_LENGTH` is exported for the migration's filter |
+| `docs/agents/sessions.md` | The pins section: the wiring, the migration, the push, and the archive state that is still per browser |
+
+**Why**
+
+Two sessions pinned in Safari were missing in Edge on the same machine, and a phone showed
+none: the sidebar kept pins in `localStorage` while the repo already had the server's state
+store (`<agentDir>/pi-web-session-state.json`, `revision`, `sessions`, `projects`).
+
+**Verification**
+
+* `node_modules/.bin/tsc --noEmit` clean; `eslint` on the touched files clean (the suite's
+  1 pre-existing warning in `ChatInput.composer-row.test.mjs` is the composer task's, whose
+  files are dirty in this tree).
+* New: `lib/sidebar-pins.test.mjs` (4), `hooks/useSidebarPins.test.mjs` (7), the chase and
+  listener tests in `hooks/useSessionUiState.test.mjs` / `lib/session-ui-state.test.mjs`.
+* Full `node --test` over app/lib/scripts/components/hooks/relay/relay-shell/public:
+  4748 pass, the only 2 failures are `components/ChatInput.composer-row.test.mjs`, which
+  reads the composer files another in-flight edit has dirty in this worktree.
+* Live against the app's dev server, two isolated Playwright browser contexts on one
+  server: pin in A → the glyph in A; the untouched B shows the same pin with no click and
+  no reload (frame `rev 17` → B's GET `rev 17`, 3 pinned); unpin in A → the glyph leaves B
+  (frame `rev 18` → 2 pinned); A's `pi-web:pinned-*` keys are gone, `pinsMigratedToServer`
+  is `1`. A real Safari window's two pins landed on the server on its first sync, which is
+  what the check read as the starting state.
+
+**Next**
+
+* The archive (`archivedChats`, `archivedSessions`, `pi-web:archived-projects`) is still
+  per browser; moving it onto the same store is the remaining half, and it would let the
+  store's pin/archive exclusion work across windows.

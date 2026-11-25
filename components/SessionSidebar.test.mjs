@@ -239,8 +239,10 @@ test("chats can be pinned and archived, ordered by recency with no date groups",
   assert.match(source, /: chatFamilies\.slice\(0, MAX_VISIBLE_CHAT_SESSIONS \* \(chatSessionPages \+ 1\)\)/);
   // Archived chats stay reachable and recoverable.
   assert.match(source, /sidebar\.showArchivedChats/);
-  assert.match(source, /APP_PREF_KEYS\.pinnedChats/);
   assert.match(source, /APP_PREF_KEYS\.archivedChats/);
+  // A chat pin is the server's, like every other pin: no localStorage behind it.
+  assert.match(source, /const pinnedChats = pins\.pinnedIds;/);
+  assert.match(source, /pinned: pinnedChats\.has\(id\),\s*archived: archivedChats\.has\(id\),\s*onTogglePin: \(\) => \{ void pins\.toggleSessionPin\(id\); \},/);
   // Row menu: only chat rows (depth 0) get the actions, in both the native and DOM menus.
   assert.match(source, /chatActions=\{depth === 0 \? chatActions : undefined\}/);
   // The pin is generic: chats always pass one, project sessions too (S2).
@@ -405,19 +407,32 @@ test("the row menu shows the compaction count only when the session was compacte
   );
 });
 
-test("a project's sessions can be pinned to the top of it, kept per browser (S2)", () => {
-  assert.match(source, /readIdSetPref\(APP_PREF_KEYS\.pinnedSessions\)/);
-  assert.match(source, /setPrefJson\(APP_PREF_KEYS\.pinnedSessions, \[\.\.\.pinnedSessions\]\)/);
-  assert.match(source, /pinned: pinnedSessions\.has\(id\),\s*onTogglePin: \(\) => setPinnedSessions\(\(current\) => toggleId\(current, id\)\),/);
+test("a project's sessions are pinned through the server's state, not this browser (S2)", () => {
+  // A pin is pi-web's state in <agentDir>/pi-web-session-state.json, so a
+  // session pinned in Safari is pinned in Edge, on the phone, and in the
+  // desktop shell too. Nothing of the sidebar's pins lives in localStorage.
+  assert.match(source, /import \{ useSidebarPins \} from "@\/hooks\/useSidebarPins";/);
+  assert.match(source, /const pins = useSidebarPins\(reportPinFailure\);/);
+  assert.match(source, /const pinnedSessions = pins\.pinnedIds;/);
+  assert.doesNotMatch(source, /APP_PREF_KEYS\.pinned/);
+  assert.doesNotMatch(source, /setPinnedSessions|setPinnedChats|setPinnedProjects/);
+  assert.match(source, /pinned: pinnedSessions\.has\(id\),\s*onTogglePin: \(\) => \{ void pins\.toggleSessionPin\(id\); \},/);
   assert.match(source, /const groupTree = pinnedFirst\(unarchivedGroupTree, \(node\) => pinnedSessions\.has\(node\.session\.id\)\);/);
+  // A pin made in another window arrives: the running frames carry the state's
+  // revision, and the sidebar hands it to the hook.
+  assert.match(source, /noteRevision\(data\.sessionUiStateRevision\);/);
+  assert.match(source, /\}, \[loadSessions, noteRevision\]\);/);
+  // The server refused a pin: the user hears it in their own language.
+  assert.match(source, /appNotify\.error\(\{ message: t\("sidebar\.uiStateFailed", \{ error: message \}\) \}\);/);
   // The native menu and the DOM menu both offer it, and the row shows the pin.
   assert.match(source, /\.\.\.\(pin\s*\? \[\{ label: t\(pin\.pinned \? "sidebar\.unpinChat" : "sidebar\.pinChat"\), onSelect: pin\.onTogglePin \}\]/);
   assert.match(source, /\{pin\?\.pinned && \(\s*<svg className="session-item-pin"/);
 });
 
 test("projects can be pinned above the others from both project menus (S2)", async () => {
-  assert.match(source, /readIdSetPref\(APP_PREF_KEYS\.pinnedProjects\)/);
-  assert.match(source, /setPrefJson\(APP_PREF_KEYS\.pinnedProjects, \[\.\.\.pinnedProjects\]\)/);
+  assert.match(source, /const pinnedProjects = pins\.pinnedProjectRoots;/);
+  assert.match(source, /void pins\.toggleProjectPin\(root\);/);
+  assert.match(source, /onSelect: \(\) => \{ void pins\.toggleProjectPin\(projectRoot\); \} \},/);
   assert.match(source, /const activeProjects = pinnedFirst\(\s*allProjects\.filter\(\(group\) => !archivedProjectRoots\.has\(group\.projectRoot\)\),\s*\(group\) => pinnedProjects\.has\(group\.projectRoot\),\s*\);/);
   const nativeMenu = source.slice(source.indexOf("const showNativeProjectMenu = useCallback"));
   assert.match(nativeMenu.slice(0, 4000), /sidebar\.unpinProject" : "sidebar\.pinProject"/);

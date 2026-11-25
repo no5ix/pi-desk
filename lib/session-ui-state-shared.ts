@@ -12,7 +12,7 @@ export const SESSION_UI_STATE_VERSION = 1;
 export const SESSION_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/;
 export const MAX_SESSION_UI_IDS_PER_REQUEST = 500;
 /** Longest projectKey or project root a request or the file may carry. */
-const MAX_PROJECT_STRING_LENGTH = 4096;
+export const MAX_PROJECT_STRING_LENGTH = 4096;
 /** Most projectKeys `projectOrder` holds. */
 export const MAX_PROJECT_ORDER_KEYS = 1000;
 /**

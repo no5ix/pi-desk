@@ -21,6 +21,7 @@ import { openSharedEventStreamHandle } from "@/lib/scheduled-tasks/shared-stream
 import { RUNNING_SESSIONS_STREAM_NAME } from "@/lib/running-sessions-stream";
 import { skillExpansionToCommand } from "@/lib/slash-display";
 import { workspaceKeyOf } from "@/lib/workspace-memory";
+import { useSidebarPins } from "@/hooks/useSidebarPins";
 import { useI18n } from "@/hooks/useI18n";
 import { formatCompactRelativeTime, formatRelativeTime } from "@/lib/i18n/format";
 import { createPortal } from "react-dom";
@@ -300,16 +301,26 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const stored = getPrefJson<unknown>(APP_PREF_KEYS.chatSessionPages);
     return typeof stored === "number" && Number.isInteger(stored) && stored > 0 ? stored : 0;
   });
-  const [pinnedChats, setPinnedChats] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.pinnedChats));
   const [archivedChats, setArchivedChats] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.archivedChats));
   const [showArchivedChats, setShowArchivedChats] = useState(false);
   // Project sessions archived one by one (#200). They leave their project's
   // list for a "Show archived" fold at its end; a search still finds them.
   const [archivedSessions, setArchivedSessions] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.archivedSessions));
-  // S2: a project's pinned sessions come first in it; kept per browser like pinned chats.
-  const [pinnedSessions, setPinnedSessions] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.pinnedSessions));
-  // S2: pinned projects sit above the others, kept per browser like pinned chats.
-  const [pinnedProjects, setPinnedProjects] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.pinnedProjects));
+  // Pins are the server's, not the browser's (`lib/sidebar-pins.ts`,
+  // `<agentDir>/pi-web-session-state.json`): one server serves Safari, Edge, the
+  // desktop shell and a phone, and a pin made in any of them shows in all. A
+  // running frame's `sessionUiStateRevision` carries a pin made elsewhere into
+  // this window. Chats and project sessions share one set of family root ids;
+  // a project pins by its root, the key `groupByProject` groups by.
+  const reportPinFailure = useCallback((message: string) => {
+    appNotify.error({ message: t("sidebar.uiStateFailed", { error: message }) });
+  }, [t]);
+  const pins = useSidebarPins(reportPinFailure);
+  const { noteRevision } = pins;
+  const pinnedChats = pins.pinnedIds;
+  const pinnedSessions = pins.pinnedIds;
+  // S2: pinned projects sit above the others.
+  const pinnedProjects = pins.pinnedProjectRoots;
   // S6: the project whose sessions the confirmation would delete.
   const [projectSessionsDelete, setProjectSessionsDelete] = useState<{ root: string; name: string; ids: string[]; kept: number } | null>(null);
   const [projectSessionsDeleting, setProjectSessionsDeleting] = useState(false);
@@ -643,11 +654,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const projectFold = useProjectFold(collapsedProjects);
 
   useEffect(() => {
-    if (pinnedChats.size === 0) removePref(APP_PREF_KEYS.pinnedChats);
-    else setPrefJson(APP_PREF_KEYS.pinnedChats, [...pinnedChats]);
-  }, [pinnedChats]);
-
-  useEffect(() => {
     if (archivedChats.size === 0) removePref(APP_PREF_KEYS.archivedChats);
     else setPrefJson(APP_PREF_KEYS.archivedChats, [...archivedChats]);
   }, [archivedChats]);
@@ -656,16 +662,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (archivedSessions.size === 0) removePref(APP_PREF_KEYS.archivedSessions);
     else setPrefJson(APP_PREF_KEYS.archivedSessions, [...archivedSessions]);
   }, [archivedSessions]);
-
-  useEffect(() => {
-    if (pinnedSessions.size === 0) removePref(APP_PREF_KEYS.pinnedSessions);
-    else setPrefJson(APP_PREF_KEYS.pinnedSessions, [...pinnedSessions]);
-  }, [pinnedSessions]);
-
-  useEffect(() => {
-    if (pinnedProjects.size === 0) removePref(APP_PREF_KEYS.pinnedProjects);
-    else setPrefJson(APP_PREF_KEYS.pinnedProjects, [...pinnedProjects]);
-  }, [pinnedProjects]);
 
   useEffect(() => {
     if (chatSessionPages === 0) removePref(APP_PREF_KEYS.chatSessionPages);
@@ -683,8 +679,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     // reads it from ONE stream: the tabs elect a leader
     // (lib/scheduled-tasks/shared-stream.ts), because the browser's handful of HTTP/1.1
     // connections per host is what a page load competes with (e2e/offline-navigation.mjs).
-    type RunningFrame = { type?: string; runningSessionIds?: string[]; sessionListVersion?: number };
+    type RunningFrame = { type?: string; runningSessionIds?: string[]; sessionListVersion?: number; sessionUiStateRevision?: number | null };
     const applyFrame = async (data: RunningFrame) => {
+      // A pin, an archive or a project move is no run, so it comes as its own
+      // frame (and rides along in every running frame): re-read the sidebar's
+      // state when the server's revision is not the one this window shows.
+      noteRevision(data.sessionUiStateRevision);
       if (data.type === "running") {
         sseAuthoritativeRef.current = true;
         setRunningSessionIds(new Set(data.runningSessionIds ?? []));
@@ -718,7 +718,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       window.removeEventListener("online", onOnline);
       stream.stop();
     };
-  }, [loadSessions]);
+  }, [loadSessions, noteRevision]);
 
   useEffect(() => {
     if (!projectMenu) return;
@@ -1271,7 +1271,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         : []),
       { label: revealProjectLabel, onSelect: () => void revealProjectInFileManager(projectRoot) },
       { kind: "separator" as const },
-      { label: t(pinnedProjects.has(projectRoot) ? "sidebar.unpinProject" : "sidebar.pinProject"), onSelect: () => setPinnedProjects((current) => toggleId(current, projectRoot)) },
+      { label: t(pinnedProjects.has(projectRoot) ? "sidebar.unpinProject" : "sidebar.pinProject"), onSelect: () => { void pins.toggleProjectPin(projectRoot); } },
       { label: t("sidebar.archiveProject"), onSelect: () => archiveProject(projectRoot) },
       ...(projectSessionsToDelete(projectRoot).ids.length > 0
         ? [{ label: t("sidebar.deleteProjectSessions", { count: projectSessionsToDelete(projectRoot).ids.length }), onSelect: () => requestProjectSessionsDelete(projectRoot) }]
@@ -1279,7 +1279,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     ], at);
     setProjectMenu((current) => (current?.root === projectRoot ? null : current));
     return shown;
-  }, [archiveProject, onOpenTerminal, pinnedProjects, projectSessionsToDelete, requestProjectSessionsDelete, restoreProject, revealProjectInFileManager, revealProjectLabel, t]);
+  }, [archiveProject, onOpenTerminal, pinnedProjects, pins, projectSessionsToDelete, requestProjectSessionsDelete, restoreProject, revealProjectInFileManager, revealProjectLabel, t]);
 
   /** "…" opens the menu under the button; a right-click opens it at the cursor. */
   const openProjectMenu = useCallback((e: React.MouseEvent<HTMLElement>, projectRoot: string, archived = false) => {
@@ -1414,7 +1414,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         chatActions={{
           pinned: pinnedChats.has(id),
           archived: archivedChats.has(id),
-          onTogglePin: () => setPinnedChats((current) => toggleId(current, id)),
+          onTogglePin: () => { void pins.toggleSessionPin(id); },
           onToggleArchive: () => setArchivedChats((current) => toggleId(current, id)),
         }}
         onSessionDeleted={(deletedId) => {
@@ -1429,7 +1429,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     archived: archivedSessions.has(id),
     onToggleArchive: () => setArchivedSessions((current) => toggleId(current, id)),
     pinned: pinnedSessions.has(id),
-    onTogglePin: () => setPinnedSessions((current) => toggleId(current, id)),
+    onTogglePin: () => { void pins.toggleSessionPin(id); },
   });
 
   const renderProjectGroup = (group: ReturnType<typeof groupByProject>[number], archived = false) => {
@@ -2285,7 +2285,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           onTogglePin={() => {
             const root = projectMenu.root;
             closeProjectMenu();
-            setPinnedProjects((current) => toggleId(current, root));
+            void pins.toggleProjectPin(root);
           }}
           deleteSessionsCount={projectSessionsToDelete(projectMenu.root).ids.length}
           onDeleteSessions={() => {

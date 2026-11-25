@@ -98,3 +98,41 @@ test("a successful first GET sets loaded and synced together and adopts the serv
   assert.equal(hook.result.error, "busy");
   assert.deepEqual(hook.result.state.projectOrder, ["/b", "/a"]);
 });
+
+test("a revision that lands while a read is in flight is chased, so news is never lost behind a slow GET", async () => {
+  answers.push(served(uiState(1)));
+  const hook = render();
+  await settle(hook);
+  assert.equal(hook.result.state.revision, 1);
+
+  // A frame says the server is at 2, and the read for it is on its way.
+  let release;
+  const gate = new Promise((resolve) => { release = (answer) => resolve(answer()); });
+  answers.push(() => gate);
+  hook.result.noteRevision(2);
+  hook.flush();
+  assert.deepEqual(requests.map(({ method }) => method), ["GET", "GET"], "the news asked for one read");
+
+  // A second frame arrives while that read is open: no second read, and no
+  // losing it — the wanted revision is remembered.
+  hook.result.noteRevision(3);
+  hook.flush();
+  assert.deepEqual(requests.map(({ method }) => method), ["GET", "GET"]);
+
+  // The open read answers with the state as it was at revision 2: the write to
+  // 3 landed after the read started, so this answer is too old to be the news.
+  // The hook keeps reading until an adopted state reaches the revision it was
+  // told about — here twice more: one at 2 (still old), one at 3.
+  answers.push(served(uiState(2)));
+  answers.push(served(uiState(3, { sessions: { far: { pinnedAt: 9 } } })));
+  release(served(uiState(2)));
+  await settle(hook);
+  assert.deepEqual(requests.map(({ method }) => method), ["GET", "GET", "GET", "GET"], "one read per news that is not settled, and no read after it is");
+  assert.equal(hook.result.state.revision, 3);
+  assert.deepEqual(Object.keys(hook.result.state.sessions), ["far"], "the pin made in the other window is shown");
+
+  // Settled: the same revision is no news, and nothing reads again.
+  hook.result.noteRevision(3);
+  hook.flush();
+  assert.deepEqual(requests.map(({ method }) => method), ["GET", "GET", "GET", "GET"]);
+});
