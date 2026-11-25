@@ -496,3 +496,22 @@ and `4a241d3e` (item 10). Items 7 and 11 are below.
    then commit item 11 and push.
 3. `npm run test:e2e` in full needs an isolated production build
    (`PI_WEB_DESKTOP_BUILD=1 …next build --webpack`) — never a plain `next build`.
+
+### Live sweep, both themes, WebKit at 390px (the phone's engine)
+Measured on the dev server with real sessions (`test-results/scratch/live-sweep2.mjs`,
+`live-sweep-dark.mjs`; `test-results/` is gitignored):
+
+| Item | Light | Dark |
+|---|---|---|
+| 6 — a code fence and its `pre` against the page | `#f0f0f1` on `#ffffff` → **15** per channel | `rgb(25,25,26)` on `rgb(36,36,36)` → **11** |
+| 5 — a subagent report against the page | **15** | **11** |
+| 5 — the report's type vs the thinking card's | `11px / 400 / 16.5px`, the same mono family | the same |
+| 4 — the scroll-to-latest disc | `border-top-width: 0px`, `box-shadow: rgba(0,0,0,.45) 0 3px 10px, rgba(0,0,0,.35) 0 1px 2px` | the same |
+| 8 — the thinking card's own inset | `padding-left: 0px` | the same |
+| 9 — the search box's bottom to the `Chats` header's top | **16px** (12 + 4), not 8 | the same |
+| 12 — a phone Settings row | `border-bottom: 0`, `::after` at `left: 52px` = `labelX: 52`, the icon ends at 38, the **last row's `::after` is `none`** | the same, on `rgba(255,255,255,.09)` |
+
+No page errors in any run. The two checks that cannot be made from a desktop browser —
+the iPhone keyboard's caret (item 2) and its travel (item 3) — are carried by
+`lib/composer-caret.ts` + `hooks/useComposerCaret.ts` and
+`settleKeyboardViewportHeight`, with unit tests and the WebKit row-geometry e2e.
