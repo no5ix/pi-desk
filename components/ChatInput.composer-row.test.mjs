@@ -205,3 +205,33 @@ test("the row's ink lines up with the text, not only its boxes", () => {
   assert.match(hint, /padding-right: 10px;/, "the hint's ink ends on Send's arrow, not 13px inside it");
   assert.match(hint, /right: 0;/, "the box stays at the text's right edge: the ink is moved, not the box");
 });
+
+test("the row's four glyphs are one cluster, behind the attach button", () => {
+  // The ask: the model chip collapses into the controls group (the phone's "More" strip),
+  // and the four icons sit together behind `+` wherever there is room, instead of the
+  // chip standing at the row's left edge and the other three at its right. A phone keeps
+  // the chip in its own cell: its group lives inside "More", and a model picker one tap
+  // deep is the control a phone cannot spare.
+  const attachAt = chatInput.indexOf('className="native-toolbar-button composer-attach-button"');
+  const controlsAt = chatInput.indexOf('className="chat-composer-controls"');
+  const phoneChipAt = chatInput.indexOf("{isNarrow && modelControl}");
+  const groupChipAt = chatInput.indexOf("{!isNarrow && modelControl}");
+  const reasoningAt = chatInput.indexOf('aria-expanded={thinkingDropdownOpen}');
+  const toolsAt = chatInput.indexOf('aria-expanded={toolDropdownOpen}');
+  const automationAt = chatInput.indexOf("<SessionAutomationMenu");
+  const spacerAt = chatInput.indexOf("{/* spacer */}");
+  assert.ok(phoneChipAt > 0 && groupChipAt > 0, "the model control is built once and placed by tier");
+  assert.equal(chatInput.split("<ModelSelector").length - 1, 1, "one model control, not a second copy per tier");
+  for (const [at, what] of [[attachAt, "attach"], [controlsAt, "the strip"], [phoneChipAt, "the phone's chip"],
+    [groupChipAt, "the cluster's chip"], [reasoningAt, "reasoning"], [toolsAt, "tools"], [automationAt, "automation"],
+    [spacerAt, "the spacer"]]) {
+    assert.ok(at > 0, `${what} renders`);
+  }
+  assert.ok(attachAt < controlsAt && controlsAt < phoneChipAt && phoneChipAt < groupChipAt, "the strip follows `+`, and the chip joins its group");
+  assert.ok(groupChipAt < reasoningAt && reasoningAt < toolsAt && toolsAt < automationAt,
+    "model, reasoning, tools and automation are one unbroken run of glyphs");
+  assert.ok(automationAt < spacerAt, "the cluster ends before the spacer, so it starts at the row's left");
+  assert.doesNotMatch(chatInput, /marginLeft: isNarrow \? 0 : "auto"/,
+    "the strip is no longer pushed to the card's right edge");
+  assert.match(chatInput, /marginLeft: 0,/);
+});

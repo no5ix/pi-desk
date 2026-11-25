@@ -2250,6 +2250,21 @@ export function AppShell() {
     () => countSubagents(activeSessionFamily, runningSessionIds),
     [activeSessionFamily, runningSessionIds],
   );
+  // The same runs as ids, for the composer: a background run leaves the main session
+  // idle, and its Stop lives in the disc, not only in the Agents panel. The live set
+  // answers first; the file's own status covers a run the running stream has not
+  // reported yet. Side chats are not runs, so they never join (lib/session-family.ts).
+  const runningSubagentIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const member of activeSessionFamily?.subagents ?? []) {
+      const relation = member.relation;
+      if (relation?.kind !== "subagent") continue;
+      if (runningSessionIds.has(member.id) || relation.status === "running" || relation.status === "queued") {
+        ids.push(member.id);
+      }
+    }
+    return ids;
+  }, [activeSessionFamily, runningSessionIds]);
   // The family's other kind: the side chats the user opened beside this conversation.
   // Counted apart (a delegated run and a side chat are different facts) and led by the
   // composer's side-chat glyph, in the same button.
@@ -3259,6 +3274,7 @@ export function AppShell() {
               initialScrollPosition={selectedSession ? sessionScrollPositionsRef.current.get(selectedSession.id) ?? null : null}
               onScrollPositionChange={handleSessionScrollPositionChange}
               sessionRunning={Boolean(selectedSession && runningSessionIds.has(selectedSession.id))}
+              runningSubagentIds={runningSubagentIds}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionDraftKey={newSessionDraftKey}
               onAgentEnd={handleAgentEnd}

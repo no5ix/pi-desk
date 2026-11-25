@@ -66,6 +66,10 @@ interface Props {
   initialScrollPosition?: ChatScrollPosition | null;
   onScrollPositionChange?: (sessionId: string, position: ChatScrollPosition) => void;
   sessionRunning?: boolean;
+  /** The conversation's live subagent runs, from the shell's running set
+   *  (`/api/agent/running/events`). A background run leaves the main session idle, and
+   *  the composer's disc covers it: Stop, not the send arrow. */
+  runningSubagentIds?: string[];
   newSessionCwd: string | null;
   newSessionDraftKey: string | null;
   /** A run ended; `aborted` when it was stopped rather than finished. */
@@ -317,7 +321,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onBranchChipCwd, composerProjectRoot, composerProjectIsWorktree, onBranchSwitched, onComposerWorktreeCreated, onComposerWorktreeSelected, onComposerWorktreeRemoved, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, runningSubagentIds, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onBranchChipCwd, composerProjectRoot, composerProjectIsWorktree, onBranchSwitched, onComposerWorktreeCreated, onComposerWorktreeSelected, onComposerWorktreeRemoved, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatOnly = workspaceKind === "chat" || session?.workspaceKind === "chat";
@@ -389,6 +393,28 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     onScrollPositionChange,
   });
   const sessionBusy = agentRunning || bashRunning;
+  // A background subagent keeps working after the main turn ends. The header counts it;
+  // the composer must act on it: an idle card with a send arrow asked for a prompt while
+  // a run was going, and the only Stop in the app was in the Agents panel.
+  const subagentsRunning = (runningSubagentIds?.length ?? 0) > 0;
+  const runningSubagentIdsRef = useRef<string[]>([]);
+  runningSubagentIdsRef.current = runningSubagentIds ?? [];
+  const handleAbortSubagents = useCallback(() => {
+    // The Agents panel's Stop, per run (app/api/subagents/[id]: abortSubagent).
+    const ids = runningSubagentIdsRef.current;
+    for (const id of ids) {
+      void fetch(`/api/subagents/${encodeURIComponent(id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "abort" }),
+      }).then((res) => {
+        if (res.ok) return;
+        addNotice({ type: "error", message: t("chat.stopSubagentsFailed") });
+      }).catch(() => {
+        addNotice({ type: "error", message: t("chat.stopSubagentsFailed") });
+      });
+    }
+  }, [addNotice, t]);
   // A refused thinking level's error opens Settings › Models on that model.
   const openModelSettings = useCallback((provider: string, modelId: string) => {
     rememberModelSettingsFocus(provider, modelId);
@@ -642,8 +668,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   // Register the abort handler for the global Esc shortcut
   // A side chat's tab leaves it to the main chat (C1).
   useEffect(() => {
-    if (!panel) registerAbortHandler(sessionBusy ? handleAbort : null);
-  }, [panel, sessionBusy, handleAbort]);
+    if (!panel) registerAbortHandler(sessionBusy ? handleAbort : subagentsRunning ? handleAbortSubagents : null);
+  }, [panel, sessionBusy, subagentsRunning, handleAbort, handleAbortSubagents]);
 
   // --- Lazy-load historical messages ---
   // Only render the last N messages initially. When the user scrolls to the
@@ -1400,6 +1426,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       onSend={handleSend}
       onAttachFiles={onAttachFiles}
       onAbort={handleAbort}
+      subagentsRunning={subagentsRunning}
+      onAbortSubagents={handleAbortSubagents}
       onSideChat={onSideSession && !isHiddenRelation(session?.relation) ? askInSideChat : undefined}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}

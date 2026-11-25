@@ -16,7 +16,11 @@ test("the wrapper reports where a virtual model routed and the cache-warming sta
 });
 
 test("the composer shows the routed model next to the selector, like pi's footer", () => {
-  assert.match(chatInput, /\{routedModel && routedModelName && \(\s*<span\s*className="routed-model-hint"/);
+  assert.match(chatInput, /const routedModelHint = routedModel && routedModelName \?\s*\(\s*<span\s*className="routed-model-hint"/);
+  // The hint rides the chip: the phone keeps both in the left cell, a desktop or a pad
+  // in the control cluster (components/ChatInput.composer-row.test.mjs).
+  assert.match(chatInput, /\{isNarrow && routedModelHint\}/);
+  assert.match(chatInput, /\{!isNarrow && routedModelHint\}/);
 });
 
 test("the session panel lists cost by model and cache warming, refreshed when it opens", () => {
