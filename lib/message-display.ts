@@ -1,4 +1,5 @@
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, ThinkingContent, ToolCallContent } from "./types";
+import { UNPARSED_TOOL_CALL_CUSTOM_TYPE } from "./unparsed-tool-call.ts";
 
 interface DisplayOptions {
   isStreaming?: boolean;
@@ -78,6 +79,8 @@ export function isMessageGroupAnchor(message: { role?: AgentMessage["role"]; cus
       || message.customType === "branch_summary"
       || message.customType === "pi-web:subagent-notification"
       || message.customType === "subagent-notification"
+      // Pi Web's own "your tool call was printed as text" note opens the turn it starts.
+      || message.customType === UNPARSED_TOOL_CALL_CUSTOM_TYPE
     ));
 }
 

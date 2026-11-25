@@ -325,7 +325,11 @@
     "components/AppSelect.tsx",
     "components/AppCombobox.tsx",
     "components/ProjectViewMenu.tsx",
-    "hooks/useMenuNavigation.ts"
+    "hooks/useMenuNavigation.ts",
+    "lib/unparsed-tool-call.ts",
+    "lib/unparsed-tool-call.test.mjs",
+    "lib/unparsed-tool-call-extension.ts",
+    "lib/unparsed-tool-call-extension.test.mjs"
   ],
   "dispositions": {
     "accepted": "Reviewed and kept. The drift is either the fork's own interaction design or a generic improvement with no desktop coupling, so it cannot be extracted into components/desktop/. Removing it would mean deleting a feature. These files stay permanent review points; that is the running cost of a UI fork, not a backlog item. Do not reopen without new information.",
