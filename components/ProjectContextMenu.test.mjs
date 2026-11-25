@@ -391,13 +391,21 @@ test("worktrees and fetch are hidden for a folder that is not a git repository",
   assert.ok(branches.includes("sidebar.noOtherBranches"));
 });
 
-test("the branch page leads with a fetch row that shows its progress", () => {
+test("the branch page's fetch is the title row's corner icon, and shows its progress", () => {
   const idle = render({ view: "branches" });
-  assert.match(idle, /sidebar-project-context-menu-fetch[^>]*>.*sidebar.fetchBranches/);
+  assert.match(idle, /class="sidebar-project-context-menu-heading sidebar-project-context-menu-heading--row"[^>]*>\s*<span>sidebar\.switchBranch<\/span>/,
+    "the title row is a row, and its label is its own element");
+  assert.match(idle, /class="sidebar-project-context-menu-fetch"[^>]*aria-label="sidebar\.fetchBranches"/,
+    "the corner icon names the action it performs");
+  assert.ok(!idle.includes(">sidebar.fetchBranches<"), "icon only: the row carries no words");
+  const at = idle.indexOf("sidebar-project-context-menu-fetch");
+  assert.ok(at > idle.indexOf("heading--row") && at < idle.indexOf("</div>"), "the icon lives in the title row");
+  assert.ok(at < idle.indexOf('data-branch="main"'), "and above the list, so the list starts at its first branch");
   assert.ok(idle.includes("remote-only"));
   const busy = render({ view: "branches", fetching: true });
-  assert.ok(busy.includes("sidebar.fetchingBranches"));
+  assert.ok(busy.includes("sidebar.fetchingBranches"), "while it runs the icon says so");
   assert.match(busy, /sidebar-project-context-menu-fetch"[^>]*disabled/);
+  assert.match(busy, /class="sidebar-project-context-menu-branch-spinner"/);
 });
 
 test("the new-worktree page suggests local branches and only creates with a name", () => {

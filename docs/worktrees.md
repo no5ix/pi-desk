@@ -76,7 +76,7 @@ Each session still remembers the working directory it was created with. That mea
 Open the `…` menu of the project's row and choose `Worktrees…`. A folder that is not a Git repository shows a hint instead of a list.
 
 **A branch pushed elsewhere is missing.**
-Under `Switch branch`, choose `Fetch from remote` first; it runs `git fetch --prune` and refreshes the list.
+Under `Switch branch`, press the `↻` icon in the panel's top-right corner first; it runs `git fetch --prune` and refreshes the list.
 
 **A branch cannot be added as a worktree.**
 Git allows a branch to be checked out in only one worktree at a time. Switch to the existing worktree for that branch, or remove it first.

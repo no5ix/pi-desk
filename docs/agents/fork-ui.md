@@ -569,7 +569,7 @@ lose nothing. `lib/worktree-folder.ts` is no longer asked of the chip, and the h
 
 It opens the project
 menu's own pages (`components/ProjectContextMenu.tsx`, driven by
-`hooks/useProjectWorktreeActions.ts`), so the branch list, "Fetch from remote", the
+`hooks/useProjectWorktreeActions.ts`), so the branch list, the fetch, the
 worktree list and the new-worktree form are the same code the sidebar's "…" menu
 always used. The chip adds one button after a branch name: the worktree icon opens the
 new-worktree form **from that branch** — the branch is created at the row's tip
@@ -607,9 +607,18 @@ what a row will do (`sidebar.currentBranchTitle` on the main checkout,
 `sidebar.branchInWorktreeTitle`, `sidebar.branchRemoteTitle`, `sidebar.switchBranchTitle`).
 A removal is confirmed in the row of the branch that owns the worktree, so the
 `Worktrees…` page has no menu item any more — the branches with folders are rows here —
-and the desktop shell keeps its native popup with its own page. A filter box appears once
+and the desktop shell keeps its native popup with its own page. The page's one
+non-branch action — `git fetch --prune` — is the **title row's corner icon**
+(`.sidebar-project-context-menu-heading--row`): the ↻ glyph alone, named to a screen
+reader by `sidebar.fetchBranches` and titled, so the list's first line is its first
+branch; while the fetch runs the glyph turns and the button is disabled. The heading
+carries the menu row's own height (`--menu-row-height`) with the button or without it,
+so the panel never moves when the read answers.
+A filter box appears once
 the list is longer than `BRANCH_FILTER_THRESHOLD`, and a query unfolds every group: a search
-that answers from inside a folded group is a dead end.
+that answers from inside a folded group is a dead end. The box is a quiet field, not a
+form: `border: 0` and a background one step raised off the panel
+(`--bg-selected`), with the accent ring only while it holds the caret.
 
 **Nothing in this panel may be cut, so the panel is as wide as its longest name.**
 `.sidebar-project-context-menu--wide` is `width: max-content` with a 240px floor and a

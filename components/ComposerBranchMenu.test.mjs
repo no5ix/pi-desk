@@ -104,9 +104,10 @@ test("every locale can say the branch tree's words", async () => {
 test("the filter box is styled from the menu tokens, in the fork's theme file", async () => {
   const css = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
   const rule = css.slice(css.indexOf(".sidebar-project-context-menu-filter {"), css.indexOf("}", css.indexOf(".sidebar-project-context-menu-filter {")));
-  for (const declaration of ["font-family: var(--font-mono);", "border: var(--hairline) solid var(--border);", "border-radius: var(--radius-sm);"]) {
+  for (const declaration of ["font-family: var(--font-mono);", "border: 0;", "border-radius: var(--radius-sm);", "background: var(--bg-selected);"]) {
     assert.ok(rule.includes(declaration), `the filter box keeps ${declaration}`);
   }
-  assert.match(css, /\.sidebar-project-context-menu-filter:focus \{\s*border-color: var\(--accent\);/,
+  assert.ok(!rule.includes("border: var(--hairline)"), "the box carries no border: in a flat panel a bordered box reads as a form field");
+  assert.match(css, /\.sidebar-project-context-menu-filter:focus \{[\s\S]*?outline: 2px solid var\(--accent\);/,
     "the box shows the accent only while it has the caret");
 });

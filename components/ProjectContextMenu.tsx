@@ -689,7 +689,29 @@ export function ProjectContextMenuPanel({
     );
     body = (
       <>
-        <div className="sidebar-project-context-menu-heading">{t("sidebar.switchBranch")}</div>
+        {/* The page's title, and at its trailing edge the one action that is not a
+            branch: `git fetch --prune`. It is a corner icon, not the list's first row —
+            the row's text is the same fact in three languages, and the glyph plus its
+            title says it in the space of one glyph, which leaves the list's first line
+            to the first branch. The heading carries the slot from the loading shape on
+            (the button appears when the read answers), so its height, and therefore the
+            panel's placement, never changes under the user. */}
+        <div className="sidebar-project-context-menu-heading sidebar-project-context-menu-heading--row">
+          <span>{t("sidebar.switchBranch")}</span>
+          {data?.isGit && (
+            <button
+              type="button"
+              role="menuitem"
+              className="sidebar-project-context-menu-fetch"
+              disabled={fetching}
+              onClick={onFetch}
+              title={fetching ? t("sidebar.fetchingBranches") : t("sidebar.fetchBranchesTitle")}
+              aria-label={fetching ? t("sidebar.fetchingBranches") : t("sidebar.fetchBranches")}
+            >
+              <span className={fetching ? "sidebar-project-context-menu-branch-spinner" : undefined} aria-hidden="true">↻</span>
+            </button>
+          )}
+        </div>
         {/* The branch list arrives a moment after the menu opens. Showing a short
             "…" line and growing into the list afterwards moves the menu (the
             placement is recomputed from the measured height) — the composer chip
@@ -707,19 +729,6 @@ export function ProjectContextMenuPanel({
         )}
         {loaded && data && (
           <>
-            {data.isGit && (
-              <button
-                type="button"
-                role="menuitem"
-                className="sidebar-project-context-menu-fetch"
-                disabled={fetching}
-                onClick={onFetch}
-                title={t("sidebar.fetchBranchesTitle")}
-              >
-                <span className={fetching ? "sidebar-project-context-menu-branch-spinner" : undefined} aria-hidden="true">↻</span>
-                <span>{fetching ? t("sidebar.fetchingBranches") : t("sidebar.fetchBranches")}</span>
-              </button>
-            )}
             {data.isGit && allRows.length > BRANCH_FILTER_THRESHOLD && (
               <input
                 className="sidebar-project-context-menu-filter"

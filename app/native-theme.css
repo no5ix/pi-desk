@@ -367,6 +367,19 @@
   padding-top: 3px;
   font-weight: var(--fw-semibold);
 }
+/* The branch page's title row carries one corner action at its trailing edge (the
+   fetch). The row's height is the menu's own row height, with the action or without
+   it: the title is painted while the branch list is still on its way, and a heading
+   that grows when the data lands moves the panel — the composer's chip sits at the
+   bottom of the window, so that is the flash this menu was fixed for. The action is
+   a menu row (the shared `.app-menu` min-height), so a finger reaches the glyph too. */
+.sidebar-project-context-menu-heading--row {
+  display: flex;
+  align-items: center;
+  min-height: var(--menu-row-height);
+  gap: 6px;
+  padding-right: 5px;
+}
 .sidebar-project-context-menu button[role="menuitem"]:has(.sidebar-project-context-menu-branch-mark) {
   display: flex;
   align-items: center;
@@ -515,24 +528,29 @@
 }
 
 /* A project can carry forty branches, and the list is only usable if it can be
-   narrowed. The same mono shape as the worktree form's field, one step quieter:
-   this box filters the list, it does not ask for an answer. */
+   narrowed. The box is a quiet field, not a control that asks for an answer: no
+   border (in a panel whose surface is one flat colour a bordered box reads as a
+   form), a background one step raised off the panel, and the mono face of the
+   names it filters. */
 .sidebar-project-context-menu-filter {
   display: block;
   box-sizing: border-box;
   width: calc(100% - 12px);
   margin: 2px 6px 16px 6px;
   padding: 5px 8px;
-  border: var(--hairline) solid var(--border);
+  border: 0;
   border-radius: var(--radius-sm);
   outline: none;
-  background: var(--bg);
+  background: var(--bg-selected);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-small);
 }
 .sidebar-project-context-menu-filter:focus {
-  border-color: var(--accent);
+  /* The accent is the caret's, so it shows only while the box has it. */
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-selected));
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .sidebar-project-context-menu-filter::placeholder {
   color: var(--text-dim);
@@ -593,14 +611,29 @@
   opacity: 0.45;
   cursor: default;
 }
+/* The fetch is a corner action in the title row: the glyph alone, in a menu row's
+   box. While the fetch runs the glyph turns and the button is disabled, so the panel
+   says what it is doing without growing a row. */
 .sidebar-project-context-menu .sidebar-project-context-menu-fetch {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  flex: 0 0 var(--menu-row-height);
+  width: var(--menu-row-height);
+  margin-left: auto;
+  padding: 0;
   color: var(--text-muted);
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-fetch:hover:not(:disabled) {
+  color: var(--accent);
 }
 .sidebar-project-context-menu .sidebar-project-context-menu-fetch:disabled {
   cursor: default;
+}
+/* The glyph is the whole button, so it is centred in the box, not pushed to a
+   row's trailing edge the way it is in a list row. */
+.sidebar-project-context-menu .sidebar-project-context-menu-fetch .sidebar-project-context-menu-branch-spinner {
+  margin-left: 0;
 }
 .sidebar-project-context-menu-confirm {
   display: flex;
