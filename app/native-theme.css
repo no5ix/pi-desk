@@ -11776,16 +11776,33 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
   min-width: 84px;
   height: 28px;
   padding: 0 9px;
-  border: var(--hairline) solid var(--separator);
+  /* A filled field, not an outlined one: the card is `--surface-elevated`, so a hairline
+     was the box's only shape. A tint of the theme's own ink stands off that surface in
+     light and dark alike (`--surface-muted` is a white wash and vanishes on the card). */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
   border-radius: var(--menu-row-radius);
-  background: var(--surface-muted);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
   color: var(--text);
   font-size: var(--fs-micro);
   outline: none;
 }
-.agent-panel-search:focus {
-  background: var(--surface);
-  border-color: var(--accent);
+.agent-panel-search::placeholder {
+  color: var(--text-dim);
+}
+.agent-panel-search::-webkit-search-cancel-button {
+  display: none;
+}
+.agent-panel-search:focus,
+.agent-panel-search:focus-visible {
+  /* Typing in it changes nothing: no accent border, no ring, no repaint. The box is
+     already a filled shape and the caret is where the input is, so a highlight on top of
+     that is noise in a menu the user is scanning. */
+  border: 0;
+  outline: none;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 .agent-panel-notice {
   padding: 6px 8px;
@@ -11831,6 +11848,17 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
      is still the findable one — the menu's own selection, not a border. */
   background: var(--bg-selected);
   box-shadow: inset 3px 0 0 var(--menu-selection-color);
+}
+.agent-row.is-main.is-selected {
+  /* Not for the main agent: the list always opens on it, and the row already says
+     "Current" in words. A wash and an accent bar on the row that is never *not*
+     selected highlights nothing — it made the panel's first row the loudest thing in it. */
+  background: transparent;
+  box-shadow: none;
+}
+.agent-row.is-main.is-selected:hover {
+  /* The row is still a row: the pointer's wash answers when it arrives. */
+  background: var(--bg-hover);
 }
 .agent-row:focus-visible {
   outline: 2px solid var(--menu-focus-ring);

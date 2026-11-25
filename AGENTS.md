@@ -289,6 +289,7 @@ components/
   TopbarElapsed.tsx   the header's live clock since the last prompt; its own component so a 1s tick re-renders the chip, not the shell
   ClockIcon.tsx       the clock glyph every duration label shares
   ChatInput.tsx       input bar + model/thinking/tools/compact controls
+  SideChatIcon.tsx    the side-chat bubble every place that marks one draws (composer, sidebar, header, panel, tab, quote bar)
   MessageView.tsx     renders one message (user/assistant/toolCall/toolResult)
   BranchNavigator.tsx in-session branch switcher
   MarkdownBody.tsx    markdown renderer

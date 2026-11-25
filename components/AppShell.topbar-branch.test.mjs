@@ -186,8 +186,10 @@ test("the family chip counts subagents and side chats apart, in one button", () 
   // Two groups, each led by the glyph its kind already wears elsewhere in the app.
   assert.match(counter, /className="app-topbar-family-group"[^>]*>\s*<AgentIcon \/>/);
   assert.match(counter, /className="app-topbar-family-group app-topbar-family-group--side"[^>]*>\s*<SideChatIcon \/>/);
-  assert.match(counter, /<path d="M21 12a8 8 0 0 1-8 8H5\.5a2 2 0 0 1-1\.4-3\.4A8 8 0 1 1 21 12z" \/>\s*<path d="M13 8\.5v7M9\.5 12h7" \/>/,
-    "the side-chat glyph is the composer's and the sidebar's, not a new drawing");
+  assert.match(counter, /import \{ SideChatPlusIcon as SideChatGlyph \} from "\.\/SideChatIcon";/,
+    "the side-chat glyph is the shared one the composer, the sidebar, the tabs and the panel draw, not a new drawing here");
+  assert.match(counter, /return <SideChatGlyph size=\{11\} strokeWidth=\{1\.9\} \/>;/,
+    "at header size, the smallest the app draws it");
   // The subagent group's glyph is the app's subagent head, not a second drawing of it.
   // The sidebar row's leading glyph, the Agents panel's rows and the Settings › Agents
   // icon all draw these paths; the header drew an antenna ball with vertical-bar eyes

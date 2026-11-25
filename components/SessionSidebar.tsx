@@ -68,6 +68,7 @@ import {
   useArchivedProjects,
 } from "@/lib/archived-projects";
 import { useMenuPlacement } from "@/hooks/useMenuPlacement";
+import { SideChatPlusIcon } from "./SideChatIcon";
 import type { MenuAnchor } from "@/lib/menu-placement";
 
 function sessionListUrl(summary: boolean, force: boolean): string {
@@ -2921,16 +2922,15 @@ function SessionItem({
         <>
           {/* Leading icon: running / unread, falling back to the standard
               chat-bubble glyph for every session. Subagent child rows carry
-              the robot glyph, side chats the composer's side-chat glyph (a circle
-              and a plus) — the same mark the composer's own side-chat button uses. */}
+              the robot glyph, side chats the app's side-chat bubble (a bubble
+              with a plus, its tail at the right) — the same mark the composer's
+              own side-chat button uses, from components/SideChatIcon.tsx. */}
           {isRunning ? (
             <RunningSessionIndicator />
           ) : isUnread ? (
             <UnreadSessionIndicator />
           ) : isSideChat ? (
-            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <path d="M21 12a8 8 0 0 1-8 8H5.5a2 2 0 0 1-1.4-3.4A8 8 0 1 1 21 12z" /><path d="M13 8.5v7M9.5 12h7" />
-            </svg>
+            <SideChatPlusIcon size={12} stroke="var(--accent)" style={{ flexShrink: 0 }} />
           ) : isSubagentChild ? (
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <rect x="5" y="7" width="14" height="11" rx="2" />

@@ -14,7 +14,7 @@
 // chats. They are counted apart and shown apart — a side chat is a conversation
 // the user opened beside the main one, a subagent is a run the agent delegated —
 // and each kind leads with the glyph the rest of the app already uses for it, so
-// the row reads `[robot] ✓2 ⚠1 ↻3  [circle-plus] ✓1 ↻1`.
+// the row reads `[robot] ✓2 ⚠1 ↻3  [side-chat bubble] ✓1 ↻1`.
 //
 // **One button, two groups.** The chip opens one thing (the Agents panel), so it is
 // one control: two `<small role="button">` neighbours in a 400px row would be two
@@ -28,6 +28,7 @@
 // The totals are not printed: the three buckets are the total.
 
 import type { Ref } from "react";
+import { SideChatPlusIcon as SideChatGlyph } from "./SideChatIcon";
 import type { SessionFamily } from "@/lib/session-family";
 import type { TranslationParams } from "@/lib/i18n/types";
 
@@ -158,16 +159,13 @@ export function AgentRunningIcon({ size = 11 }: { size?: number }) {
   );
 }
 
-/* The composer's side-chat mark (components/ChatInput.tsx) and the sidebar's leading
-   glyph on a side chat's row (components/SessionSidebar.tsx): a bubble with a plus.
-   The header uses it at 11px so the same shape names the same kind in all three places. */
+/* The header's size of the app's one side-chat mark (components/SideChatIcon.tsx): the
+   composer's button, the sidebar's leading glyph on a side chat's row, the Agents panel's
+   rows, a tab and the quote bar all draw the same bubble, and the header's 11px is the
+   smallest of them. The plus variant, because the group leads with the composer's mark —
+   the same shape that opens one. */
 function SideChatIcon() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M21 12a8 8 0 0 1-8 8H5.5a2 2 0 0 1-1.4-3.4A8 8 0 1 1 21 12z" />
-      <path d="M13 8.5v7M9.5 12h7" />
-    </svg>
-  );
+  return <SideChatGlyph size={11} strokeWidth={1.9} />;
 }
 
 /** One bucket: the state's glyph and its number. A zero bucket renders nothing —

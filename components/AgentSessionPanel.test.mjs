@@ -40,8 +40,8 @@ test("renders as the app's own menu surface: a rounded card, flat rows, no rules
   assert.doesNotMatch(source, /borderLeft: "var\(--hairline\) solid var\(--border\)"/, "no hairline welded to the topbar");
   assert.doesNotMatch(source, /borderRadius: "0 0 var\(--radius-sm\) var\(--radius-sm\)"/, "no square bottom corners");
   assert.doesNotMatch(source, /borderBottom: "var\(--hairline\) solid var\(--border\)"/, "no rule under the header, the search box, or a row");
-  assert.match(source, /className=\{`agent-row\$\{selected \? " is-selected" : ""\}`\}/,
-    "rows are class-styled menu rows, and the selected one is marked by class, not by an inline border");
+  assert.match(source, /className=\{`agent-row\$\{main \? " is-main" : ""\}\$\{selected \? " is-selected" : ""\}`\}/,
+    "rows are class-styled menu rows, and the selected one is marked by class, not by an inline border; the main row says so, because its selection is styled apart");
   // The header row carries the whole summary, search included: name, counts, filter.
   const head = source.indexOf('className="agent-panel-head"');
   const search = source.indexOf('className="agent-panel-search"');
@@ -85,6 +85,36 @@ test("the panel's stylesheet is the menu surface: rounded, shadowed, no rules dr
   assert.match(cssRule(".agent-panel-search") ?? "", /margin-left: auto;/, "the search box sits at the end of that row");
   assert.match(source, /className="agent-panel-strip"/, "a row's confirmation and the steer field are inset strips, not ruled-off bands");
   assert.match(cssRule(".agent-panel-strip") ?? "", /border-radius: var\(--menu-row-radius\);/, "the strips round with the menu's rows");
+});
+
+test("the main agent's row is flat, and the search box is a quiet filled field", () => {
+  // The user's two complaints about the panel's top: the first row wore the menu's
+  // selection (a grey wash and a blue bar) although the list always opens there and the
+  // row says "Current" in words; and the filter box was an outlined field that lit up
+  // with an accent border the moment the user typed in it.
+  const main = cssRule(".agent-row.is-main.is-selected");
+  assert.ok(main, "the main row's selected state is styled apart");
+  assert.match(main, /background: transparent;/, "no wash on the main agent");
+  assert.match(main, /box-shadow: none;/, "and no blue bar before its text");
+  assert.match(cssRule(".agent-row.is-main.is-selected:hover") ?? "", /background: var\(--bg-hover\);/,
+    "it is still a row: the pointer's wash answers when it arrives");
+  // A row that is genuinely switched to (a side chat, a run) keeps the menu's selection.
+  assert.match(css, /\.agent-row\.is-selected \{[^}]*background: var\(--bg-selected\);/,
+    "the selection still exists for the rows that need it");
+
+  const search = cssRule(".agent-panel-search");
+  assert.ok(search, "the search box has a fork rule of its own");
+  assert.match(search, /border: 0;/, "no border at rest");
+  assert.ok(!/border: var\(--hairline\)/.test(search), "the hairline is gone, not merely recoloured");
+  assert.match(search, /background: color-mix\(in srgb, var\(--text\) 8%, transparent\);/,
+    "a tint of the theme's ink, so the field stands off the card in light and dark");
+  assert.ok(!/var\(--surface-muted\)/.test(search), "not the white wash that vanishes on the card");
+  const focused = css.match(/\.agent-panel-search:focus,\s*\.agent-panel-search:focus-visible \{[^}]*\}/);
+  assert.ok(focused, "one rule covers pointer and keyboard focus");
+  assert.match(focused[0], /outline: none;/, "typing in it raises no ring");
+  assert.match(focused[0], /border: 0;/, "and no border appears");
+  assert.ok(!/var\(--accent\)/.test(focused[0]), "nothing lights up in the accent while typing");
+  assert.ok(!/var\(--focus-ring\)/.test(focused[0]), "no ring at all");
 });
 test("shows persisted completion states while live running state takes precedence", () => {
   assert.match(source, /const status: SubagentSessionStatus = running \? "running" : relation\?\.status \?\? "completed"/);

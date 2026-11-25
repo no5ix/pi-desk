@@ -466,8 +466,10 @@ test("a side chat row carries the composer's side-chat glyph", () => {
   assert.ok(icons.includes(") : isSideChat ? ("), "the side-chat case is in the leading-icon chain");
   assert.ok(icons.indexOf("isSideChat ? (") < icons.indexOf("isSubagentChild ? ("),
     "a side chat is read before the subagent glyph, not as a fallback bubble");
-  assert.match(icons, /isSideChat \? \(\s*<svg[\s\S]*?M21 12a8 8 0 0 1-8 8H5\.5[\s\S]*?M13 8\.5v7M9\.5 12h7/,
-    "the circle-and-plus mark the composer's side-chat button uses");
+  assert.match(icons, /isSideChat \? \(\s*<SideChatPlusIcon size=\{12\} stroke="var\(--accent\)"/,
+    "the app's shared side-chat bubble, at row size and in the row's accent");
+  assert.match(source, /import \{ SideChatPlusIcon \} from "\.\/SideChatIcon";/,
+    "drawn by the shared glyph, not by a copy in this file");
   // The glyph is decoration; the row's tip and label carry the words.
   assert.match(sessionItemSource, /isSideChat \? t\("sideChat\.title"\) : null,/,
     "the row's tip says which row is a side chat");

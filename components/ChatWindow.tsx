@@ -55,6 +55,7 @@ import { isImeComposing } from "@/lib/ime";
 import { useChatAccess } from "@/hooks/useChatAccess";
 import { ChatShellPrompt } from "./ChatShellPrompt";
 import { lastTurnHitChatShellBlock } from "@/lib/chat-shell-block";
+import { SideChatIcon } from "./SideChatIcon";
 import { assignMessageKeys, createMessageKeyTracker } from "@/lib/message-keys";
 
 interface Props {
@@ -1982,9 +1983,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
               onClick={() => { setQuoteInputOpen(true); window.getSelection()?.removeAllRanges(); }}
               style={{ width: "auto", height: 35, flex: "0 0 auto", gap: 5, padding: "0 10px", border: "none", fontSize: "var(--fs-caption)", fontWeight: "var(--fw-medium)" }}
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M21 12a8 8 0 0 1-8 8H5.5a2 2 0 0 1-1.4-3.4A8 8 0 1 1 21 12z" />
-              </svg>
+              <SideChatIcon size={14} strokeWidth={1.75} />
               <span>{t("chat.askInSideChat")}</span>
             </button>
           )}
