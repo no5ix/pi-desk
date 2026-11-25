@@ -611,3 +611,59 @@ chip keeps `usePopTransition` in the working tree, so
 `hooks/usePopTransition.test.mjs` stays satisfied by that agent's pass.
 `e2e/project-chip-menu.mjs` is not in `package.json`'s `test:e2e` chain: that one long line
 carries the other agent's uncommitted `image-swipe` entry, so wiring it is theirs to commit.
+
+## 2026-11-26 — the second phone pass (4 items from the screenshots)
+
+1. **The sidebar's search box is a label.** `lib/i18n/locale-plugins.ts` — all three
+   packs: `"Search titles…"` / `搜索标题…` / `搜尋標題…`, the `· Enter for full text`
+   clause dropped (in a 272px box it was cut to `…full te`, which reads as damage). The
+   Enter gesture keeps its discoverability where it already had it: the input's
+   `title={t("sidebar.searchAllHint")}`. Pinned in
+   `components/SessionSidebar.session-search.test.mjs` (all three packs carry no `·` and
+   no "Enter" in the label, and the tooltip key stays) and in
+   `app/native-theme-phone-pass.test.mjs`.
+2. **"Branch in new chat" is gone from the phone.** `components/MessageView.tsx` names
+   the chip `message-branch-action`; `app/native-theme.css` hides it at
+   `(max-width: 640px)`. It needs `display: none !important` — the chip is drawn with an
+   inline `display: flex`, and the first version lost to it (the probe measured
+   `branchVisible: 8` on the phone and caught that). Live: phone `branchCount 8 /
+   branchVisible 0`, desktop `branchVisible 8` — the chip stays where a cursor can aim,
+   and the same action is in the composer's branch chip and the sidebar's Fork.
+3. **A tool call's band is deeper.** The card's inline 4%/5%/6% wash (1–9 points off the
+   page) is a class — `tool-call-card` + `is-error` / `is-aborted` — painted in
+   `app/native-theme.css` at `rgba(34,197,94,.085)` / `rgba(248,113,113,.1)` /
+   `rgba(148,163,184,.11)`: over `#fff` the normal state lands ~21 points off the page
+   where the old tint was ~9. Live: `rgba(34, 197, 94, 0.086)` on the running app.
+4. **The clock beside a reply's model is the app's 12px glyph** (`<ClockIcon size={12} />`,
+   was 10 — a dot at a phone's distance; the footer's duration keeps its 11). Live: the
+   glyph box is `12×12`.
+
+### Test alignment this pass (the changes moved pinned markup)
+`components/MessageView.test.mjs` (the rendered tool call now asserts
+`class="tool-call-card"` / `"tool-call-card is-error"`, not the inline wash),
+`components/sidebar-and-message-updates.test.mjs` (the aborted state: the class in the
+markup **and** the slate rule in the stylesheet),
+`components/MessageView.subagent-report.test.mjs` (the 12px clock, with the reason),
+`components/MessageView.turn-duration.test.mjs` (the branch chip's name, and the phone
+rule that hides it), `components/SessionSidebar.session-search.test.mjs` (the label).
+`components/ImagePreview.tsx`'s Escape handler was reshaped to the guard the a11y test
+pins (`event.key !== "Escape"` first), keeping the arrows and the `stopPropagation`.
+
+### Suite state
+`tsc --noEmit` clean; `npm run lint` clean; `npm test` 4881 tests, **4877 pass, 3 fail**.
+Two of the three were mine-by-inheritance (`components/AppShell.chat-workspace.test.mjs`
+pinned `handleOpenTerminal` and `onNewTerminal` as they were *before* item 10 — the chat
+guards are still asserted, now against the shape with `{ newTab: true }`) and are green.
+The last one, `components/side-chat.test.mjs` → "side chats open in right-panel tabs
+that leave the global Esc to the main chat", is the **panel agent's**: its `<GitPanel>`
+turned the side-tab branch into a chained ternary
+(`{gitPanelOpen && visibleProjectCwd ? … : activeSideTab ? …`), so the pinned
+`{activeSideTab ? (<div className="session-chat-panel" …` no longer matches. The markup
+itself is intact at `components/AppShell.tsx:3734`. Its lane, its alignment.
+
+### Uncommitted in the shared tree (deliberate)
+Item 7 (the image overlay) and this pass's CSS all touch `app/native-theme.css`,
+`components/ChatInput.tsx`, `components/AppShell.tsx` and `package.json`, which the panel
+agent is editing. `git status` also carries its in-flight work, so nothing of mine is
+committable without taking its unfinished files along. Land in two commits when it
+reports: the phone pass (items 7 + these 4) and item 11.
