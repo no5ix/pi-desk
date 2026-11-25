@@ -10,7 +10,7 @@ import { test } from "node:test";
  * menu that flashed.
  */
 
-test("a pinned project is its orange folder icon, with no pin button in the row", async () => {
+test("a pinned project is its yellow folder icon, with no pin button in the row", async () => {
   const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
   const css = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
   assert.ok(!sidebar.includes("sidebar-project-tree-pin"),
@@ -18,8 +18,8 @@ test("a pinned project is its orange folder icon, with no pin button in the row"
   assert.ok(!/\.sidebar-project-tree-pin \{/.test(css), "its CSS went with the button");
   assert.match(sidebar, /className=\{`sidebar-project-tree-row\$\{isMenuOpen \? " is-menu-open" : ""\}\$\{pinned \? " is-pinned" : ""\}`\}/,
     "the row carries the pin state");
-  assert.match(css, /\.sidebar-project-tree-row\.is-pinned \.sidebar-project-tree-folder \{\n  color: var\(--warning\);\n\}/,
-    "the folder icon takes the app's orange");
+  assert.match(css, /\.sidebar-project-tree-row\.is-pinned \.sidebar-project-tree-folder \{\n  color: #cdc12c;\n\}/,
+    "the folder icon takes the pin yellow");
   // The state is announced, and unpinning is the project menu's item — a row with no
   // glyph must still say what it is and let the user change it.
   assert.match(sidebar, /aria-label=\{`\$\{displayName\}\$\{pinned \? ` · \$\{t\("sidebar\.pinnedProject"\)\}` : ""\} · \$\{rowTitle\}`\}/);
