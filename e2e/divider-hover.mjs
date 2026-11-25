@@ -5,21 +5,27 @@ import { createServer } from "node:http";
 import { chromium } from "playwright";
 
 /**
- * Sliding the pointer over a panel divider must not light the divider up.
+ * Sliding the pointer over a panel divider, and dragging it, must not light it up.
  *
  * The user's complaint: hovering the line between the sidebar (or the right panel)
- * and the conversation made that line brighter. The visible line is the panels' own
- * hairline; `.panel-resize-handle` is a 12px invisible hit target that only widens
- * the grab, and upstream (app/globals.css, byte-identical) tints its `::after` on
- * `:hover` — so the separator got a highlight on top of itself. The fork keeps the
- * tint for the two states that say "this target is live": keyboard focus (the
- * separator is tabbable and resizes with the arrows) and an active drag.
+ * and the conversation made that line brighter — and the same line lit up while the
+ * divider was dragged. The visible line is the panels' own hairline;
+ * `.panel-resize-handle` is a 12px invisible hit target that only widens the grab, and
+ * upstream (app/globals.css, byte-identical) tints its `::after` on `:hover`,
+ * `:focus-visible` **and** `.is-resizing` — so the separator got a highlight on top of
+ * itself. The fork keeps the tint for the one state with no other cue: keyboard focus
+ * (the separator is tabbable and resizes with the arrows). A drag needs none — the pane
+ * itself is what moves, and it tracks the pointer 1:1.
  *
  * Measured in a real browser, in both themes, from the computed `::after` of the
- * shell's own markup: rest, hover, keyboard focus, drag. The control pass injects
- * upstream's declaration verbatim and shows a tint, so the assertions below are not
- * blind — a source grep cannot tell a hover tint from a focus tint, and the cascade
- * (the right panel's pair above 960px carries `!important`) is what decides it.
+ * shell's own markup: rest, hover, keyboard focus, a class-flagged drag, and a real
+ * pointer drag through `useResizablePanel` — the hook that owns `is-resizing` and, until
+ * this fix, focused the separator on pointer-down (Chromium grants `:focus-visible` to a
+ * programmatically focused `div[role=separator][tabindex=0]`, so the line stayed lit after
+ * the drag ended). The control pass injects upstream's declaration verbatim and shows a
+ * tint, so the assertions below are not blind — a source grep cannot tell a hover tint
+ * from a focus tint, and the cascade (the right panel's pair above 960px carries
+ * `!important`) is what decides it.
  */
 const out = "test-results/divider-hover";
 await mkdir(out, { recursive: true });
@@ -77,6 +83,7 @@ const HANDLES = [
   { selector: '[data-resize-handle="sidebar"]', label: "sidebar / conversation" },
   { selector: '[data-resize-handle="right-panel"]', label: "conversation / right panel" },
   { selector: '[data-resize-handle="file-tree"]', label: "file tree / file viewer" },
+  { selector: '[data-resize-handle="live-sidebar"]', label: "sidebar / conversation, on the real hook" },
 ];
 
 const measure = () => {
@@ -84,7 +91,14 @@ const measure = () => {
   for (const { selector, label } of window.__HANDLES) {
     const el = document.querySelector(selector);
     const after = getComputedStyle(el, "::after");
-    rows[selector] = { label, background: after.backgroundColor, width: after.width, opacity: after.opacity };
+    rows[selector] = {
+      label,
+      background: after.backgroundColor,
+      width: after.width,
+      cls: el.className,
+      focus: el.matches(":focus"),
+      focusVisible: el.matches(":focus-visible"),
+    };
   }
   return {
     rows,
@@ -101,7 +115,7 @@ await page.addInitScript((handles) => { window.__HANDLES = handles; }, HANDLES);
 
 const away = async () => { await page.mouse.move(4, 4); await page.waitForTimeout(220); };
 /** The palette's own idle separator, for reference. */
-const UPSTREAM_HOVER = ".panel-resize-handle:hover::after { background: color-mix(in srgb, var(--text-muted) 70%, var(--border)); }";
+const UPSTREAM_HOVER = ".panel-resize-handle:hover::after, .panel-resize-handle:focus-visible::after, .panel-resize-handle.is-resizing::after { background: color-mix(in srgb, var(--text-muted) 70%, var(--border)); }";
 
 for (const theme of ["light", "dark"]) {
   await page.goto(`http://127.0.0.1:${port}/`);
@@ -121,7 +135,7 @@ for (const theme of ["light", "dark"]) {
     assert.equal(row.width, "1px", `${theme}: the ${label} divider's line is the 1px hairline (${row.width})`);
   }
 
-  // 2. Hover: byte for byte the rest state. This is the user's complaint.
+  // 2. Hover and drag: byte for byte the rest state. These are the user's complaints.
   for (const { selector, label } of HANDLES) {
     await page.hover(selector);
     await page.waitForTimeout(220);
@@ -146,8 +160,8 @@ for (const theme of ["light", "dark"]) {
   await tag.evaluate((el) => el.remove());
   await away();
 
-  // 4. The states that stay lit: keyboard focus (the separator is tabbable and the
-  //    arrows resize it) and an active drag. The hover fix must not dim these.
+  // 4. The state that stays lit: keyboard focus. The separator is tabbable, the arrows
+  //    resize it, and this is the only state with no other cue. Hover and drag are dark.
   await page.evaluate(() => document.body.focus());
   for (const { selector, label } of HANDLES) {
     const focused = await page.keyboard.press("Tab").then(async () => {
@@ -159,19 +173,59 @@ for (const theme of ["light", "dark"]) {
     assert.ok(parseColor(focused.rows[selector].background).alpha > 0,
       `${theme}: a keyboard-focused ${label} divider still shows where the focus ring is (${focused.rows[selector].background})`);
   }
+  // Blur first: the tabbable separator from the loop above still has focus, and its
+  // `:focus-visible` tint must not be mistaken for the drag state's.
+  await page.evaluate(() => document.activeElement?.blur?.());
   for (const { selector, label } of HANDLES) {
     await page.evaluate((sel) => document.querySelector(sel).classList.add("is-resizing"), selector);
     await page.waitForTimeout(240);
     const dragging = (await page.evaluate(measure)).rows[selector];
-    assert.ok(parseColor(dragging.background).alpha > 0,
-      `${theme}: a dragged ${label} divider stays lit while the pointer owns it (${dragging.background})`);
+    assert.equal(dragging.background, rest.rows[selector].background,
+      `${theme}: dragging the ${label} divider leaves the line exactly as it was (${dragging.background})`);
+    assert.equal(parseColor(dragging.background).alpha, 0,
+      `${theme}: the ${label} divider is not highlighted while it is dragged (${dragging.background})`);
+    const box = await page.locator(selector).boundingBox();
+    await page.screenshot({ path: `${out}/${theme}-drag-${selector.replace(/[^a-z]/g, "")}.png`, clip: { x: box.x - 40, y: box.y, width: box.width + 80, height: Math.min(box.height, 320) } });
     await page.evaluate((sel) => document.querySelector(sel).classList.remove("is-resizing"), selector);
     await page.waitForTimeout(160);
   }
 
-  console.log(`ok: ${theme} — rest ${rest.rows['[data-resize-handle="sidebar"]'].background} / hover ${rest.rows['[data-resize-handle="sidebar"]'].background} on all three dividers; upstream's hover ${upstream.red},${upstream.green},${upstream.blue} / a${upstream.alpha}; focus and drag stay tinted`);
+  // 5. The real pointer drag, through `useResizablePanel` — the hook owns `is-resizing`
+  //    and (before this fix) focused the separator on pointer-down. A focused separator
+  //    is a `:focus-visible` separator in Chromium, so a drag that ends focused leaves
+  //    the line lit: the pointer's own gesture highlighted it.
+  const live = '[data-resize-handle="live-sidebar"]';
+  const box = await page.locator(live).boundingBox();
+  const grab = { x: box.x + box.width / 2, y: box.y + 120 };
+  const widthOf = () => page.evaluate(() => document.querySelector("[data-e2e='live-sidebar-panel']").getBoundingClientRect().width);
+  const before = await widthOf();
+  await page.mouse.move(grab.x, grab.y);
+  await page.mouse.down();
+  await page.mouse.move(grab.x + 90, grab.y, { steps: 10 });
+  await page.waitForTimeout(200);
+  const mid = (await page.evaluate(measure)).rows[live];
+  assert.match(mid.cls, /\bis-resizing\b/, `${theme}: the drag is live (${mid.cls})`);
+  // The pane really moved (the hook clamps the default against the window, so the exact
+  // px is its business; a pointer drag that paints the line but moves nothing is not a
+  // drag).
+  const grew = (await widthOf()) - before;
+  assert.ok(grew > 40 && grew < 120, `${theme}: the drag moved the pane (${before} → ${before + grew})`);
+  assert.equal(mid.background, rest.rows[live].background,
+    `${theme}: the divider is not highlighted while it is dragged (${mid.background})`);
+  assert.equal(mid.focusVisible, false, `${theme}: a dragged divider is not the keyboard-focused one (${mid.cls})`);
+  await page.screenshot({ path: `${out}/${theme}-drag-real.png`, clip: { x: box.x - 60, y: box.y, width: box.width + 220, height: 240 } });
+  await page.mouse.up();
+  await page.waitForTimeout(240);
+  const released = await page.evaluate(measure);
+  assert.equal(released.rows[live].background, rest.rows[live].background,
+    `${theme}: the divider is not lit after the drag ends (${released.rows[live].background})`);
+  assert.equal(released.focused, null,
+    `${theme}: a mouse drag leaves no focus on the separator, so no tint outlives it (${released.focused})`);
+  await away();
+
+  console.log(`ok: ${theme} — rest ${rest.rows['[data-resize-handle="sidebar"]'].background} / hover and drag ${rest.rows['[data-resize-handle="sidebar"]'].background} on all four dividers; upstream's tint ${upstream.red},${upstream.green},${upstream.blue} / a${upstream.alpha}; keyboard focus stays lit`);
 }
 
 await browser.close();
 server.close();
-console.log("PASS: the panel dividers keep their hairline under the pointer, and stay lit for focus and drag");
+console.log("PASS: the panel dividers keep their hairline under the pointer and through a drag, and stay lit for keyboard focus");

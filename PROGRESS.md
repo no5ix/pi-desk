@@ -310,3 +310,32 @@ at 1280px: `::after` is `rgba(0, 0, 0, 0)` / 1px at rest and under the pointer.
 `npm run test:e2e` as a whole was not run (it needs a production build;
 `next build` from this shell hits the `__NEXT_PRIVATE_*` trap) — the new test was run
 directly, as its siblings are.
+
+### The drag lights the line too (same day)
+
+The hover fix was not the whole story: dragging the same divider highlighted it, and
+after the pointer was released the line stayed lit until the user clicked elsewhere.
+
+- Root cause, measured live: `useResizablePanel.onPointerDown` called
+  `target.focus({ preventScroll: true })`. Its `preventDefault()` cancels the
+  compatibility `mousedown`, so that call was the *only* thing focusing the separator
+  during a drag — and Chromium grants `:focus-visible` to a programmatically focused
+  `div[role=separator][tabindex=0]`, so the fork's focus tint fired for a mouse gesture.
+  Mid-drag the live page measured `color(srgb .155 .155 .162 / 0.192)` = the
+  `:focus-visible` value, and it outlived the release.
+- `hooks/useResizablePanel.ts` — the `focus()` call is gone (pointer capture needs no
+  focus). A keyboard user Tabs to the separator, which is the one state with a cue; a
+  dragged divider no longer swallows the arrow keys or Enter afterwards.
+- `app/native-theme.css` — `.is-resizing` joins `:hover` at `background: transparent`;
+  the right panel's pair above 960px is now `:not(:focus-visible)` transparent /
+  `:focus-visible` tinted.
+- Tests: `e2e/divider-hover.mjs` mounts the real hook (`[data-resize-handle="live-sidebar"]`)
+  and drives a real mouse drag — the pane moves ~90px, `is-resizing` is set, the `::after`
+  is `rgba(0, 0, 0, 0)` mid-drag and after release, `document.activeElement` never lands on
+  the separator, Tab still tints. Control passes: upstream's declaration (alpha 0.74) and
+  re-adding the hook's `focus()` both fail the assertion. `hooks/useResizablePanel.test.mjs`
+  pins that pointer-down captures without focusing; `app/native-theme-hover.test.mjs` pins
+  the declarations and forbids the old `:is(:focus-visible, .is-resizing)` pair.
+- Verified: live app at 1280px — rest / hover / mid-drag / after release all
+  `rgba(0, 0, 0, 0)` with the sidebar 260 → 350; `npm test` 4811/4812 (0 fail);
+  `tsc --noEmit` and eslint clean; the e2e passes in light and dark.

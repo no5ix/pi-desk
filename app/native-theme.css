@@ -756,19 +756,18 @@
      visible pixel beside the separator. */
   width: 1px;
 }
-/* Pointer-over must not brighten the divider between a sidebar and the
-   conversation: the panels' own hairline is the whole line, so upstream's
-   hover tint paints a stray highlight over a separator that is already there.
-   Only the states that say "this target is live" tint it — keyboard focus
-   (the separator is tabbable and resizes with the arrows) and an active drag. */
-.panel-resize-handle:hover::after {
+/* Pointer-over and a drag must not brighten the divider between a sidebar and the
+   conversation: the panels' own hairline is the whole line, so upstream's tint on
+   `:hover` and `.is-resizing` paints a stray highlight over a separator that is
+   already there. Only keyboard focus tints it — the separator is tabbable and resizes
+   with the arrows, and that is the one state with no other cue. A drag needs none:
+   the pane itself is what moves, and it tracks the pointer 1:1. */
+.panel-resize-handle:hover::after,
+.panel-resize-handle.is-resizing::after {
   background: transparent;
 }
 .panel-resize-handle:focus-visible::after {
   background: color-mix(in srgb, var(--border) 92%, var(--text-muted));
-}
-.panel-resize-handle.is-resizing::after {
-  background: color-mix(in srgb, var(--border) 80%, var(--text-muted));
 }
 .file-tree-resize-handle {
   z-index: 3;
@@ -10651,15 +10650,15 @@ html.native-desktop :is(
   }
 }
 
-/* The panel edge is the shell boundary; its resize target stays invisible and
-   tints only while focused from the keyboard or dragged, never on pointer-over
-   (the same rule as the sidebar divider above). The `!important` pair is needed
-   because the upstream hover tint outranks the fork base layer. */
+/* The panel edge is the shell boundary; its resize target stays invisible and tints
+   only when the keyboard focuses it — never on pointer-over, never while dragged (the
+   same rule as the sidebar divider above). The `!important` pair is needed because
+   upstream's tint outranks the fork base layer here. */
 @media (min-width: 960px) {
-  .right-panel-resize-handle:not(:focus-visible):not(.is-resizing)::after {
+  .right-panel-resize-handle:not(:focus-visible)::after {
     background: transparent !important;
   }
-  .right-panel-resize-handle:is(:focus-visible, .is-resizing)::after {
+  .right-panel-resize-handle:focus-visible::after {
     background: color-mix(in srgb, var(--separator) 68%, var(--text-muted)) !important;
   }
 }

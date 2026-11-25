@@ -1,4 +1,6 @@
 import { createRoot } from "react-dom/client";
+import { useRef } from "react";
+import { useResizablePanel } from "@/hooks/useResizablePanel";
 
 /**
  * The shell's panel dividers, in a real browser, so hovering them can be measured.
@@ -57,10 +59,55 @@ function Shell() {
   );
 }
 
+/**
+ * The real resizer hook on a divider, so a pointer drag is the shell's own pipeline.
+ *
+ * `useResizablePanel` owns `is-resizing`, the pointer capture, and — until this fix —
+ * the `target.focus()` a drag performed. Chromium grants `:focus-visible` to a
+ * programmatically focused `div[role=separator][tabindex=0]`, so a drag left the
+ * separator focused and the divider stayed lit after the pointer was released: the
+ * pointer's own gesture highlighted the line. That hook is what has to get this right,
+ * so it is mounted here and dragged with a real mouse.
+ */
+function LiveDivider() {
+  const widthRef = useRef(260);
+  const resizer = useResizablePanel({
+    ariaLabel: "sidebar",
+    cssVariable: "--e2e-divider-width",
+    defaultWidth: 260,
+    getMaxWidth: () => 900,
+    growthDirection: "right",
+    maxWidth: 900,
+    minWidth: 160,
+    storageKey: "pi-e2e-divider-sidebar-width",
+    widthRef,
+  });
+  return (
+    <div style={{ display: "flex", height: 240, border: "1px solid var(--border)" }}>
+      <div
+        ref={resizer.panelRef}
+        data-e2e="live-sidebar-panel"
+        className="sidebar-container sidebar-open"
+        style={{ width: "var(--e2e-divider-width, 260px)", borderRight: "1px solid var(--border)" }}
+      >
+        Sessions
+      </div>
+      <div
+        {...resizer.separatorProps}
+        className={`panel-resize-handle sidebar-resize-handle${resizer.isResizing ? " is-resizing" : ""}`}
+        data-resize-handle="live-sidebar"
+        style={{ height: 240 }}
+      />
+      <div style={{ flex: "1 1 auto", minWidth: 0 }}>The conversation, resized by the real hook</div>
+    </div>
+  );
+}
+
 createRoot(document.getElementById("root")).render(
   <div style={{ display: "grid", gap: 16, padding: 8, paddingTop: 200 }}>
     {/* A top offset: the shell is a plain row here, and the pointer must land on the
         12px-wide handle, not on anything painted over it. */}
     <Shell />
+    <LiveDivider />
   </div>,
 );
