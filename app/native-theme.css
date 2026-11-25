@@ -13542,6 +13542,11 @@ html.dark {
 .session-stats-body {
   max-height: min(66dvh, 620px);
   overflow-y: auto;
+  /* The card is a vertical scroller, on a phone especially: with `overflow-y: auto`
+     the other axis becomes a scrollbar too, and a grid track that cannot shrink below
+     a long model id grew the card wider than the screen. The card's content wraps
+     now (components/AppShell.tsx), so there is nothing to scroll sideways to. */
+  overflow-x: hidden;
 }
 /* The tools card: the head spans both panes, and the list column is the menu's own
    surface — the muted column, the separator token between the panes. */

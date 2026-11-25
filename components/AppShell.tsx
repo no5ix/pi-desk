@@ -3110,20 +3110,34 @@ export function AppShell() {
                     ) => (
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{title}</div>
-                          <div style={{
-                            display: "grid",
-                            // A compact column (numbers) keeps label and value tight: both
-                            // tracks size to their content, so a wide column never pushes
-                            // a value away from its label. The card's outer grid gives this
-                            // section a max-content track, so the pairs cannot outgrow it.
-                            gridTemplateColumns: compact ? "max-content max-content" : "auto minmax(0, 1fr)",
-                            columnGap: compact ? 14 : 12,
-                            rowGap: 4,
-                            justifyContent: compact ? "start" : undefined,
-                          }}>
+                        <div style={{
+                          display: "grid",
+                          // A phone stacks a row: the label on its own line, the value
+                          // (a path, a model id) under it, with room to wrap. Side by side,
+                          // the label's column ate the width a long value needed.
+                          gridTemplateColumns: compact
+                            ? "max-content max-content"
+                            : isMobile ? "minmax(0, 1fr)" : "auto minmax(0, 1fr)",
+                          columnGap: compact ? 14 : 12,
+                          rowGap: compact ? 4 : isMobile ? 2 : 4,
+                          justifyContent: compact ? "start" : undefined,
+                        }}>
                             {sectionRows.map(([label, value]) => (
                               <div key={`${title}:${label}`} style={{ display: "contents" }}>
-                                <div style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>{label}</div>
+                                <div style={{
+                                  color: "var(--text-dim)",
+                                  // A cost row's label is a whole model id
+                                  // (`splash/ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_S(Splash)`).
+                                  // Held on one line it is the widest thing in the card, and a grid
+                                  // track cannot go below what it holds: on a phone the card scrolled
+                                  // sideways and the tail of the id was off the screen. The compact
+                                  // numeric columns label tokens and messages in a few words, so they
+                                  // stay tight.
+                                  whiteSpace: compact ? "nowrap" : "normal",
+                                  minWidth: 0,
+                                  overflowWrap: compact ? "normal" : "anywhere",
+                                  wordBreak: compact ? "normal" : "break-word",
+                                }}>{label}</div>
                                 <div style={{
                                   color: "var(--text-muted)",
                                   minWidth: 0,
@@ -3191,10 +3205,23 @@ export function AppShell() {
                     const fieldSection = (title: string, rows: { label: string; value: string; copyField: SessionCopyField | null }[]) => (
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{title}</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", columnGap: 12, rowGap: 8, alignItems: "start" }}>
+                        <div style={{
+                          display: "grid",
+                          // A phone reads one thing per line: `Session File` on its own
+                          // line, the whole path under it. In two columns the label's track
+                          // took the width the path needed and the tail fell off the screen.
+                          gridTemplateColumns: isMobile ? "minmax(0, 1fr)" : "auto minmax(0, 1fr)",
+                          columnGap: 12,
+                          rowGap: isMobile ? 2 : 8,
+                          alignItems: "start",
+                        }}>
                           {rows.map((row) => (
                             <div key={`${title}:${row.label}`} style={{ display: "contents" }}>
-                              <div style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>{row.label}</div>
+                              <div style={{
+                                color: "var(--text-dim)",
+                                whiteSpace: "nowrap",
+                                marginBottom: isMobile ? 1 : 0,
+                              }}>{row.label}</div>
                               <div style={{ display: "flex", gap: 8, alignItems: "flex-start", minWidth: 0 }}>
                                 <span style={{
                                   color: "var(--text-muted)",
@@ -3226,14 +3253,18 @@ export function AppShell() {
                         // floors are what still reads — below SESSION_STATS_STACK_WIDTH
                         // the whole card stacks into one column.
                         gridTemplateColumns: isMobile || topPanelPos.width < SESSION_STATS_STACK_WIDTH
-                          ? "1fr"
+                          // A stacked card is one column, and `1fr` alone is
+                          // `minmax(auto, 1fr)`: the floor is the content's min-content,
+                          // so one long model id pushes the track past the phone and the
+                          // card grows a horizontal scrollbar. The floor is 0 by design.
+                          ? "minmax(0, 1fr)"
                           : "minmax(280px, 1fr) minmax(150px, max-content) minmax(190px, max-content)",
                         gap: isMobile ? 16 : 24,
                         fontSize: "var(--fs-caption)",
                         lineHeight: 1.5,
                         fontFamily: "var(--font-mono)",
                       }}>
-                        <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20 }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: isMobile ? 16 : 20, minWidth: 0 }}>
                           {sessionInfoSection}
                           {projectInfoSection}
                           {costBreakdownRows.length > 0 && section(translate("session.costByModel"), costBreakdownRows)}

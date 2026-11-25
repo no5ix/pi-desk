@@ -369,8 +369,8 @@ test("the session stats card fills the conversation column", () => {
     "the stats card takes the column's whole width: three columns of numbers want the horizontal space the conversation has");
   assert.match(block[0], /activeTopPanel === "system" \? SYSTEM_PROMPT_PANEL_WIDTH\s*\n\s*: activeTopPanel === "tools" \? TOOLS_PANEL_WIDTH/,
     "the prompt is prose and the tool list is two panes: both keep a reading width of their own");
-  assert.match(appShell, /gridTemplateColumns: isMobile \|\| topPanelPos\.width < SESSION_STATS_STACK_WIDTH\s*\n\s*\? "1fr"\s*\n\s*: "minmax\(280px, 1fr\) minmax\(150px, max-content\) minmax\(190px, max-content\)"/,
-    "the numbers columns size to their content and hug the card's right edge; below the module's floor the card stacks into one column");
-  assert.match(appShell, /gridTemplateColumns: compact \? "max-content max-content" : "auto minmax\(0, 1fr\)"/,
-    "a number row keeps its label and its value tight, so a wide column cannot push a value out of the card (its overflow is hidden)");
+  assert.match(appShell, /gridTemplateColumns: isMobile \|\| topPanelPos\.width < SESSION_STATS_STACK_WIDTH[\s\S]{0,500}?\? "minmax\(0, 1fr\)"\s*\n\s*: "minmax\(280px, 1fr\) minmax\(150px, max-content\) minmax\(190px, max-content\)"/,
+    "the numbers columns size to their content and hug the card's right edge; below the module's floor the card stacks into one column, and that column's floor is 0 — a `1fr` track is `minmax(auto, 1fr)`, so one long model id in a cost row widened the card past a phone and grew it a horizontal scrollbar");
+  assert.match(appShell, /gridTemplateColumns: compact\s*\n\s*\? "max-content max-content"\s*\n\s*: isMobile \? "minmax\(0, 1fr\)" : "auto minmax\(0, 1fr\)"/,
+    "a number row keeps its label and its value tight, so a wide column cannot push a value out of the card (its overflow is hidden); on a phone a cost row stacks — its label is a whole model id");
 });

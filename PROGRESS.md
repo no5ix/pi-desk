@@ -400,3 +400,26 @@ On a phone the model picker opened ~82px wide: every model name (`provider/model
   on a phone and keeps its own width on a desktop; every composer menu goes through the
   helper, now four of them) and `components/ModelSelector.test.mjs` (the composer passes
   `composerAnchored`; the absolute branch precedes the fixed one; a phone gets the page).
+
+## 2026-11-25 — the phone's Session stats card scrolls one way and reads top to bottom
+
+A 390px screenshot of the Session stats card: a horizontal scrollbar under it, the
+`Session File` path cut at the screen edge, and the tail of
+`splash/ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF:…` off to the right.
+
+- Cause, measured in the running app: a grid track cannot shrink below its content's
+  min-content. The card's stacked column was `1fr` (= `minmax(auto, 1fr)`), a cost row's
+  label is a whole model id, and that label was `whiteSpace: "nowrap"`. The track grew to
+  the id, the card grew past the phone, and `overflow-y: auto` turned the other axis into
+  the scrollbar the user saw.
+- `components/AppShell.tsx`: the stacked track is `minmax(0, 1fr)`; on a phone a field row
+  and a cost row stack vertically (label on its own line, the value under it, wrapping),
+  while the compact token/message columns stay tight; a non-compact label breaks
+  (`overflowWrap: anywhere`, `wordBreak: break-word`).
+- `app/native-theme.css`: `.session-stats-body` names `overflow-x: hidden` — the card
+  scrolls vertically only.
+- Verified live: 390px → `scrollWidth === clientWidth` (368/368), `overflow-x: hidden`,
+  the card's right edge at 379 of 390, `Session File`/`ID`/`Active Time` values start on
+  the line below their labels, no element is wider than its box. 1280px → the three
+  columns (545/150/230) are unchanged, label and value share a row.
+- Test: `components/AppShell.session-stats-phone.test.mjs`.
