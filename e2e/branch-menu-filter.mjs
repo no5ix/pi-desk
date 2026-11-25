@@ -171,7 +171,10 @@ assert.equal(await page.locator(".sidebar-project-context-menu-back").count(), 0
 assert.equal(await page.getByText("Worktrees…").count(), 0, "no Worktrees… item: the branches that own a folder are rows here");
 assert.equal(await page.getByText("More actions").count(), 0, "the panel does not open on a Project actions step, so there is nothing to come back from");
 assert.equal(await page.locator(".sidebar-project-context-menu-heading").count(), 1, "one title, naming this page");
-assert.equal((await page.locator(".sidebar-project-context-menu-heading").textContent())?.trim(), "Switch branch", "and the title is the panel's own, not a step it came from");
+assert.equal((await page.locator(".sidebar-project-context-menu-heading > span").first().textContent())?.trim(), "Switch branch", "and the title is the panel's own, not a step it came from");
+assert.equal(await page.locator(".sidebar-project-context-menu-heading .sidebar-project-context-menu-fetch").count(), 1,
+  "the fetch sits in the title row's corner, above the list");
+assert.equal((await page.locator(".sidebar-project-context-menu-fetch").textContent())?.trim(), "\u21bb", "and it is the glyph alone: no words take the list's first line");
 assert.equal(await page.locator(".sidebar-project-context-menu-row:not(.sidebar-project-context-menu-row--branch):not(.sidebar-project-context-menu-row--fetch)").count(), 0,
   "the fetch row and the tree are the whole menu");
 
