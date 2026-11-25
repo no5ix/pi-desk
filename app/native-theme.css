@@ -530,8 +530,15 @@
 /* A project can carry forty branches, and the list is only usable if it can be
    narrowed. The box is a quiet field, not a control that asks for an answer: no
    border (in a panel whose surface is one flat colour a bordered box reads as a
-   form), a background one step raised off the panel, and the mono face of the
-   names it filters. */
+   form), and the mono face of the names it filters.
+   Its background is the menu's own selection hue over the panel, not the ink
+   gray a row puts behind itself: the panel's first row is the branch this folder
+   is on, painted with `--bg-selected` right under the box, and in the gray field
+   the two read as one block — the box disappeared into the list it filters.
+   The blue is the panel's colour for "this is the live thing", and nothing in the
+   list wears it, so the field you type in is the field you can see — and the panel's
+   `native-popover` wash is excluded for this one input above, which is the other
+   way this box stopped being a box. */
 .sidebar-project-context-menu-filter {
   display: block;
   box-sizing: border-box;
@@ -541,14 +548,14 @@
   border: 0;
   border-radius: var(--radius-sm);
   outline: none;
-  background: var(--bg-selected);
+  background: color-mix(in srgb, var(--menu-selection-color) 14%, var(--surface-elevated));
   color: var(--text);
   font-family: var(--font-mono);
   font-size: var(--fs-small);
 }
 .sidebar-project-context-menu-filter:focus {
-  /* The accent is the caret's, so it shows only while the box has it. */
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-selected));
+  /* The caret's colour, so the tint deepens only while the box has it. */
+  background: color-mix(in srgb, var(--menu-selection-color) 22%, var(--surface-elevated));
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
@@ -4192,7 +4199,11 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   border-bottom-color: transparent !important;
 }
 
-.native-popover input:not([type="checkbox"]):not([type="radio"]) {
+/* Every input in a popover is a field: the separator hairline, the panel's radius,
+   the muted surface. The branch list's filter box is excluded and paints its own
+   background (`.sidebar-project-context-menu-filter`): `--surface-muted` is a white
+   wash, so on a panel whose surface is white it washes the field away. */
+.native-popover input:not([type="checkbox"]):not([type="radio"]):not(.sidebar-project-context-menu-filter) {
   border-color: var(--separator) !important;
   border-radius: var(--radius-md) !important;
   background: var(--surface-muted) !important;
@@ -11052,11 +11063,64 @@ html.native-desktop :is(
 }
 
 
-/* Chats: the pin mark and archived rows. */
-.session-item-pin {
-  flex: 0 0 auto;
-  color: var(--text-dim);
-  opacity: 0.8;
+/* Chats: the pin is ink, not a hue. A pinned session's title keeps the row's own
+   full-contrast text (the inline `color: var(--text)`), and every title that is
+   *not* pinned steps back a quarter tone — plain sessions and side chats go
+   through this span, so they follow together. The pinned rows are then the
+   darkest text in the list, which is what a pin is for, and no theme's accent is
+   borrowed to say it. A quarter, not a step to --text-muted: these rows are read,
+   at 12px, in every theme — the mix is of the theme's own ink, so light and dark
+   both lose the same amount of contrast. `!important` beats the row's inline
+   color on the span. The state stays reachable: the title's tooltip names it and
+   the "…" menu unpins. */
+.session-item-title:not(.is-pinned) {
+  color: color-mix(in srgb, var(--text) 76%, transparent) !important;
+}
+
+/* A pin is worth a weight as well as an ink. 500 is one notch over the row's
+   inline 400 — enough to catch the eye on a scan, small enough to keep the list
+   quiet — and it is a second channel, so a pin survives a screen where the ink
+   step is hard to see. `!important` for the same reason as the colour: the row
+   sets the span's weight inline. A nested row under a pinned parent wears it
+   with the ink, so a pinned family is one block of text. */
+.session-item-title.is-pinned {
+  font-weight: var(--fw-medium) !important;
+}
+
+/* The rows nested under a session — the subagent runs it delegated and the side
+   chats forked off it — are its work, not rows of their own, so they wear the
+   family's pin. Under a pinned parent the row and its title carry `.is-pinned`,
+   so the parent and every run under it read at one full-contrast ink: a pinned
+   family is one block, not one bright row over two faint ones. Under an unpinned
+   parent they step back one step *further* than a plain unpinned row (64% against
+   the 76% above), because the list's ink belongs to the rows the user pinned and
+   reads, not to what hangs under them. 64% over the panel is ~4.8:1 in the light
+   theme and ~6.7:1 in the dark (and ~5.6:1 on the dark selection fill), so the
+   step down stays readable at 12px. One `--child-ink` colours the title and the
+   row's leading glyph — the robot and the side-chat bubble, both drawn in
+   `currentColor` — so an icon never outshines the text it marks: this theme's
+   `--accent` IS its `--text`, and the accent glyph was the hardest thing on a
+   stepped-back row. Specificity: `.session-item.is-*-child .session-item-title`
+   is three classes against the two of `:not(.is-pinned)` above, so both cases
+   come from here and the two rules never fight. */
+.session-item.is-subagent-child,
+.session-item.is-side-chat {
+  --child-ink: color-mix(in srgb, var(--text) 64%, transparent);
+}
+
+.session-item.is-subagent-child.is-pinned,
+.session-item.is-side-chat.is-pinned {
+  --child-ink: var(--text);
+}
+
+.session-item.is-subagent-child .session-item-title,
+.session-item.is-side-chat .session-item-title {
+  color: var(--child-ink) !important;
+}
+
+.session-item.is-subagent-child .session-item-child-glyph,
+.session-item.is-side-chat .session-item-child-glyph {
+  color: var(--child-ink);
 }
 
 .sidebar-chats-archived-toggle {

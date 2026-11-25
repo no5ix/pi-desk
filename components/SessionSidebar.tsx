@@ -1406,6 +1406,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         sessionsById={sessionsById}
         node={node}
         familySessions={[family.root, ...family.subagents]}
+        pinnedInk={pinnedChats.has(id)}
         selectedSessionId={selectedSessionId}
         runningSessionIds={runningSessionIds}
         unreadSessionIds={unreadSessionIds}
@@ -1632,6 +1633,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 key={node.session.id}
                 node={node}
                 familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
+                pinnedInk={pinnedSessions.has(node.session.id)}
                 selectedSessionId={selectedSessionId}
                 runningSessionIds={runningSessionIds}
                 unreadSessionIds={unreadSessionIds}
@@ -1683,6 +1685,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                       sessionsById={sessionsById}
                       node={node}
                       familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
+                      pinnedInk={pinnedSessions.has(node.session.id)}
                       selectedSessionId={selectedSessionId}
                       runningSessionIds={runningSessionIds}
                       unreadSessionIds={unreadSessionIds}
@@ -1719,6 +1722,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             key={family.root.id}
             node={node}
             familySessions={familySessions}
+            pinnedInk={pinnedSessions.has(family.root.id)}
             subtitle={projectName}
             archiveActions={sessionArchiveActions(family.root.id)}
             onFork={forkSession}
@@ -2368,9 +2372,15 @@ function SessionFamilyItem({
   sideFamily,
   subtitle,
   sessionsById,
+  pinnedInk = false,
 }: {
   node: SessionTreeNode;
   familySessions?: SessionInfo[];
+  /** The family's root is pinned. A subagent run or a side chat is its parent's
+   *  work, not a row of its own, so every row under a pinned parent wears the
+   *  parent's pinned ink; under an unpinned parent they step back a step further
+   *  than a plain row. Set from the pinned set at the root and inherited below. */
+  pinnedInk?: boolean;
   /** Every listed session, to name a fork's source in its row's tooltip (#237). */
   sessionsById?: ReadonlyMap<string, SessionInfo>;
   /** C1: the family a side chat row is numbered in, as its tab and the Agents panel number it. */
@@ -2430,6 +2440,7 @@ function SessionFamilyItem({
           session={node.session}
           isSubagentChild={Boolean(node.session.relation?.kind === "subagent")}
           isSideChat={node.session.relation?.kind === "side"}
+          pinnedInk={pinnedInk}
           isSelected={familySessions
             ? familySessions.some((session) => session.id === selectedSessionId)
             : node.session.id === selectedSessionId}
@@ -2471,6 +2482,7 @@ function SessionFamilyItem({
               sideFamily={sideFamily ?? familySessions}
               subtitle={subtitle}
               sessionsById={sessionsById}
+              pinnedInk={pinnedInk}
             />
           ))}
         </div>
@@ -2604,6 +2616,7 @@ function SessionItem({
   onToggleCollapse,
   isSubagentChild = false,
   isSideChat = false,
+  pinnedInk = false,
   isFork = false,
   forkSourceTitle,
   subtitle,
@@ -2633,6 +2646,9 @@ function SessionItem({
   /** A side chat forked off a session: the composer's side-chat glyph, not the
    *  plain chat bubble, so the numbered "Side chat 2" row is recognisable. */
   isSideChat?: boolean;
+  /** This row wears the pinned ink — its own pin, or a pinned parent's (a
+   *  subagent run is pinned with the session that delegated it). */
+  pinnedInk?: boolean;
   /** A fork: a row of its own, with the fork glyph instead of the chat bubble. */
   isFork?: boolean;
   /** The fork's source session, named in the row's tooltip when it is listed. */
@@ -2877,7 +2893,7 @@ function SessionItem({
   return (
     <div
       ref={rowRef}
-      className={`session-item${isSelected ? " is-selected" : ""}${isRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}`}
+      className={`session-item${isSelected ? " is-selected" : ""}${isRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}${isSubagentChild ? " is-subagent-child" : ""}${isSideChat ? " is-side-chat" : ""}${pinnedInk ? " is-pinned" : ""}`}
       data-sidebar-tree-row
       tabIndex={0}
       role="treeitem"
@@ -2964,9 +2980,13 @@ function SessionItem({
           ) : isUnread ? (
             <UnreadSessionIndicator />
           ) : isSideChat ? (
-            <SideChatPlusIcon size={12} stroke="var(--accent)" style={{ flexShrink: 0 }} />
+            <SideChatPlusIcon size={12} stroke="currentColor" className="session-item-child-glyph" style={{ flexShrink: 0 }} />
           ) : isSubagentChild ? (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            /* The child row's own mark, in currentColor: this theme's --accent IS
+               its --text, so an accent glyph on a stepped-back row is the hardest
+               thing in it. `--child-ink` (app/native-theme.css) colours the glyph
+               and the title together. */
+            <svg className="session-item-child-glyph" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <rect x="5" y="7" width="14" height="11" rx="2" />
               <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
             </svg>
@@ -2975,10 +2995,16 @@ function SessionItem({
               <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
             </svg>
           )}
+          {/* A pinned session is marked by its title's ink and by nothing else:
+              the row's trailing edge already carries the fork mark, the children
+              count and the hover "…". A nested row has no pin of its own, so it
+              wears the family's: `pinnedInk` is set for every row under a pinned
+              parent, and the row's leading glyph takes the same ink. */}
           <span
-            className="session-item-title"
+            className={`session-item-title${pin?.pinned || pinnedInk ? " is-pinned" : ""}`}
             title={[
               subtitle ? `${title} · ${subtitle}` : title,
+              pin?.pinned ? t("sidebar.pinned") : null,
               isSideChat ? t("sideChat.title") : null,
               isFork ? (forkSourceTitle ? t("sidebar.forkedFrom", { title: forkSourceTitle }) : t("sidebar.forkRow")) : null,
             ].filter(Boolean).join("\n")}
@@ -2996,11 +3022,6 @@ function SessionItem({
           >
             {title}
           </span>
-          {pin?.pinned && (
-            <svg className="session-item-pin" aria-label={t("sidebar.unpinChat")} width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
-            </svg>
-          )}
           {subtitle && (
             <span className="session-item-project" title={subtitle}>
               {subtitle}
