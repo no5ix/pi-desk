@@ -23,6 +23,35 @@ export function countTreeDescendants(node: SessionTreeNode): number {
   return node.children.reduce((total, child) => total + 1 + countTreeDescendants(child), 0);
 }
 
+/** How many of this row's subagent runs are live right now.
+ *
+ * The row's fold toggle counts runs and side chats together and leads with the
+ * subagent head; the header's running bucket breathes, and the row breathes with
+ * it while a delegated run of *this* session is going (`countSubagents` in
+ * `components/TopbarSubagents.tsx` reads the same two sources: the live running
+ * set first, then the relation's own `running` / `queued`).
+ *
+ * A live side chat is not counted. It is a conversation the user drives, never a
+ * run the session is waiting on — the same rule that keeps it out of the
+ * composer's Stop (`components/ChatInput.subagent-stop.test.mjs`) — and its own
+ * row already leads with the running spinner. Nested runs count: a run under a
+ * run is still the family's live work, and the folded row says what it holds. */
+export function countRunningSubagentRuns(
+  node: SessionTreeNode,
+  runningIds: ReadonlySet<string>,
+): number {
+  let live = 0;
+  for (const child of node.children) {
+    const relation = child.session.relation;
+    if (relation?.kind === "subagent"
+      && (runningIds.has(child.session.id) || relation.status === "running" || relation.status === "queued")) {
+      live += 1;
+    }
+    live += countRunningSubagentRuns(child, runningIds);
+  }
+  return live;
+}
+
 /** The name a session row shows (SessionItem's title, without a side chat's number). */
 export function sessionRowTitle(session: SessionInfo): string {
   const firstMessage = skillExpansionToCommand(session.firstMessage) ?? session.firstMessage;

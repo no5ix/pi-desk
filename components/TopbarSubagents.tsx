@@ -150,8 +150,14 @@ function AgentIcon() {
  * Agents panel's "Current" row wants the head that names an agent, and the 1.6s opacity
  * cycle beside a word that says "this is the conversation you are in" reads as live work.
  * At rest the glyph is the identical shape, only unanimated.
+ *
+ * `strokeWidth` is a prop for the one place that is neither a row nor a chip: the
+ * composer's disc (components/ChatInput.tsx) draws a live run at ~17px inside a filled
+ * accent button, where the 13px rule's 1.24px line reads thin next to the send arrow's
+ * 1.9px. An absent value keeps this file's size rule, so the header and the panel are
+ * untouched.
  */
-export function AgentRunningIcon({ size = 11, pulse = true }: { size?: number; pulse?: boolean }) {
+export function AgentRunningIcon({ size = 11, pulse = true, strokeWidth }: { size?: number; pulse?: boolean; strokeWidth?: number }) {
   return (
     <svg
       className={pulse ? "agent-status-icon--pulse" : undefined}
@@ -160,7 +166,7 @@ export function AgentRunningIcon({ size = 11, pulse = true }: { size?: number; p
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={size > 12 ? 1.75 : 1.9}
+      strokeWidth={strokeWidth ?? (size > 12 ? 1.75 : 1.9)}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"

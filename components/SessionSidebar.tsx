@@ -5,6 +5,7 @@ import type { SessionInfo, SessionWorkspaceKind } from "@/lib/types";
 import { listSessionFamilies, sideChatTitle } from "@/lib/session-family";
 import {
   buildSessionTree,
+  countRunningSubagentRuns,
   countTreeDescendants,
   sessionRowTitle,
   treeContainsSession,
@@ -2400,6 +2401,10 @@ function SessionFamilyItem({
   const hasChildren = node.children.length > 0;
   const collapsed = hasChildren && !expandedRows.has(node.session.id);
   const childCount = hasChildren ? countTreeDescendants(node) : 0;
+  // A delegated run of this row's family that is live right now: the row's fold
+  // toggle breathes with the header's running bucket, while a live side chat (a
+  // conversation the user drives) keeps the glyph at rest.
+  const runningChildren = hasChildren ? countRunningSubagentRuns(node, runningSessionIds) : 0;
   const selectedInChildren = Boolean(selectedSessionId)
     && node.session.id !== selectedSessionId
     && treeContainsSession(node, selectedSessionId!);
@@ -2442,6 +2447,7 @@ function SessionFamilyItem({
           sideTitle={node.session.relation?.kind === "side" ? sideChatTitle(node.session, t("sideChat.title"), sideFamily ?? familySessions ?? []) : undefined}
           hasChildren={hasChildren}
           childCount={childCount}
+          childrenRunningCount={runningChildren}
           collapsed={collapsed}
           onToggleCollapse={() => setSubagentRowExpanded(node.session.id, collapsed)}
           isFork={node.session.relation?.kind === "fork"}
@@ -2593,6 +2599,7 @@ function SessionItem({
   sideTitle,
   hasChildren = false,
   childCount = 0,
+  childrenRunningCount = 0,
   collapsed = false,
   onToggleCollapse,
   isSubagentChild = false,
@@ -2617,6 +2624,9 @@ function SessionItem({
   hasChildren?: boolean;
   /** Subagent runs and side chats below this row, shown beside its fold toggle. */
   childCount?: number;
+  /** How many of those are live subagent runs: the toggle's head breathes with the
+   *  header's running bucket, and its tooltip says how many. */
+  childrenRunningCount?: number;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   isSubagentChild?: boolean;
@@ -2855,6 +2865,13 @@ function SessionItem({
   // The menu's real height decides whether it opens downward or upward.
   const placedMenuPos = useMenuPlacement(menuOpen ? menuAnchor : null, menuRef);
 
+  // The fold toggle's name: the count it folds, plus how many of them are live, so a
+  // breathing head is also said to a screen reader.
+  const childToggleLabel = [
+    t(collapsed ? "sidebar.expandSubagentsCount" : "sidebar.collapseSubagentsCount", { count: childCount }),
+    childrenRunningCount > 0 ? t("chat.subagentsRunning", { running: childrenRunningCount }) : null,
+  ].filter(Boolean).join(" · ");
+
 
   // Fixed-height outer wrapper — content swaps in place so the list never reflows
   return (
@@ -3016,17 +3033,21 @@ function SessionItem({
           )}
 
           {/* Fold toggle for the subagent runs and side chats below: folded
-              by default, with their count so a folded row says what it holds (#237). */}
+              by default, with their count so a folded row says what it holds (#237).
+              While a delegated run of this family is live, its head breathes — the
+              same 1.6s cycle the header's running bucket and the composer's Stop use
+              (`.agent-status-icon--pulse`), so "the family has work going" moves the
+              same way in all three places. */}
           {hasChildren && (
             <button
               type="button"
-              className={`session-item-children-toggle${collapsed ? " is-collapsed" : ""}`}
+              className={`session-item-children-toggle${collapsed ? " is-collapsed" : ""}${childrenRunningCount > 0 ? " is-running" : ""}`}
               onClick={(e) => { e.stopPropagation(); onToggleCollapse?.(); }}
-              title={t(collapsed ? "sidebar.expandSubagentsCount" : "sidebar.collapseSubagentsCount", { count: childCount })}
-              aria-label={t(collapsed ? "sidebar.expandSubagentsCount" : "sidebar.collapseSubagentsCount", { count: childCount })}
+              title={childToggleLabel}
+              aria-label={childToggleLabel}
               aria-expanded={!collapsed}
             >
-              <svg className="session-item-children-glyph" aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg className={`session-item-children-glyph${childrenRunningCount > 0 ? " agent-status-icon--pulse" : ""}`} aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="5" y="7" width="14" height="11" rx="2" />
                 <path d="M9 11h.01M15 11h.01M12 7V4" />
               </svg>
