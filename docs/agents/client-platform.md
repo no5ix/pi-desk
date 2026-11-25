@@ -59,3 +59,30 @@
 - **Both pages heal themselves.** `public/offline-recovery.js` probes `/api/home` (the cheapest route, no auth on localhost) every 2 s and reloads when the app answers, backing off to 30 s, and keeps a `pi-web:offline-reload:<origin>` budget in `localStorage` of `MAX_RELOADS` (8) in `RELOAD_WINDOW_MS` (10 min) so a wedged server cannot make the browser flash forever. The budget must stay above the 2 reloads a real restart needs: one page consumes three, and a page that has spent its budget reloads on a real tap on "Try again". A fallback page has no app JS left to reconnect with — `public/sw.test.mjs` fails if either page loses the script, its auto-reload, the tap-to-reload, the budget, or the `/api/home` probe, and `public/offline-recovery.test.mjs` proves the self-heal in a DOM.
 - **A browser gets about six open connections per host over HTTP/1.1, and this page holds long-lived ones** — the open session's `/api/agent/<id>/events`, the sidebar's running set, the scheduled stream, one file watcher, a terminal panel. A refresh whose document is 7th waits for a free socket and the worker reads that as offline. Two layers keep the pool: every page-wide stream goes through `openSharedEventStream[Handle]()` (`lib/scheduled-tasks/shared-stream.ts`) so the tabs of a browser elect one leader over a `pi-web:*` name and fan the frames out over a `BroadcastChannel` (the sidebar's running set: `lib/running-sessions-stream.ts`; the file watchers fan in per page over `/api/files?type=watch-all&paths=[{filePath,sessionId}]`, `lib/file-watch-channel.ts` + `lib/file-watch-stream.ts`, whose watched set is capped at 64 entries and filtered by the same roots, symlinks and `isCredentialPath()` rules as one file's `?type=watch`); and the production server is started with `--keepAliveTimeout 65000` (`bin/keep-alive.js`, `scripts/prod-server-flags.test.mjs`) because Next's 5 s default is shorter than a browser's keep-alive idle, so every focused-after-pause refresh rode a half-closed socket. A tab whose handlers must run per tab (the terminal panel's activity, audio) opens its own stream and says so in a comment.
 - `e2e/offline-navigation.mjs` runs all of this against a real production server: saturates the pool and demands the "not answering" page in 15 s and its reload when the pool frees; kills the server and demands the offline page in under a second and its reload when it returns; refreshes across the keep-alive window; and checks that four open file tabs cost one file-watch connection, with the change of one of them delivered to its viewer.
+
+## The image overlay's travel (`components/ImagePreview.tsx`)
+
+A picture opened from the conversation is a full-screen `<dialog>`, and on a phone that
+overlay had one control: the ×. A thumb had nothing to swipe, a trackpad's flick did
+nothing, and a tap on the picture — what every photo app answers with "close" — did
+nothing. The overlay now travels the pictures it belongs to: a finger's swipe
+(40px, and horizontal-dominant, so a vertical drag is the page's), a trackpad's flick
+(the horizontal wheel delta is summed, one page per burst, then a 260ms rest, because a
+real flick sends dozens of momentum events), the arrow keys, and the ring in both
+directions, so past the last picture of a turn is its first. A tap on the picture closes
+it; a swipe's own trailing click is not a tap, and the mark that says so is cleared as
+soon as the click is answered — a mark that outlives the swipe swallows the next tap,
+which is exactly the bug the live probe caught.
+
+The travel list is read from the DOM when the overlay opens, from the nearest
+`[data-image-gallery]` container, and otherwise the rendered document (`.markdown-body`)
+or the message (`.message-assistant`, `.message-user`): the conversation is what decides
+the order of a turn's pictures, so no caller has to keep a list in step, and an image
+inline in prose travels with the images of that document. The two direction plates are
+`(pointer: coarse)` only — a mouse has the wheel and the arrows — and they are 44px, the
+overlay's own control size, the close button's shape. The neighbour is fetched while the
+current picture is looked at, so a swipe reveals a picture that is already there.
+
+Check: `e2e/image-swipe.mjs` (the phone shape and the desktop shape, on Chromium and
+WebKit: the count, the swipe, a mouse drag that is deliberately not a swipe, one flick
+one page, the ring, the arrows, a tap that closes).
