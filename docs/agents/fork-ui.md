@@ -714,6 +714,16 @@ box can see it, so a keydown handler on the input would never run). `e2e/branch-
 types into a twelve-branch fixture and reads the rows back; its `?short=1` pass requires the
 box to be **absent** for three branches, so the check cannot pass by always having a box.
 
+The box paints its own field: `--menu-selection-color` over `--surface-elevated`, never
+`--bg-selected`. The list's head row (the branch this folder is on) wears that ink gray
+directly underneath, and in the same gray the field and the row read as one block — the box
+disappears into the list it filters. The blue is the panel's colour for the live thing and no
+row wears it, and the panel's own `native-popover` rule (which washes every input with
+`--surface-muted` `!important` — a white wash on the panel's white, which paints the field
+away) skips this one input in its selector. `ComposerBranchMenu.test.mjs` pins the field
+colour, the `--bg-selected` ban and the exclusion, because a clean upstream merge can put
+either half back.
+
 A branch row is `[name] [remote|worktree tag]` inside one button, with the **one** action
 icon after it: the worktree this branch can start. It used to carry a second icon that
 checked the branch out, which is exactly what the name under the pointer already does, and a
