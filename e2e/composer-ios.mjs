@@ -84,6 +84,14 @@ const measure = () => {
     card: rect(card),
     editor: rect(document.querySelector(".chat-composer-editor")),
     textarea: rect(document.querySelector(".chat-input-textarea")),
+    textareaMargin: (() => {
+      const s = getComputedStyle(document.querySelector(".chat-input-textarea"));
+      return { left: parseFloat(s.marginLeft), right: parseFloat(s.marginRight) };
+    })(),
+    editorPad: (() => {
+      const s = getComputedStyle(document.querySelector(".chat-composer-editor"));
+      return { left: parseFloat(s.paddingLeft) + parseFloat(s.borderLeftWidth), right: parseFloat(s.paddingRight) + parseFloat(s.borderRightWidth) };
+    })(),
     actions: rect(actions),
     controls: (() => {
       const el = document.querySelector(".chat-composer-controls");
@@ -129,17 +137,22 @@ for (const state of ["rest", "keyboard"]) {
   // The text area is inside the card, and as wide as the box it is stretched in. That
   // box is `.chat-composer-editor`'s content: the card's padding, then 4px of editor
   // padding on the left (the card's own inset), so measuring against the card's box
-  // would demand 4px that belongs to the editor.
+  // would demand 4px that belongs to the editor. The textarea's own horizontal margin is
+  // part of the inset too — it is stretched (`width: auto`), so a margin can only inset,
+  // and the left one (half the send disc less 10px) is what stands the text's ink on the
+  // `+` glyph's edge. Counted here, the check still catches the bug it was written for: a
+  // text box wider than the box it is stretched in, which crossed the card's right edge.
   const editorStyle = await page.evaluate(() => {
     const s = getComputedStyle(document.querySelector(".chat-composer-editor"));
     return { paddingLeft: parseFloat(s.paddingLeft), paddingRight: parseFloat(s.paddingRight), borderLeft: parseFloat(s.borderLeftWidth), borderRight: parseFloat(s.borderRightWidth) };
   });
   const editorLeft = m.editor.left + editorStyle.paddingLeft + editorStyle.borderLeft;
   const editorRight = m.editor.right - editorStyle.paddingRight - editorStyle.borderRight;
+  const contentWidth = editorRight - editorLeft - m.textareaMargin.left - m.textareaMargin.right;
   assert.ok(m.textarea.right <= editorRight + 0.5,
     `${state}: the text area does not pass the card's right edge (${Math.round(m.textarea.right)} of ${Math.round(editorRight)})`);
-  assert.ok(Math.abs(m.textarea.w - (editorRight - editorLeft)) <= 1,
-    `${state}: the text area is the card's content width (${Math.round(m.textarea.w)} of ${Math.round(editorRight - editorLeft)})`);
+  assert.ok(Math.abs(m.textarea.w - contentWidth) <= 1,
+    `${state}: the text area is the card's content width, its own inset counted (${Math.round(m.textarea.w)} of ${Math.round(contentWidth)})`);
   assert.ok(m.scrollWidth <= m.viewport, `${state}: the page does not scroll sideways (${m.scrollWidth} of ${m.viewport})`);
 
   if (state === "keyboard") {
@@ -172,7 +185,13 @@ assert.ok(typed.card.h > 0 && typed.textarea.h > 0, "the card holds the typed te
 assert.ok(Math.abs(typed.send.right - (typed.card.right - typed.insetRight)) <= 1.5,
   `a filled composer keeps Send in the corner (${Math.round(typed.send.right)} of ${Math.round(typed.card.right - typed.insetRight)})`);
 assert.ok(typed.textarea.right <= typed.card.right - typed.insetRight + 0.5, "the typed text stays inside the card");
-assert.ok(Math.abs(typed.textarea.w - typed.editor.w) <= 6, "the typed text keeps the card's width");
+// The stretched text keeps the editor's content width, margins counted: it is `width: auto`
+// in a stretched column, so the left margin (half the send disc less 10px) insets it and a
+// box wider than that content box is the overflow this check exists for.
+const typedContentWidth = typed.editor.w - typed.editorPad.left - typed.editorPad.right
+  - typed.textareaMargin.left - typed.textareaMargin.right;
+assert.ok(Math.abs(typed.textarea.w - typedContentWidth) <= 1,
+  `the typed text keeps the card's width (${Math.round(typed.textarea.w)} of ${Math.round(typedContentWidth)})`);
 await page.screenshot({ path: `${out}/typed.png`, clip: { x: 0, y: Math.max(0, typed.card.y - 8), width: 390, height: typed.card.h + 16 } });
 assert.equal(rest.scrollWidth <= rest.viewport, true, "no sideways scroll with a long draft");
 

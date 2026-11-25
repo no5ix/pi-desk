@@ -29,6 +29,14 @@ export async function checkComposerGeometry(page) {
           const cardStyle = getComputedStyle(el);
           const editorStyle = getComputedStyle(el.querySelector('.chat-composer-editor'));
           const inset = parseFloat(cardStyle.paddingLeft) + parseFloat(cardStyle.borderLeftWidth);
+          // The textarea's own horizontal margin is part of the card's inset. The text is
+          // stretched (`width: auto`), so a margin can only inset, and the 8px on the left
+          // is what stands the text's ink on the `+` glyph's left edge. Counted here the
+          // gap stays zero, and the check keeps its teeth: what it catches is a text box
+          // wider than the card's content box — the 8px overflow past the card's right edge
+          // this check was born for.
+          const textStyle = getComputedStyle(text);
+          const textInset = parseFloat(textStyle.marginLeft) + parseFloat(textStyle.marginRight);
           // Buttons inside a popup (the phone's More strip floats above the row on an
           // absolutely positioned cell) are not in the row; the ones in flow are.
           const inPopup = (button) => {
@@ -56,7 +64,8 @@ export async function checkComposerGeometry(page) {
             }));
           return {
             widthGap: cardBox.width - box.width - inset * 2
-              - parseFloat(editorStyle.paddingLeft) - parseFloat(editorStyle.paddingRight),
+              - parseFloat(editorStyle.paddingLeft) - parseFloat(editorStyle.paddingRight)
+              - textInset,
             rowSpread: centres.length ? Math.max(...centres) - Math.min(...centres) : 99,
             flowCount: centres.length,
             textAboveRow: box.bottom <= rowBox.top + 0.5,
@@ -66,7 +75,7 @@ export async function checkComposerGeometry(page) {
             labelled,
           };
         });
-        assert.ok(Math.abs(layout.widthGap) < 1, `The text area spans the card at ${size}px: ${JSON.stringify(layout)}`);
+        assert.ok(Math.abs(layout.widthGap) < 1, `The text area spans the card at ${size}px, its own margins counted: ${JSON.stringify(layout)}`);
         assert.ok(layout.rowSpread < 1, `Attach, the controls and Send share one row at ${size}px: spread ${layout.rowSpread}`);
         assert.ok(layout.flowCount >= 2, `The row holds at least the attach button and Send at ${size}px: ${layout.flowCount}`);
         assert.ok(layout.textAboveRow, `The text sits above the control row at ${size}px: ${JSON.stringify(layout)}`);
@@ -104,7 +113,10 @@ export async function checkComposerGeometry(page) {
           // The composer's row works in 2px (`.chat-composer-actions { gap: 2px }`), and at
           // the smallest chat font the phone tier's insets are read at that granularity.
           // The glyph may sit at the text's edge or a hair left of it; what is forbidden is
-          // the 10px the centred disc used to put between them.
+          // the glyph standing proud of the prompt it opens — the 10px a centered glyph in
+          // an untouched disc puts between them, which is what the row looked like. The text
+          // is the side that moves: its left margin is half the send disc less 10px, so the
+          // two edges meet on the 36px tier and on the touch tier's 44px disc alike.
           assert.ok(ink.plusLeft >= ink.textLeft - 2 && ink.plusLeft <= ink.textLeft + 1,
             `The \`+\` glyph opens on the text's left edge at ${size}px: ${ink.plusLeft} vs ${ink.textLeft}`);
         }
