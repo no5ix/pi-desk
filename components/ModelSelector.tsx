@@ -192,7 +192,11 @@ export function ModelSelector({
     <div
       ref={rootRef}
       className={`model-selector is-${variant}${locked ? " is-disabled" : ""}`}
-      style={{ position: "relative", width: variant === "field" || isMobile ? "100%" : undefined, minWidth: 0, flex: variant === "toolbar" && isMobile ? "1 1 auto" : undefined }}
+      // An icon-only control sizes to its glyph in every tier. The labelled toolbar chip
+      // fills its row on a phone (`width: 100%`, `flex: 1 1 auto`), and inside the
+      // composer's control strip that width is the strip's own: it put a 22px gap after
+      // the model glyph and squeezed the strip's close control from 36px to 15px.
+      style={{ position: "relative", width: iconOnly ? undefined : variant === "field" || isMobile ? "100%" : undefined, minWidth: 0, flex: iconOnly ? "0 0 auto" : variant === "toolbar" && isMobile ? "1 1 auto" : undefined }}
       onKeyDown={(event) => {
         if (event.key !== "Escape" || !open || isImeComposing(event)) return;
         event.preventDefault();

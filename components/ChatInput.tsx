@@ -2339,12 +2339,22 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (!isMobile) setControlsMenuOpen(false);
   }, [isMobile]);
 
-  // The row's four glyphs are one cluster. On a desktop or a pad the model chip joins
-  // the reasoning / tools / automation group, and the whole cluster sits behind the
-  // attach button; the phone keeps the chip in its own cell, because its group lives
-  // inside "More" and a model picker hidden behind a second tap is the one control a
-  // phone cannot spare. Visible always, busy while a switch is pending; a switch during
-  // a run applies from its next request (C2).
+  // The row's glyphs are one cluster in every tier: model, reasoning, tool preset,
+  // session automation, in that order, behind the attach `+`. A phone folds the whole
+  // cluster behind its "More" button, which sits right behind `+`; the chip is the
+  // group's first cell there too, so the strip the user asked for is one run of glyphs
+  // and the row keeps its width for the project and branch chips. Visible always, busy
+  // while a switch is pending; a switch during a run applies from its next request (C2).
+  const modelDisplayName = model
+    ? modelOptions.find((option) => option.provider === model.provider && option.modelId === model.modelId)?.name
+      ?? model.modelId
+    : null;
+  // The phone's closed row prints no model name (the chip lives inside "More"), so the
+  // button's title carries it: the control that opens the group says what it changes.
+  const moreControlsTitle = [
+    t("chat.moreControls"),
+    modelDisplayName ? `${t("chat.changeModel")}: ${modelDisplayName}` : null,
+  ].filter(Boolean).join(" · ");
   const modelControl = (modelOptions.length > 0 || model || modelError) && onModelChange ? (
     <ModelSelector
       options={modelOptions}
@@ -3128,18 +3138,25 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           display: isNarrow ? "grid" : "flex",
           // A phone renders exactly two children here (the wide spacer below is
           // skipped), so the controls block needs its own `auto` track. The
-          // first track must be `minmax(0, 1fr)`: an `auto` track sizes to the
-          // model chip's untruncated max-content, which pushed the trailing
-          // cell out of the row, and its More button (squeezed to 16px in a
-          // zero-width track) landed on top of the context ring on an iPhone.
-          gridTemplateColumns: isNarrow ? "minmax(0, 1fr) auto" : undefined,
+          // controls take the first track and the chips the `minmax(0, 1fr)` one,
+          // because the phone's More button is the row's first control, standing
+          // right behind the attach `+` (the `order` on the two cells puts them in
+          // that visual order). The chip is no longer in the chips' cell, so no
+          // untruncated model name sizes an `auto` track, and the 1fr track keeps
+          // the cell shrinkable — a cell that cannot shrink is what pushed the
+          // trailing cell out of the row and squeezed the More button to 16px on
+          // an iPhone.
+          gridTemplateColumns: isNarrow ? "auto minmax(0, 1fr)" : undefined,
           alignItems: "center",
           gap: 6,
         }}>
 
           {/* LEFT: project context + model selector (idle) or steer/followup toggle (streaming) */}
 
-          <div style={{ flex: isNarrow ? "1 1 auto" : "0 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
+          {/* The chips' cell. On a phone it takes the grid's second track (`order: 2`)
+              so the More button leads the row; `order` moves the box, not the tab order,
+              which is why this stays the strip's first JSX child. */}
+          <div style={{ flex: isNarrow ? "1 1 auto" : "0 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2, ...(isNarrow ? { order: 2 } : null) }}>
             {/* Only a new session picks its project from the composer. Once a
                 session exists, its project is fixed and the header names it, so the
                 composer row drops the chip rather than showing a second, inert one. */}
@@ -3172,9 +3189,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 onWorktreeRemoved={onComposerWorktreeRemoved}
               />
             )}
-            {/* The phone keeps the chip in this cell, beside its project and branch
-                chips; a desktop and a pad put it in the group below. */}
-            {isNarrow && modelControl}
+            {/* A virtual model routes each request; the phone shows where the
+                latest reply went, since its model chip is inside "More". */}
             {isNarrow && routedModelHint}
           </div>
 
@@ -3188,12 +3204,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             justifyContent: "flex-end",
             position: "relative",
             marginLeft: 0,
+            ...(isNarrow ? { order: 1 } : null),
           }}>
             {isNarrow && (
               <button
                 type="button"
-                 title={controlsMenuOpen ? undefined : t("chat.moreControls")}
-                 aria-label={t("chat.moreControls")}
+                title={controlsMenuOpen ? undefined : moreControlsTitle}
+                aria-label={t("chat.moreControls")}
                 aria-expanded={controlsMenuOpen}
                 aria-hidden={controlsMenuOpen || undefined}
                 tabIndex={controlsMenuOpen ? -1 : undefined}
@@ -3227,8 +3244,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               alignItems: "center",
               gap: isNarrow ? 1 : 2,
               ...(isNarrow ? {
+                // The strip opens from the More button's own edge, which on a phone
+                // is the row's left end, right behind `+`.
                 position: "absolute",
-                right: 0,
+                left: 0,
                 bottom: 0,
                 zIndex: 60,
                 padding: 1,
@@ -3243,10 +3262,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 backdropFilter: "blur(10px)",
               } : null),
             }}>
-            {/* The model is the cluster's first cell on a desktop or a pad: four glyphs
-                in one run behind the attach button, the chip collapsed into the group
-                the phone opens as "More". */}
-            {!isNarrow && modelControl}
+            {/* The model is the cluster's first cell in every tier: the glyphs run
+                model, reasoning, tools, automation, and on a phone that whole run is
+                the strip the More button opens. */}
+            {modelControl}
             {/* Keep reasoning and Config as separate, consistent option menus. */}
             {(onThinkingLevelChange || chatOnly) && (
               <div ref={thinkingDropdownRef} style={{ position: "relative" }}>

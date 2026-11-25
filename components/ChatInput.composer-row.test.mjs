@@ -10,6 +10,10 @@ import test from "node:test";
 // desktop the model chip's fixed 220px box overflowed its own shrunken root onto the
 // ring. The ring has since left this row for the conversation header
 // (components/TopbarContextChip.tsx); the width rules that fixed it stay.
+// 2026-11-25 (a phone ask): the strip leads the row. The model chip collapsed into the
+// group the phone opens as "More" and the More button moved behind the attach `+`, so the
+// phone's grid is `auto minmax(0, 1fr)` with the controls in the first track. The old
+// order is safe only because no unshrinkable model name sits in the chips' cell any more.
 const chatInput = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const modelSource = await readFile(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
@@ -22,10 +26,12 @@ const moreButton = chatInput.match(/\{isNarrow && \(\s*<button[\s\S]*?<\/button>
 test("the narrow composer row gives the controls block its own track", () => {
   assert.ok(rowStart > 0, "the composer controls row renders");
   assert.match(row, /display: isNarrow \? "grid" : "flex"/);
-  assert.match(row, /gridTemplateColumns: isNarrow \? "minmax\(0, 1fr\) auto" : undefined/,
-    "the left cell takes the free width and shrinks; the controls keep an auto track");
-  assert.ok(!/gridTemplateColumns:[^\n]*auto minmax/.test(row),
-    "an `auto` first track sizes to the model chip's max-content and pushes the trailing cell out of the row");
+  assert.match(row, /gridTemplateColumns: isNarrow \? "auto minmax\(0, 1fr\)" : undefined/,
+    "the controls keep an auto track, and the chips' cell takes the free width and shrinks");
+  // The phone's strip is the grid's FIRST track, so the More button is the row's first
+  // control, standing right behind `+`; the chips follow in the 1fr track.
+  assert.match(chatInput, /\.\.\.\(isNarrow \? \{ order: 1 \} : null\),\n\s*\}\}>/, "the controls block is track one");
+  assert.match(chatInput, /gap: 2, \.\.\.\(isNarrow \? \{ order: 2 \} : null\) \}\}>/, "the chips' cell is track two");
 });
 
 test("the left cell can shrink, and no context control is left in the row", () => {
@@ -206,32 +212,52 @@ test("the row's ink lines up with the text, not only its boxes", () => {
   assert.match(hint, /right: 0;/, "the box stays at the text's right edge: the ink is moved, not the box");
 });
 
-test("the row's four glyphs are one cluster, behind the attach button", () => {
-  // The ask: the model chip collapses into the controls group (the phone's "More" strip),
-  // and the four icons sit together behind `+` wherever there is room, instead of the
-  // chip standing at the row's left edge and the other three at its right. A phone keeps
-  // the chip in its own cell: its group lives inside "More", and a model picker one tap
-  // deep is the control a phone cannot spare.
+test("the row's glyphs are one cluster, and a phone's strip sits behind the attach button", () => {
+  // The ask (2026-11-25): the model chip collapses into the controls group in every tier,
+  // and the phone's "More" button — the one control that opens that group — sits behind
+  // the attach `+`, not at the card's right edge. So the strip is one unbroken run of
+  // glyphs (model, reasoning, tools, automation) placed by nothing but the tier's own
+  // open/closed state, and the chips' cell is the only thing that shares the row.
   const attachAt = chatInput.indexOf('className="native-toolbar-button composer-attach-button"');
   const controlsAt = chatInput.indexOf('className="chat-composer-controls"');
-  const phoneChipAt = chatInput.indexOf("{isNarrow && modelControl}");
-  const groupChipAt = chatInput.indexOf("{!isNarrow && modelControl}");
+  const moreAt = chatInput.indexOf('aria-label={t("chat.moreControls")}');
+  const chipAt = chatInput.indexOf("{modelControl}");
   const reasoningAt = chatInput.indexOf('aria-expanded={thinkingDropdownOpen}');
   const toolsAt = chatInput.indexOf('aria-expanded={toolDropdownOpen}');
   const automationAt = chatInput.indexOf("<SessionAutomationMenu");
+  const closeAt = chatInput.indexOf('className="composer-controls-close"');
   const spacerAt = chatInput.indexOf("{/* spacer */}");
-  assert.ok(phoneChipAt > 0 && groupChipAt > 0, "the model control is built once and placed by tier");
   assert.equal(chatInput.split("<ModelSelector").length - 1, 1, "one model control, not a second copy per tier");
-  for (const [at, what] of [[attachAt, "attach"], [controlsAt, "the strip"], [phoneChipAt, "the phone's chip"],
-    [groupChipAt, "the cluster's chip"], [reasoningAt, "reasoning"], [toolsAt, "tools"], [automationAt, "automation"],
-    [spacerAt, "the spacer"]]) {
+  assert.doesNotMatch(chatInput, /(isNarrow|!isNarrow) && modelControl/,
+    "the chip is in the cluster in every tier: no tier places it, so a phone has no bare model glyph of its own");
+  // The strip's glyphs are one 32px run. The labelled toolbar chip fills its row on a
+  // phone (`width: 100%`, `flex: 1 1 auto`), and inside the strip's max-content row that
+  // width is the strip's own: it put a 22px gap after the model glyph and squeezed the
+  // strip's close control from 36px to 15px (measured in Chromium and WebKit at 390px).
+  assert.match(modelSource, /width: iconOnly \? undefined : variant === "field" \|\| isMobile \? "100%" : undefined/, "an icon-only model control sizes to its glyph");
+  assert.match(modelSource, /flex: iconOnly \? "0 0 auto" : variant === "toolbar" && isMobile \? "1 1 auto" : undefined/);
+  assert.match(cssRule(css, ".composer-controls-close") ?? "", /flex-shrink: 0;/, "and the control that closes the strip keeps its 36px box");
+  for (const [at, what] of [[attachAt, "attach"], [controlsAt, "the strip"], [moreAt, "the phone's More button"],
+    [chipAt, "the cluster's chip"], [reasoningAt, "reasoning"], [toolsAt, "tools"], [automationAt, "automation"],
+    [closeAt, "the strip's close"], [spacerAt, "the spacer"]]) {
     assert.ok(at > 0, `${what} renders`);
   }
-  assert.ok(attachAt < controlsAt && controlsAt < phoneChipAt && phoneChipAt < groupChipAt, "the strip follows `+`, and the chip joins its group");
-  assert.ok(groupChipAt < reasoningAt && reasoningAt < toolsAt && toolsAt < automationAt,
-    "model, reasoning, tools and automation are one unbroken run of glyphs");
-  assert.ok(automationAt < spacerAt, "the cluster ends before the spacer, so it starts at the row's left");
+  assert.ok(attachAt < controlsAt && controlsAt < moreAt, "the strip follows `+`, and More leads it");
+  assert.ok(moreAt < chipAt && chipAt < reasoningAt && reasoningAt < toolsAt && toolsAt < automationAt,
+    "model, reasoning, tools and automation are one unbroken run of glyphs behind More");
+  assert.ok(automationAt < closeAt, "the strip closes with its own control");
+  assert.ok(closeAt < spacerAt, "the cluster ends before the spacer, so it starts at the row's left");
   assert.doesNotMatch(chatInput, /marginLeft: isNarrow \? 0 : "auto"/,
     "the strip is no longer pushed to the card's right edge");
   assert.match(chatInput, /marginLeft: 0,/);
+  // The strip floats above the row from the More button's edge, and on a phone that
+  // edge is the row's left end: anchored right, the panel would open off the card.
+  assert.match(chatInput, /position: "absolute",\s*left: 0,\s*bottom: 0,/,
+    "the phone's strip opens from the More button's left edge");
+  assert.doesNotMatch(chatInput, /position: "absolute",\s*right: 0,/,
+    "no right anchor: the phone's More button no longer sits at the card's right edge");
+  // A closed phone row prints no model name, so the button that opens the strip names it.
+  assert.match(chatInput, /title=\{controlsMenuOpen \? undefined : moreControlsTitle\}/);
+  assert.match(chatInput, /modelDisplayName \? \`\$\{t\("chat\.changeModel"\)\}: \$\{modelDisplayName\}\` : null,/);
+  assert.match(chatInput, /aria-label=\{t\("chat\.moreControls"\)\}/, "the accessible name stays the short one");
 });
