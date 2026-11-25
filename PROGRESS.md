@@ -532,3 +532,31 @@ Item 7's files (`components/ImagePreview.tsx`, `components/MessageView.tsx`,
 `components/ChatInput.tsx`'s `data-image-gallery`, the CSS section, `e2e/image-swipe.*`,
 `package.json`) are verified and **sit uncommitted in the shared tree** on purpose: the
 agent is editing the same files, so a commit now would carry its unfinished work.
+
+### Item 8, measured in a real conversation (not a fixture)
+The live app puts a collapsed thought inside the turn's **Process details** plate, and
+the row above it is the model/time row (`.message-assistant-model-time`), whose glyph is
+the "clock icon above" the user meant. `test-results/scratch/probe-thinking-align2.mjs`
+(WebKit 390px, session `01a21274-…`, the process group opened as a finger opens it,
+58 thinking cards):
+
+- `glyphX 24 == clockGlyphX 24 == modelRowX 24 == proseX 24` — the lightbulb stands
+  exactly under the clock, and on the prose's edge (the card's own 10px inset used to
+  push it to 34).
+- a cut thought: `data-clipped="true"`, `scrollWidth/clientWidth 1632/312`, the three
+  marks over the cut; a short one: `data-clipped=null`, `88/88`, no marks.
+
+The plate is translucent (`.process-details-content` = `color-mix(in srgb, var(--surface)
+34%, transparent)`), so the marks' `background: var(--bg)` cut a light rectangle into it.
+The surface is now a token the context sets — `.thinking-card { --thinking-cut-surface:
+var(--bg) }` and `.process-details-content .thinking-card { …: color-mix(in srgb,
+var(--surface) 34%, var(--bg)) }` (the plate flattened). Pinned by
+`app/native-theme-phone-pass.test.mjs` (8/8) and measured by `e2e/thinking-preview.mjs`,
+whose fixture now draws a thought **inside** the plate and asserts the marks are opaque,
+equal to the plate's flattened colour, and not the page's.
+
+### Suite state while the panel agent works
+`node --test app/native-theme-phone-pass.test.mjs` 8/8; `e2e/thinking-preview.mjs`,
+`e2e/image-swipe.mjs`, `e2e/composer-ios.mjs` pass. `npm test` has **one** failure, and
+it is the agent's own new file: `hooks/usePopTransition.test.mjs` →
+"SessionAutomationMenu holds its popup for the exit". `tsc --noEmit` is clean again.
