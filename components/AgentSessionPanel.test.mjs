@@ -61,7 +61,11 @@ test("a running row leads with the header's subagent head, not a spinner", () =>
 test("the panel's stylesheet is the menu surface: rounded, shadowed, no rules drawn inside", () => {
   const panel = cssRule(".agent-session-panel");
   assert.ok(panel, "the panel has a fork rule of its own");
-  assert.doesNotMatch(panel, /border/, "no hairline of its own: `.app-menu` carries the separator, the radius and the shadow");
+  assert.doesNotMatch(panel, /border:|--hairline|border-color/, "no hairline of its own: `.app-menu` carries the separator and the shadow");
+  // The panel docks against the conversation column, so the adopted user stylesheet
+  // squares it: the rounded corner used to float a panel that reads as one surface.
+  // `.app-menu` still paints its own shadow; only the corner is the panel's own call.
+  assert.match(panel, /border-radius: 0 !important;/, "the one radius the panel owns: flush with the column it docks into");
   const row = cssRule(".agent-row");
   assert.ok(row, "the row has a fork rule of its own");
   assert.match(row, /border: 0;/, "rows carry no divider: the list draws no rules inside it");

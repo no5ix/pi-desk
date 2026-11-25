@@ -394,7 +394,7 @@ and which names no project. Both now read the repository the folder belongs to
 exported and unit-tested): the label is the project's display name
 (`getProjectDisplayName(projectRoot, availableProjectRoots)` — the same resolution every
 project name uses, so duplicate basenames stay disambiguated), and the glyph in front of it
-is `WorktreeIcon`, the checkout glyph the branch chip uses, in the header
+is `WorktreeIcon`, the checkout glyph, in the header
 (`TopbarProjectChip`'s `isWorktree`) and in the composer (`ComposerProjectChip`'s
 `isWorktree`, fed by `ChatWindow`'s `composerProjectRoot` / `composerProjectIsWorktree`). A
 session carries both from its file (`SessionInfo.projectRoot` / `isWorktree`); a fresh
@@ -402,7 +402,9 @@ composer resolves them from the folder it points at, so the pair agrees with the
 beside it. Only a linked worktree takes the glyph and the project name — a normal checkout
 keeps its folder name, because there the folder *is* the project. The worktree's own path is
 not lost: the project tip's `Path` row is `visibleProjectCwd`, the folder being worked in,
-and the branch chip names the branch that lives there. `components/AppShell.worktree-project.test.mjs`
+and the branch chip names the branch that lives there. **The project row is the chip that
+says which folder this is**, so it is the one that wears the checkout glyph; the branch chip
+beside it always wears `BranchIcon` (see the next section). `components/AppShell.worktree-project.test.mjs`
 pins the resolution and the four places it is worn; live on the user's repository it reads
 `tab-to-find` + the checkout glyph in the header and the composer, with the menu listing
 every branch of the repository.
@@ -478,25 +480,79 @@ being blind.
 
 A new-session composer ends its control row with `[branch icon] main`, right behind
 the project chip (`components/ComposerBranchMenu.tsx`, mounted by `ChatInput` with
-`branchChipCwd` — an open session and a chat render nothing). It opens the project
+`branchChipCwd` — an open session and a chat render nothing). **The chip always wears
+`BranchIcon`.** A worktree session used to wear `WorktreeIcon` there, and the header read
+`[folder] pi-desk  [worktree] wt/x`: one row, the same glyph twice, and a claim about the
+folder standing in front of a branch name. The chip is the project row's twin
+(`.app-topbar-branch-hit` is in the same CSS block), the project chip already says which
+folder this is with its own tip, and the sidebar, the composer's chip and the branch list
+all use `BranchIcon` for "this is a branch". The kind stays in the words: the accessible
+name is `chat.gitWorktreeBranchTitle` ("Worktree branch: x") and the tip's `Branch` row is
+labelled `chat.branchTipWorktreeLabel` ("Worktree branch"), so a phone and a screen reader
+lose nothing. `lib/worktree-folder.ts` is no longer asked of the chip, and the header's
+`WorktreeIcon` lives on the project row, where the folder is the fact
+(`components/AppShell.topbar-branch.test.mjs`, `e2e/topbar-project-row.mjs`).
+
+It opens the project
 menu's own pages (`components/ProjectContextMenu.tsx`, driven by
 `hooks/useProjectWorktreeActions.ts`), so the branch list, "Fetch from remote", the
 worktree list and the new-worktree form are the same code the sidebar's "…" menu
-always used. The chip adds two buttons after every branch name: the branch icon
-checks that branch out in the composer's checkout, the worktree icon opens the
+always used. The chip adds one button after a branch name: the worktree icon opens the
 new-worktree form **from that branch** — the branch is created at the row's tip
 (local ref, else the one remote that carries it) and checked out in
 `<repo>-worktrees/<branch>`, and the new session moves into that folder while the
-folder the composer was opened from keeps its own branch. The form names the base
-branch, and picking an existing worktree moves the session there. A worktree the
+folder the composer was opened from keeps its own branch. The row's **name is the
+switch** (it was always the only thing that could be): a second branch glyph that
+also checked the branch out was a target that did the same thing as the label, and a
+button on a row whose branch git would refuse (this folder's own branch, a branch a
+worktree already holds) promised a click that answers with an error. The form names the base
+branch and the folder the branch lands in, and picking an existing worktree moves the
+session there. A worktree the
 composer was sitting in, once removed, sends the composer to the project's main
 checkout. The sidebar's "…" menu keeps folder actions only: `Switch branch` and
 `Worktrees…` are gone from it, DOM and native, so the app has one branching surface.
 
-The chip opens the **app's** menu on click, on every platform: a branch row carries two
-buttons, which a native popup cannot host, and a long list wants a box to narrow it. The
+**The branch page is a tree, not a list, and it is the panel's first page.** The
+`Project actions` step is gone: the chip opens branches, the panel opens at the top of
+the tree, and Escape, Cancel, a click outside close it, as every other menu of the app.
+`lib/branch-tree.ts` orders it: the branch this folder is on, then the branches that own a
+folder of their own, then the rest — names with no `/` first, then each prefix as a group
+row with an arrow that folds it (`aria-expanded`, and a count of what a fold hides),
+nested as deep as the names go (`wt/a/b` sits under `wt` then `a`), remotes included
+(`origin/main` groups under `origin`). A leaf under a group is labelled by the part the
+group's row did not already say, and carries the full name in `data-branch`: a branch name
+is what a git call takes and what a screen reader reads, and it must never be cut. The
+glyphs are the three facts, in two voices: `ProjectFolderIcon` for the branch this checkout
+is on and for a branch the project's own folder holds, `WorktreeIcon` for a branch with a
+linked folder, plain-ink `BranchIcon` for every other name and every group; the accent
+voice is only ever a fact, never decoration. Titles say what a row will do
+(`sidebar.currentBranchTitle`, `sidebar.mainCheckoutBranchTitle`,
+`sidebar.branchInWorktreeTitle`, `sidebar.branchRemoteTitle`, `sidebar.switchBranchTitle`).
+A removal is confirmed in the row of the branch that owns the worktree, so the
+`Worktrees…` page has no menu item any more — the branches with folders are rows here —
+and the desktop shell keeps its native popup with its own page. A filter box appears once
+the list is longer than `BRANCH_FILTER_THRESHOLD`, and a query unfolds every group: a search
+that answers from inside a folded group is a dead end.
+
+**Nothing in this panel may be cut, so the panel is as wide as its longest name.**
+`.sidebar-project-context-menu--wide` is `width: max-content` with a 240px floor and a
+`min(420px, calc(100vw - 16px))` cap; a branch name has `min-width: 4em` and
+`overflow-wrap: anywhere`, so it is squeezed against the window's own edge by breaking
+inside a word, never by an ellipsis; a `remote` / `worktree` tag is `flex: 0 0 auto` with
+`white-space: nowrap`, because the word "w…" says nothing; and the row's button keeps
+`overflow: hidden` as the last line of defence, with the action icons outside it.
+The new-worktree form's folder hint is a path, so it wraps with `overflow-wrap: anywhere`
+too. `e2e/branch-menu-rows.mjs` measures all of it in Chromium and re-runs the fixture
+with those four rules surgically removed, expecting the overlap back; the unit test
+asserts the CSS carries them, so the browser check cannot pass on an empty file.
+
+The chip opens the **app's** menu on click, on every platform: a branch row carries a
+button — the worktree that branch can start — which a native popup cannot host, and a long
+list wants a box to narrow it. The
 desktop shell keeps the OS popup for the **right-click**, where a plain list of names is
-what a pointer wants (`onContextMenu` → `showNativeProjectBranchMenu`). The chip reads
+what a pointer wants (`onContextMenu` → `showNativeProjectBranchMenu`); the popup answers
+with the same `buildBranchRows` order — the checkout's branch, the worktree branches, the
+rest — because two orders of one list read as two different lists. The chip reads
 `newSessionCwd ?? activeCwd` (`AppShell`'s `onBranchChipCwd`): the folder the composer's
 project chip names. Reading `activeCwd` alone listed the *previously selected* session's
 branches under a chip labelled with the new session's project.

@@ -382,14 +382,12 @@
   font-family: var(--font-ui);
 }
 .sidebar-project-context-menu-branch-tag {
-  /* The tag is short (`remote`, `worktree`, `main`) and it is the part that
-     gives way: it shrinks and ellipsizes, so the branch name keeps its width. */
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 6em;
+  /* The tag is a word (`remote`, `worktree`, a count) and it is never the part
+     that gives way: the panel grows to its longest row, so a tag is shown whole.
+     It keeps its own width and never breaks. */
+  flex: 0 0 auto;
   margin-left: auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  padding-left: 6px;
   white-space: nowrap;
   color: var(--text-dim);
   font-family: var(--font-ui);
@@ -401,9 +399,19 @@
   animation: spin 0.8s linear infinite;
 }
 /* Worktree pages of the project menu: switch / remove rows, the confirm
-   strip, the new-worktree form and the fetch row. */
+   strip, the new-worktree form and the fetch row.
+
+   The width is the longest row's own width, not a number: a panel that is told
+   to be 240px cuts a branch name in half, and a cut branch name is the one thing
+   in this menu the user cannot recover — the full name is nowhere else on the
+   screen (the tip's ellipsis and the row's own clip both hide it). So the panel
+   asks for what its rows need and caps at the window: a 60-character name is a
+   wide menu, and a 60-character name on a phone wraps inside its row rather than
+   running off the screen. */
 .sidebar-project-context-menu--wide {
-  width: 240px;
+  width: max-content;
+  min-width: 240px;
+  max-width: min(420px, calc(100vw - 16px));
 }
 .sidebar-project-context-menu-row {
   display: flex;
@@ -428,28 +436,71 @@
   margin-right: 0;
   padding: 0;
 }
-/* A branch row with the composer chip's two buttons: the name keeps its width
-   and ellipsizes, the icons sit at the row's trailing edge in the same place on
-   every row, so the eye scans one column of branch names. The row's own button
-   is a checkout, so it gets the row's mono face like the plain branch list. */
+/* A branch row with the composer chip's buttons at its trailing edge: the glyph
+   says what the branch is, the name is the switch, and the icons sit in the same
+   place on every row, so the eye scans one column of branch names. The row's own
+   button is a checkout, so it gets the row's mono face like the plain branch list. */
 .sidebar-project-context-menu-row--branch > button[role="menuitem"] {
   display: flex;
   align-items: center;
   gap: 6px;
   font-family: var(--font-mono);
-  /* The name and the `remote` / `worktree` tag share this box. Clipping is the
-     last line of defence: the row's two icons sit right after it, and a tag
-     that outgrows the box used to paint on top of them. */
+  /* The name and the `remote` tag share this box. Clipping is the last line of
+     defence: the row's icons sit right after it, and a tag that outgrows the box
+     used to paint on top of them. Nothing reaches them. */
   overflow: hidden;
 }
 
 /* A long name like claude/settings-layout-review-8265af has to give way, not
    the tag: `overflow-wrap: anywhere` lets it break inside a word, while the
    4em floor stops the flex line from squeezing a branch name into a vertical
-   strip when the tag is wide. The tag is the thing that ellipsizes. */
+   strip when the tag is wide. The panel is as wide as its longest name, so this
+   only ever engages at the window's own edge. */
 .sidebar-project-context-menu-branch-name {
   flex: 1 1 auto;
   min-width: 4em;
+  overflow-wrap: anywhere;
+}
+
+/* The tree of the branch list: the prefix a name already carries becomes a
+   folder that folds, and a branch under it is indented one step per level and
+   named by what the prefix above it does not already say. The chevron turns with
+   `aria-expanded`, so the row says the same thing to a pointer and to a screen
+   reader. */
+.sidebar-project-context-menu .sidebar-project-context-menu-row--tree > button[role="menuitem"] {
+  padding-left: calc(10px + var(--branch-depth, 0) * 14px);
+}
+.sidebar-project-context-menu button[role="menuitem"].sidebar-project-context-menu-branch-group {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-left: calc(4px + var(--branch-depth, 0) * 14px);
+  gap: 5px;
+  color: var(--text-muted);
+}
+.sidebar-project-context-menu button[role="menuitem"].sidebar-project-context-menu-branch-group:hover {
+  color: var(--text);
+}
+.sidebar-project-context-menu-branch-chevron {
+  display: inline-flex;
+  flex: 0 0 10px;
+  color: var(--text-dim);
+  transition: transform 0.12s ease;
+}
+.sidebar-project-context-menu-branch-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+/* The three glyphs, in the two voices the list needs: the accent for the branch
+   this folder is on and for a branch that has a worktree of its own (the two
+   answers), the quiet ink for every other name. */
+.sidebar-project-context-menu-branch-mark.is-plain {
+  color: var(--text-dim);
+}
+.sidebar-project-context-menu-row--branch button[aria-current="true"] .sidebar-project-context-menu-branch-name {
+  font-weight: var(--fw-semibold);
+}
+/* The new-worktree form's sentence ends in an absolute path: a folder the user
+   is being asked to create is the one thing here that must not be cut. */
+.sidebar-project-context-menu-worktree-hint {
   overflow-wrap: anywhere;
 }
 
@@ -5887,7 +5938,9 @@ html.dark {
 .chat-composer-actions > .chat-composer-controls {
   flex: 1 1 auto;
   min-width: 0;
+  /* padding: 0 6px 0 0; */
   padding: 0;
+  margin-right: 15px;
 }
 
 /* Send keeps the card's bottom-right corner even when the phone hides the controls strip.
@@ -5902,14 +5955,14 @@ html.dark {
 
 .chat-composer-editor > .chat-input-textarea {
   box-sizing: border-box;
-  padding-right: 3px;
+  padding-right: 13px;
   /* The width comes from the column's `align-items: stretch`, not from `width: 100%`:
      a full width and a horizontal margin together pushed the text 8px past the card's
      right edge (the phone's Safari showed the caret in the border), and the margin is
      the card's inset. Stretched, a margin can only inset. Keep the top margin vertical
      only — that pairing is the invariant the width is bought with. */
   width: auto;
-  margin: 8px 0 0;
+  margin: 8px 0 18px 8px;
 }
 
 /* Focus only lifts the hairline a step; the caret already says where typing
@@ -6111,7 +6164,7 @@ html.dark {
   align-self: center;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   width: var(--composer-send-size);
   height: var(--composer-send-size);
   padding: 0;
@@ -6125,9 +6178,9 @@ html.dark {
    Left-aligning the glyph inside the (unchanged, touch-sized) disc puts the ink on the
    text's line; the Send disc keeps its centered arrow, because the card's bottom-right
    arc is built around it. */
-.composer-attach-button > svg {
+/* .composer-attach-button > svg {
   flex: 0 0 auto;
-}
+} */
 
 .composer-attach-button[data-active] {
   /* Attached files are the state, and the glyph says so in full colour. No disc: the
@@ -12990,4 +13043,117 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-extra-keys {
     opacity: 0.01;
     font-size: 16px;
   }
+}
+
+/* ==========================================================================
+   Adopted from the user stylesheet (`<agentDir>/desktop/custom.css`, the copy
+   kept at the repo's `custom.css`).
+
+   Those rules were carried in the per-user file that `/api/custom-css` serves
+   last, so they won the cascade on one machine and nowhere else. They are the
+   app's look now, so they live in the fork's theme file: the same rules, the
+   same order (this section is the last thing in the file, where the user
+   stylesheet used to sit), the same `!important` weight, so a machine with no
+   `custom.css` renders what every machine renders. A user file that repeats a
+   rule here changes nothing.
+
+   Keep the section at the end of this file: the rules override native-theme
+   rules that come before them on purpose.
+   ========================================================================== */
+
+/* ---- the composer, and the shadow that replaced its border ---------------- */
+.chat-composer {
+  border: 0 !important;
+}
+
+/* The composer's shadow, one value per theme. Every surface that carries
+   `--shadow-composer` (the topbar, the panels) takes it with these numbers. */
+html.dark {
+  --shadow-composer: 0 0px 0px #00000047, 0 0px 36px #0000004d !important;
+}
+:root {
+  --shadow-composer: 0 0px 0px #0a0a0a47, 0 0px 36px #a57f7f4d !important;
+}
+
+/* ---- the conversation body: no hairlines between its blocks --------------- */
+.compaction-card-header {
+  background: var(--bg-subtle) !important;
+}
+
+.markdown-body .markdown-inline-code {
+  box-shadow: none !important;
+  background: var(--bg-selected) !important;
+}
+
+/* The conversation's header: a shadow, not a rule under it. */
+.app-topbar {
+  border-bottom: 0 !important;
+  box-shadow: var(--shadow-composer) !important;
+}
+
+/* The read-only panels that dock beside the conversation: the panel's own ink,
+  and the two edges that face the conversation. */
+.session-info-popover {
+  background: var(--bg-panel) !important;
+  border-bottom: var(--hairline) solid var(--border) !important;
+  border-left: var(--hairline) solid var(--border) !important;
+}
+.agent-session-panel {
+  background: var(--bg-panel) !important;
+  border-radius: 0 !important;
+}
+.system-prompt-panel {
+  background: var(--bg-panel) !important;
+  border-bottom: var(--hairline) solid var(--border) !important;
+  border-left: var(--hairline) solid var(--border) !important;
+}
+
+/* The extension status line (LSP, background tasks): one line of 17px, so the
+   strip never takes a row of its own height away from the conversation. */
+.extension-status-line {
+  min-height: 17px !important;
+  max-height: min(17px, 18vh) !important;
+}
+
+/* ---- the folder window --------------------------------------------------- */
+.directory-picker-entry {
+  border-radius: 0 !important;
+}
+.directory-picker-path:focus-visible {
+  box-shadow: none !important;
+  border: var(--hairline) solid var(--border) !important;
+}
+.directory-picker-filter:focus-visible {
+  border: var(--hairline) solid var(--border) !important;
+}
+
+/* No platform focus ring anywhere: the app marks the focused control with its
+   own box-shadow / border, and the ring drew a second outline over it. */
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: none !important;
+}
+
+/* A phone's folder window: rows are as tall as their label, and the panel's
+   close button moves to the edge the thumb is at. */
+@media (max-width: 640px) {
+  .directory-picker-back,
+  .directory-picker-entry,
+  .directory-picker-action {
+    min-height: 0 !important;
+  }
+  .right-panel-tab-strip {
+    padding-right: 10px !important;
+  }
+}
+
+/* ---- the left sidebar ---------------------------------------------------- */
+.app-sidebar {
+  border-right: 0 !important;
+}
+.sidebar-search-input {
+  border: 0;
 }

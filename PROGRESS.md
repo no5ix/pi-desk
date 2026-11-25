@@ -1,104 +1,72 @@
-# PROGRESS — selective pi-web backport (branch `chore/selective-pi-web-backport`)
+# PROGRESS — the composer's branch picker, its tree, and the adopted user stylesheet
 
-Branch from `pi-desk-main` at `41913bcd`. Source: `agegr/pi-web` (remote
-`pi-web`, fetched as `refs/pull/{1730,1731,1739,1742}/head` and `3443700`).
-The item table with results is PLAN.md; the reasoning is DECISIONS.md.
-The previous task's log (notification reliability) is in git history
-(`git log -- PROGRESS.md`).
+Branch `wt/2wt-branch-picker-header-worktrees`. The task is the seven items in
+PLAN.md (six from the user's screenshots of 2026-11-25, plus the user's
+`custom-bak.css`); the reasoning is in DECISIONS.md.
 
-**All five items are committed on the branch.**
+**All seven items are implemented, verified, committed as `20729757` and pushed to
+`origin/wt/2wt-branch-picker-header-worktrees`.**
 
-| sha | what |
-| --- | --- |
-| `f8bac2c2` | #1731 `fix(stats)`: a count just under a million shows as `1.0M`, not `1000k` |
-| `78665202` | #1730 `fix(agents)`: `MAX_SESSION_STATS_IDS` lives in `lib/session-stats.ts` where a caller can batch by it |
-| `197f0d7a` | `chore(deps)`: pi `1.5.2` → `1.6.0` (every `@earendil-works/*`, pinned exact) |
-| `b72769da` | #1742 `feat(subagents)`: a background report is steered into the parent's running run |
-| `dd5ee7ad` | #1739 `fix(subagents)`: the report survives a steer that arrives as the child finishes it |
-| `66f67abc` | #1742 `fix(subagents)`: `get_subagent_result` names the parent's own id as a wrong poll |
-| `844b2fa1` | `test(models)`: pi 1.6.0 moved `qwen-token-plan-cn` to `token-plan.maas.qianwenaiapi.com` |
+## What is on the branch
+
+| # | Item | State |
+| --- | --- | --- |
+| 1 | Every rule of `~/Desktop/custom-bak.css` adopted into `app/native-theme.css` | done — repo-root `custom.css` untouched (it is the user's own file, served by `/api/custom-css`) |
+| 2 | A branch row's worktree button opens the **new-worktree form** | done — `openWorktreeForm` in `components/ComposerBranchMenu.tsx` sets `NEW_WORKTREE_VIEW` with the row's branch as base |
+| 3 | The form: no back button, no "Switch worktree" title; the hint names the base branch **and** the destination folder | done — `sidebar.newWorktreeFrom` / `sidebar.newWorktreeInto`, path from `worktreePathForBranch()` |
+| 4 | The header's branch chip always wears the **branch** glyph | done — `components/TopbarBranchChip.tsx`; the checkout glyph moved to the project chip |
+| 5 | The branch page: no back row, no "Project actions"; the panel is as wide as its longest name | done — `width: max-content` (240px floor, `min(420px, 100vw - 16px)` cap), names break inside a word, tags never ellipsize |
+| 6 | A foldable branch tree: current branch, worktree branches, then prefix groups | done — `lib/branch-tree.ts` + the panel; three glyphs in two voices |
+| 7 | The "Worktrees…" menu item removed | done in the DOM panel; the native desktop popup keeps its page |
 
 ## Implementation state
 
-* **#1731** — cherry-pick `c919f735`, clean; the fork's `lib/session-stats-format.ts`.
-* **#1730** — the fork has no agent switcher, no `AgentStatusBar`, no
-  `lib/agent-switcher.ts`: upstream's `fetchAgentUsage()` batching has no caller
-  here. Ported the half the fork can use: the cap is exported from
-  `lib/session-stats.ts`, `app/api/sessions/stats/route.ts` imports it, and the
-  route test asserts the exported number and the refusal sentence.
-* **pi 1.6.0** — `npm install` from HEAD's lock; `check:deps`,
-  `lib/pi-packages.test.mjs`, `tsc`, `npm run desktop:prepare` (webpack build +
-  payload credential scan: 0 findings, the sharp libvips allowlist entry) and
-  `npm run desktop:verify` (Code mode sandbox self-test `{"state":"available"}`,
-  Bedrock import, bundled terminal `PI_PACKAGED_TERMINAL_OK`) all pass.
-  One fork test pinned 1.5.2's provider data (`844b2fa1`).
-* **#1742** — `steerIntoRun()` queues the report as a
-  `pi-web:subagent-notification` custom message at the parent's `turn_end`
-  (`deliverAs: "steer"`), so the parent's next model call in the run it is
-  already in takes it; `canSteerAfterTurn()` refuses (and falls back to the old
-  follow-up wake) after an error/aborted turn, after Stop, while chat-typed input
-  is queued (`one-at-a-time`), and for a parent that is itself a subagent which
-  has used its turns. Delivery is confirmed by pi's `message_end` for that report
-  (`settledSubagentNotification`), not by the promise of the send. `lib/pi-types.ts`
-  gained `agent.signal` and `agent.hasQueuedMessages()`.
-* **#1739** — `runResultText(sessionManager, from)` reads the child's entries from
-  `stored.entryBase` (an entry index), joins every assistant text that ended a
-  turn with no tool call, and projects `context_edit` (omit / rewrite, latest
-  wins) the way pi projects them for the model. Start, resume, success and catch
-  record it; the fork's resume-catch path records partial output for the first
-  time. No boundary, or a window with no answer, falls back to
-  `getLastAssistantText()`; a direct turn in a child's own chat keeps
-  `getLastAssistantText()`.
+* **`lib/branch-tree.ts`** (new, pure): `buildBranchRows` (current → worktree/project
+  branches → the rest, each row with `holderPath` / `holderIsMain`), `buildBranchTree`
+  (a tree of the `/` prefixes, remotes included), `flattenBranchTree` (the rows the panel
+  paints, with the fold honoured and every group open while filtering),
+  `worktreePathForBranch` (the client mirror of `lib/worktree.ts`'s `sanitizeBranchForDir`).
+  `lib/branch-tree.test.mjs`: 7 tests.
+* **`components/ProjectContextMenu.tsx`**: the branch page is the tree; the actions step,
+  the back rows and the "Worktrees…" item are gone; a removal is confirmed in the row of
+  the branch that owns the worktree; the new-worktree page is the form and nothing else,
+  and Escape/Cancel close the menu. The native popup answers with the same row order.
+* **`components/GitIcons.tsx`**: `ProjectFolderIcon` (the sidebar's folder shape) joined
+  `BranchIcon` / `WorktreeIcon`, and `TopbarProjectChip` uses it.
+* **`app/native-theme.css`**: the panel-width rules, the tree's indentation, the chevron,
+  the mark's two voices, the folder hint's wrap — and a closing section that adopts the
+  user stylesheet (composer border and shadow, topbar/panel edge removal, the folder
+  window, focus rings, phone tweaks, sidebar/search).
+* **i18n**: `sidebar.currentBranchTitle`, `sidebar.mainCheckoutBranchTitle`,
+  `sidebar.branchGroupExpand/Collapse/Count`, `sidebar.newWorktreeFrom/Into` in en,
+  zh-CN, zh-TW (`lib/i18n/locale-plugins.ts`).
+* **Docs**: `docs/agents/fork-ui.md` (the chips' glyphs, the tree, the panel's width) and
+  `docs/agents/files-and-access.md` (the form names the folder the server will create).
 
 ## Verification
 
-* `node_modules/.bin/tsc --noEmit` — clean.
-* `npm run lint` (`eslint .` + branding) — clean.
-* Full `npm test` — 4608 tests, 4607 pass, 0 fail, on the final tree.
-  (An earlier run showed exactly 2 failures, the builtin-match test that pinned
-  pi 1.5.2's Qwen Token Plan endpoint; `844b2fa1` follows the SDK's data.)
-* Touched suites, all green: `lib/subagent*.test.mjs` (244, incl. the real-SDK
-  integration suite), `lib/subagent-extension.test.mjs`,
-  `components/MessageView.subagent-report.test.mjs`,
-  `app/api/sessions/stats-route.test.mjs`, `lib/session-stats-format.test.mjs`,
-  `lib/pi-packages.test.mjs`, `components/fork-extractions.test.mjs`.
-* `npm run drift` — 6 files disagree with `scripts/fork-ownership.json`
-  (`FileExplorer`, `MarkdownBody`, `web-push`, `request-security`,
-  `PwaRegistration`, `directory-browser`). Verified pre-existing: the same 6
-  disagree on `pi-desk-main`. No file this branch touched is among them
-  (`lib/subagent-runtime.ts` is recorded `high` and stays `high`). Left alone:
-  the registry update belongs to a sync, not to this backport.
+* `node --test components/*.test.mjs lib/*.test.mjs lib/i18n/*.test.mjs scripts/*.test.mjs`
+  → **3985 pass, 0 fail**.
+* `node_modules/.bin/tsc --noEmit` → clean. `npx eslint app lib components hooks` →
+  no new warning (the pre-existing SkillsConfig / project-skills ones remain).
+* `node --test scripts/ui-menu-consistency.test.mjs` → 2/2.
+* `node e2e/branch-menu-rows.mjs` → 7 rows at 360px (the panel grew to the longest name,
+  capped at 420px), the longest name on one line with nothing cut, 2 prefix groups open
+  with their arrows, no tag/icon overlap; the control pass (the four rules surgically
+  removed) overlaps 5 of 7 rows.
+* `node e2e/branch-menu-filter.mjs` → 12 branches as 6 prefix groups, the checkout's
+  branch at the head, a fold hides 3 and puts them back, the filter box for the long
+  project only (`fix/` → 3, `Settings` → 2, `zzz` → the sentence), Escape closes, the
+  short project keeps none.
+* `node e2e/topbar-project-row.mjs`, `node e2e/sidebar-menu-placement.mjs` → green.
+* `npm run drift` → the 6 files that disagree with `scripts/fork-ownership.json` are
+  files this task did not touch (pre-existing on the branch).
 
 ## Next
 
-Nothing outstanding for these five items. If the branch is merged, the follow-up
-this work exposed (BLOCKERS.md): the fork's `AgentStatusBar`-shaped live report
-surface does not exist, so a steered report shows up only as the custom message
-the parent's turn renders.
-
-## Tailscale Serve: an OS-assigned port hijacked the tailnet URL (fixed)
-
-- **Report:** `npm start` on 30141, but `tailscale serve status` printed
-  `/ proxy http://127.0.0.1:55530`, so `https://macb00kpr0m4.taila0e40f.ts.net`
-  opened nothing.
-- **Cause:** the startup registration runs `tailscale serve --bg <port>` for any
-  resolved port, and `PORT` is a candidate in `resolveServePort()`. A launch that got
-  an OS-assigned port — the packaged app's last-resort `choose_port`
-  (`src-tauri/src/lib.rs`) or `npm run desktop:verify`, which boots the staged server
-  on `freePort()` — rewrote the machine's single `/` serve handler onto a port that
-  stops listening with that process. `npm start` is not the writer: its `-p 30141`
-  beats `PORT`.
-- **Fix:** `isAutoServePort()` refuses the IANA ephemeral range (≥ 49152), as the first
-  statement of `ensureTailscaleServe()`, so such a launch reads and writes no Tailscale
-  state and never starts the app; the outcome state is `"ephemeral"` and startup logs
-  one dim line why. `scripts/verify-packaged-codemode.mjs` sets
-  `PI_WEB_DISABLE_TAILSCALE_SERVE=1` in its spawn env, like `scripts/e2e-server-env.mjs`.
-- **Verified here:** `ensureTailscaleServe(55530)` → `state=ephemeral`, `status=""`,
-  config unchanged; `ensureTailscaleServe(30141)` → `state=served`; `tailscale serve
-  status` reads `/ proxy http://127.0.0.1:30141`; `curl
-  https://macb00kpr0m4.taila0e40f.ts.net/api/home` → 200.
-  `node --test lib/tailscale-serve.test.mjs` 11/11 green.
-- **Next:** nothing for this fix. A second Pi on the machine (the packaged app on
-  38471) still takes over the one `/` handler when it starts — the tailnet can only
-  carry one port per machine, so that is a product decision, not a bug. Two stray
-  `npm start` processes (the second failed to bind 30141) were left running.
+* Commit and push `wt/2wt-branch-picker-header-worktrees`.
+* Open question for the user, not a blocker: the adopted stylesheet hides
+  `.extension-status-line` and `.sidebar-search-input`, and squares `.agent-session-panel`
+  (`components/AgentSessionPanel.test.mjs` was updated to pin that corner as the panel's
+  own call). Those are the user's look, adopted on request; say the word and any one of
+  them goes back.

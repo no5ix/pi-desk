@@ -2,7 +2,7 @@
 
 import { useI18n } from "@/hooks/useI18n";
 import { branchOwnsWorktreeFolder } from "@/lib/worktree-folder";
-import { WorktreeIcon } from "./GitIcons";
+import { ProjectFolderIcon, WorktreeIcon } from "./GitIcons";
 import { TopbarTip, TopbarTipRow, useTopbarTip } from "./TopbarTip";
 
 /**
@@ -47,9 +47,7 @@ export function TopbarProjectChip({ name, path, branch = null, isWorktree = fals
             folder switched to an ordinary branch is a folder — the user asked for exactly
             that, and lib/worktree-folder.ts is the rule. */}
         {isWorktree && branchOwnsWorktreeFolder(path, branch) ? <WorktreeIcon size={13} /> : (
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />
-          </svg>
+          <ProjectFolderIcon size={13} />
         )}
         <span>{name}</span>
       </button>

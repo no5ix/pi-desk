@@ -263,3 +263,41 @@
 - **A deliberate `PORT=<ephemeral>` launch is the user's call.** Settings ›
   Remote access keeps copying `tailscale serve --bg <the page's port>`; that
   remains the way to register a port the app refuses to register for you.
+
+---
+
+# Branch picker decisions (2026-11-25)
+
+- **The header's branch chip always wears `BranchIcon`.** A worktree session used to
+  wear `WorktreeIcon`, giving one row `[folder] pi-desk  [worktree] wt/x`: the same glyph
+  twice and a claim about the folder in front of a branch name. The project row is the
+  chip that says which folder this is (its tip carries the path), so the checkout glyph
+  lives there; the kind stays in the words (`chat.gitWorktreeBranchTitle`,
+  `chat.branchTipWorktreeLabel`), which is where a phone and a screen reader read it.
+- **A branch row's name is the switch; its one trailing button is the worktree that
+  branch can start.** The second (branch) glyph did what the label already did, and a
+  button on a row git would refuse (this folder's own branch, a branch a worktree holds)
+  promises a click that answers with an error. The worktree button opens the
+  new-worktree form, never a list of names.
+- **The branch page is the tree and the panel's first page.** No `Project actions` step,
+  no back rows; Escape, Cancel and a click outside close it. The `Worktrees…` item is
+  gone from the DOM panel because every branch with a folder is a row of the tree with
+  the glyph that says so, and a removal is confirmed in that branch's own row. The
+  desktop shell keeps its native popup with its page, and answers with the same
+  `buildBranchRows` order.
+- **Nothing in the panel may be cut, so the panel is as wide as its longest name**:
+  `width: max-content`, a 240px floor and a `min(420px, calc(100vw - 16px))` cap; a name
+  breaks inside a word at the window's edge, a `remote` / `worktree` tag keeps its word
+  whole. A branch name exists nowhere else on the screen; an ellipsis over one is data
+  loss.
+- **The new-worktree form names the base branch and the destination folder.**
+  `worktreePathForBranch()` in `lib/branch-tree.ts` mirrors `sanitizeBranchForDir()` in
+  `lib/worktree.ts`: one rule in two places, pinned by `lib/branch-tree.test.mjs`.
+- **`~/Desktop/custom-bak.css` is adopted into `app/native-theme.css`, not into
+  `custom.css`.** Fork rules belong in the fork's theme file (the upstream CSS is
+  byte-identical and `custom.css` is the user's own runtime file); the adopted block is
+  marked as such, including the squares-it `.agent-session-panel` corner, which
+  `components/AgentSessionPanel.test.mjs` now pins as the panel's own call.
+- **The browser checks keep their control passes.** `e2e/branch-menu-rows.mjs` re-serves
+  the fixture with the four width rules surgically removed and expects the overlap back;
+  a check that cannot see the bug it was written for is not a check.
