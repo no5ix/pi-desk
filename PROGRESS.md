@@ -515,3 +515,20 @@ No page errors in any run. The two checks that cannot be made from a desktop bro
 the iPhone keyboard's caret (item 2) and its travel (item 3) — are carried by
 `lib/composer-caret.ts` + `hooks/useComposerCaret.ts` and
 `settleKeyboardViewportHeight`, with unit tests and the WebKit row-geometry e2e.
+
+### Blocker, and what is gated on it
+The panel agent's in-progress edit left the shared dev server unable to compile
+(`components/TopbarTip.tsx:119` — `Error: Expression expected`), so **every page of
+`http://127.0.0.1:30141` is blank** while it works. Steering sent (it must land that file
+compiling, keep `tsc`/lint/`npm test` clean, and report any popup-plumbing reach beyond
+the Git view). Gated on it:
+- item 1's live check on a real **running** session (`test-results/scratch/probe-composer-live.mjs`,
+  written and ready: it compares each composer control's box with
+  `html[data-keyboard-open]` on and off — the side-chat bubble, the control strip, the
+  `More` button, `+`, Send — the WebKit fixture e2e already covers the same invariant);
+- item 11's live measurement at 390px and 1280px, which is part of its acceptance.
+
+Item 7's files (`components/ImagePreview.tsx`, `components/MessageView.tsx`,
+`components/ChatInput.tsx`'s `data-image-gallery`, the CSS section, `e2e/image-swipe.*`,
+`package.json`) are verified and **sit uncommitted in the shared tree** on purpose: the
+agent is editing the same files, so a commit now would carry its unfinished work.
