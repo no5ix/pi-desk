@@ -212,6 +212,42 @@ strip fades and scales from `left bottom`, the More button's edge it is anchored
 its box, and reduced motion drops the travel and shortens the fade. Pinned by
 `components/ChatInput.composer-row.test.mjs`.
 
+### Composer menus land in the conversation column, never under the sidebar
+
+The Reasoning, Config (tool preset) and session-automation menus hang above their 32px
+button. Two independent mechanisms made all three unreadable, photographed side by side
+with a wide sidebar:
+
+- **Collapse.** An `position: absolute` box with `right: 0` and only a `minWidth` is
+  shrink-to-fit against its containing block, and the containing block is the button's own
+  `position: relative` wrapper — 32px. So the used width collapsed to the minimum and every
+  row wider than that was cut by the menu's own `overflow: hidden`: the Config menu opened
+  as "n defaultTools" and the Reasoning menu centred its rows with the star sitting behind
+  the text instead of at the panel's right edge.
+- **The sidebar's column.** The menus sat at `zIndex: 100` inside `.app-main-column`, which
+  is `overflow: hidden`, while the sidebar is a sibling at `zIndex: 200`. Anything of a menu
+  that reached the sidebar's column was clipped at the column's left edge and painted over by
+  the sidebar. The Config menu made it worse by clamping itself to the *window* (`Math.max(16, …)`),
+  and 16px from the window's left edge is inside the sidebar.
+
+The rule: **a composer menu takes an explicit width and is placed inside the box the page can
+show** — the visual viewport intersected with every ancestor that clips horizontally (the
+conversation column is the clipper that decides the left edge), each edge kept 16px clear for
+the shadow. A desktop menu still hangs left from the button, a phone from its left edge, and a
+menu is never wider than the box. Vertically the same rule already ran on the composer
+(`getVisibleTopBoundary` in `components/ChatInput.tsx`, #63); this is it turned sideways.
+All of it lives in `lib/composer-panel-placement.ts` (`composerPanelBounds`,
+`placeComposerPanel`, `composerPanelAnchoring` — null when nothing can be measured, so a
+server render keeps the plain `right: 0` / `left: 0`), and the three menus pass their width
+constant (`COMPOSER_RUN_MENU_WIDTH` / `COMPOSER_TOOL_MENU_WIDTH` / `COMPOSER_AUTOMATION_MENU_WIDTH`).
+The z-indexes stayed as they are: a menu clamped to the column cannot reach the sidebar, so
+there is no layer war to win.
+
+`lib/composer-panel-placement.test.mjs` pins the collapse, the sidebar as the limit, the
+narrow-column cap, the phone's gutter and the wiring; the geometry was measured in a browser
+with the sidebar dragged to 480px at 1000px, 900px and 430px (viewport, panel, and every row's
+box inside it).
+
 ## Conversation find
 
 `ConversationFind` is mounted by `ChatWindow`. Ctrl+F / Cmd+F searches the current

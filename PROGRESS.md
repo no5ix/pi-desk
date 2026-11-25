@@ -95,3 +95,56 @@ mirror files **absent**.
 
 ## Next
 - Nothing outstanding for the ask.
+
+---
+
+# PROGRESS — the composer's menus stop opening under the sidebar, and a pin is ink
+
+Branch `feat/branch-picker-header-worktrees`. The ask: (1) a pinned session's title
+goes back to the row's own ink and the **unpinned** titles (plain, side chat, and a
+subagent run under an unpinned parent) step back a quarter tone; (2) three panels
+photographed cut off — the Reasoning menu, the Config menu ("n defaultTools") and the
+session-automation menu — "blocked by left side bar".
+
+**Item 2 is implemented, measured and committed. Item 1 is implemented and measured,
+and is deliberately left in the working tree: it rides on the tree's uncommitted
+`components/SessionSidebar.tsx` (the `is-pinned` class on the title, the tooltip, the
+glyph removal), so a commit without that file is red — `SessionSidebar.test.mjs`
+asserts the class and that no `session-item-pin` is left.**
+
+## What changed (item 2)
+
+- `lib/composer-panel-placement.ts` (new, pure + a thin DOM collector):
+  `composerPanelBounds` intersects the visual viewport with every ancestor that clips
+  horizontally, `placeComposerPanel` puts a menu of a given width inside that box
+  (desktop from the button's right edge, phone from its left, never wider than the box),
+  `composerPanelAnchoring` returns the `left`/`width` to set, or null so a server render
+  keeps the plain `right: 0` / `left: 0`.
+- Wired into all three menus: the Reasoning and Config menus
+  (`components/ChatInput.tsx`, in HEAD from the composer-copies commit) and
+  `components/SessionAutomationMenu.tsx`.
+- The two causes, both measured: an `absolute` box with `right: 0` and only a `minWidth`
+  is shrink-to-fit against its containing block — the button's 32px wrapper — so it
+  collapsed and `overflow: hidden` cut its rows; and a menu clamped to the *window*
+  (`Math.max(16, …)`) lands inside the sidebar, whose column clips the menu
+  (`.app-main-column { overflow: hidden }`) and paints above it (sidebar z-index 200,
+  the menus' 100). The z-indexes are untouched: a menu clamped to the column cannot
+  reach the sidebar.
+- `lib/composer-panel-placement.test.mjs` (new) pins the collapse, the sidebar as the
+  limit, the narrow-column cap, the phone's gutters, the clip intersection, the wiring of
+  all three menus, and the server fallback.
+- Docs: the new section in `docs/agents/fork-ui.md`, the file-map entry and a hard rule
+  in `AGENTS.md`.
+
+## Verification
+
+- Geometry measured in a real browser against the running dev server, with the sidebar
+  dragged to 480px, at 1000 / 900 / 430px: every panel's box satisfies
+  `left >= sidebar.right` and every row's box sits inside the panel
+  (`scrollWidth === clientWidth`, content overflow 0px). Reasoning 320px, Config 304px,
+  automation 300px; screenshots `/tmp/menu-*.png`.
+- The ink rule (item 1) was read in the same screenshots: the two pinned rows are the
+  darkest text in the sidebar, the unpinned ones a quarter tone back, light theme.
+
+## Next
+- Item 1 commits with the tree's sidebar work (its CSS, its test, `docs/agents/sessions.md`).
