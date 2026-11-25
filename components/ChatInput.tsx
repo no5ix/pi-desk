@@ -2350,6 +2350,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       // The row is icon-only, like the reasoning and tools buttons; the model's
       // name rides in the button's title and aria-label.
       iconOnly
+      // The picker is one of the composer's menus: its panel is placed by the shared
+      // engine, so on a phone it takes the screen's width instead of the strip's.
+      composerAnchored
       defaultValue={defaultModel}
       onSetDefault={onSetDefaultModel}
     />

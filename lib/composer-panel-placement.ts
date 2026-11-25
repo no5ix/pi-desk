@@ -36,6 +36,13 @@ export const COMPOSER_PANEL_EDGE_GUTTER = 16;
 export const COMPOSER_RUN_MENU_WIDTH = 320;
 export const COMPOSER_TOOL_MENU_WIDTH = 304;
 export const COMPOSER_AUTOMATION_MENU_WIDTH = 300;
+/**
+ * The model picker. Its rows are `provider/model` identifiers a full 40 characters
+ * long, so it asks for more than the reading menus and `placeComposerPanel` clamps
+ * that to the whole box: on a phone the picker is as wide as the screen allows, and
+ * on a desktop it stops at this width rather than running to the window.
+ */
+export const COMPOSER_MODEL_MENU_WIDTH = 420;
 
 /** A horizontal box in viewport CSS pixels. */
 export interface HorizontalBox {

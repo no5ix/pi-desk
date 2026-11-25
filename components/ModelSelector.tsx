@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { isImeComposing } from "@/lib/ime";
+import { COMPOSER_MODEL_MENU_WIDTH, composerPanelAnchoring } from "@/lib/composer-panel-placement";
 import { SelectorRow } from "./SelectorRow";
 
 export interface ModelSelectorOption {
@@ -34,6 +35,15 @@ interface ModelSelectorProps {
    */
   iconOnly?: boolean;
   placement?: "up" | "auto";
+  /**
+   * The picker sits in the composer's control row. Its panel then hangs from its own
+   * button and is placed by `lib/composer-panel-placement`, because it cannot be a
+   * `position: fixed` box there: the phone's control strip animates with `translate`
+   * and `scale` and blurs its backdrop, and both make the strip the containing block
+   * for a fixed descendant — `left: 8; right: 8` measures the strip's own ~200px, and
+   * the model list opens as a narrow column that cuts every model name.
+   */
+  composerAnchored?: boolean;
   /** The model new sessions start with; its row gets a filled star. */
   defaultValue?: { provider: string; modelId: string } | null;
   /** Shows a star on every row that saves it as the default. */
@@ -75,6 +85,7 @@ export function ModelSelector({
   variant = "toolbar",
   iconOnly = false,
   placement = "up",
+  composerAnchored = false,
   defaultValue,
   onSetDefault,
 }: ModelSelectorProps) {
@@ -266,12 +277,32 @@ export function ModelSelector({
         const spaceBelow = viewportHeight - anchorRect.bottom - 8;
         const openAbove = placement === "up" || spaceAbove > spaceBelow;
         const maxHeight = Math.max(120, Math.min(openAbove ? spaceAbove : spaceBelow, viewportHeight * 0.6));
-        const verticalPosition = openAbove
-          ? { bottom: viewportHeight - anchorRect.top + 6 }
-          : { top: anchorRect.bottom + 6 };
-        const horizontalPosition: CSSProperties = isMobile
-          ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
-          : { left: anchorRect.left, width: "max-content", minWidth: anchorRect.width, maxWidth: Math.max(anchorRect.width, viewportWidth - anchorRect.left - 8) };
+        // In the composer, the panel hangs from its own button and is placed by the
+        // shared engine: a number for the width (never shrink-to-fit on the 32px chip)
+        // and a box that stops at the sidebar. `composerPanelAnchoring` returns the
+        // anchor's own coordinates, so it is right whatever the containing block is —
+        // including the phone's strip, whose transform and backdrop-filter capture a
+        // fixed-position descendant (see the prop). Elsewhere (a settings field) the
+        // panel stays a viewport-fixed box: full width on a phone, content width on
+        // a desktop.
+        const anchoring = composerAnchored
+          ? composerPanelAnchoring(rootRef.current, COMPOSER_MODEL_MENU_WIDTH, { alignLeft: isMobile })
+          : null;
+        const position: CSSProperties = composerAnchored
+          ? {
+              position: "absolute",
+              ...(openAbove ? { bottom: "calc(100% + 6px)" } : { top: "calc(100% + 6px)" }),
+              ...(anchoring ? { left: anchoring.left, width: anchoring.width } : { width: COMPOSER_MODEL_MENU_WIDTH, ...(isMobile ? { left: 0 } : { right: 0 }) }),
+            }
+          : {
+              position: "fixed",
+              ...(openAbove
+                ? { bottom: viewportHeight - anchorRect.top + 6 }
+                : { top: anchorRect.bottom + 6 }),
+              ...(isMobile
+                ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
+                : { left: anchorRect.left, width: "max-content", minWidth: anchorRect.width, maxWidth: Math.max(anchorRect.width, viewportWidth - anchorRect.left - 8) }),
+            };
 
         return (
           <div
@@ -280,9 +311,7 @@ export function ModelSelector({
             role="listbox"
             aria-label={ariaLabel}
             style={{
-              position: "fixed",
-              ...verticalPosition,
-              ...horizontalPosition,
+              ...position,
               zIndex: 500,
               display: "flex",
               flexDirection: "column",
