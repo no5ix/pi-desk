@@ -6,6 +6,10 @@
 
 import type { RefObject } from "react";
 import type { SessionAutomation, SessionAutomationChange } from "@/hooks/useSessionAutomation";
+import {
+  COMPOSER_AUTOMATION_MENU_WIDTH,
+  composerPanelAnchoring,
+} from "@/lib/composer-panel-placement";
 import { useI18n } from "@/hooks/useI18n";
 
 interface SessionAutomationMenuProps {
@@ -49,11 +53,18 @@ export function SessionAutomationMenu({
           <path d="M13 2 4.5 13.5H12L11 22l8.5-11.5H12L13 2Z" />
         </svg>
       </button>
-      {open && (
+      {open && (() => {
+        // The same rule as the composer's other two menus: an explicit width (a box
+        // with only minWidth collapses to the 36px button and clips its own rows), and
+        // a box that ends at the sidebar's edge — the sidebar clips what reaches its
+        // column and paints above it, and this menu's checkbox labels and segmented
+        // buttons were the first thing cut.
+        const anchoring = composerPanelAnchoring(menuRef.current, COMPOSER_AUTOMATION_MENU_WIDTH, { alignLeft });
+        return (
         <div className="native-popover app-menu" style={{
           position: "absolute",
           bottom: "calc(100% + 6px)",
-          ...(alignLeft ? { left: 0 } : { right: 0 }),
+          ...(anchoring ? { left: anchoring.left, width: anchoring.width } : alignLeft ? { left: 0 } : { right: 0 }),
           zIndex: 100, background: "var(--bg)", border: "var(--hairline) solid var(--border)",
           borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-popover)",
           padding: "6px 0", minWidth: 230,
@@ -149,7 +160,8 @@ export function SessionAutomationMenu({
           )}
           </>)}
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
