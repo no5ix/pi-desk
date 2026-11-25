@@ -9,13 +9,14 @@ import { createJiti } from "jiti";
  *
  * The row is the outbox's row with two differences, and both are the design:
  * a copy belongs to the device that typed it, so there is **no edit button and
- * no delete button** — no device edits or deletes another's content — and the
- * row is marked by the **browser** that typed it (Safari's compass, Chrome's
- * wheel), because "whose draft is this" is the only question a row has to answer
- * and a mark is read where a `mac-content-copy` slug is scan noise. The name the
- * slug carries is not gone: it is the row's tooltip and its accessible name.
- * The row's one action is `onUse`, which prepends the copy into this composer
- * and leaves the row alone.
+ * no delete button** — no device edits or deletes another's content — and the row
+ * is marked by a **pair**: the machine, then the **browser** that typed it (a
+ * screen with Safari's compass; a phone body with Chrome's wheel), because "whose
+ * draft is this" asks about both and one compass made a MacBook and an iPhone
+ * twins. The device's slug is not printed — it is the row's tooltip and its
+ * accessible name — because a slug is scan noise where two marks are read at a
+ * glance. The row's one action is `onUse`, which prepends the copy into this
+ * composer and leaves the row alone.
  */
 
 const jiti = createJiti(import.meta.url, { tsconfigPaths: true });
@@ -32,21 +33,22 @@ test("a copy row is read-only: no edit, no delete, no send", () => {
   assert.match(row, /className="composer-outbox composer-device-copies"/, "it reuses the outbox's docked surface");
 });
 
-test("the mark is the browser the copy came from, with the device glyph as its fallback", () => {
+test("the mark is a pair: the machine, then the browser that typed the copy", () => {
+  assert.match(row, /<DeviceCopyGlyph kind=\{copy\.kind\} \/>/, "the machine comes first: a MacBook's screen, an iPhone's body");
+  assert.match(row, /<BrowserCopyGlyph browser=\{copy\.browser\} \/>/, "and its browser follows");
   for (const browser of ["safari", "chrome", "edge", "firefox", "opera"]) {
     assert.match(row, new RegExp(`^  ${browser}: \\[`, "m"), `${browser} has a mark`);
   }
-  assert.match(row, /const strokes = BROWSER_GLYPHS\[browser \?\? "other"\] \?\? DEVICE_GLYPHS\[kind\] \?\? DEVICE_GLYPHS\.other;/,
-    "a browser with no mark, and a copy written before the browser was recorded, wear the device glyph");
-  assert.match(row, /<DeviceCopyGlyph kind=\{copy\.kind\} browser=\{copy\.browser\} \/>/, "the mark follows the copy's browser and device");
-  assert.doesNotMatch(row, /other: \[[^\]]*\],?\s*\n\};[\s\S]*safari/, "`other` has no brand mark: it falls back, it does not guess");
-  // The phone glyph used to be a thin slab; at 16px it read as a line. A rounded
+  assert.match(row, /const strokes = browser && browser !== "other" \? BROWSER_GLYPHS\[browser\] : null;\n\s*if \(!strokes\) return null;/,
+    "a browser with no mark, and a copy written before the browser was recorded, draw no brand: the device glyph already carries the row, and a guessed brand is a lie");
+  // The phone glyph used to be a thin slab; at 15px it read as a line. A rounded
   // body, a speaker and a home dot survive the size.
   assert.match(row, /"M6 5a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2v-14"/, "a phone with a body");
   assert.match(row, /strokeWidth="2"/, "the app's stroke weight, not a thin 1.75");
-  const narrow = css.slice(css.indexOf("@media (max-width: 480px) {\n  /* The mark names the browser"));
+  assert.match(css, /\.composer-copy-row \.composer-outbox-mark \{[^}]*gap: 3px;/s, "the pair is spaced, not glued");
+  const narrow = css.slice(css.indexOf("@media (max-width: 480px) {\n  /* The mark is the machine and its browser"));
   assert.match(narrow, /\.composer-device-copies \.composer-outbox-mark \{ display: flex; \}/,
-    "on a phone the mark stays: the outbox hides its queue glyph, a copy row's glyph is its point");
+    "on a phone the mark stays: the outbox hides its queue glyph, a copy row's mark is its point");
 });
 
 test("the row prints no `mac-content-copy`: the mark is the row's text, the name is its tooltip", () => {

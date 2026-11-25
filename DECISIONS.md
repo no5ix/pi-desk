@@ -364,28 +364,30 @@
   up twice is the user's business.
 - **A row is read-only by construction.** `components/ComposerDeviceCopies.tsx`
   borrows the outbox's surface and drops its action column: no edit, no delete,
-  no send. Its mark is the browser the copy was typed in and it never hides below
+  no send. Its marks are the machine and its browser and they never hide below
   480px, where the outbox's queue mark does — on a phone, "whose draft is this"
   is the row's whole information.
-- **The row's mark is the browser; the device slug is not printed.** A row wears
-  Safari's compass / Chrome's wheel / Edge's swirl / Firefox's fox / Opera's O,
-  drawn in the app's stroke style. `mac-content-copy` was printed beside it and
-  read as scan noise: the mark is recognised at a glance, the slug is scanned.
-  The slug is not lost — `deviceCopyNames` feeds the row's `title` and
-  `aria-label` (`mac-content-copy · Safari`), which is also how two Safaris on
-  two Macs are told apart. `browser` is part of the record
+- **The row's mark is a pair — the machine, then the browser that typed the
+  copy — and the device slug is not printed.** A row wears the device glyph (a
+  screen, a rounded phone, a tablet) in front of the browser glyph (Safari's
+  compass, Chrome's wheel, Edge's swirl, Firefox's fox, Opera's O). The first
+  cut at this drew only the browser, and two Safari rows — one from a MacBook,
+  one from an iPhone — came out as twins: the machine answers "which device", the
+  browser answers "which app", and a row needs both. `mac-content-copy` was
+  printed beside the marks and read as scan noise, so the slug from
+  `deviceCopyNames` is the row's `title` and `aria-label`
+  (`mac-content-copy · Safari`). `browser` is part of the record
   (`detectBrowser` → the PUT body → the store's `browserFor`, capped on the
   route), so the mark comes from the device that typed the copy and no
   caller-supplied string reaches the renderer. Chromium forks are matched before
   Safari: every Blink UA ends with `Safari/537.36`, and a headless Chromium says
   `HeadlessChrome/`, so a `\b` before `Chrome/` would call both Safari.
-- **An unknown browser falls back to the device glyph, never to a guess.**
-  `other` has no entry in `BROWSER_GLYPHS` (Vivaldi, the DuckDuckGo app, an
-  Android WebView) and a record written before browsers were recorded has no
-  browser: the row draws the computer / rounded phone / tablet. A device shape
-  is honest; a wrong brand is a lie about the user's machine. The fallback glyph
-  set was redrawn at the app's stroke weight (2, round caps) — the phone was a
-  thin slab that read as a line at 16px.
+- **A browser with no mark draws no brand, never a guess.** `other` has no entry
+  in `BROWSER_GLYPHS` (Vivaldi, the DuckDuckGo app, an Android WebView) and a
+  record written before browsers were recorded has no browser: `BrowserCopyGlyph`
+  returns `null` and the row is marked by its machine alone. The device glyph is
+  redrawn at the app's stroke weight (2, round caps) — the phone was a thin slab
+  that read as a line at 15px.
 - **The device slug, not a hostname, names a copy.** `mac-content-copy`,
   `iphone-content-copy`, `ipad-content-copy`: the label is a sanitised slug from
   what the browser reports (iPadOS 13+ asks for the desktop site, so

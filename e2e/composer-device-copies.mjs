@@ -9,14 +9,14 @@ import { checkComposerGeometry } from './composer-geometry.mjs';
  * The composer's per-device copies, as rows (the outbox's surface, a read-only row).
  *
  * Pinned here, live: the rows are the other devices' copies in device order
- * (mac, then iPhone), each marked by the **browser** that typed it — Safari's
- * compass and Chrome's wheel, not a `mac-content-copy` slug — and **one button
- * each: no edit, no delete**, because no device edits or deletes another's
- * content. The slug is not printed, but it is not lost: the row's tooltip and its
- * accessible name carry `mac-content-copy · Safari`. Clicking a row prepends
- * that copy, image included, before what is typed here, and the row stays. At a
- * phone's width the mark is visible where the outbox's queue glyph hides, and the
- * dock joins the composer the way the outbox does.
+ * (mac, then iPhone), each marked by a **pair** — the machine, then the **browser**
+ * that typed it: a MacBook's screen with Safari's compass, an iPhone's body with
+ * Chrome's wheel — and **one button each: no edit, no delete**, because no device
+ * edits or deletes another's content. The slug is not printed, but it is not lost:
+ * the row's tooltip and its accessible name carry `mac-content-copy · Safari`.
+ * Clicking a row prepends that copy, image included, before what is typed here,
+ * and the row stays. At a phone's width the marks are visible where the outbox's
+ * queue glyph hides, and the dock joins the composer the way the outbox does.
  */
 const dir = 'test-results/composer-device-copies';
 await mkdir(dir, { recursive: true });
@@ -30,8 +30,19 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = 'http://127.0.0.1:' + server.address().port;
-/** The strokes `ComposerDeviceCopies` draws per browser mark, in order. */
+/** The strokes `ComposerDeviceCopies` draws, in order: the machine, then the browser. */
 const GLYPHS = {
+  desktop: [
+    'M3 5a1 1 0 0 1 1 -1h16a1 1 0 0 1 1 1v10a1 1 0 0 1 -1 1h-16a1 1 0 0 1 -1 -1v-10',
+    'M7 20h10',
+    'M9 16v4',
+    'M15 16v4',
+  ],
+  phone: [
+    'M6 5a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2v-14',
+    'M11 4h2',
+    'M12 17v.01',
+  ],
   safari: ['M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M8 16l2 -6l6 -2l-2 6l-6 2'],
   chrome: [
     'M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0',
@@ -41,8 +52,9 @@ const GLYPHS = {
     'M9.4 13.5l-4.2 -7.3',
   ],
 };
-/** All of a row's strokes, the way the mark is drawn: one `<path>` per stroke. */
-const strokesOf = locator => locator.evaluateAll(rows => rows.map(row => [...row.querySelectorAll('.composer-copy-glyph path')].map(path => path.getAttribute('d'))));
+/** One row's marks, in order, as the strokes each is drawn from. */
+const strokesOf = locator => locator.evaluateAll(rows => rows.map(row =>
+  [...row.querySelectorAll('.composer-copy-glyph')].map(svg => [...svg.querySelectorAll('path')].map(path => path.getAttribute('d')))));
 let browser;
 try {
   browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined, headless: true });
@@ -62,8 +74,10 @@ try {
     assert.equal(await page.locator('.composer-copy-name').count(), 0, 'no `mac-content-copy` text is printed: the mark carries it');
     assert.deepEqual(await page.locator('.composer-copy-text').allInnerTexts(), ['在 macbook 上打的提示词', '在 iphone 上打的一段话'],
       'the copy is the row\'s text, the mac\'s above the iPhone\'s');
-    assert.deepEqual(await strokesOf(rows), [GLYPHS.safari, GLYPHS.chrome],
-      'the marks are Safari and Chrome — the browsers that typed the copies');
+    assert.deepEqual(await strokesOf(rows), [[GLYPHS.desktop, GLYPHS.safari], [GLYPHS.phone, GLYPHS.chrome]],
+      'each row is a pair: a MacBook with Safari, an iPhone with Chrome');
+    assert.deepEqual(await rows.evaluateAll(rows => rows.map(row => row.querySelectorAll('.composer-copy-glyph').length)), [2, 2],
+      'two marks per row: one compass alone made the MacBook\'s Safari and the iPhone\'s Safari twins');
     assert.equal(await page.locator('.composer-outbox-actions').count(), 0, 'a copy row has no action column');
     assert.deepEqual(await rows.evaluateAll(rows => rows.map(row => row.querySelectorAll('button').length)), [1, 1],
       'one action per row: no edit, no delete, no send');
@@ -79,7 +93,7 @@ try {
     assert.ok(dock.left >= 0 && dock.right <= dock.viewport, JSON.stringify(dock));
     assert.ok(dock.bottom - dock.cardTop >= 10 && dock.bottom - dock.cardTop <= 14, 'the copies dock to the composer card, as the outbox does');
     const mark = await rows.first().locator('.composer-outbox-mark').boundingBox();
-    assert.ok(mark.width >= 12, `the device glyph is drawn, even at ${width}px where the outbox hides its queue mark`);
+    assert.ok(mark.width >= 28, `the pair of marks is drawn, even at ${width}px where the outbox hides its queue mark`);
 
     await editor.fill('我自己的内容');
     const reads = await page.evaluate(() => window.__copiesCalls.filter(call => call.method === 'GET').length);
@@ -112,7 +126,7 @@ try {
     assert.deepEqual(errors, [], 'no page errors');
     await page.close();
   }
-  console.log(`composer device copies: ${['light', 'dark'].map(t => `${t} 1280/390`).join(', ')} — two read-only rows marked Safari and Chrome, prepend with attachments, passed`);
+  console.log(`composer device copies: ${['light', 'dark'].map(t => `${t} 1280/390`).join(', ')} — two read-only rows marked device + browser (MacBook·Safari, iPhone·Chrome), prepend with attachments, passed`);
 } finally {
   await browser?.close();
   server.close();

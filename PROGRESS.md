@@ -247,3 +247,22 @@ a MacBook shows Safari's compass, and the slug is gone from the row's text.
 - `npm run drift` still reports the 6 pre-existing manifest disagreements
   (`FileExplorer.tsx`, `MarkdownBody.tsx`, `web-push.ts`, `request-security.ts`,
   `PwaRegistration.tsx`, `directory-browser.ts`) — untouched by this change.
+
+### The mark is a pair, not one glyph (same day)
+
+The browser-only mark from deeb38f5 made a MacBook's Safari row and an iPhone's
+Safari row identical (screenshot: two compasses). The mark is now
+`<DeviceCopyGlyph kind> <BrowserCopyGlyph browser>`:
+
+- `components/ComposerDeviceCopies.tsx` — `CopyGlyph` renderer, `DeviceCopyGlyph`
+  (always, 15px, first) and `BrowserCopyGlyph` (15px, second, `null` for
+  `other`/missing: no brand is drawn, never a guessed one). The `browser`
+  fallback-to-device logic is gone — the device glyph is already in the pair.
+- `app/native-theme.css` — `.composer-copy-row .composer-outbox-mark` is an
+  inline-flex with `gap: 3px`; the glyph flexes, and the ≤480px comment names the
+  pair (the component test slices CSS from it).
+- Tests: the component test pins the pair and the `null` browser glyph; the e2e
+  asserts `[[desktop, safari], [phone, chrome]]` per row's glyph strokes, 2 marks
+  per row, and a mark box ≥ 28px. Verified: 8 component tests, the e2e at
+  1280/390 in both themes, `tsc --noEmit`, eslint on the component; the pair was
+  read in both screenshots (row 1 monitor+compass, row 2 phone+Chrome wheel).
