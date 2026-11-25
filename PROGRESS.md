@@ -148,3 +148,68 @@ asserts the class and that no `session-item-pin` is left.**
 
 ## Next
 - Item 1 commits with the tree's sidebar work (its CSS, its test, `docs/agents/sessions.md`).
+
+
+---
+
+# PROGRESS — a finished run announces itself when its first prompt carried an image
+
+Branch `feat/branch-picker-header-worktrees`. The ask: "when there's 4 task
+running, and the `Fix Agents Panel Subagent Highlight, Text, Alignment` session
+just finished while other's still running, it should also pop out the
+notifications, but it didn't, I didn't receive any".
+
+## Root cause (measured, not guessed)
+
+Replaying that session's own file through the announcer answered
+`{ skipped: "unnamed" }` — a run with no title announces nothing on any channel.
+The session was unnamed when its run ended (auto-naming named it 16 s later), so
+its title had to come from its first prompt. That prompt carried two screenshots,
+so its JSONL line is **496 KB starting at byte 102 268**, and
+`readPromptTitle` opened a fixed **256 KB** window of the file: the window cut the
+line in half, half a line is not JSON, and the reader answered `null`.
+Every session that *opens* with an image was therefore silent on the phone push,
+on ntfy and in Notification Center when its task finished. `node ./tmp-diag.mjs`
+(the throwaway replay) went `skipped: "unnamed"` before the fix and announced all
+three channels after it.
+
+## What changed
+
+- `lib/session-prompt-title.ts` — `readPromptTitle` reads lines from the start of
+  the file with a **16 MB read budget** (a cap on the read, never a window that
+  truncates the line being read) and closes the stream at the first prompt. A line
+  over 256 KB is stepped over when its shape says it is not a user prompt, so a
+  4 MB base64 tool result ahead of the prompt costs a substring check, not a parse.
+  New `promptTitleFromEntries(entries)`: the same title, from a live session's own
+  in-memory entries. Cap/one-lining moved into shared helpers so both readers speak
+  the sidebar's rule.
+- `lib/rpc-manager.ts` — `getRpcSessionNotificationTitle(session)`: the session's
+  name (trimmed), else its first prompt from its own entries, never throwing. Both
+  announce callbacks (`onAgentRunComplete`, `onAttentionNeeded`) use it, so a live
+  run's title needs no session-path scan, no file, and no window.
+- Docs: the title rule in `docs/agents/fork-files-security.md` (the notification
+  bullet).
+
+## Verification
+
+- `node --test lib/session-prompt-title.test.mjs` — 9 pass, incl. the regression
+  (a 800 KB first-prompt line titles its run), a prompt behind a 4 MB tool result,
+  the bounded read, and the entries reader.
+- `lib/rpc-manager-shutdown.test.mjs` 46 pass (new: name wins, blank name falls
+  through, entries title a nameless session, a session that throws mid-shutdown
+  titles nothing). `lib/task-completion-server.test.mjs`, `lib/rpc-manager.test.mjs`,
+  `lib/subagent-runtime.test.mjs`, `lib/subagent-report-runs.test.mjs`,
+  `lib/notification-tags.test.mjs`, `lib/web-push.test.mjs`,
+  `lib/subagent-parent-completion.integration.test.mjs`,
+  `components/fork-extractions.test.mjs` — 172 + 19 pass, 0 fail.
+- `tsc --noEmit` clean; `eslint` on the four changed files clean.
+- The announcer replay over the real session file now returns
+  `title: "fix: 1. in the pic1, when i open a subagent session page, …"` and
+  `The task lasted 0h42m22s, started at 19:57:19, and ended at 20:39:41.` on push,
+  ntfy and the local channel.
+
+## Next
+
+Nothing outstanding for this fix. A phone push needs a subscription to be tested
+end to end; the local macOS row is the channel the report is about, and it is the
+same `announceRunEnd` call.
