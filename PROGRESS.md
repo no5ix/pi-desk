@@ -423,3 +423,76 @@ A 390px screenshot of the Session stats card: a horizontal scrollbar under it, t
   the line below their labels, no element is wider than its box. 1280px → the three
   columns (545/150/230) are unchanged, label and value share a row.
 - Test: `components/AppShell.session-stats-phone.test.mjs`.
+
+---
+
+## 2026-11-26 — the phone pass: 12 items (`fix/flat-chat-blocks`)
+
+`PLAN.md` holds the 12 items. Two commits are in: `e09f3eb7` (items 1-6, 8, 9, 12)
+and `4a241d3e` (item 10). Items 7 and 11 are below.
+
+### Done and verified
+1. **Composer under the keyboard (1, 2, 3).** The fork's
+   `html[data-keyboard-open] .chat-composer-controls { display: none !important }` hid
+   the row's only flex filler, so a keyboard left `+` and Send and slid Send across the
+   emptied row. Rule deleted. `e2e/composer-ios.mjs` (WebKit 390px) now compares the
+   keyboard state to the resting one, control by control: the strip, the side-chat
+   bubble and Send keep the same `x`, `y`, `w`; a control pass (the strip's fill and
+   Send's auto margin both taken away) moves Send off the corner, so the geometry is
+   bought, not given. `hooks/useViewportHeight.ts` gained `settleKeyboardViewportHeight`
+   (the smallest reading wins while iOS's ~250ms slide is running: no travel past its
+   place and back) and the travel is transitioned on `.app-shell` while the keyboard is
+   open. The caret: `lib/composer-caret.ts` + `hooks/useComposerCaret.ts` focus and set
+   the caret inside the finger's pointerdown (the card and the text area) and set the
+   selection to itself after the lift lands — WebKit paints the caret where the field
+   stood before the lift, and a tap on an already-`activeElement` field is no focus event.
+2. **Appearance (4, 5, 6, 8, 9, 12).** `app/native-theme-phone-pass.test.mjs` and
+   `e2e/thinking-preview.mjs` pin: the disc's missing border and two-layer shadow, the
+   `--code-surface` token (`--bg-panel`; the old 8% mix measured 1 point per channel),
+   the report as a panel at the thinking card's type, the thinking glyph on the
+   conversation's ink edge (the card's own 10px inset) and its cut line ending with the
+   three marks painted over the end, the sidebar's 12px seam, the phone's Settings
+   separator starting at the label's letter. `e2e/code-background.mjs` now demands the
+   fence stand off the page by ≥6 per channel.
+3. **Terminal `+` (10).** Reproduced at 390px: `handleOpenTerminal` adopted the tab the
+   cwd already had, so `tabs: ["pi-desk"]` before and after the tap. The strip's button
+   passes `{ newTab: true }`; live after the fix `tabs: ["pi-desk", "pi-desk 2"]`, the
+   button 36×36 on touch, its anchor grown with it. Two shells in a folder are numbered.
+   `components/AppShell.terminal-plus.test.mjs`.
+4. **The image overlay (7).** `components/ImagePreview.tsx` travels the pictures of its
+   container (`[data-image-gallery]`, `.markdown-body`, `.message-assistant`,
+   `.message-user`, read from the DOM at open, so the conversation decides the order):
+   a finger's swipe (40px, horizontal-dominant), a trackpad's flick (60px of summed
+   horizontal wheel delta, one page per burst, a 260ms rest after), the arrow keys, a
+   ring in both directions, a count (`2 / 11`), 44px direction plates on touch only, a
+   tap on the picture closes, and the neighbour is prefetched. The probe found a real
+   bug: a swipe ends in a click of its own, and the mark that says "that click was a
+   swipe" outlived it, so the *next* tap was swallowed — the mark is now cleared as soon
+   as the click is answered. `e2e/image-swipe.mjs` covers the phone shape and the
+   desktop shape on Chromium **and** WebKit; it is in the `test:e2e` chain.
+
+### Verification so far
+- `node_modules/.bin/tsc --noEmit` clean; `npm run lint` clean; `npm test` 4845 tests,
+  0 failures at `4a241d3e`.
+- `node e2e/composer-ios.mjs`, `node e2e/thinking-preview.mjs`,
+  `node e2e/image-swipe.mjs` pass.
+
+### In flight
+- **Item 11 (the right panel's Git view)** is being built in a background subagent
+  session (`01a214c8-1ee4-77bf-8e24-a32f5cf0d0f7`): a Git button beside
+  `.file-tree-toggle`, branch tree → commits → diff, reusing `app/api/git/*`,
+  `lib/branch-tree.ts`, `lib/git-changes.ts` and the existing diff view. It is editing
+  `components/AppShell.tsx`, `app/native-theme.css`, `package.json`,
+  `components/ModelSelector.tsx`, `components/path-ui.tsx` and adding
+  `hooks/usePopTransition.ts`. **Its suite is not green yet**
+  (`hooks/usePopTransition.test.mjs`: "SessionAutomationMenu holds its popup for the
+  exit"). Do not commit those files until it reports; do not duplicate its work.
+
+### Next actions
+1. Land item 7's files (`components/ImagePreview.tsx`, `components/MessageView.tsx`,
+   `components/ChatInput.tsx`, `e2e/image-swipe.*`, `package.json`, the CSS section) once
+   the panel agent's tree settles; commit and push.
+2. Review the Git-panel agent's diff as a whole, run the suites and the live measurement,
+   then commit item 11 and push.
+3. `npm run test:e2e` in full needs an isolated production build
+   (`PI_WEB_DESKTOP_BUILD=1 …next build --webpack`) — never a plain `next build`.
