@@ -30,6 +30,12 @@ try{
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.addInitScript(theme=>{localStorage.setItem('pi-theme',theme);localStorage.setItem('pi-locale','en');},theme);
     await page.goto(url);await page.locator('.settings-font-section').waitFor();
+    // The page title keeps a real gap above its first card: upstream zeroes the
+    // first section's top margin, which pins the card's edge under "Appearance".
+    const titleGap=await page.evaluate(()=>{const title=document.querySelector('.settings-general-title');
+      const card=title&&title.parentElement.querySelector('.settings-general-section');
+      return card?card.getBoundingClientRect().top-title.getBoundingClientRect().bottom:-1;});
+    assert.ok(titleGap>=24,`The title and its filled first card need a clear gap, got ${titleGap.toFixed(1)}px`);
     // Appearance offers colour mode only: no background washes, one flat neutral canvas.
     assert.equal(await page.locator('input[name="background"]').count(),0,'Background choices were removed');
     assert.equal(await page.locator('html').getAttribute('data-background'),null,'No background attribute is set');
