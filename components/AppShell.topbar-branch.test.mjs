@@ -200,14 +200,17 @@ test("the family chip counts subagents and side chats apart, in one button", () 
     const source = readFileSync(new URL(file, import.meta.url), "utf8").replace(/\s+/g, " ");
     assert.ok(head.test(source), `${file} draws the same head, so the header is not the odd one`);
   }
-  // The head leads its group, so it is drawn a step above the buckets' glyphs (13 vs 11):
+  // The head leads its group, so it is drawn well above the buckets' glyphs (17 vs 11):
   // at the bucket size the row's label read smaller than the count beside it, like one
   // more bucket. The state glyphs stay 11px on purpose — a bucket's glyph belongs to the
   // number it counts, and the running head is the Agents panel's row glyph at its default.
   const leadHead = counter.match(/function AgentIcon\(\) \{[\s\S]*?\n\}/);
   assert.ok(leadHead, "the chip's kind glyph is a component of its own");
-  assert.match(leadHead[0], /width="13" height="13"/, "the family's head is a size above the buckets");
-  assert.match(leadHead[0], /strokeWidth="1\.75"/, "the larger box thins its stroke, the way AgentRunningIcon does past 12px");
+  assert.match(leadHead[0], /width="17" height="17"/, "the family's head is well above the buckets");
+  // 1.55 on a 17px box paints a 1.1px line; 1.75, this file's rule just past 12px, paints
+  // 1.24px and turns the label bold next to the 11px glyphs' 0.87px.
+  assert.match(leadHead[0], /strokeWidth="1\.55"/, "the larger box keeps its stroke light");
+  assert.ok(!leadHead[0].includes('strokeWidth="1.75"'), "the head is not left on the 13px stroke rule at 17px");
   assert.ok(!leadHead[0].includes('width="11"'), "the head is not left at the bucket size");
   assert.match(counter, /export function AgentRunningIcon\(\{ size = 11 \}/,
     "the running head still defaults to the header's 11px");

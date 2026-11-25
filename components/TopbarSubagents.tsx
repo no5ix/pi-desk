@@ -120,15 +120,18 @@ function CheckIcon() {
    head says "this family delegates runs". The running head below is shared the other
    way — the panel imports that one, at row size, so a running run has one shape.
 
-   The head is drawn a step above the buckets' 11px (13px, with the file's stroke rule
-   for a glyph over 12px): it names the group, and at the bucket size it read smaller
-   than the count sitting beside it, so the row's label looked like one more bucket. The
-   state glyphs — the check, the stop, the running head — stay at 11px on purpose: a
-   bucket's glyph sits *inside* the number it counts, and `AgentRunningIcon` is shared
-   with the Agents panel's rows at its default size. */
+   The head is drawn well above the buckets' 11px (17px) on a light 1.55 stroke: at that
+   box it paints a 1.1px line, a shade heavier than the 11px glyphs' 0.87px, which is what
+   a label wants; 1.75 (this file's rule just past 12px) paints 1.24px and turns bold next
+   to them. It names the group, and at the bucket size it read smaller than the count
+   sitting beside it, so the row's label looked like one more bucket. The state glyphs —
+   the check, the stop, the running head — stay at 11px on purpose: a bucket's glyph sits
+   *inside* the number it counts, and `AgentRunningIcon` is shared with the Agents panel's
+   rows at its default size. The chip grows with the head (15px → 19px tall); the bar is a
+   floor, and `placeAgentsPanel` reads the chip's live box, so the card follows it. */
 function AgentIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="5" y="7" width="14" height="11" rx="2" />
       <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
     </svg>
