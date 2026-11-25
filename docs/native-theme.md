@@ -130,7 +130,10 @@ the icon by a fixed pixel offset. Send stays bottom-aligned with the card's arc.
 It shows `--bg-hover` when hovered and `--bg-selected` when pinned on. The pinned state is
 deliberately one step stronger than hover, so "on" is never mistaken for the pointer resting on
 the control. This applies to sidebar chrome buttons, the topbar actions, the panel toggle, the
-right-panel header row and the file-panel expand button.
+right-panel header row and the file-panel expand button. A page toolbar's word pill (the Tasks
+calendar's Today) is the same language in pill form: `--bg-subtle` at rest, `--bg-selected` under
+the pointer, no border. A hairline ring filled with the page's own colour reads as an outline,
+not as a control.
 
 **Sidebar.** It runs the full window height. On macOS its header hosts the traffic lights.
 - Header rows (New chat / folder / branch) are flat and full-width, Claude-Desktop style.
@@ -186,6 +189,15 @@ when on; buttons keep the neutral accent. Phone and ≤640px picker layouts are 
 instead of scrolling (this reverts upstream #650). While a run is busy, fork/navigate actions
 on user messages are hidden with CSS (`data-session-busy`), not props, so message memoization
 survives.
+
+**A prompt's list markers.** An ordered list draws its number in the list's own left padding, to
+the left of the item's text, and a long prompt is a bubble whose collapsed box clips horizontally.
+The flat 24px fits `9.` and cuts `10.`, `11.`, `12.` down to `0.`, `1.`, `2.` — the leading digit
+lands outside the box. `.markdown-user-message ol` sizes the room from globals.css's
+`--ol-marker-digits` in em, so it scales with the chat font, and its test computes the marker's
+width (`app/native-theme-prompt-marker-and-today-chip.test.mjs`). The assistant's lists sit in no
+clipping box and keep the flat padding; the prompt's rule only wins by source order, so it must
+stay below `.markdown-body ul, .markdown-body ol`.
 
 The circular send button and the composer's bottom-right corner share a center. Keep the
 right and bottom insets equal; the outer radius is the button radius plus that inset and

@@ -6798,6 +6798,17 @@ html.dark {
   color: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
   font-weight: var(--fw-semibold);
 }
+/* An ordered list's marker is drawn in the list's own left padding, to the left of
+   the item's text, and a prompt is a bubble: the flat pass gave every list a flat
+   24px, which fits `9.` and cuts `10.`, `11.`, `12.` down to `0.`, `1.`, `2.` — the
+   collapsed prompt box clips horizontally, so the leading digit lands outside it and
+   is gone. globals.css sizes the room from `--ol-marker-digits`; the prompt bubble
+   keeps that rule (the assistant's lists, which sit in no clipping box, keep the flat
+   padding): two digits, and the item's own padding, fit with a hand to spare. */
+.markdown-user-message ol {
+  --ol-marker-digits: 2;
+  padding-left: calc(1em + var(--ol-marker-digits) * 0.7em);
+}
 .markdown-body strong {
   color: var(--text);
   font-weight: var(--fw-semibold);
@@ -12556,16 +12567,19 @@ html.dark .artifacts-thumb[data-tone="data"] { --tone: #4fc1d6; }
 
 .task-cal-today {
   padding: 5px 12px;
-  border: var(--hairline) solid var(--border);
+  border: 0;
   border-radius: 999px;
-  background: var(--bg);
+  /* It was a hairline ring on the page's own colour, so on a phone the outline was
+     the whole affordance and the page showed through it. A chip: a step off the page
+     at rest, a step deeper under the pointer, no border. */
+  background: var(--bg-subtle);
   color: var(--text);
   font-size: var(--fs-body);
   font-weight: var(--fw-semibold);
   cursor: pointer;
 }
 
-.task-cal-today:hover { background: var(--bg-hover); }
+.task-cal-today:hover { background: var(--bg-selected); }
 
 .task-cal-notice { padding: 8px 16px 0; }
 
