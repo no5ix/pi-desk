@@ -42,6 +42,31 @@ test("an idle composer with no live run keeps the send arrow", () => {
   assert.match(html, /aria-label="Send"/);
 });
 
+test("a live run puts the breathing head in the disc; a bare turn keeps the square", () => {
+  // The header and the Agents panel said "a subagent is working" while the composer,
+  // the one control the user reaches for, answered with the same square it shows for a
+  // plain turn. The disc now wears the app's running head and breathes with the
+  // header's bucket; the action, its name and the tooltip stay Stop.
+  const runs = render({
+    onSend() {},
+    onAbort() {},
+    onAbortSubagents() {},
+    isStreaming: true,
+    subagentsRunning: true,
+  });
+  assert.match(runs, /data-action="stop"/, "still the Stop control");
+  assert.match(runs, /aria-label="Stop agent"/, "named the same to a screen reader");
+  assert.match(runs, /<svg class="agent-status-icon--pulse" width="17" height="17" viewBox="0 0 24 24"[^>]*stroke-width="2.1"/,
+    "the header's running head, at disc size and with a stroke that survives the filled button");
+  assert.ok(!runs.includes('<rect x="3.5"'), "the square is gone while a run is live");
+
+  const turn = render({ onSend() {}, onAbort() {}, isStreaming: true });
+  assert.match(turn, /data-action="stop"/, "a turn is still stoppable");
+  assert.match(turn, /<rect x="3.5" y="3.5" width="9" height="9" rx="1.5"/,
+    "with no run under it, the square stays");
+  assert.ok(!turn.includes("agent-status-icon--pulse"), "and nothing breathes that is not running");
+});
+
 test("Stop stops the turn when there is one, and the runs when the session is idle", () => {
   // A running turn's Stop already cascades to the children it waits on
   // (lib/subagent-runtime.ts aborts the wait with the parent's signal); only an idle

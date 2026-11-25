@@ -84,3 +84,28 @@ test("the branch chip opens on the side the loaded list fits on", async () => {
   assert.match(menu, /data-loading=\{hiddenPanel \? "true" : undefined\}/);
   assert.ok(placement.includes("export const MENU_MAX_HEIGHT_PX = 420;"), "one constant");
 });
+
+test("a row whose subagent runs are live breathes", async () => {
+  // The header's running bucket pulses; the sidebar's fold head sat still ten pixels
+  // away, so a delegated run looked alive in one place and dead in the other.
+  const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+  const nodes = await readFile(new URL("../lib/sidebar-session-nodes.ts", import.meta.url), "utf8");
+  const css = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+  assert.match(sidebar, /const runningChildren = hasChildren \? countRunningSubagentRuns\(node, runningSessionIds\) : 0;/,
+    "the row counts its family's live runs from the tree, the same two sources the header reads");
+  assert.match(sidebar, /childrenRunningCount=\{runningChildren\}/, "and hands the number to the row");
+  assert.match(sidebar, /className=\{`session-item-children-glyph\$\{childrenRunningCount > 0 \? " agent-status-icon--pulse" : ""\}`\}/,
+    "the fold head carries the app's one breathing class, and only while a run is live");
+  assert.match(sidebar, /className=\{`session-item-children-toggle\$\{collapsed \? " is-collapsed" : ""\}\$\{childrenRunningCount > 0 \? " is-running" : ""\}`\}/,
+    "the toggle itself carries the state for a rule that wants the whole pill");
+  assert.match(sidebar, /childrenRunningCount > 0 \? t\("chat\.subagentsRunning", \{ running: childrenRunningCount \}\)/,
+    "a breathing icon is also said: the tooltip and aria-label name how many are running");
+  assert.match(nodes, /export function countRunningSubagentRuns\(/,
+    "the count is a tree helper, so the row and the tests read one rule");
+  assert.match(nodes, /relation\?\.kind === "subagent"/, "side chats stay out: a conversation the user drives is not a run");
+  const pulse = css.match(/\.agent-status-icon--pulse \{[^}]*\}/);
+  assert.ok(pulse, "the breathing rule is the shared one");
+  assert.match(pulse[0], /animation: agent-run-pulse 1\.6s var\(--ease-native\) infinite;/, "one cycle, one speed");
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.agent-status-icon--pulse \{ animation: none; \}/,
+    "and a reduced-motion user gets the identical shape, unanimated");
+});

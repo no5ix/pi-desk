@@ -69,6 +69,7 @@ import { ComposerBranchChip } from "./ComposerBranchMenu";
 import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
 import { ComposerDeviceCopies } from "./ComposerDeviceCopies";
 import { SideChatPlusIcon } from "./SideChatIcon";
+import { AgentRunningIcon } from "./TopbarSubagents";
 import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
 
 
@@ -3560,7 +3561,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             style={{ flexShrink: 0, alignSelf: "flex-end", ...(compact ? { display: "flex", alignItems: "center", gap: 6 } : null) }}
           >
             {showStop ? (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" /></svg>
+              /* A live subagent run wears the header's breathing head (17px on a 24 box,
+                 so the head paints ~13px inside the disc, next to the arrow's 10px); the
+                 plain square stays for a turn with no run under it. The button is the same
+                 Stop — the glyph names what is working, not a second action. */
+              subagentsRunning ? (
+                <AgentRunningIcon size={17} strokeWidth={2.1} />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5" /></svg>
+              )
             ) : (
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <line x1="8" y1="13" x2="8" y2="3.5" /><polyline points="3.5 7.5 8 3 12.5 7.5" />
