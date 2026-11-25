@@ -323,11 +323,21 @@ test("the header's branch is polled, so a checkout outside pi shows up", () => {
   assert.match(route, /readCurrentBranch/, "one short git rev-parse");
   assert.match(route, /isCwdAllowed/, "the endpoint is behind the file-access gate");
 });
-test("the Agents panel opens under the count it belongs to, not over the project tree", () => {
+test("the Agents panel opens under the count it belongs to, and centres on a phone", () => {
   const block = appShell.match(/if \(activeTopPanel === "agents"\) \{[\s\S]*?\n      \}/);
   assert.ok(block, "the agents branch of the top-panel placement exists");
-  assert.match(block[0], /left: Math\.max\(topBarRect\.left, topBarRect\.right - width\)/,
-    "a 420px card pinned to the topbar's left edge landed on the project tree on a desktop and a pad, under the pointer's start");
-  assert.match(block[0], /const width = Math\.min\(AGENT_PANEL_WIDTH, available\);/,
-    "the cap is the topbar's width, which is what keeps a phone's panel at the column's left edge");
+  assert.match(block[0], /setTopPanelPos\(placeAgentsPanel\(topBarRect, topbarSubagentsRef\.current\?\.getBoundingClientRect\(\) \?\? null, isMobile\)\)/,
+    "the card is placed from the header's subagent count — the control that opens it — and from the phone flag; pinned to the topbar's right edge it used to cover the file panel");
+  assert.match(appShell, /import \{ AGENT_PANEL_EDGE_GUTTER, placeAgentsPanel \} from "@\/lib\/top-panel-placement";/,
+    "the card's numbers and its clamp live in the pure module the unit test measures");
+  assert.match(appShell, /anchorRef=\{topbarSubagentsRef\}/, "the shell hands the count's box to the placement");
+  const subagents = readFileSync(new URL("./TopbarSubagents.tsx", import.meta.url), "utf8");
+  assert.match(subagents, /className="app-topbar-subagents"\s*ref=\{anchorRef\}/,
+    "the chip publishes its box, and nothing else moves the card");
+  // The card's shadow must not be clipped: a scroll container on the layer cuts it on
+  // the left, the right and the bottom, which is part of what made the panel look flat.
+  assert.match(appShell, /overflowY: topPanelPos\.floating \? "visible" : "auto"/,
+    "the card's layer never scrolls, so the menu's shadow survives");
+  assert.match(appShell, /topPanelPos\.floating \? ` - \$\{AGENT_PANEL_EDGE_GUTTER\}px` : ""/,
+    "the card keeps a gutter at the bottom, so its shadow is not cut by the window's edge");
 });

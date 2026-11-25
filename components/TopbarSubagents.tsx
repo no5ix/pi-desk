@@ -27,6 +27,7 @@
 // mark for one that ended early, and the pulsing AgentRunningIcon for a live one.
 // The totals are not printed: the three buckets are the total.
 
+import type { Ref } from "react";
 import type { SessionFamily } from "@/lib/session-family";
 import type { TranslationParams } from "@/lib/i18n/types";
 
@@ -215,11 +216,14 @@ export function TopbarSubagents({
   sideChats,
   onOpenAgents,
   translate,
+  anchorRef,
 }: {
   subagents: SubagentCounts;
   sideChats: SubagentCounts;
   onOpenAgents: () => void;
   translate: (key: string, params?: TranslationParams) => string;
+  /** The Agents panel hangs below this chip: the shell reads its box to place the card. */
+  anchorRef?: Ref<HTMLElement>;
 }) {
   if (subagents.total + sideChats.total === 0) return null;
   const parts: string[] = [];
@@ -229,6 +233,7 @@ export function TopbarSubagents({
   return (
     <small
       className="app-topbar-subagents"
+      ref={anchorRef}
       role="button"
       tabIndex={0}
       title={title}
