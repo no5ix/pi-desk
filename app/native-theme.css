@@ -5938,7 +5938,9 @@ html.dark {
 .chat-composer-actions > .chat-composer-controls {
   flex: 1 1 auto;
   min-width: 0;
+  /* padding: 0 6px 0 0; */
   padding: 0;
+  margin-right: 15px;
 }
 
 /* Send keeps the card's bottom-right corner even when the phone hides the controls strip.
