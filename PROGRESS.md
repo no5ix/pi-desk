@@ -266,3 +266,47 @@ Safari row identical (screenshot: two compasses). The mark is now
   per row, and a mark box ≥ 28px. Verified: 8 component tests, the e2e at
   1280/390 in both themes, `tsc --noEmit`, eslint on the component; the pair was
   read in both screenshots (row 1 monitor+compass, row 2 phone+Chrome wheel).
+
+## 2026-11-25 — a divider the pointer crosses is not highlighted
+
+The user's screenshots: sliding the cursor over the line between the sidebar (or the
+right panel) and the conversation made that line light up, and the tooltip
+"Resize sidebar: Drag to resize. Double-click or press Enter to reset." proved the
+pointer was over the resize handle.
+
+### Root cause
+
+Upstream's `app/globals.css` (byte-identical, fork CSS may not live there) tints
+`.panel-resize-handle::after` on `:hover`, `:focus-visible` **and** `.is-resizing`.
+That element is a 12px invisible hit target straddling the pane boundary
+(`margin: 0 -6px; flex: 0 0 12px`) — the visible line is the panels' own hairline, so
+the hover tint painted a second, brighter line on top of a separator already there.
+The fork had already thinned it to 1px and softened the tint, but kept the hover.
+
+### What changed
+
+- `app/native-theme.css` — `.panel-resize-handle:hover::after { background: transparent; }`
+  in the fork base layer; `:focus-visible` and `.is-resizing` keep the tint (the
+  separator is tabbable, the arrows resize it, and a drag needs feedback). The
+  right panel's `!important` pair above 960px drops `:hover` from its tinted
+  selector; its transparent selector becomes `:not(:focus-visible):not(.is-resizing)`
+  so it never beats the tint.
+- Tests: `e2e/divider-hover.mjs` (+ fixture, in `npm run test:e2e`) measures the
+  shell's markup in Chromium in both themes — rest and hover are the same
+  `rgba(0, 0, 0, 0)` on all three dividers, the line stays 1px, Tab and
+  `.is-resizing` still tint, and a control pass injects upstream's declaration
+  verbatim (alpha 0.74) so the hover assertion is not blind.
+  `app/native-theme-hover.test.mjs` pins the declarations and the old
+  `:not(:hover)` pair's absence.
+- Docs: `docs/agents/fork-ui.md` (in the hover-state section) and
+  `docs/native-theme.md`'s override list.
+
+### Verification
+
+`tsc --noEmit` clean; eslint clean on the changed files; `npm test` 4810/4811 pass
+(1 skipped, 0 fail) including the upstream-CSS byte-identity check;
+`node e2e/divider-hover.mjs` passes in light and dark. Measured on the live dev page
+at 1280px: `::after` is `rgba(0, 0, 0, 0)` / 1px at rest and under the pointer.
+`npm run test:e2e` as a whole was not run (it needs a production build;
+`next build` from this shell hits the `__NEXT_PRIVATE_*` trap) — the new test was run
+directly, as its siblings are.

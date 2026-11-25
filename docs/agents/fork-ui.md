@@ -406,6 +406,28 @@ opaque base + tint under it. Measured over the photo's backdrop: base alpha `1`,
 185 levels away from the backdrop, and a control pass installs upstream's rule to show its
 alpha is `0.04` — the check cannot pass by being blind.
 
+**A divider the pointer crosses is not highlighted.** Upstream (byte-identical
+`app/globals.css`) tints `.panel-resize-handle::after` on `:hover`, `:focus-visible`
+**and** `.is-resizing`. That handle is a 12px invisible hit target straddling the
+pane boundary (`margin: 0 -6px`, `flex: 0 0 12px`); the visible line is the panels'
+own hairline — so sliding the pointer over the sidebar / conversation edge, the
+conversation / right-panel edge, or the file tree's edge painted a brighter line on
+top of the separator that was already there (the user's screenshot: the divider went
+white under the cursor). The fork's override keeps the tint for the two states that
+say *this target is live* — `:focus-visible` (the separator is tabbable and the
+arrows resize it; the tooltip is "Drag to resize. Double-click or press Enter to
+reset.") and `.is-resizing` (drag feedback) — and answers `:hover` with
+`background: transparent`. The right panel's own pair above 960px carries
+`!important` over upstream, so it drops `:hover` from its tinted selector and its
+transparent selector becomes `:not(:focus-visible):not(.is-resizing)` — the `:not()`s
+are what keep the higher-specificity transparent rule from beating the tinted one.
+`e2e/divider-hover.mjs` measures the shell's markup in a browser, both themes: rest
+and hover are the same `rgba(0, 0, 0, 0)` on all three dividers, the line stays the
+fork's 1px, Tab and `.is-resizing` still tint, and a control pass injects upstream's
+declaration verbatim (measured at alpha `0.74`) so the hover assertion is not blind.
+Measure after the 120ms fade — Chromium hands back the in-flight transition value, and
+an early read of a fading-in tint looks transparent.
+
 ## Conversation header: project, branch, and the running clock
 
 The title block (`app-topbar-title`) is the session title and, under it, one
