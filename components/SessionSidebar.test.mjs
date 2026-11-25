@@ -407,7 +407,7 @@ test("the row menu shows the compaction count only when the session was compacte
   );
 });
 
-test("a project's sessions are pinned through the server's state, not this browser (S2)", () => {
+test("a project's sessions are pinned through the server's state, not this browser (S2)", async () => {
   // A pin is pi-web's state in <agentDir>/pi-web-session-state.json, so a
   // session pinned in Safari is pinned in Edge, on the phone, and in the
   // desktop shell too. Nothing of the sidebar's pins lives in localStorage.
@@ -424,9 +424,52 @@ test("a project's sessions are pinned through the server's state, not this brows
   assert.match(source, /\}, \[loadSessions, noteRevision\]\);/);
   // The server refused a pin: the user hears it in their own language.
   assert.match(source, /appNotify\.error\(\{ message: t\("sidebar\.uiStateFailed", \{ error: message \}\) \}\);/);
-  // The native menu and the DOM menu both offer it, and the row shows the pin.
+  // The native menu and the DOM menu both offer it. The row marks a pin by
+  // its title's ink: a session row has no pin glyph of its own, and the
+  // state stays in the title's tooltip.
   assert.match(source, /\.\.\.\(pin\s*\? \[\{ label: t\(pin\.pinned \? "sidebar\.unpinChat" : "sidebar\.pinChat"\), onSelect: pin\.onTogglePin \}\]/);
-  assert.match(source, /\{pin\?\.pinned && \(\s*<svg className="session-item-pin"/);
+  assert.match(source, /className=\{`session-item-title\$\{pin\?\.pinned \|\| pinnedInk \? " is-pinned" : ""\}`\}/);
+  assert.match(source, /pin\?\.pinned \? t\("sidebar\.pinned"\) : null/);
+  assert.doesNotMatch(source, /session-item-pin/);
+  const theme = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+  // A pinned title keeps the row's full-contrast ink (its inline var(--text)) and
+  // gains one weight notch; the unpinned ones step back a quarter tone. No pin
+  // yellow on a session title: that hue belongs to a pinned project's folder icon.
+  assert.match(theme, /\.session-item-title:not\(\.is-pinned\) \{\s*color: color-mix\(in srgb, var\(--text\) 76%, transparent\) !important;/);
+  assert.match(theme, /\.session-item-title\.is-pinned \{\s*font-weight: var\(--fw-medium\) !important;\s*\}/);
+  assert.doesNotMatch(theme, /\.session-item-title[^{]*\{[^}]*#cdc12c/);
+  assert.doesNotMatch(theme, /\.session-item-pin \{/);
+});
+
+test("a subagent run's row wears its parent's pin — title, glyph and weight together", async () => {
+  // The rows nested under a session (its delegated runs, its side chats) are its
+  // work, not rows of their own, so the family's pin is theirs:
+  //  - pinned parent: every nested row reads at the parent's ink, so a pinned
+  //    family is one block and not one bright row over two faint ones;
+  //  - unpinned parent: they step back a step FURTHER than a plain row, and
+  //    their leading glyph (the robot / the side-chat bubble) takes that same
+  //    ink — in this theme --accent IS --text, so an accent glyph was the
+  //    hardest thing on a stepped-back row.
+  // `pinnedInk` starts at the pinned set of the family's root and is inherited
+  // down the tree, so a run under a run follows the same ink.
+  assert.match(source, /className=\{`session-item\$\{isSelected \? " is-selected" : ""\}\$\{isRunning \? " is-running" : ""\}\$\{isUnread \? " is-unread" : ""\}\$\{isSubagentChild \? " is-subagent-child" : ""\}\$\{isSideChat \? " is-side-chat" : ""\}\$\{pinnedInk \? " is-pinned" : ""\}`\}/);
+  assert.match(source, /pinnedInk=\{pinnedInk\}/, "the tree hands the family's ink to every row below");
+  assert.match(source, /pinnedInk=\{pinnedChats\.has\(id\)\}/, "the chats list starts it from the pinned set");
+  assert.match(source, /pinnedInk=\{pinnedSessions\.has\(node\.session\.id\)\}/, "the project tree does too");
+  assert.match(source, /pinnedInk=\{pinnedSessions\.has\(family\.root\.id\)\}/, "and the chronological view");
+  // The child glyphs are drawn in currentColor, never in the theme's accent.
+  const glyphs = sessionItemSource.slice(sessionItemSource.indexOf("isSideChat ? ("), sessionItemSource.indexOf("isFork && ("));
+  assert.match(glyphs, /<SideChatPlusIcon size=\{12\} stroke="currentColor" className="session-item-child-glyph"/);
+  assert.match(glyphs, /className="session-item-child-glyph"[\s\S]*?stroke="currentColor"/);
+  assert.doesNotMatch(glyphs, /stroke="var\(--accent\)"/);
+  const theme = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+  // One --child-ink carries the row: 64% unpinned (a step past the plain 76%),
+  // full var(--text) under a pinned parent.
+  assert.match(theme, /\.session-item\.is-subagent-child,\s*\.session-item\.is-side-chat \{\s*--child-ink: color-mix\(in srgb, var\(--text\) 64%, transparent\);\s*\}/);
+  assert.match(theme, /\.session-item\.is-subagent-child\.is-pinned,\s*\.session-item\.is-side-chat\.is-pinned \{\s*--child-ink: var\(--text\);\s*\}/);
+  // Both rules are three classes deep, so they outrank `.session-item-title:not(.is-pinned)`.
+  assert.match(theme, /\.session-item\.is-subagent-child \.session-item-title,\s*\.session-item\.is-side-chat \.session-item-title \{\s*color: var\(--child-ink\) !important;/);
+  assert.match(theme, /\.session-item\.is-subagent-child \.session-item-child-glyph,\s*\.session-item\.is-side-chat \.session-item-child-glyph \{\s*color: var\(--child-ink\);\s*\}/);
 });
 
 test("projects can be pinned above the others from both project menus (S2)", async () => {
@@ -481,8 +524,8 @@ test("a side chat row carries the composer's side-chat glyph", () => {
   assert.ok(icons.includes(") : isSideChat ? ("), "the side-chat case is in the leading-icon chain");
   assert.ok(icons.indexOf("isSideChat ? (") < icons.indexOf("isSubagentChild ? ("),
     "a side chat is read before the subagent glyph, not as a fallback bubble");
-  assert.match(icons, /isSideChat \? \(\s*<SideChatPlusIcon size=\{12\} stroke="var\(--accent\)"/,
-    "the app's shared side-chat bubble, at row size and in the row's accent");
+  assert.match(icons, /isSideChat \? \(\s*<SideChatPlusIcon size=\{12\} stroke="currentColor" className="session-item-child-glyph"/,
+    "the app's shared side-chat bubble, at row size, in the row's own ink (--child-ink: the family's pin) — never in the theme's accent, which on a stepped-back row is the brightest thing in it");
   assert.match(source, /import \{ SideChatPlusIcon \} from "\.\/SideChatIcon";/,
     "drawn by the shared glyph, not by a copy in this file");
   // The glyph is decoration; the row's tip and label carry the words.
