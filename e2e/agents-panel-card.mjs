@@ -65,6 +65,23 @@ const MEASURE = () => {
   const panel = document.querySelector(".agent-session-panel");
   const layer = document.getElementById("panel-layer");
   const style = getComputedStyle(panel);
+  const topbarBottom = box(document.querySelector(".app-topbar")).bottom;
+  const rows = [...panel.querySelectorAll(".agent-row")].map((row) => {
+    const cs = getComputedStyle(row);
+    const actions = row.querySelector(".agent-row-actions");
+    const status = row.querySelector(".agent-row-status");
+    return {
+      main: row.classList.contains("is-main"),
+      selected: row.classList.contains("is-selected"),
+      title: getComputedStyle(row.querySelector(".agent-row-title")).color,
+      subtitle: getComputedStyle(row.querySelector(".agent-row-subtitle")).color,
+      statusLeft: Math.round(box(status).left),
+      statusRight: Math.round(box(status).right),
+      actionsLeft: actions ? Math.round(box(actions).left) : null,
+      background: cs.backgroundColor,
+      shadow: cs.boxShadow,
+    };
+  });
   return {
     radius: parseFloat(style.borderTopLeftRadius),
     shadow: style.boxShadow,
@@ -72,10 +89,21 @@ const MEASURE = () => {
     panel: box(panel),
     layer: box(layer),
     layerOverflowY: getComputedStyle(layer).overflowY,
-    topbarBottom: box(document.querySelector(".app-topbar")).bottom,
+    topbarBottom,
     chipLeft: box(document.querySelector(".app-topbar-subagents")).left,
     viewport: window.innerWidth,
+    rows,
   };
+};
+
+/** Text's ink as it lands on this fixture's white card: a 62% wash is the shallower
+ *  colour it paints, not a bigger rgb sum. Chromium serialises `color-mix()` results in
+ *  the 0..1 `color(srgb …)` form and plain custom properties as `rgb(…, …)`, so both
+ *  scales are read. Higher is shallower. */
+const ink = (color) => {
+  const scale = /srgb|display-p3|\blab\b|\blch\b|\boklab\b|\boklch\b/i.test(color) ? 255 : 1;
+  const [r, g, b, a = 1] = color.match(/[\d.]+/g).map(Number).map((v, i) => (i < 3 ? v * scale : v));
+  return (r + g + b) * a + 3 * 255 * (1 - a);
 };
 
 const server = await serve();
@@ -88,6 +116,7 @@ try {
     { name: "iphone", viewport: { width: 390, height: 844 }, mobile: true },
   ]) {
     const page = await browser.newPage({ viewport: shape.viewport, deviceScaleFactor: 2 });
+    page.on("console", (msg) => console.log(`PAGE[${shape.name}]:`, msg.text()));
     await page.goto(url, { waitUntil: "networkidle" });
     await page.waitForSelector(".agent-session-panel");
     const m = await page.evaluate(MEASURE);
@@ -111,7 +140,67 @@ try {
       assert.ok(Math.abs(m.panel.left - m.chipLeft) <= 1,
         `${shape.name}: the card opens under the subagent count (card ${m.panel.left.toFixed(1)}, count ${m.chipLeft.toFixed(1)})`);
     }
+
+    // The rows. The row the chat stands on paints nothing — no wash, no inset bar (the
+    // user asked for both gone) — and it is named by its ink: every other row in the
+    // family is shallower. The states all start on one column, buttons beside a row or
+    // not, and none of them runs into the row's buttons.
+    assert.ok(m.rows.length >= 3, `${shape.name}: the card lists the main agent and its runs`);
+    const selected = m.rows.filter((row) => row.selected);
+    assert.equal(selected.length, 1, `${shape.name}: one row is the open session`);
+    assert.ok(/rgba\(0, 0, 0, 0\)|transparent/.test(selected[0].background),
+      `${shape.name}: the current row carries no highlight, got ${selected[0].background}`);
+    assert.equal(selected[0].shadow, "none", `${shape.name}: and no inset bar beside its text`);
+    const others = m.rows.filter((row) => !row.selected);
+    assert.ok(others.every((row) => ink(row.title) > ink(selected[0].title) + 20),
+      `${shape.name}: every other row's title is shallower ink than the current row's (${others.map((r) => r.title).join(" | ")} vs ${selected[0].title})`);
+    assert.ok(others.every((row) => ink(row.subtitle) > ink(selected[0].subtitle) + 20),
+      `${shape.name}: and its subtitle steps back with it`);
+    const lefts = m.rows.map((row) => row.statusLeft);
+    const spread = Math.max(...lefts) - Math.min(...lefts);
+    assert.ok(spread <= 1, `${shape.name}: Running and Completed start on one column (spread ${spread}px: ${lefts.join(", ")})`);
+    for (const row of m.rows) {
+      if (row.actionsLeft !== null) {
+        assert.ok(row.statusRight <= row.actionsLeft,
+          `${shape.name}: a state never runs into the row's buttons (${row.statusRight} vs ${row.actionsLeft})`);
+      }
+    }
     await page.screenshot({ path: `${out}/${shape.name}.png` });
+
+    // The rows' old layout, put back: the measurement has to see it. One `auto` track
+    // for the status and the buttons, a wash and an inset bar on the selected row, and
+    // every row's text in the same full ink. The row transitions its background, so the
+    // probe reads it after the 120ms `--dur-fast` has settled: mid-transition the computed
+    // colour is the old transparent one, and a probe that read it then proved nothing.
+    const oldRows = await page.evaluate(async () => {
+      const style = document.createElement("style");
+      style.textContent = [
+        "#panel-layer .agent-row{grid-template-columns:28px minmax(0,1fr) auto !important;}",
+        "#panel-layer .agent-row.is-selected{background:var(--bg-selected) !important;box-shadow:inset 3px 0 0 var(--menu-selection-color) !important;}",
+        "#panel-layer .agent-row .agent-row-title,#panel-layer .agent-row .agent-row-subtitle{color:var(--text) !important;}",
+      ].join("");
+      document.head.append(style);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const rows = [...document.querySelectorAll(".agent-row")].map((row) => ({
+        selected: row.classList.contains("is-selected"),
+        statusLeft: Math.round(row.querySelector(".agent-row-status").getBoundingClientRect().left),
+        background: getComputedStyle(row).backgroundColor,
+        shadow: getComputedStyle(row).boxShadow,
+        title: getComputedStyle(row.querySelector(".agent-row-title")).color,
+      }));
+      style.remove();
+      return rows;
+    });
+    const oldLefts = oldRows.map((row) => row.statusLeft);
+    const oldSpread = Math.max(...oldLefts) - Math.min(...oldLefts);
+    assert.ok(oldSpread > 20,
+      `${shape.name}: the one-track layout scattered the states ${oldSpread}px apart, so the measurement sees the fix`);
+    const oldSelected = oldRows.find((row) => row.selected);
+    assert.ok(!/rgba\(0, 0, 0, 0\)|transparent/.test(oldSelected.background),
+      `${shape.name}: and it saw the old wash on the current row (${oldSelected.background})`);
+    assert.notEqual(oldSelected.shadow, "none", `${shape.name}: and the old inset bar (${oldSelected.shadow})`);
+    assert.ok(oldRows.every((row) => row.title === oldRows[0].title),
+      `${shape.name}: and every row wore the same ink, so nothing ranked`);
 
     // The old rules, put back: the measurement has to see them. The probe names the
     // layer too, so it outranks the fix's `.agent-session-panel.app-menu` the way the

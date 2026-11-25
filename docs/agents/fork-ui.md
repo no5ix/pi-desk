@@ -741,13 +741,23 @@ opens the Agents panel, and a session with no subagent runs renders nothing. The
 one `.app-menu` surface — the rounded card, the separator and `--shadow-popover` every
 popup already uses — and not a box welded to the topbar: no hairline down its sides, no rule
 under the header, none under the search box, none under a row. Its rows are flat and rounded
-and the selected one is a wash with an inset accent bar (`--menu-selection-color`);
-delete confirmation and steer field are inset strips. **The main agent's row is outside
-that selection** (`.agent-row.is-main.is-selected` is `background: transparent`,
-`box-shadow: none`, with the pointer's `--bg-hover` kept): the list always opens on it and
-the row says "Current" in words, so a wash and a blue bar on the row that is never *not*
-selected highlighted nothing and made the panel's first row the loudest thing in it. A row
-the user actually switched to (a side chat, a run) still takes the wash and the bar.
+and **no row is painted at all**: `.agent-row.is-selected` is `background: transparent`,
+`box-shadow: none`. The panel used to draw the menu's selection (a `--bg-selected` wash and an
+inset `--menu-selection-color` bar) on the row the chat stands on, and on a subagent's page
+that highlighted one run out of eleven and put a blue line nobody read beside it. The hierarchy
+is ink instead: the current row keeps `--text` and every other row steps back (title to
+`--text-muted`, subtitle and head glyph to a wash of `--text-dim` / the accent, a finished
+state's label at 0.68 opacity), the row under the pointer comes back to full ink, and a
+*running* row keeps its accent because that one is worth looking at. Each row is a grid of four
+tracks — icon, text, a fixed `--agent-status-column` (84px, the widest label) and a fixed
+`--agent-actions-column` (48px, the widest button pair) — with the status `justify-self: start`
+and the buttons `justify-self: end`, so "Running" and "Completed" start on one column in every
+row: with the state and the buttons in one `auto` track, and every row a grid of its own, the
+main row's state (a side-chat button beside it) began ~80px left of a finished run's (no
+button) and the states read as two columns. A row with nothing to do draws no actions track
+(`hasActions`) and its state stays in the same column. The main agent's head glyph keeps the
+chrome's ink (`.agent-row.is-main .agent-row-icon`). Delete confirmation and the steer field
+are inset strips (`.agent-panel-strip`), not ruled-off bands.
 The filter box lives in the header row with the title and the counts (the `> 8` gate is
 unchanged) and is a **quiet filled field**: `border: 0` and a tint of the theme's own ink
 (`color-mix(in srgb, var(--text) 8%, transparent)`) — `--surface-muted` is a white wash that
@@ -755,11 +765,15 @@ vanishes on the `--surface-elevated` card — and its `:focus` / `:focus-visible
 nothing, so typing in it raises no accent border and no ring: the box is already a shape and
 the caret is the position (`components/AgentSessionPanel.test.mjs` asserts both).
 
-The card's surface and its place are both measured (`e2e/agents-panel-card.mjs`, real
+The card's surface, its place and its rows are all measured (`e2e/agents-panel-card.mjs`, real
 CSS and real components at 1440 / 834 / 390): a rounded rectangle (`--menu-radius`), the
 menu's shadow, `--surface-elevated` ink, and a
 layer that never scrolls (`overflowY: "visible"`) because a scroll container clips the
-shadow on the left, the right and the bottom. The tail of `app/native-theme.css` used to
+shadow on the left, the right and the bottom. The same run measures the rows: the current row's
+background is transparent and its shadow `none`, every other row's title and subtitle are
+shallower ink than its own (the colours are read as they land on the card, so a 62% wash counts
+as the shallower colour it paints), and the states' left edges agree to 1px and never reach the
+row's buttons. The tail of `app/native-theme.css` used to
 undo all of that with `.agent-session-panel { background: var(--bg-panel) !important;
 border-radius: 0 !important }` — the sheet in the user's screenshot — so the panel now
 states the three things itself as `.agent-session-panel.app-menu` (0,2,0), which no

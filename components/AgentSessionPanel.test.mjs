@@ -79,12 +79,39 @@ test("the panel's stylesheet is the menu surface: rounded, shadowed, no rules dr
   assert.ok(row, "the row has a fork rule of its own");
   assert.match(row, /border: 0;/, "rows carry no divider: the list draws no rules inside it");
   assert.match(row, /border-radius: var\(--menu-row-radius\);/, "flat rows round with the menu's rows");
-  assert.match(css, /\.agent-row\.is-selected \{[^}]*box-shadow: inset 3px 0 0 var\(--menu-selection-color\);/,
-    "the row the session stands on is a wash and an inset bar, not a border");
+  assert.match(css, /\.agent-row\.is-selected \{[^}]*background: transparent;[\s\S]*?box-shadow: none;/,
+    "the row the chat stands on paints nothing: the user asked for the wash and the blue bar gone");
   assert.match(cssRule(".agent-panel-head") ?? "", /display: flex;/, "one header row carries the name, the counts and the search box");
   assert.match(cssRule(".agent-panel-search") ?? "", /margin-left: auto;/, "the search box sits at the end of that row");
   assert.match(source, /className="agent-panel-strip"/, "a row's confirmation and the steer field are inset strips, not ruled-off bands");
   assert.match(cssRule(".agent-panel-strip") ?? "", /border-radius: var\(--menu-row-radius\);/, "the strips round with the menu's rows");
+});
+
+test("the status sits in its own fixed track, so the states line up in one column", () => {
+  // The status and a row's buttons shared one `auto` track, and each row is a grid of its
+  // own: the main row's "Running" (a side-chat button beside it) started ~80px left of a
+  // finished subagent's "Completed" (no button), so the states read as two columns.
+  const row = cssRule(".agent-row");
+  assert.match(row, /--agent-status-column: 84px;/, "a status track as wide as the widest label");
+  assert.match(row, /--agent-actions-column: 48px;/, "an actions track as wide as the widest button pair");
+  assert.match(row, /grid-template-columns: 28px minmax\(0, 1fr\) var\(--agent-status-column\) var\(--agent-actions-column\);/,
+    "four tracks, two of them fixed: every row gets the same geometry");
+  assert.match(cssRule(".agent-row-status") ?? "", /justify-self: start;/,
+    "the state starts on its track's left edge in every row");
+  assert.match(cssRule(".agent-row-actions") ?? "", /justify-self: end;/,
+    "the buttons sit at the row's end, out of the state's column");
+  assert.match(source, /className=\{`agent-row-status\$\{running \? " is-running" : ""\}\`\}/,
+    "the status is a grid item of its own, and a running one is named");
+  assert.match(source, /className="agent-row-actions"/, "and the row's buttons are another");
+  assert.match(source, /const hasActions = controllable \|\| !!onNewSideChat \|\| !!onToggleTab \|\| !!onDelete;/,
+    "a row with nothing to do draws no actions track, and its status stays in the same column");
+  assert.match(cssRule(".agent-row-icon") ?? "", /color: var\(--accent\);/, "a subagent row's head is the accent");
+  assert.match(cssRule(".agent-row.is-main .agent-row-icon") ?? "", /color: var\(--text-muted\);/,
+    "the main agent's head stays the chrome's ink, as the header draws it");
+  assert.match(css, /\.agent-row:not\(\.is-selected\):hover \.agent-row-title \{[^}]*color: var\(--text\);/,
+    "the dimming never hides the row under the pointer");
+  assert.match(css, /\.agent-row:not\(\.is-selected\) \.agent-row-status:not\(\.is-running\) \{[^}]*opacity: 0\.68;/,
+    "a finished state dims with its row; a running one keeps its accent");
 });
 
 test("the main agent's row is flat, and the search box is a quiet filled field", () => {
@@ -98,9 +125,12 @@ test("the main agent's row is flat, and the search box is a quiet filled field",
   assert.match(main, /box-shadow: none;/, "and no blue bar before its text");
   assert.match(cssRule(".agent-row.is-main.is-selected:hover") ?? "", /background: var\(--bg-hover\);/,
     "it is still a row: the pointer's wash answers when it arrives");
-  // A row that is genuinely switched to (a side chat, a run) keeps the menu's selection.
-  assert.match(css, /\.agent-row\.is-selected \{[^}]*background: var\(--bg-selected\);/,
-    "the selection still exists for the rows that need it");
+  // The hierarchy is ink, not paint: the row the chat stands on keeps its colour and
+  // every other run in the family steps back. That is what replaces the wash.
+  assert.match(css, /\.agent-row:not\(\.is-selected\) \.agent-row-title \{[^}]*color: var\(--text-muted\);/,
+    "every other row's title steps back, so the current row is the loudest thing in the list");
+  assert.match(css, /\.agent-row:not\(\.is-selected\) \.agent-row-subtitle \{[^}]*color-mix\(in srgb, var\(--text-dim\)/,
+    "and its subtitle goes shallower with it");
 
   const search = cssRule(".agent-panel-search");
   assert.ok(search, "the search box has a fork rule of its own");
