@@ -5938,7 +5938,9 @@ html.dark {
 .chat-composer-actions > .chat-composer-controls {
   flex: 1 1 auto;
   min-width: 0;
+  /* padding: 0 6px 0 0; */
   padding: 0;
+  margin-right: 15px;
 }
 
 /* Send keeps the card's bottom-right corner even when the phone hides the controls strip.
@@ -5953,14 +5955,14 @@ html.dark {
 
 .chat-composer-editor > .chat-input-textarea {
   box-sizing: border-box;
-  padding-right: 3px;
+  padding-right: 13px;
   /* The width comes from the column's `align-items: stretch`, not from `width: 100%`:
      a full width and a horizontal margin together pushed the text 8px past the card's
      right edge (the phone's Safari showed the caret in the border), and the margin is
      the card's inset. Stretched, a margin can only inset. Keep the top margin vertical
      only — that pairing is the invariant the width is bought with. */
   width: auto;
-  margin: 8px 0 0;
+  margin: 8px 0 18px 8px;
 }
 
 /* Focus only lifts the hairline a step; the caret already says where typing
@@ -6162,7 +6164,7 @@ html.dark {
   align-self: center;
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   width: var(--composer-send-size);
   height: var(--composer-send-size);
   padding: 0;
@@ -6176,9 +6178,9 @@ html.dark {
    Left-aligning the glyph inside the (unchanged, touch-sized) disc puts the ink on the
    text's line; the Send disc keeps its centered arrow, because the card's bottom-right
    arc is built around it. */
-.composer-attach-button > svg {
+/* .composer-attach-button > svg {
   flex: 0 0 auto;
-}
+} */
 
 .composer-attach-button[data-active] {
   /* Attached files are the state, and the glyph says so in full colour. No disc: the
