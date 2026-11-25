@@ -72,3 +72,33 @@ export function placeMenuWithinViewport(
     : Math.max(margin, above);
   return { top, left, side };
 }
+
+/** A node that answers `contains`, as a DOM node does. */
+interface NodeLike {
+  contains(other: unknown): boolean;
+}
+
+/**
+ * Does this scroll event move the element a menu is anchored to?
+ *
+ * A capture-phase `scroll` listener on the window hears every scroller in the app, and
+ * on a running session page the chat scrolls itself on each streamed chunk. A menu that
+ * closes for "the view moved" therefore closed the sidebar's "…" a second after every
+ * open, and the same listener shuts a combobox's suggestions while the conversation
+ * streams. Only a scroller that contains the anchor — or the page itself, which moves
+ * everything — detaches a menu from the control it belongs to.
+ *
+ * With no anchor (a menu opened at a point, not beside a control) only the page counts.
+ */
+export function scrollMovesAnchor(scroller: unknown, anchor: unknown): boolean {
+  if (scroller == null) return false;
+  if (typeof window !== "undefined" && scroller === window) return true;
+  if (typeof document !== "undefined"
+    && (scroller === document || scroller === document.documentElement || scroller === document.body)) {
+    return true;
+  }
+  if (anchor == null) return false;
+  const node = scroller as NodeLike;
+  if (typeof node.contains !== "function") return false;
+  return node.contains(anchor);
+}

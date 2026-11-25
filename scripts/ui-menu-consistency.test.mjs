@@ -54,3 +54,26 @@ test("all declared popup surfaces opt into the shared app-menu design", async ()
   assert.ok(checked >= 19, "The popup inventory must cover the application, not one example");
   assert.deepEqual(violations, []);
 });
+
+test("a menu yields to a scroll only when that scroll moves its own control", async () => {
+  // A capture-phase scroll listener sees every scroller in the app. Menus that closed for
+  // any of them shut themselves on the chat's auto-scroll while a session streams.
+  // A component with such a listener must ask `scrollMovesAnchor` first; a file that only
+  // re-places what it anchors (no closing) is listed here as the exception.
+  const REPOSIZES_INSTEAD = ["ChatInput.tsx", "ChatWindow.tsx", "TopbarTip.tsx"];
+  const offenders = [];
+  let guarded = 0;
+  for (const path of await components()) {
+    const source = await readFile(path, "utf8");
+    if (!/addEventListener\("scroll",\s*[A-Za-z0-9_$]+,\s*true\)/.test(source)) continue;
+    const name = path.pathname.split("/").pop();
+    if (REPOSIZES_INSTEAD.includes(name)) continue;
+    if (source.includes("scrollMovesAnchor")) {
+      guarded++;
+      continue;
+    }
+    offenders.push(name);
+  }
+  assert.ok(guarded >= 3, `the rule must cover the app's menus, not one file (${guarded})`);
+  assert.deepEqual(offenders, [], "a window-wide scroll listener must ask scrollMovesAnchor first");
+});

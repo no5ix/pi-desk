@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import type { NativeMenuEntry } from "@/lib/desktop-menu-model";
 import { closeDomMenu, getDomMenu, subscribeDomMenu, type DomMenuState } from "@/lib/dom-menu-store";
 import { isImeComposing } from "@/lib/ime";
+import { scrollMovesAnchor } from "@/lib/menu-placement";
 
 /**
  * The in-app context menu: the DOM counterpart of `showNativeMenu`, drawn from
@@ -184,10 +185,10 @@ function MenuView({ menu }: { menu: DomMenuState }) {
       closeDomMenu();
     };
     const onScroll = (event: Event) => {
-      const target = event.target as Node;
-      // A long submenu scrolls itself; the page behind it moving is what closes the menu.
-      if (rootRef.current?.contains(target) || subRef.current?.contains(target)) return;
-      closeDomMenu();
+      // A long submenu scrolls itself, and so does the conversation behind the menu while
+      // a session streams. This menu is opened at a point, not beside a control, so only
+      // the page itself moving takes it away.
+      if (scrollMovesAnchor(event.target, null)) closeDomMenu();
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || isImeComposing(event)) return;
