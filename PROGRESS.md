@@ -82,5 +82,16 @@ mirror files **absent**.
   queue mark, a click that prepends the copy *and its image* before the local text
   while both rows stay, and the store's write token coming back on the next push.
 
+## Shipped
+- `705702d3 feat: the composer keeps one copy per device, not one shared draft`,
+  pushed to `origin/feat/branch-picker-header-worktrees` (31 files). Only this
+  task's files are in it: `app/native-theme.css` is committed with just the
+  `.composer-copy-*` hunk, so the user's uncommitted rules in that file stayed
+  uncommitted, as did the sidebar/menu work in the tree.
+- `e2e/composer-device-copies.mjs` joined `npm run test:e2e` after
+  `e2e/composer-outbox.mjs`.
+- Screenshots of both rows at desktop and phone widths, light and dark:
+  `test-results/composer-device-copies/`.
+
 ## Next
-- Nothing outstanding for the ask. E2E result appended in this file.
+- Nothing outstanding for the ask.
