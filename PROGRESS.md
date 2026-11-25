@@ -560,3 +560,54 @@ equal to the plate's flattened colour, and not the page's.
 `e2e/image-swipe.mjs`, `e2e/composer-ios.mjs` pass. `npm test` has **one** failure, and
 it is the agent's own new file: `hooks/usePopTransition.test.mjs` →
 "SessionAutomationMenu holds its popup for the exit". `tsc --noEmit` is clean again.
+
+## The composer's project menu, covered by the header (dbc100f4)
+
+**Report.** On a phone in Safari, opening the composer's project chip drew the list *behind*
+the app header: the filter box, the current project and the first rows were cut in half and
+unreachable (`fix/flat-chat-blocks`, iPhone 15 Pro width).
+
+**Cause.** The menu hangs above the chip and was capped by nothing but its own
+`min(60vh, 420px)`. On a phone `60vh` reads the **layout** viewport (the whole page, 956px),
+while the app sizes its shell to the **visual** viewport the browser's bars shrink — so the
+cap was taller than the space above the chip. The panel grew up through the chat window's
+clipping box (`.chat-window` is `overflow: hidden`, and its box starts under the header) and
+behind the topbar, which is a sibling of the chat column at `z-index: var(--z-chrome)` and is
+drawn over it. The composer's slash/@ menus already carried this rule (#63); this menu never
+applied it.
+
+**Fix.** `components/ComposerProjectChip.tsx` now takes the composer's whole placement rule:
+an explicit width inside the box the page can show (`composerPanelAnchoring`,
+`PROJECT_MENU_WIDTH`), and a height capped by `getUpwardMenuMaxHeight` to the space between
+the chip and the boundary above it — the clipper's top and the topbar's bottom — with the list
+scrolling internally and a 120px floor. The vertical half of the rule
+(`getVisibleTopBoundary`, `getTopbarBoundary`, `getUpwardMenuMaxHeight`) moved to
+`lib/composer-panel-placement.ts`, next to the horizontal half, so the composer has **one**
+topbar walk and one clip walk; `ChatInput` imports them and re-exports the two its callers
+read. The panel's layer is the composer popovers' (`zIndex: 100`), not `500`: a panel capped
+to the column never needs to paint over the chrome.
+
+**Verification.**
+- `e2e/project-chip-menu.mjs` (new, run with `node e2e/project-chip-menu.mjs`) mounts the real
+  chip in the app's chrome with the phone's viewport split reproduced (a 440x956 page, a
+  480px shell) and asks every row whether it is painted below the header and inside the
+  window: the panel starts at 58px against the 48px header, 12 rows painted, and the scroll
+  reaches the last project; on 1280x800 it starts at 334px inside the column. The `?broken=1`
+  pass serves the pre-fix panel and measures it at 17px — under the header, one row covered —
+  so the check keeps its teeth. Screenshots: `test-results/project-chip-menu/*.png`.
+- `components/ComposerProjectChip.test.mjs` (new) and
+  `lib/composer-panel-placement.test.mjs` pin the wiring, the cap's numbers, the topbar's
+  overlap/above rules, the clip walk, and that no component reimplements the walks.
+- Verified in a detached worktree at the commit: `tsc --noEmit` clean,
+  `components/ComposerProjectChip.test.mjs lib/composer-panel-placement.test.mjs
+  components/ChatInput.test.mjs scripts/ui-menu-consistency.test.mjs
+  components/fork-extractions.test.mjs` → 137/137, and the e2e above.
+
+**Left alone.** The panel/pop-transition work in the tree (`hooks/usePopTransition.ts`,
+`components/ComposerProjectChip.tsx`'s `pop`, `AppShell`, `ImagePreview`, `ModelSelector`,
+`path-ui`, `native-theme.css`, `package.json`, the `lib/git-*` and `app/api/git/*` files) is
+another agent's uncommitted work: it stayed unstaged, and the commit is this fix only. The
+chip keeps `usePopTransition` in the working tree, so
+`hooks/usePopTransition.test.mjs` stays satisfied by that agent's pass.
+`e2e/project-chip-menu.mjs` is not in `package.json`'s `test:e2e` chain: that one long line
+carries the other agent's uncommitted `image-swipe` entry, so wiring it is theirs to commit.
