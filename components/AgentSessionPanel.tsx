@@ -135,6 +135,9 @@ function AgentRow({
     : `${side ? t("agentSwitcher.sideChat") : relation?.profile ?? t("agentSwitcher.subagent")} · ${formatRelativeTime(session.modified, locale)}`;
   // Steer and Stop are the subagent route's; a side chat is driven from its own tab.
   const controllable = !main && !side && running;
+  // The row's trailing track is drawn only when it holds something; the status keeps its
+  // own fixed track either way, so every row's geometry is the same (see `.agent-row`).
+  const hasActions = controllable || !!onNewSideChat || !!onToggleTab || !!onDelete;
 
   return (
     <div
@@ -150,7 +153,7 @@ function AgentRow({
         }
       }}
     >
-      <span style={{ width: 28, height: 28, display: "grid", placeItems: "center", color: main ? "var(--text-muted)" : "var(--accent)" }}>
+      <span className="agent-row-icon" style={{ width: 28, height: 28, display: "grid", placeItems: "center" }}>
         {main ? (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" />
@@ -163,15 +166,15 @@ function AgentRow({
           </svg>
         )}
       </span>
-      <span style={{ minWidth: 0 }}>
-        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--fs-caption)", fontWeight: selected ? 600 : 500 }} title={primary}>
+      <span className="agent-row-text" style={{ minWidth: 0 }}>
+        <span className="agent-row-title" style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--fs-caption)", fontWeight: selected ? 600 : 500 }} title={primary}>
           {primary}
         </span>
-        <span style={{ display: "block", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: "var(--fs-micro)" }} title={secondary}>
+        <span className="agent-row-subtitle" style={{ display: "block", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--fs-micro)" }} title={secondary}>
           {secondary}
         </span>
       </span>
-      <span style={{ display: "flex", alignItems: "center", gap: 6, color: main && !running ? "var(--text-dim)" : statusColor(status), fontSize: "var(--fs-micro)", whiteSpace: "nowrap" }}>
+      <span className={`agent-row-status${running ? " is-running" : ""}`} style={{ color: main && !running ? "var(--text-dim)" : statusColor(status) }}>
         {(main || side) && !running ? (
           main && selected ? t("agentSwitcher.current") : null
         ) : (
@@ -180,8 +183,11 @@ function AgentRow({
             <span>{t(`agentSwitcher.status.${status}`)}</span>
           </>
         )}
+      </span>
+      {hasActions && (
+        <span className="agent-row-actions">
         {controllable && (
-          <span style={{ display: "inline-flex", gap: 4, marginLeft: 4 }}>
+          <>
             <button
               type="button"
               title={t("agentSwitcher.steer")}
@@ -208,7 +214,7 @@ function AgentRow({
             >
               <StopIcon />
             </button>
-          </span>
+          </>
         )}
         {onNewSideChat && (
           <RowButton title={t("sideChat.new")} disabled={newSideChatPending} onClick={onNewSideChat}>
@@ -236,7 +242,8 @@ function AgentRow({
             </svg>
           </RowButton>
         )}
-      </span>
+        </span>
+      )}
     </div>
   );
 }

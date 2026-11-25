@@ -11935,10 +11935,18 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
   overflow-y: auto;
 }
 .agent-row {
+  /* Four tracks, the last two fixed. Every row is a grid of its own, so a status in an
+     `auto` track started where its own row's buttons ended: "Running" (with a side-chat
+     button beside it) and "Completed" (with none) sat on two different columns and the
+     states never lined up. A status track as wide as the widest label and an actions
+     track as wide as the widest button pair give every row the same geometry, so the
+     statuses read as one left-aligned column. */
+  --agent-status-column: 84px;
+  --agent-actions-column: 48px;
   width: 100%;
   min-height: 52px;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) var(--agent-status-column) var(--agent-actions-column);
   align-items: center;
   gap: 9px;
   padding: 7px 8px;
@@ -11950,12 +11958,72 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
   text-align: left;
   transition: background var(--dur-fast) var(--ease-native);
 }
+.agent-row-icon {
+  color: var(--accent);
+}
+.agent-row.is-main .agent-row-icon {
+  color: var(--text-muted);
+}
+.agent-row-title {
+  color: var(--text);
+}
+.agent-row-subtitle {
+  color: var(--text-dim);
+}
+.agent-row-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* The state starts on the track's left edge in every row — the column the eye runs
+     down, which is what the fixed width is for. */
+  justify-self: start;
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+.agent-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: end;
+}
+/* The list's hierarchy is ink, not paint. The row the chat stands on keeps its full
+   colour; every other row — the other runs in the family — steps back: title to
+   `--text-muted`, subtitle and glyph washed out, the finished state's label dimmed.
+   A running row keeps its accent: that one is worth looking at. The pointer's row
+   comes back up to full ink, so the dimming never hides a row being read. */
+.agent-row:not(.is-selected) .agent-row-title {
+  color: var(--text-muted);
+}
+.agent-row:not(.is-selected) .agent-row-subtitle {
+  color: color-mix(in srgb, var(--text-dim) 62%, transparent);
+}
+.agent-row:not(.is-selected) .agent-row-icon {
+  color: color-mix(in srgb, var(--accent) 52%, var(--text-dim));
+}
+.agent-row:not(.is-selected) .agent-row-status:not(.is-running) {
+  opacity: 0.68;
+}
+.agent-row:not(.is-selected):hover .agent-row-title {
+  color: var(--text);
+}
+.agent-row:not(.is-selected):hover .agent-row-subtitle {
+  color: var(--text-dim);
+}
+.agent-row:not(.is-selected):hover .agent-row-icon {
+  color: var(--accent);
+}
+.agent-row:not(.is-selected):hover .agent-row-status:not(.is-running) {
+  opacity: 1;
+}
 .agent-row:hover { background: var(--bg-hover); }
 .agent-row.is-selected {
-  /* A wash and an inset bar: the list draws no rules, and the row the session stands on
-     is still the findable one — the menu's own selection, not a border. */
-  background: var(--bg-selected);
-  box-shadow: inset 3px 0 0 var(--menu-selection-color);
+  /* Nothing painted on the row the chat stands on: no wash, no inset bar. It is named
+     by its ink (the rules above dim every other row), and the header already says which
+     session is open. The panel drew the menu's selection here — a grey wash and a blue
+     bar — and on a subagent's page that highlighted one run out of eleven and put a
+     blue line nobody read beside it. */
+  background: transparent;
+  box-shadow: none;
 }
 .agent-row.is-main.is-selected {
   /* Not for the main agent: the list always opens on it, and the row already says
