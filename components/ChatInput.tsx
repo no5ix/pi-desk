@@ -1359,7 +1359,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const signature = draftSignature(draft.value, draft.images, draft.files);
     if (syncedSignatureRef.current === signature) return;
     syncedSignatureRef.current = signature;
-    composerSyncStampRef.current = pushComposerDraft(draftKey, draft);
+    // The stamp is this device's own write, and the mirror effect below compares every
+    // server copy against it. A composer the mirror cannot carry (a pasted screenshot
+    // past the image cap) is local-only, and its stamp keeps advancing all the same —
+    // otherwise a keystroke drops the guard to zero and the composer's own last
+    // accepted snapshot, read back by the poll, replaces the text and the images.
+    const stamp = pushComposerDraft(draftKey, draft);
+    if (stamp > composerSyncStampRef.current) composerSyncStampRef.current = stamp;
   }, [attachedFiles, attachedImages, draftKey, value]);
 
   useEffect(() => {

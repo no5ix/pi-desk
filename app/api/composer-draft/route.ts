@@ -46,11 +46,12 @@ export async function PUT(request: Request) {
   if (!key) return NextResponse.json({ error: "key is required" }, { status: 400 });
   const result = writeComposerDraft(key, body);
   if (!result.ok) {
-    if (result.dropped) {
-      // The composer carries attachments the mirror cannot hold (a screenshot past the
-      // image cap). Storing a trimmed copy would hand the composer back to itself
-      // without them, so this is a "cannot sync" answer: the client stops mirroring
-      // this composer and its draft stays local, as it was before the mirror existed.
+    if (result.dropped || result.refused) {
+      // The composer carries what the mirror cannot hold (a screenshot past the image
+      // cap, a snapshot past the size cap). Storing a trimmed copy would hand the
+      // composer back to itself without them, so this is a "cannot sync" answer: the
+      // client stops mirroring this composer and its draft stays local, as it was
+      // before the mirror existed.
       return NextResponse.json({ error: result.error, draft: result.draft ?? readComposerDraft(key) }, { status: 413 });
     }
     // The client's write lost to a newer one; hand back the copy it is behind so

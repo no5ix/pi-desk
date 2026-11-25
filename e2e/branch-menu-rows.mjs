@@ -110,7 +110,7 @@ assert.ok(menuWidth > 225 && menuWidth <= 240, `the chip's menu is the wide proj
 
 for (const row of rows) {
   const label = row.text;
-  assert.equal(row.actions.length, 2, `${label}: the two action icons`);
+  assert.equal(row.actions.length, 1, `${label}: one action icon — the worktree; the branch name is the switch`);
   assert.ok(!row.tagOverIcon, `${label}: the "${row.tagText}" tag does not overlap the row's icons`);
   assert.ok(!row.tagPastButton, `${label}: the "${row.tagText}" tag stays inside the row's button`);
   if (row.tag) {
@@ -127,7 +127,12 @@ for (const row of rows) {
   assert.ok(rows.some((row) => row.name.height > 20), "a long branch name wraps to more than one line");
 
 // The control: without the fix rules, the same measurement sees the overlap.
+// The row lost an action icon (the name is the switch now), so the control also takes
+// back the width that icon used to occupy: the menu falls to its narrow 168px form, the
+// width a phone's project menu has. Pressure restored, the unshrunken tag must reach the
+// icon again — a control that passes on an empty field proves nothing.
 const unfixed = css
+  .replace(/\.sidebar-project-context-menu--wide \{([^}]*?)width: 240px;/, ".sidebar-project-context-menu--wide {$1width: 168px;")
   .replace(/\.sidebar-project-context-menu-branch-name \{[^}]*\}/g, "")
   .replace(/\.sidebar-project-context-menu-branch-tag \{\n((?:[^}]*\n)*?)\}/, ".sidebar-project-context-menu-branch-tag {\n  margin-left: auto;\n  color: var(--text-dim);\n  font-family: var(--font-ui);\n  font-size: var(--fs-micro);\n}")
   .replace(/(\.sidebar-project-context-menu-row--branch > button\[role="menuitem"\] \{)([^}]*?)overflow: hidden;/, "$1$2");

@@ -80,6 +80,38 @@ export async function checkComposerGeometry(page) {
           assert.equal(control.text, "", `The ${control.name} button is icon-only at ${size}px`);
           assert.ok((control.title || "").length > 0, `The ${control.name} button names its state in the title at ${size}px`);
         }
+        // The row's ink edges, not only its boxes. The `+` and Send are discs with no disc
+        // painted, so the only ink in them is the glyph — centred, the `+` sat 10px right of
+        // the text it opens, and the hint carried a padding that left its sentence 13px
+        // short of the arrow it ends on. The ask was for the composer's contents to line up
+        // with the two controls, so this measures the ink: the text's left edge, the `+`
+        // glyph's left edge, the hint's last character, Send's arrow.
+        const ink = await card.evaluate((el) => {
+          const box = (n) => n ? n.getBoundingClientRect() : null;
+          const text = el.querySelector("textarea");
+          const ts = getComputedStyle(text);
+          const plus = el.querySelector(".composer-attach-button > svg");
+          const send = el.querySelector(".composer-send-button > svg");
+          const hint = el.querySelector(".composer-trigger-hint");
+          return {
+            textLeft: box(text).left + parseFloat(ts.paddingLeft) + parseFloat(ts.borderLeftWidth),
+            plusLeft: plus ? box(plus).left : null,
+            sendRight: send ? box(send).right : null,
+            hintInkRight: hint ? box(hint).right - parseFloat(getComputedStyle(hint).paddingRight) : null,
+          };
+        });
+        if (ink.plusLeft !== null) {
+          // The composer's row works in 2px (`.chat-composer-actions { gap: 2px }`), and at
+          // the smallest chat font the phone tier's insets are read at that granularity.
+          // The glyph may sit at the text's edge or a hair left of it; what is forbidden is
+          // the 10px the centred disc used to put between them.
+          assert.ok(ink.plusLeft >= ink.textLeft - 2 && ink.plusLeft <= ink.textLeft + 1,
+            `The \`+\` glyph opens on the text's left edge at ${size}px: ${ink.plusLeft} vs ${ink.textLeft}`);
+        }
+        if (ink.hintInkRight !== null && ink.sendRight !== null) {
+          assert.ok(Math.abs(ink.hintInkRight - ink.sendRight) <= 3,
+            `The \`/ @ #\` hint ends on Send's arrow at ${size}px: ${ink.hintInkRight} vs ${ink.sendRight}`);
+        }
         assert.ok(Math.abs(layout.placeholderLine - layout.line) < 0.1, 'Placeholder must use the actual text line height');
         if (!draft) assert.ok(layout.overflow <= 1, `Empty input must not have a vertical scrollbar at ${size}px / ${page.viewportSize().width}px: ${JSON.stringify(layout)}`);
         // The card carries no "clear" button (a textarea is selected and deleted), the

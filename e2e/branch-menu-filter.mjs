@@ -81,6 +81,11 @@ const STATE = () => ({
 
 const branchButton = (name, kind) =>
   `.sidebar-project-context-menu-row--branch:has(.sidebar-project-context-menu-branch-name:text-is("${name}")) .sidebar-project-context-menu-branch-action[title*="${kind}"]`;
+/** The row's name is the branch switch: it checks the branch out, or takes the session to
+ *  the worktree that already holds it. The row used to carry a second icon that did exactly
+ *  this, and the menu's own test (`e2e/branch-menu-rows.mjs`) counts one action button. */
+const branchRow = (name) =>
+  `.sidebar-project-context-menu-row--branch:has(.sidebar-project-context-menu-branch-name:text-is("${name}")) button[role="menuitem"]`;
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
@@ -124,24 +129,20 @@ assert.equal(state.filter.value, "zzz", "the box keeps its text to the end: the 
 await page.evaluate(() => { window.__calls.length = 0; });
 await page.fill(".sidebar-project-context-menu-filter", "");
 
-// The branch that lives in another worktree: the row explains it, and the branch
-// icon is the way in. `main` is checked out in /repo while the session is in
-// /repo-worktrees/feat-x; `feat/x` is the current branch of that checkout.
+// The branch that lives in another worktree: the row's **name** explains it and is the way
+// in. `main` is checked out in /repo while the session is in /repo-worktrees/feat-x;
+// `feat/x` is the current branch of that checkout. The separate branch icon that repeated
+// the name is gone, so the tip and the click both live on the name.
 const attr = (selector, name) => page.locator(selector).first().getAttribute(name);
-const heldTitle = await attr(branchButton("main", "checked out in a worktree"), "title");
-assert.equal(heldTitle, "main is checked out in a worktree — work in that folder");
-assert.equal(await attr(branchButton("main", "checked out in a worktree"), "disabled"), null,
-  "opening the worktree that holds the branch is allowed");
-assert.notEqual(await attr(branchButton("feat/x", "Check out"), "disabled"), null,
-  "the current branch cannot be checked out again");
-const rowTitle = await attr(
-  '.sidebar-project-context-menu-row--branch:has(.sidebar-project-context-menu-branch-name:text-is("main")) button[role="menuitem"]',
-  "title",
-);
-assert.match(rowTitle, /main is already checked out in another worktree — open that worktree/);
+assert.equal(await attr(branchRow("main"), "title"),
+  "main is already checked out in another worktree — open that worktree");
+assert.equal(await attr(branchRow("main"), "disabled"), null,
+  "a branch held in a worktree is still reachable: the row opens that checkout");
+assert.equal(await attr(branchRow("feat/x"), "aria-current"), "true",
+  "the current branch is marked current: its row is the only place that says so now that the row carries no branch icon");
 await page.screenshot({ path: `${out}/long-list.png` });
 
-await page.click(branchButton("main", "checked out in a worktree"));
+await page.click(branchRow("main"));
 await page.click(branchButton("fix/b", "New worktree from"));
 state = await page.evaluate(STATE);
 assert.deepEqual(state.calls, ["switch:main", "worktree:fix/b"],

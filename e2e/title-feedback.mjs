@@ -10,6 +10,9 @@ import { createE2EServerEnv } from "../scripts/e2e-server-env.mjs";
 
 // Real AppShell and notice shelf; only the title model response is synthetic.
 // All session writes go to this test's private agent directory, never user data.
+// The title assertions read `.app-topbar-title > span:first-child`: the header's title
+// block also carries the project / branch row (a second span), and that is a control, not
+// the title.
 const root = fileURLToPath(new URL("../", import.meta.url));
 const artifacts = join(root, "test-results/title-feedback");
 await mkdir(artifacts, { recursive: true });
@@ -130,7 +133,7 @@ try {
   assert.equal(await page.getByRole("button", { name: "Model settings", exact: true }).count(), 0);
   release();
   await page.getByText("Conversation title updated: Generated fixture title", { exact: true }).waitFor();
-  await page.waitForFunction(() => document.querySelector(".app-topbar-title > span")?.textContent === "Generated fixture title");
+  await page.waitForFunction(() => document.querySelector(".app-topbar-title > span:first-child")?.textContent === "Generated fixture title");
   await page.locator(".session-item-title").getByText("Generated fixture title", { exact: true }).waitFor();
 
   gate = defer(); responseKind = "Background generated title";
@@ -139,7 +142,7 @@ try {
   await page.getByText("Synthetic Other conversation message", { exact: true }).waitFor();
   release();
   await page.getByText("Conversation title updated: Background generated title", { exact: true }).waitFor();
-  assert.equal(await page.locator(".app-topbar-title > span").innerText(), "Other conversation");
+  assert.equal(await page.locator(".app-topbar-title > span:first-child").innerText(), "Other conversation");
   await page.locator(".session-item-title").getByText("Background generated title", { exact: true }).waitFor();
   assert.deepEqual(errors, []);
   const localized = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: "zh-CN", colorScheme: "dark" });

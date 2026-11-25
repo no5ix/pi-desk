@@ -370,7 +370,12 @@ try {
       }));
       assert.equal(after.maximum - after.value, distanceFromEnd);
       assert.ok(after.value >= 1 && after.value <= after.maximum);
-      await page.locator("textarea").last().focus();
+      // Focus the composer by name, not "the last textarea": the workspace panel keeps its
+      // terminal mounted when hidden, and xterm's `.xterm-helper-textarea` then sits after
+      // the composer in DOM order inside a `display: none` subtree, where focus() is a
+      // no-op. The navigator track keeps focus, its `onBlur` never runs, and the hover
+      // preview stays visible forever (the bug this line used to reproduce as a timeout).
+      await page.locator(".chat-input-textarea").focus();
       await preview.waitFor({ state: "hidden" });
       await page.setViewportSize(viewport);
       await navigator.waitFor({ state: "detached" });

@@ -123,6 +123,21 @@ only — `width: 100%` with a horizontal margin pushed the text 8px past the car
 edge. `e2e/composer-geometry.mjs` measures the hint's centre against the text's first
 line and asserts there is no clear button and the text ends inside the card, at every
 font size and theme.
+The card's two left ends are compared as **ink**, not as boxes. The `+` and Send are discs
+with no disc painted (`background: none`), so the only ink in them is the glyph: centred in
+the 36px disc, the `+` began 10px right of the prompt it opens, and the hint's 23px
+`padding-right` left its sentence 13px short of Send's arrow — the composer read as two left
+columns and a ragged right edge, typed lines included (the placeholder and the text share
+the element, so both move together). `.composer-attach-button` is
+`justify-content: flex-start` (the disc keeps its touch-sized box), and the hint's
+`padding-right` is 10px — the disc's own inset — with its box still at `right: 0`, so the
+ink moves and the layout does not. The e2e measures the glyph and text ink edges.
+The in-session "Waiting for model…" / "Compacting…" line is the **transcript's** last row
+(`components/ChatWindow.tsx`), not part of the composer, and the composer floats over the
+scrollport with a 32px fade above its card on top of the card's shadow — so the one sentence
+the user is watching arrived painted over. `.chat-scroll-container`'s `padding-bottom` (34px)
+is what lifts it clear; being scroll content, it only exists at the tail. The same test that
+owns `overflow-anchor: none` pins it (`components/ChatWindow.scroll-anchor.test.mjs`).
 
 The row under the card no longer exists; the same controls live inside it. On a phone
 `.chat-composer-controls` is a grid with exactly TWO children (the wide spacer is
@@ -519,8 +534,12 @@ box can see it, so a keydown handler on the input would never run). `e2e/branch-
 types into a twelve-branch fixture and reads the rows back; its `?short=1` pass requires the
 box to be **absent** for three branches, so the check cannot pass by always having a box.
 
-A branch row is `[name] [remote|worktree tag]` inside one button, with the two
-action icons after it. The name is the flexible element (`min-width: 4em`,
+A branch row is `[name] [remote|worktree tag]` inside one button, with the **one** action
+icon after it: the worktree this branch can start. It used to carry a second icon that
+checked the branch out, which is exactly what the name under the pointer already does, and a
+row with two ways to do one thing reads as two different things — the user asked for the name
+to *be* the switch (`components/ProjectContextMenu.tsx`; `e2e/branch-menu-rows.mjs` counts
+one action button per row). The name is the flexible element (`min-width: 4em`,
 `overflow-wrap: anywhere`) and the tag is the element that gives way (it shrinks and
 ellipsizes); the button clips. A long name like
 `claude/conversation-list-optimization-9ec111` used to push the `remote` tag past the
@@ -559,16 +578,42 @@ The composer's **project chip** is a new-session control only: `ChatInput` gates
 is pinned to its project and the header above names it, so an inert copy under its composer
 is noise.
 
-The header's row reads `[folder] project  [branch|worktree icon] branch  [clock]  [subagents] N [✓] N [⚠] N [↻] N`. The glyph is the
-worktree one when the selected session runs in a linked worktree (`SessionInfo.isWorktree`),
-because the same branch name can live in the repo and in a worktree. The counts are the
+The header's row reads `[folder] project  [branch|worktree icon] branch  [clock]  [subagents] N [✓] N [⚠] N [↻] N`. The worktree
+glyph is asked of the **branch**, not of the folder alone: it goes in front of a branch whose
+own folder this is (`lib/worktree-folder.ts` — the app creates `<repo>-worktrees/<branch>`, so
+the folder carrying that branch is that branch's worktree), because the same branch name can
+live in the repo and in a worktree. A linked folder the user switched to an ordinary branch is
+a plain folder to the person typing in it, and the row is read as a statement about the branch:
+`auto-toc` on `main` inside `auto-toc-worktrees/main-bak3-test-wt` wears the **folder** glyph,
+in the header's project chip and in the composer's, and so does a session with no branch at
+all. The folder's own truth (`SessionInfo.isWorktree`, `ProjectInfo.isWorktree`) is untouched —
+grouping, file access and the sidebar keep it; only the glyph asks the second question.
+Hover, focus, or an open tip lights a chip's label **and its glyph** onto `--text`: the row's
+only state used to be the `--bg-hover` wash, and over the chrome's translucent bar a 4% tint
+says nothing (the glyph sits below the button, where `.app-topbar-project svg`
+out-specifies an inherited `color`, so it is named with the label).
+The counts are the
 active family's subagent runs (`components/TopbarSubagents.tsx`,
 `countSubagents`): the subagent glyph, then completed / aborted (aborted counts failed
 and stopped runs too) / running, each with the Agents panel's own icon for that state
 (the check, its stopped mark, the pulsing runner) in the success / warning / accent
 colours. No total is printed — the three buckets are the total, and a number after the
 glyph only took width from the project and the branch. Clicking
-opens the Agents panel, and a session with no subagent runs renders nothing. The row
+opens the Agents panel, and a session with no subagent runs renders nothing. The panel is
+one `.app-menu` surface — the rounded card, the separator and `--shadow-popover` every
+popup already uses — and not a box welded to the topbar: no hairline down its sides, no rule
+under the header, none under the search box, none under a row. Its rows are flat and rounded
+and the selected one is a wash with an inset accent bar (`--menu-selection-color`); its
+delete confirmation and steer field are inset strips. The filter box lives in the header row
+with the title and the counts (the `> 8` gate is unchanged). The panel is placed under the
+count it opens from, at the topbar's **right** edge: pinned to the topbar's left edge, the
+420px card sat on top of the project tree on a desktop and a pad, which is where nobody is
+reading a run. A running row leads with the header's subagent head (`AgentRunningIcon`,
+exported, at row size, pulsing), not a spinner: one shape for one state. One local caveat is
+worth knowing when a panel refuses to look round: the install's `<agentDir>/desktop/custom.css`
+loads after every app stylesheet, and a block like
+`.agent-session-panel { border-radius: 0 !important }` in it wins the cascade.
+The row
 wraps, and the counts are its last item, so on a phone, or behind a long project name,
 they take the second line; the topbar is a floor (`minHeight` in `AppShell`, `height:
 auto` in the standalone rule) so a wrapped line grows the bar instead of spilling into
@@ -600,9 +645,14 @@ eating the composer it mirrors, and both came from real losses:
   screenshots and the composer's own 4s poll painted that trimmed copy back: the
   attachments vanished mid-typing, with no reload and no send. `normalizeComposerDraft`
   reports what the size guards refused, `writeComposerDraft` refuses such a write (the
-  route answers **413**), and `lib/composer-sync.ts` then stops pushing and polling that
-  composer for the tab's life. The user's composer, with its attachments, beats the
-  other device's copy.
+  route answers **413**, and a whole-snapshot refusal is a `refused` result, never a
+  "newer draft" 409 the client would answer by reading the store), and
+  `lib/composer-sync.ts` then stops pushing and polling that composer for the tab's life —
+  checked when the watcher starts *and* on the tick that learns the key is unmirrored.
+  Such a composer keeps its own **monotonic stamp** (`nextStamp`): `pushComposerDraft`
+  handing back `0` used to flatten the composer's echo guard, and the next accepted
+  snapshot then looked newer than anything the composer had written. The user's composer,
+  with its attachments, beats the other device's copy.
 
 `lib/composer-sync.test.mjs`, `app/api/composer-draft/route.test.mjs` and
 `components/ChatInput.composer-sync.test.mjs` pin each half. See

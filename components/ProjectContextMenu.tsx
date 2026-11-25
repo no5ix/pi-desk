@@ -12,7 +12,7 @@
 // (openDomProjectMenu in SessionSidebar).
 
 import { AppCombobox } from "./AppCombobox";
-import { BranchIcon, WorktreeIcon } from "./GitIcons";
+import { WorktreeIcon } from "./GitIcons";
 import type { RefObject } from "react";
 import { useEffect, useState } from "react";
 import { useRef } from "react";
@@ -538,28 +538,16 @@ export function ProjectContextMenuPanel({
                   </button>
                 );
                 if (!onCreateWorktreeFromBranch) return row;
-                // The composer's chip: the name checks the branch out, and the two
-                // buttons after it say what else the same branch can become — a
-                // checkout here, a worktree of its own next to the folder, or (when a
-                // worktree already holds it) that checkout itself.
+                // The composer's chip: the name is the branch switch — it checks the
+                // branch out here, or takes the session to the worktree that already
+                // holds it — so the row carries one button only: the worktree this
+                // branch can start. The second button used to be a git-branch glyph
+                // that did exactly what the name does, and a row with two ways to do
+                // one thing reads as two different things.
                 return (
                   <div key={`${remote ? "remote:" : "local:"}${name}`} className="sidebar-project-context-menu-row sidebar-project-context-menu-row--branch">
                     {row}
                     <span className="sidebar-project-context-menu-branch-actions">
-                      <button
-                        type="button"
-                        className="sidebar-project-context-menu-branch-action"
-                        disabled={switchingBranch !== null || isCurrent}
-                        title={holder
-                          ? t("sidebar.openWorktreeForBranchTitle", { branch: name })
-                          : t("sidebar.checkOutBranchTitle", { branch: name })}
-                        aria-label={holder
-                          ? t("sidebar.openWorktreeForBranchTitle", { branch: name })
-                          : t("sidebar.checkOutBranchTitle", { branch: name })}
-                        onClick={() => onSwitchBranch(name)}
-                      >
-                        <BranchIcon />
-                      </button>
                       <button
                         type="button"
                         className="sidebar-project-context-menu-branch-action"

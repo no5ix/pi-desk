@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@/hooks/useI18n";
+import { branchOwnsWorktreeFolder } from "@/lib/worktree-folder";
 import { BranchIcon, WorktreeIcon } from "./GitIcons";
 import { TopbarTip, TopbarTipRow, useTopbarTip } from "./TopbarTip";
 
@@ -39,8 +40,11 @@ export function TopbarBranchChip({
       >
         {/* The sidebar's branch glyph in a checkout, the worktree glyph in a linked
             worktree: the same branch name can mean both folders, and the header has to
-            say which one this session works in. */}
-        {isWorktree ? <WorktreeIcon /> : <BranchIcon />}
+            say which one this session works in. A linked folder that was switched to an
+            ordinary branch is a plain folder to the person typing in it, so the glyph
+            asks the question they read it as: is this folder *this* branch's own
+            worktree, the one the app made for it? */}
+        {isWorktree && branchOwnsWorktreeFolder(projectRoot, branch) ? <WorktreeIcon /> : <BranchIcon />}
         <span>{branch}</span>
       </button>
       {open ? (
