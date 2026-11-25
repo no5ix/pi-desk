@@ -906,25 +906,26 @@ on a 700ms debounce and polls every 4s while the tab is visible.
   counted (`droppedImages` / `droppedFiles`) and the row names what is missing. A
   read-only copy that reports itself incomplete is honest; the mirror's trimmed copy
   repainted a composer without the screenshots the user had just added.
-- **The row's mark is the browser that typed the copy.** `browser` is part of the
-  record: `detectBrowser` (`lib/device-identity.ts`) reads the UA — Chromium forks
-  first, so the `Safari/537.36` that ends every Blink UA is not Safari — the client
-  sends it with every write, and the store keeps it inside a fixed set (`browserFor`,
-  `other` for anything else, capped at `MAX_BROWSER_CHARS` on the route), so no
-  caller-supplied string reaches the renderer.
-
+- **The row's mark is a pair: the machine, then the browser that typed the copy.**
+  `browser` is part of the record: `detectBrowser` (`lib/device-identity.ts`) reads
+  the UA — Chromium forks first, so the `Safari/537.36` that ends every Blink UA is
+  not Safari — the client sends it with every write, and the store keeps it inside a
+  fixed set (`browserFor`, `other` for anything else, capped at `MAX_BROWSER_CHARS`
+  on the route), so no caller-supplied string reaches the renderer.
 `components/ComposerDeviceCopies.tsx` renders one row per other device, wearing the
-outbox's surface (`.composer-outbox composer-device-copies`): the mark of that
-browser — Safari's compass, Chrome's wheel, Edge's swirl, Firefox's fox, Opera's O,
-drawn as strokes on a 24 grid at the app's weight (2, round caps) — and the content,
-plus notes for attachments carried or refused. **No `mac-content-copy` text is
-printed**: a column of brand marks is read at a glance where a slug is scan noise,
-so the name from `deviceCopyNames` lives in the row's `title` and its `aria-label`
-(`mac-content-copy · Safari`) — which is also what tells two Safaris on two Macs
-apart. A browser with no mark, and a copy written before browsers were recorded,
-falls back to the device glyph: a computer, a rounded phone with a speaker and a
-home dot, a tablet. A device shape is honest, a guessed brand is not. On a phone the
-mark stays, where the outbox's own queue mark hides. **No edit button, no delete
+outbox's surface (`.composer-outbox composer-device-copies`): two marks — the
+machine (`DeviceCopyGlyph`: a screen, a rounded phone with a speaker and a home dot,
+a tablet) and the browser (`BrowserCopyGlyph`: Safari's compass, Chrome's wheel,
+Edge's swirl, Firefox's fox, Opera's O), both strokes on a 24 grid at the app's
+weight (2, round caps) — then the content, plus notes for attachments carried or
+refused. The pair is the point: a MacBook's Safari and an iPhone's Safari are two
+rows, and a lone compass made them twins. **No `mac-content-copy` text is printed**:
+a column of marks is read at a glance where a slug is scan noise, so the name from
+`deviceCopyNames` lives in the row's `title` and its `aria-label`
+(`mac-content-copy · Safari`). A browser with no mark, and a copy written before
+browsers were recorded, draw no brand at all — the machine's glyph is already in
+front of them, and a guessed brand is a lie about the user's machine. On a phone the
+marks stay, where the outbox's own queue mark hides. **No edit button, no delete
 button**: a row is another device's
 draft. The row is one action — `applyDeviceCopy` in `components/ChatInput.tsx`
 prepends the copy's text *before* what is typed here and joins its attachments to

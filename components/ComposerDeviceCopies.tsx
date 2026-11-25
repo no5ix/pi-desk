@@ -7,12 +7,14 @@ import { browserDisplayName, deviceCopyNames } from "@/lib/device-identity";
 // Fork-owned: the other devices' composer copies, docked above this composer.
 //
 // One row per device that is editing the same composer elsewhere, wearing the
-// outbox's surface: the mark of the browser that typed it (Safari's compass,
-// Chrome's wheel, …), and the content. The device's own name (`mac-content-copy`)
-// is not printed: a column of brand marks is read at a glance, where a slug of
-// text is scan noise, and the mark is the thing the eye recognises. The name is
-// not lost — the row's tooltip and its accessible name carry `mac-content-copy ·
-// Safari`, which is also what tells two Safaris on two Macs apart.
+// outbox's surface. The mark is a **pair**: the device (a MacBook's screen, an
+// iPhone's body) and then the browser that typed the copy (Safari's compass,
+// Chrome's wheel, …). The device alone cannot say which browser holds the draft,
+// the browser alone cannot say which machine does — a MacBook's Safari and an
+// iPhone's Safari are two rows, and one compass made them twins. Nothing is
+// printed: the device's own name (`mac-content-copy`) is the row's tooltip and
+// its accessible name (`mac-content-copy · Safari`), because a slug in the row is
+// scan noise where two marks are read at a glance.
 //
 // There is no edit and no delete button — a row is another device's draft, and no
 // device edits or deletes another's. The row is one action: it prepends the copy,
@@ -22,9 +24,9 @@ import { browserDisplayName, deviceCopyNames } from "@/lib/device-identity";
 /**
  * Strokes on a 24 grid, one `<path>` per stroke, in the app's outline style
  * (stroke 2, round caps). The browser map has no `other`: a browser this app has
- * no mark for — and a copy written before the browser was recorded — falls back
- * to the device's own glyph, because a computer is honest and a wrong brand is
- * not.
+ * no mark for — and a copy written before the browser was recorded — draws no
+ * browser mark at all, because the device's own glyph is already in front of it
+ * and a guessed brand is a lie about the user's machine.
  */
 const BROWSER_GLYPHS: Partial<Record<ComposerBrowser, string[]>> = {
   safari: [
@@ -75,17 +77,27 @@ const DEVICE_GLYPHS: Record<ComposerDeviceKind, string[]> = {
   other: ["M3 5h13v10H3zM19 10h3v11h-3z"],
 };
 
-export function DeviceCopyGlyph({ kind, browser, size = 16 }: {
-  kind: ComposerDeviceKind;
-  browser?: ComposerBrowser | null;
-  size?: number;
-}) {
-  const strokes = BROWSER_GLYPHS[browser ?? "other"] ?? DEVICE_GLYPHS[kind] ?? DEVICE_GLYPHS.other;
+const GLYPH_SIZE = 15;
+
+function CopyGlyph({ strokes, size }: { strokes: string[]; size: number }) {
   return (
     <svg className="composer-copy-glyph" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       {strokes.map((d) => <path key={d} d={d} />)}
     </svg>
   );
+}
+
+/** The machine: a screen, a phone, a tablet. Always drawn, first in the pair. */
+export function DeviceCopyGlyph({ kind, size = GLYPH_SIZE }: { kind: ComposerDeviceKind; size?: number }) {
+  return <CopyGlyph strokes={DEVICE_GLYPHS[kind] ?? DEVICE_GLYPHS.other} size={size} />;
+}
+
+/** The browser that typed the copy, second in the pair. Draws nothing for a
+ *  browser with no mark: the device glyph already carries the row. */
+export function BrowserCopyGlyph({ browser, size = GLYPH_SIZE }: { browser?: ComposerBrowser | null; size?: number }) {
+  const strokes = browser && browser !== "other" ? BROWSER_GLYPHS[browser] : null;
+  if (!strokes) return null;
+  return <CopyGlyph strokes={strokes} size={size} />;
 }
 
 export function ComposerDeviceCopies({ copies, onUse }: {
@@ -108,7 +120,10 @@ export function ComposerDeviceCopies({ copies, onUse }: {
         if (dropped > 0) notes.push(t("chat.deviceCopyDropped", { count: dropped }));
         return (
           <div className="composer-outbox-row composer-copy-row" role="listitem" key={`${copy.deviceId}:${copy.updatedAt}`}>
-            <span className="composer-outbox-mark"><DeviceCopyGlyph kind={copy.kind} browser={copy.browser} /></span>
+            <span className="composer-outbox-mark">
+              <DeviceCopyGlyph kind={copy.kind} />
+              <BrowserCopyGlyph browser={copy.browser} />
+            </span>
             <button
               className="composer-outbox-preview composer-copy-use"
               type="button"

@@ -11276,8 +11276,16 @@ html.native-desktop :is(
   border-radius: 0;
   padding-top: 0;
 }
-.composer-copy-row .composer-outbox-mark { color: var(--text-muted); }
-.composer-copy-glyph { display: block; }
+/* The mark is a pair: the machine, then the browser that typed the copy. A
+   MacBook's Safari and an iPhone's Safari are two rows, and one compass alone
+   made them twins. */
+.composer-copy-row .composer-outbox-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-muted);
+}
+.composer-copy-glyph { display: block; flex: 0 0 auto; }
 .composer-copy-use {
   display: flex;
   align-items: center;
@@ -11285,7 +11293,7 @@ html.native-desktop :is(
 }
 .composer-copy-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 480px) {
-  /* The mark names the browser the copy was typed in: on a phone, where the
+  /* The mark is the machine and its browser: on a phone, where the
      outbox hides its queue mark, a copy row's mark is the row's whole point and
      never goes away. */
   .composer-device-copies .composer-outbox-mark { display: flex; }
