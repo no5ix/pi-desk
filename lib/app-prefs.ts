@@ -32,10 +32,17 @@ export const APP_PREF_KEYS = {
   collapsedProjectsSection: "pi-web:collapsed-projects-section",
   /** Additional five-chat pages shown past the Chats preview cap. */
   chatSessionPages: "pi-web:chat-session-pages",
-  /** Chat session ids pinned to the top of the Chats section. */
+  /**
+   * Migration source only, and nothing since: pins live on the server
+   * (`lib/session-ui-state.ts`, read by `lib/sidebar-pins.ts`) so every browser
+   * and device shows the same ones. The first sync pushes what an older build
+   * kept here and deletes these keys (`hooks/useSidebarPins.ts`).
+   */
   pinnedChats: "pi-web:pinned-chats",
   pinnedSessions: "pi-web:pinned-sessions",
   pinnedProjects: "pi-web:pinned-projects",
+  /** "1" once this browser has pushed (or had nothing to push) its local pins. */
+  pinsMigratedToServer: "pi-web:pins-migrated-to-server",
   /** "tree" shows the Git changes as folders (F2); anything else is the flat list. */
   changesViewMode: "pi-web:sidebar-changes-view-mode",
   /** Chat session ids hidden from the Chats section until "Show archived". */

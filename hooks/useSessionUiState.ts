@@ -25,6 +25,12 @@ export interface SessionUiStateApi {
   synced: boolean;
   /** Last request error (cleared on the next success). */
   error: string | null;
+  /**
+   * The same message in a ref, so a write's `.then` reads the reason it failed:
+   * `error` is state, and the render that publishes it happens after the
+   * caller has already been answered.
+   */
+  lastErrorRef: { current: string | null };
   /** GET /api/sessions/ui-state; a response older than a later read or write is ignored. */
   refresh(): Promise<void>;
   /** Revision from /api/agent/running: refreshes when it differs and no write is in flight. */
@@ -78,6 +84,16 @@ export function useSessionUiState(): SessionUiStateApi {
   const [loaded, setLoaded] = useState(false);
   const [synced, setSynced] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastErrorRef = useRef<string | null>(null);
+
+  const reportError = useCallback((message: string) => {
+    lastErrorRef.current = message;
+    setError(message);
+  }, []);
+  const clearError = useCallback(() => {
+    lastErrorRef.current = null;
+    setError(null);
+  }, []);
 
   const serverStateRef = useRef<SessionUiState>(state);
   const localStateRef = useRef<SessionUiState>(state);
@@ -86,6 +102,11 @@ export function useSessionUiState(): SessionUiStateApi {
   // Bumped by every GET and every adopted write response: older GETs are stale.
   const loadIdRef = useRef(0);
   const refreshInFlightRef = useRef<number | null>(null);
+  /**
+   * The revision a running frame said the server has, while the read that could
+   * show it was already on its way. Kept until an adopted state reaches it.
+   */
+  const wantedRevisionRef = useRef<number | null>(null);
 
   const publish = useCallback(() => {
     let next = serverStateRef.current;
@@ -96,6 +117,14 @@ export function useSessionUiState(): SessionUiStateApi {
     setState(next);
   }, []);
 
+  /** Adopt one server state: it is the newest read, and it may settle the news. */
+  const adopt = useCallback((next: SessionUiState) => {
+    serverStateRef.current = next;
+    const wanted = wantedRevisionRef.current;
+    if (wanted !== null && wanted <= next.revision) wantedRevisionRef.current = null;
+    publish();
+  }, [publish]);
+
   // keepError: the rollback after a failed write must not hide that failure.
   const load = useCallback(async (keepError: boolean) => {
     const loadId = ++loadIdRef.current;
@@ -104,27 +133,34 @@ export function useSessionUiState(): SessionUiStateApi {
       const response = await fetch(SESSION_UI_STATE_URL, { cache: "no-store" });
       const next = await readState(response);
       if (loadId !== loadIdRef.current) return;
-      serverStateRef.current = next;
-      publish();
-      if (!keepError) setError(null);
+      adopt(next);
+      if (!keepError) clearError();
       setLoaded(true);
       setSynced(true);
+      // A frame that named a revision this read predates is news still: the GET
+      // answered with the state from before the other window's write, so read
+      // again. Without this, a pin made elsewhere can sit behind a slow read
+      // until the next write happens to push a frame.
+      const wanted = wantedRevisionRef.current;
+      if (wanted !== null && wanted > next.revision) void load(keepError);
     } catch (err) {
       if (loadId !== loadIdRef.current) return;
-      setError(errorMessage(err));
+      reportError(errorMessage(err));
       setLoaded(true);
     } finally {
       if (refreshInFlightRef.current === loadId) refreshInFlightRef.current = null;
     }
-  }, [publish]);
+  }, [adopt, clearError, reportError]);
 
   const refresh = useCallback(() => load(false), [load]);
 
   const noteRevision = useCallback((revision: number | null | undefined) => {
     if (typeof revision !== "number" || !Number.isFinite(revision)) return;
+    if (revision <= serverStateRef.current.revision) return;
+    wantedRevisionRef.current = revision;
     if (pendingRef.current.length > 0) return;
-    if (revision === serverStateRef.current.revision) return;
-    // A current GET is already on its way; a stale one does not count.
+    // A current GET is already on its way; a stale one does not count. The
+    // wanted revision above is what makes a read that lands too old chase.
     if (refreshInFlightRef.current !== null && refreshInFlightRef.current === loadIdRef.current) return;
     void refresh();
   }, [refresh]);
@@ -146,13 +182,13 @@ export function useSessionUiState(): SessionUiStateApi {
         const next = await readState(response);
         // Any GET started before this response may predate the write.
         loadIdRef.current++;
-        serverStateRef.current = next;
-        setError(null);
+        adopt(next);
+        clearError();
         setLoaded(true);
         setSynced(true);
         ok = true;
       } catch (err) {
-        setError(errorMessage(err));
+        reportError(errorMessage(err));
       }
       pendingRef.current = pendingRef.current.filter((item) => item !== pending);
       publish();
@@ -164,7 +200,7 @@ export function useSessionUiState(): SessionUiStateApi {
     const result = writeChainRef.current.then(run, run);
     writeChainRef.current = result;
     return result;
-  }, [load, publish]);
+  }, [adopt, clearError, load, publish, reportError]);
 
   const snapshot = useCallback(
     (ids: readonly string[]) => snapshotSessionUiFlags(localStateRef.current, ids),
@@ -176,7 +212,7 @@ export function useSessionUiState(): SessionUiStateApi {
   }, [refresh]);
 
   return useMemo(
-    () => ({ state, loaded, synced, error, refresh, noteRevision, apply, snapshot }),
+    () => ({ state, loaded, synced, error, lastErrorRef, refresh, noteRevision, apply, snapshot }),
     [state, loaded, synced, error, refresh, noteRevision, apply, snapshot],
   );
 }

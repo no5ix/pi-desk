@@ -63,6 +63,8 @@ interface SessionUiStateCache {
   reads: Map<string, CachedRead>;
   /** The highest revision seen per path, so a reset after a corrupt or removed file still moves forward. */
   revisions: Map<string, number>;
+  /** Notified after a write landed, so a live stream can push the new revision. */
+  listeners: Set<() => void>;
 }
 
 declare global {
@@ -70,7 +72,31 @@ declare global {
 }
 
 function cache(): SessionUiStateCache {
-  return (globalThis.__piWebSessionUiStateCache ??= { reads: new Map(), revisions: new Map() });
+  return (globalThis.__piWebSessionUiStateCache ??= { reads: new Map(), revisions: new Map(), listeners: new Set() });
+}
+
+/**
+ * Watch for a write that changed the state. The running-events stream uses it
+ * so a pin made in one browser lands in every other window on this server
+ * right away; the revision in each frame covers a window that missed a push,
+ * and a tab coming back from the background re-reads (`hooks/useSidebarPins`).
+ * In-process only: another process's write is caught by those two paths.
+ */
+export function subscribeSessionUiStateChange(listener: () => void): () => void {
+  const listeners = cache().listeners;
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function notifySessionUiStateChange(): void {
+  for (const listener of [...cache().listeners]) {
+    try {
+      listener();
+    } catch (error) {
+      // One broken listener (a closed stream, say) must not stop the others.
+      console.warn(`[pi-web] a session UI state listener threw: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
 }
 
 function noteRevision(path: string, revision: number): void {
@@ -230,6 +256,7 @@ function editState(
       };
       writePrivateFileAtomicSync(path, JSON.stringify(document, null, 2) + "\n");
       noteRevision(path, next.revision);
+      notifySessionUiStateChange();
       try {
         const stats = statSync(path);
         cache().reads.set(path, { mtimeMs: stats.mtimeMs, size: stats.size, ino: stats.ino, state: copyState(next) });
