@@ -41,8 +41,10 @@ mirror effect, the remote-apply effect, `draftSignature`, `BLANK_DRAFT_SIGNATURE
   tab is visible (+ on `visibilitychange`); an empty composer is a DELETE; a 403
   or 413 stops this device's pushes for the tab's life, the rows keep reading.
 - `components/ComposerDeviceCopies.tsx` — the row, in the outbox's surface
-  (`.composer-outbox composer-device-copies`): device glyph, copy name, content,
-  attachment notes; **no edit, no delete**; click = prepend, row stays.
+  (`.composer-outbox composer-device-copies`): the browser's mark (Safari /
+  Chrome / Edge / Firefox / Opera, the device glyph for `other`), content,
+  attachment notes; the `mac-content-copy` slug is in the `title` and the
+  `aria-label`, not in the row; **no edit, no delete**; click = prepend, row stays.
 - CSS in `app/native-theme.css` (`.composer-copy-*`, the dock seam
   `.composer-device-copies + .composer-outbox`, and the glyph staying visible
   below 480px where the outbox hides its queue mark).
@@ -213,3 +215,35 @@ three channels after it.
 Nothing outstanding for this fix. A phone push needs a subscription to be tested
 end to end; the local macOS row is the channel the report is about, and it is the
 same `announceRunEnd` call.
+
+## 2026-08-14 — the copy rows wear the browser's mark
+
+The ask (screenshot): the rows printed `mac-content-copy` / `iphone-content-copy`
+and a thin phone glyph. Both are now a mark: the row for a copy typed in Safari on
+a MacBook shows Safari's compass, and the slug is gone from the row's text.
+
+- `lib/device-identity.ts` — `detectBrowser()` (Chromium forks before Safari:
+  every Blink UA ends with `Safari/537.36`, and a headless Chromium says
+  `HeadlessChrome/`, so no `\b` before `Chrome/`), `browserDisplayName()`,
+  `browser` on the identity.
+- `lib/composer-copy-store.ts` / `app/api/composer-copies/route.ts` /
+  `lib/composer-copies.ts` — `browser` is part of the copy: sanitised to a fixed
+  set (`browserFor`, `other` for anything else), capped at `MAX_BROWSER_CHARS`,
+  sent on every write.
+- `components/ComposerDeviceCopies.tsx` — `BROWSER_GLYPHS` (safari, chrome, edge,
+  firefox, opera; strokes on a 24 grid, stroke 2) + `DEVICE_GLYPHS`
+  (redrawn desktop / phone / tablet / other — the phone is a rounded body with a
+  speaker and a home dot, not the thin slab). No `other` browser entry: the device
+  glyph is the fallback, never a guessed brand. The `.composer-copy-name` span is
+  gone; `title` / `aria-label` carry `mac-content-copy · Safari`.
+- `app/native-theme.css` — `.composer-copy-name` deleted, `.composer-copy-glyph`
+  added, the row centers.
+- Tests: 8 in `components/ComposerDeviceCopies.test.mjs` (browser marks, fallback,
+  UA table incl. headless Chromium, no printed slug), store/route/client carry the
+  browser, `e2e/composer-device-copies.mjs` asserts the Safari and Chrome strokes,
+  the absent slug and the tooltip. `tsc --noEmit` clean, eslint clean on the
+  changed files, `node e2e/composer-device-copies.mjs` passes at 1280/390 in both
+  themes; the marks were eyeballed at 14/16/20px in both themes.
+- `npm run drift` still reports the 6 pre-existing manifest disagreements
+  (`FileExplorer.tsx`, `MarkdownBody.tsx`, `web-push.ts`, `request-security.ts`,
+  `PwaRegistration.tsx`, `directory-browser.ts`) — untouched by this change.

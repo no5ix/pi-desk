@@ -11277,16 +11277,17 @@ html.native-desktop :is(
   padding-top: 0;
 }
 .composer-copy-row .composer-outbox-mark { color: var(--text-muted); }
+.composer-copy-glyph { display: block; }
 .composer-copy-use {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
 }
-.composer-copy-name { flex: 0 0 auto; color: var(--text-dim); }
 .composer-copy-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 480px) {
-  /* The glyph names the device: on a phone, where the outbox hides its queue mark, a
-     copy row's mark is the row's whole point and never goes away. */
+  /* The mark names the browser the copy was typed in: on a phone, where the
+     outbox hides its queue mark, a copy row's mark is the row's whole point and
+     never goes away. */
   .composer-device-copies .composer-outbox-mark { display: flex; }
   .composer-copy-use { gap: 4px; }
 }

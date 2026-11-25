@@ -40,12 +40,21 @@ import type { ChatDraftFile, ChatDraftImage } from "./draft-store";
 
 export type ComposerDeviceKind = "desktop" | "phone" | "tablet" | "other";
 
+/**
+ * The browser a copy was typed in, as its row's mark: Safari's compass, Chrome's
+ * wheel, … `other` is a browser this app has no mark for, and its row wears the
+ * device glyph instead.
+ */
+export type ComposerBrowser = "safari" | "chrome" | "edge" | "firefox" | "opera" | "other";
+
 export interface ComposerDeviceCopy {
   /** The writing device's own id. The record's second segment. */
   deviceId: string;
   /** A short human label: `mac`, `iphone`, `ipad`, `windows`, … */
   label: string;
   kind: ComposerDeviceKind;
+  /** The writing device's browser. The row's mark; `other` for an unknown one. */
+  browser: ComposerBrowser;
   value: string;
   images: ChatDraftImage[];
   files: ChatDraftFile[];
@@ -73,6 +82,8 @@ export const MAX_DEVICE_ID_CHARS = 64;
 export const MAX_LABEL_CHARS = 64;
 const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{6,64}$/;
 const KINDS: readonly ComposerDeviceKind[] = ["desktop", "phone", "tablet", "other"];
+const BROWSERS: readonly ComposerBrowser[] = ["safari", "chrome", "edge", "firefox", "opera", "other"];
+export const MAX_BROWSER_CHARS = 24;
 
 type StoredCopy = ComposerDeviceCopy & { token: string | null };
 type GlobalWithCopies = typeof globalThis & {
@@ -157,6 +168,13 @@ function labelFor(value: unknown): string {
   return slug || "device";
 }
 
+/** A browser slug, or `other`. The row draws a mark from a fixed set, so a slug
+ *  outside it is the fallback, never a string handed to the renderer. */
+function browserFor(value: unknown): ComposerBrowser {
+  const slug = typeof value === "string" ? value.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
+  return BROWSERS.includes(slug as ComposerBrowser) ? slug as ComposerBrowser : "other";
+}
+
 /** A composer with nothing in it: nothing to offer the other devices. */
 export function isCopyEmpty(copy: Pick<ComposerDeviceCopy, "value" | "images" | "files">): boolean {
   return !copy.value.trim() && copy.images.length === 0 && copy.files.length === 0;
@@ -218,6 +236,7 @@ export function writeDeviceCopy(
     token?: unknown;
     label?: unknown;
     kind?: unknown;
+    browser?: unknown;
     value?: unknown;
     images?: unknown;
     files?: unknown;
@@ -254,6 +273,7 @@ export function writeDeviceCopy(
     deviceId,
     label: labelFor(input.label),
     kind: deviceKind(input.kind),
+    browser: browserFor(input.browser),
     value: normalized.copy.value,
     images: normalized.copy.images,
     files: normalized.copy.files,
@@ -274,6 +294,7 @@ function publicCopy(record: StoredCopy | null | undefined): ComposerDeviceCopy |
     deviceId: record.deviceId,
     label: record.label,
     kind: record.kind,
+    browser: record.browser,
     value: record.value,
     images: record.images,
     files: record.files,

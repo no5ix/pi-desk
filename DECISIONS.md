@@ -364,9 +364,28 @@
   up twice is the user's business.
 - **A row is read-only by construction.** `components/ComposerDeviceCopies.tsx`
   borrows the outbox's surface and drops its action column: no edit, no delete,
-  no send. Its glyph is the device (computer / phone / tablet) and it never hides
-  below 480px, where the outbox's queue mark does — on a phone, "whose draft is
-  this" is the row's whole information.
+  no send. Its mark is the browser the copy was typed in and it never hides below
+  480px, where the outbox's queue mark does — on a phone, "whose draft is this"
+  is the row's whole information.
+- **The row's mark is the browser; the device slug is not printed.** A row wears
+  Safari's compass / Chrome's wheel / Edge's swirl / Firefox's fox / Opera's O,
+  drawn in the app's stroke style. `mac-content-copy` was printed beside it and
+  read as scan noise: the mark is recognised at a glance, the slug is scanned.
+  The slug is not lost — `deviceCopyNames` feeds the row's `title` and
+  `aria-label` (`mac-content-copy · Safari`), which is also how two Safaris on
+  two Macs are told apart. `browser` is part of the record
+  (`detectBrowser` → the PUT body → the store's `browserFor`, capped on the
+  route), so the mark comes from the device that typed the copy and no
+  caller-supplied string reaches the renderer. Chromium forks are matched before
+  Safari: every Blink UA ends with `Safari/537.36`, and a headless Chromium says
+  `HeadlessChrome/`, so a `\b` before `Chrome/` would call both Safari.
+- **An unknown browser falls back to the device glyph, never to a guess.**
+  `other` has no entry in `BROWSER_GLYPHS` (Vivaldi, the DuckDuckGo app, an
+  Android WebView) and a record written before browsers were recorded has no
+  browser: the row draws the computer / rounded phone / tablet. A device shape
+  is honest; a wrong brand is a lie about the user's machine. The fallback glyph
+  set was redrawn at the app's stroke weight (2, round caps) — the phone was a
+  thin slab that read as a line at 16px.
 - **The device slug, not a hostname, names a copy.** `mac-content-copy`,
   `iphone-content-copy`, `ipad-content-copy`: the label is a sanitised slug from
   what the browser reports (iPadOS 13+ asks for the desktop site, so

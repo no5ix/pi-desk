@@ -3,6 +3,7 @@ import {
   composerCopyKey,
   deleteDeviceCopy,
   isDeviceId,
+  MAX_BROWSER_CHARS,
   MAX_DEVICE_ID_CHARS,
   MAX_LABEL_CHARS,
   readDeviceCopies,
@@ -61,6 +62,7 @@ export async function PUT(request: Request) {
     token?: unknown;
     label?: unknown;
     kind?: unknown;
+    browser?: unknown;
     value?: unknown;
     images?: unknown;
     files?: unknown;
@@ -78,6 +80,10 @@ export async function PUT(request: Request) {
   }
   if (typeof body.label === "string" && body.label.length > MAX_LABEL_CHARS) {
     return NextResponse.json({ error: "label is too long" }, { status: 400 });
+  }
+  if (typeof body.browser === "string" && body.browser.length > MAX_BROWSER_CHARS) {
+    // A browser slug is a word from a fixed set; anything longer is not one.
+    return NextResponse.json({ error: "browser is too long" }, { status: 400 });
   }
   const result = writeDeviceCopy(key, body.deviceId, body);
   if (!result.ok) {
