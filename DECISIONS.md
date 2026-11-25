@@ -378,3 +378,29 @@
   copy that reports itself incomplete is honest; the mirror's silently trimmed
   copy was what repainted a composer without the screenshots the user had just
   added.
+
+
+## A finished run's title is read from the session that ran (missing notifications)
+
+- **A notification's title is a hard gate, so its reader must be dumb-safe.**
+  `announceRunEnd` refuses a run it cannot title — "Session complete" cannot say
+  which task ended, and the user rejected that format. That makes the title reader
+  load-bearing: one reader that returns `null` silences every channel of one real
+  finished task. It is now read from the live session's own entries first, with the
+  file as the fallback for a run whose session is not live in this process.
+- **A bounded read is a budget, not a window.** A session's first prompt is one
+  JSONL line, and with a screenshot attached it carries a few hundred KB of base64.
+  Cutting the file at a fixed byte offset cuts that line in half and the line stops
+  being JSON, so "read the head of the file" silently means "no title for every
+  session that opens with an image". The reader walks lines and caps the *bytes
+  read*; it never truncates the line it is reading.
+- **Oversized lines are filtered by shape, then parsed for real.** A line over
+  256 KB is skipped only when its prefix says it is not a user message; a line that
+  passes the check is parsed, so the shape test can cost a title but can never
+  invent one. Tool results carry base64 too, and parsing a 10 MB line to learn it
+  is not a prompt spends the end of a run.
+- **No concurrency gate was added.** The report says "4 tasks running"; nothing in
+  the announce path counts other sessions, and the replay reproduced the miss with
+  one session. The parallel tasks made it *noticed* (the other three were still
+  running, so nothing else had popped either). Announcing at the run's
+  `agent_settled` stays the rule (464f9678).

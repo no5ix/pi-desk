@@ -71,6 +71,7 @@ import {
   sideToolNames,
 } from "./side-session";
 import { SIDE_SESSION_NAME, sideChatNameFrom } from "./session-family";
+import { promptTitleFromEntries } from "./session-prompt-title";
 import { createSubagentController, getLiveSubagentStatus, hasUnsettledSubagentRun } from "./subagent-runtime";
 import { takeSubagentReportRun } from "./subagent-report-runs";
 import { isBuiltInSubagentsEnabled } from "./subagent-settings";
@@ -3667,6 +3668,33 @@ export function getRpcStartingSessionIds(): string[] {
   return ids;
 }
 
+/**
+ * The title a finished run of this live session is announced with: its name, and with no name
+ * yet (nobody renamed it and auto-naming has not named it) the first prompt of its own
+ * transcript — the way the sidebar titles the row.
+ *
+ * Both halves come from the session that ran, so a finished task is announced without a
+ * session-path scan, a file read, or any window into a file: a session whose first prompt
+ * carries a screenshot (a few hundred KB of base64 on one JSON line) has to be titled from
+ * what it holds, because every reader that scans the file has to wade through that line.
+ * Null only when the session says nothing usable, and a run with no title announces nothing.
+ */
+export function getRpcSessionNotificationTitle(session: {
+  sessionManager?: { getSessionName?: () => string | null | undefined; getEntries?: () => readonly unknown[] };
+}): string | null {
+  const manager = session.sessionManager;
+  if (!manager) return null;
+  try {
+    const named = manager.getSessionName?.();
+    if (typeof named === "string" && named.trim()) return named.trim();
+  } catch { /* a session mid-shutdown answers nothing; its run keeps its prompt title */ }
+  try {
+    return promptTitleFromEntries(manager.getEntries?.() ?? []);
+  } catch {
+    return null;
+  }
+}
+
 export function getCompletionNotificationSuppressedRpcSessionIds(): string[] {
   const ids = new Set<string>();
   for (const [sessionId, session] of getRegistry()) {
@@ -4078,8 +4106,9 @@ export async function startRpcSession(
       chatFolder,
       chatUnlocked,
       onAgentRunComplete: (completedSessionId, outcome) => {
-        // The live session knows its own name; no need to scan every session file.
-        const sessionName = inner.sessionManager.getSessionName() ?? null;
+        // The live session knows its own name, and a nameless session titles itself by its
+        // first prompt, straight out of its own entries (the sidebar's rule).
+        const sessionName = getRpcSessionNotificationTitle(inner);
         // A run started by a subagent's report is that subagent's ending, and a subagent
         // finishing announces nothing: the user asked for no notice when one ends. The mark
         // is set at the delivery and consumed here, so a run of a prompt the user typed is
@@ -4094,7 +4123,7 @@ export async function startRpcSession(
         });
       },
       onAttentionNeeded: (waitingSessionId, prompt, requestId) => {
-        const sessionName = inner.sessionManager.getSessionName() ?? null;
+        const sessionName = getRpcSessionNotificationTitle(inner);
         void announceAttention({ sessionId: waitingSessionId, sessionName, prompt, requestId }).catch((error) => {
           console.error("[pi-web] failed to send attention push:", error instanceof Error ? error.message : error);
         });
