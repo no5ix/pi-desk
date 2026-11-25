@@ -121,10 +121,11 @@ The attach `+` is a bare glyph: no plate at rest, and no plate while files are a
 (`[data-active]` changes the glyph's colour only). The text area is stretched (`width: auto`),
 never `width: 100%` — a full width and a horizontal margin together push the text 8px past
 the card's right edge — and stretched, its margins are the card's insets: `margin: 8px 0
-18px 8px` (the left 8px is the ink alignment below, the 18px is the room above the control
-row) plus 13px of right padding for the caret. `e2e/composer-geometry.mjs` measures the
-hint's centre against the text's first line and asserts there is no clear button and the
-text ends inside the card, at every font size and theme.
+18px calc(var(--composer-send-size) / 2 - 10px)` (the 18px is the room above the control
+row, the left margin is the ink alignment below) plus 13px of right padding for the caret.
+`e2e/composer-geometry.mjs` measures the hint's centre against the text's first line and
+asserts there is no clear button and the text ends inside the card, at every font size and
+theme.
 The card's two left ends are compared as **ink**, not as boxes. The `+` and Send are discs
 with no disc painted (`background: none`), so the only ink in them is the glyph, and the
 hint's 23px `padding-right` once left its sentence 13px short of Send's arrow — the
@@ -132,10 +133,11 @@ composer read as two left columns and a ragged right edge, typed lines included 
 placeholder and the text share the element, so both move together). The ink is what the eye
 compares, so the ink is what is pinned: the `+` stays centered in its touch-sized disc
 (`justify-content: center`; a finger aims at the disc, and Send's arrow is centered in its
-own) and the **text moves to it** — the textarea's 8px left margin stands the prompt's first
-character on the glyph's left edge, which `e2e/composer-geometry.mjs` measures. The hint's
-`padding-right` is 10px — the disc's own inset — with its box still at `right: 0`, so the
-ink moves and the layout does not.
+own) and the **text moves to it** — the textarea's left margin is half the disc less 10px
+(8px on the 36px tier, 12px on the touch tier's 44px), which stands the prompt's first
+character on the glyph's left edge; `e2e/composer-geometry.mjs` measures it at both tiers.
+The hint's `padding-right` is 10px — the disc's own inset — with its box still at
+`right: 0`, so the ink moves and the layout does not.
 The in-session "Waiting for model…" / "Compacting…" line is the **transcript's** last row
 (`components/ChatWindow.tsx`), not part of the composer, and the composer floats over the
 scrollport with a 32px fade above its card on top of the card's shadow — so the one sentence

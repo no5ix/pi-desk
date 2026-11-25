@@ -178,7 +178,7 @@ test("the full-width text area stays inside the card", () => {
   const rule = cssRule(css, ".chat-composer-editor > .chat-input-textarea");
   assert.ok(rule, "the textarea has a rule of its own");
   assert.match(rule, /width: auto;/, "the width comes from the column's stretch");
-  assert.match(rule, /margin: 8px 0 18px 8px;/, "top, the room above the row, the inset that meets the `+`");
+  assert.match(rule, /margin: 8px 0 18px calc\(var\(--composer-send-size\) \/ 2 - 10px\);/, "top, the room above the row, and the inset that meets the `+` glyph");
   assert.match(rule, /padding-right: 13px;/, "the caret stays off the card's edge");
   assert.doesNotMatch(rule, /margin: 8px;/, "never one inset on all four sides");
   assert.doesNotMatch(rule, /width: 100%;/, "and no full width to pair with a horizontal margin");
@@ -190,14 +190,16 @@ test("the row's ink lines up with the text, not only its boxes", () => {
   // of Send's arrow: the card read as two left columns and a ragged right edge. The boxes
   // always lined up; the ink is what the eye compares, so the ink is what is pinned. The
   // `+` stays centered in its touch-sized disc — a finger aims at the disc, and Send's
-  // arrow is centered in its own — and the text moves to it at the textarea's 8px left
-  // margin. `e2e/composer-geometry.mjs` measures these ink edges in the browser.
+  // arrow is centered in its own — and the text moves to it, at a left margin of half the
+  // disc less 10px (8px on the desktop's 36px tier, 12px on the phone's 44px). The e2e
+  // `composer-geometry.mjs` measures these ink edges in the browser at every tier.
   const attach = cssRule(css, ".composer-attach-button");
   assert.ok(attach, "the attach button has a rule of its own");
   assert.match(attach, /justify-content: center;/, "the `+` glyph stays centered in its disc");
   assert.match(attach, /width: var\(--composer-send-size\);/, "and the hit area keeps the disc's touch size");
   const text = cssRule(css, ".chat-composer-editor > .chat-input-textarea");
-  assert.match(text, /margin: 8px 0 18px 8px;/, "the text's ink is inset to the glyph's left edge");
+  assert.match(text, /margin: 8px 0 18px calc\(var\(--composer-send-size\) \/ 2 - 10px\);/,
+    "the text's ink is inset to the glyph's left edge, off the disc's own size");
   const hint = cssRule(css, ".composer-trigger-hint");
   assert.ok(hint, "the hint has a rule of its own");
   assert.match(hint, /padding-right: 10px;/, "the hint's ink ends on Send's arrow, not 13px inside it");

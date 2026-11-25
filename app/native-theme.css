@@ -5961,11 +5961,14 @@ html.dark {
      a full width and a horizontal margin together pushed the text 8px past the card's
      right edge (the phone's Safari showed the caret in the border). Stretched, a margin
      can only inset — that pairing is the invariant, and it is what lets the margins carry
-     the card's insets: the 8px on the left stands the text's ink on the `+` glyph's left
-     edge (the glyph stays centered in its disc below), the 18px below is the room above
-     the control row, and the 13px of right padding keeps the caret off the card's edge. */
+     the card's insets: the 18px below is the room above the control row, the 13px of right
+     padding keeps the caret off the card's edge, and the left margin is the glyph's edge:
+     the `+` is centered in a disc of `--composer-send-size` and 16px wide, the text
+     carries 2px of its own padding, so half the disc less 10px (8px on the 36px tier)
+     stands the prompt's first character on the glyph's left edge — and on the
+     coarse-pointer tier, where the disc is 44px, the text follows it to 12px. */
   width: auto;
-  margin: 8px 0 18px 8px;
+  margin: 8px 0 18px calc(var(--composer-send-size) / 2 - 10px);
 }
 
 /* Focus only lifts the hairline a step; the caret already says where typing
@@ -13062,6 +13065,12 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-extra-keys {
 /* ---- the composer, and the shadow that replaced its border ---------------- */
 .chat-composer {
   border: 0 !important;
+  /* The card's bottom-right arc and the Send circle share their center, and the radius
+     above pays for a 1px border that this rule removes — left at 29px the disc's center
+     sat 1px outside the arc's (measured in every theme and width by
+     `e2e/composer-geometry.mjs`). With the border gone, the arc is the disc's half plus
+     the card's inset. */
+  border-radius: calc(var(--composer-send-size) / 2 + var(--composer-inset)) !important;
 }
 
 /* The composer's shadow, one value per theme. Every surface that carries
