@@ -453,7 +453,13 @@ export function ProjectContextMenuPanel({
 
   /** What a row's glyph promises, in the row's own words. */
   const branchTitle = (row: BranchRow) => {
-    if (row.kind === "current") return t("sidebar.currentBranchTitle", { branch: row.name });
+    if (row.kind === "current") {
+      // The row of the branch this folder is on says which folder it is in too: the
+      // glyph is a worktree there, and the title has to say the same thing.
+      return row.holderIsMain
+        ? t("sidebar.currentBranchTitle", { branch: row.name })
+        : t("sidebar.currentWorktreeBranchTitle", { branch: row.name });
+    }
     if (row.holderPath) {
       return row.holderIsMain
         ? t("sidebar.mainCheckoutBranchTitle", { branch: row.name })
@@ -464,13 +470,17 @@ export function ProjectContextMenuPanel({
       : t("sidebar.switchBranchTitle", { branch: row.name });
   };
 
-  /** The glyph of a branch: the project's folder for the branch this checkout is on
-   *  (and for a branch the project's own folder holds), the worktree for a branch
-   *  that has a folder of its own, the branch glyph for every other name. The three
-   *  are the same three glyphs the header and the composer's chip use. */
+  /** The glyph of a branch: the checkout glyph for the branch this linked worktree is
+   *  on and for a branch a linked worktree holds, the project's folder for a branch the
+   *  project's own folder holds (this checkout included), the branch glyph for every
+   *  other name. The three are the same three glyphs the header and the composer's
+   *  project chip use, and they answer the same question the chips do: what kind of
+   *  folder is this. A branch carried into a worktree folder does not downgrade the
+   *  folder — the user's `main-bak` in `auto-toc-worktrees/main-bak3-test-wt` is a
+   *  worktree, and the current row says so. */
   const branchMark = (row: BranchRow) => (
     <span className={`sidebar-project-context-menu-branch-mark${row.kind === "branch" ? " is-plain" : ""}`}>
-      {row.kind === "worktree"
+      {row.kind === "worktree" || (row.kind === "current" && !row.holderIsMain)
         ? <WorktreeIcon />
         : row.kind === "branch"
           ? <BranchIcon />

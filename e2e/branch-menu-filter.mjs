@@ -133,7 +133,17 @@ const branchRow = (branch) => `.sidebar-project-context-menu-row--branch:has([da
 const branchTitle = (branch) => page.getAttribute(branchRow(branch), "title");
 const currentRow = page.locator(".sidebar-project-context-menu-row--branch:has([data-branch='feat/x']) button[role='menuitem']");
 assert.equal(await currentRow.getAttribute("aria-current"), "true", "the current branch is marked in its own row");
-assert.match(await currentRow.getAttribute("title"), /This folder is on feat\/x/, "and says which folder is on it");
+assert.match(await currentRow.getAttribute("title"), /This worktree is on feat\/x/, "and says which worktree is on it");
+// The glyph the user asked for: this checkout is a linked worktree (`/repo-worktrees/feat-x`),
+// so the current row wears the checkout glyph. It used to wear the project folder — a row
+// about the branch, on a rule that matched the folder's name against it — and a session in
+// a worktree read its whole header as a plain folder.
+const currentGlyph = await page.evaluate(() => {
+  const name = document.querySelector('.sidebar-project-context-menu-row--branch [data-branch="feat/x"]');
+  const first = name?.closest("button")?.querySelector(".sidebar-project-context-menu-branch-mark svg path");
+  return first?.getAttribute("d") ?? null;
+});
+assert.ok(currentGlyph?.startsWith("M4 4h9a2 2"), "the current row's mark is the worktree's own drawing");
 assert.equal(
   await branchTitle("main"),
   "main is checked out in the project's own folder — work there",

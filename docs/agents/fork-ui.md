@@ -540,11 +540,14 @@ nested as deep as the names go (`wt/a/b` sits under `wt` then `a`), remotes incl
 (`origin/main` groups under `origin`). A leaf under a group is labelled by the part the
 group's row did not already say, and carries the full name in `data-branch`: a branch name
 is what a git call takes and what a screen reader reads, and it must never be cut. The
-glyphs are the three facts, in two voices: `ProjectFolderIcon` for the branch this checkout
-is on and for a branch the project's own folder holds, `WorktreeIcon` for a branch with a
-linked folder, plain-ink `BranchIcon` for every other name and every group; the accent
-voice is only ever a fact, never decoration. Titles say what a row will do
-(`sidebar.currentBranchTitle`, `sidebar.mainCheckoutBranchTitle`,
+glyphs are the three facts, in two voices: `ProjectFolderIcon` for a branch the project's own
+folder holds (the main checkout's own row included), `WorktreeIcon` for a branch a **linked**
+worktree holds — and for the current row when this checkout *is* a linked worktree —, plain-ink
+`BranchIcon` for every other name and every group; the accent voice is only ever a fact, never
+decoration. `BranchRow.holderIsMain` (the checkout that holds the branch, which for the current
+row is this folder) is what says which of the two glyphs the head of the list wears. Titles say
+what a row will do (`sidebar.currentBranchTitle` on the main checkout,
+`sidebar.currentWorktreeBranchTitle` in a linked folder, `sidebar.mainCheckoutBranchTitle`,
 `sidebar.branchInWorktreeTitle`, `sidebar.branchRemoteTitle`, `sidebar.switchBranchTitle`).
 A removal is confirmed in the row of the branch that owns the worktree, so the
 `Worktrees…` page has no menu item any more — the branches with folders are rows here —
@@ -653,15 +656,20 @@ is pinned to its project and the header above names it, so an inert copy under i
 is noise.
 
 The header's row reads `[folder] project  [branch|worktree icon] branch  [clock]  [subagents] N [✓] N [⚠] N [↻] N`. The worktree
-glyph is asked of the **branch**, not of the folder alone: it goes in front of a branch whose
-own folder this is (`lib/worktree-folder.ts` — the app creates `<repo>-worktrees/<branch>`, so
-the folder carrying that branch is that branch's worktree), because the same branch name can
-live in the repo and in a worktree. A linked folder the user switched to an ordinary branch is
-a plain folder to the person typing in it, and the row is read as a statement about the branch:
-`auto-toc` on `main` inside `auto-toc-worktrees/main-bak3-test-wt` wears the **folder** glyph,
-in the header's project chip and in the composer's, and so does a session with no branch at
-all. The folder's own truth (`SessionInfo.isWorktree`, `ProjectInfo.isWorktree`) is untouched —
-grouping, file access and the sidebar keep it; only the glyph asks the second question.
+glyph is asked of the **folder**, and of nothing else: the header's project chip, the composer's
+project chip and the branch list's current row wear `WorktreeIcon` when the folder the session
+works in is a linked worktree checkout (`SessionInfo.isWorktree` / `ProjectInfo.isWorktree`), and
+`ProjectFolderIcon` on the main checkout and in a plain folder. It used to ask a second question —
+is this folder the worktree the app made for the branch we are on (`lib/worktree-folder.ts` reads
+the `<repo>-worktrees/<branch>` pairing backwards)? — so that a linked folder switched to an
+ordinary branch read as a plain folder: `auto-toc` on `main-bak` inside
+`auto-toc-worktrees/main-bak3-test-wt` wore the **folder** glyph in all three places, on the
+argument that a row is a statement about the branch in front of it. The user read that as a lie
+and said so: the folder *is* a worktree, and the glyph is how they check which folder a prompt is
+about to run in — the same branch name can live in the repo and in a worktree, and the folder is
+the fact that changes what a session touches. `lib/worktree-folder.ts` stays as the naming rule
+the new-worktree form shows while a branch name is being typed; nothing asks it of a glyph.
+The chips' own tip (`Path`) and the row's title carry the folder, so the words say it too.
 Hover, focus, or an open tip lights a chip's label **and its glyph** onto `--text`: the row's
 only state used to be the `--bg-hover` wash, and over the chrome's translucent bar a 4% tint
 says nothing (the glyph sits below the button, where `.app-topbar-project svg`

@@ -205,6 +205,7 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
       "sidebar.noOtherBranches": "No other branches",
       /* The branch page's tree and its three glyphs. */
       "sidebar.currentBranchTitle": "This folder is on {branch}",
+      "sidebar.currentWorktreeBranchTitle": "This worktree is on {branch}",
       "sidebar.mainCheckoutBranchTitle": "{branch} is checked out in the project's own folder — work there",
       "sidebar.branchGroupExpand": "Expand the {group} branches",
       "sidebar.branchGroupCollapse": "Collapse the {group} branches",
@@ -1172,6 +1173,7 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
       "sidebar.noOtherBranches": "没有其他分支",
       /* 分支页的树形结构与三种图标。 */
       "sidebar.currentBranchTitle": "当前目录就在 {branch} 上",
+      "sidebar.currentWorktreeBranchTitle": "当前 worktree 就在 {branch} 上",
       "sidebar.mainCheckoutBranchTitle": "{branch} 已在项目自己的目录检出，点击去那里工作",
       "sidebar.branchGroupExpand": "展开 {group} 分支",
       "sidebar.branchGroupCollapse": "折叠 {group} 分支",
@@ -2371,6 +2373,7 @@ const FORK_MESSAGE_PATCHES: Record<Locale, {
       "sidebar.noOtherBranches": "沒有其他分支",
       /* 分支頁的樹形結構與三種圖示。 */
       "sidebar.currentBranchTitle": "目前目錄就在 {branch} 上",
+      "sidebar.currentWorktreeBranchTitle": "目前 worktree 就在 {branch} 上",
       "sidebar.mainCheckoutBranchTitle": "{branch} 已在專案自己的目錄檢出，點選到那裡工作",
       "sidebar.branchGroupExpand": "展開 {group} 分支",
       "sidebar.branchGroupCollapse": "摺疊 {group} 分支",

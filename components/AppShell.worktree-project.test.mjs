@@ -51,8 +51,8 @@ test("the shell resolves the composer's project and hands it to the header and t
   // checkout keeps its folder name (that is the project).
   assert.match(appShell, /headerProjectIsWorktree && headerProjectRoot\n\s*\? getProjectDisplayName\(headerProjectRoot, availableProjectRoots\)/,
     "the worktree's label is its project's name, resolved the way every project name is");
-  assert.match(appShell, /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} branch=\{topBarBranch\} isWorktree=\{headerProjectIsWorktree\} \/>/,
-    "the header's project glyph is asked of the branch, and its tip keeps the worktree's own path");
+  assert.match(appShell, /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} isWorktree=\{headerProjectIsWorktree\} \/>/,
+    "the header's project glyph is asked of the folder, and its tip keeps the worktree's own path");
   assert.match(appShell, /composerProjectRoot=\{composerProjectIdentity\.projectRoot\}\n\s*composerProjectIsWorktree=\{composerProjectIdentity\.isWorktree\}/,
     "the composer is told the same pair");
 });
@@ -62,15 +62,19 @@ test("the composer's project chip names the repository and wears the checkout gl
     "the chip is labelled with the project, exactly as a session's projectRoot already labels it");
   assert.match(chatWindow, /projectIsWorktree=\{chatOnly \? false : Boolean\(session\?\.isWorktree \?\? composerProjectIsWorktree\)\}/);
   assert.match(chatInput, /isWorktree=\{projectIsWorktree\}/);
-  assert.match(projectChip, /showsWorktreeGlyph \? <WorktreeIcon size=\{14\} \/>/, "the composer takes the checkout glyph, and only for a branch that owns the folder");
-  assert.match(projectChip, /const projectBranch = useProjectBranch\(projectPath\);\s*\n\s*const showsWorktreeGlyph = isWorktree && branchOwnsWorktreeFolder\(projectPath, projectBranch\);/,
-    "the chip reads the branch through the same cached hook the branch chip beside it uses");
-  assert.match(topbarChip, /isWorktree && branchOwnsWorktreeFolder\(path, branch\) \? <WorktreeIcon size=\{13\} \/>/, "and so does the header");
+  assert.match(projectChip, /showsWorktreeGlyph \? <WorktreeIcon size=\{14\} \/>/, "the composer takes the checkout glyph, and only for a linked worktree");
+  assert.match(projectChip, /const showsWorktreeGlyph = isWorktree;/,
+    "asked of the folder alone: no branch read, no second question");
+  assert.match(topbarChip, /isWorktree \? <WorktreeIcon size=\{13\} \/> : <ProjectFolderIcon size=\{13\} \/>/, "and so does the header");
   assert.match(topbarChip, /isWorktree = false/, "the glyph is opt-in: a plain checkout keeps the folder");
-  // The rule the user asked for: a worktree folder switched to an ordinary branch wears
-  // the folder glyph, because the glyph is a statement about the branch on the row.
-  assert.match(topbarChip, /import \{ branchOwnsWorktreeFolder \} from "@\/lib\/worktree-folder";/);
-  assert.match(projectChip, /import \{ branchOwnsWorktreeFolder \} from "@\/lib\/worktree-folder";/);
+  // The rule the user asked for after the old one shipped: `main-bak` inside
+  // `auto-toc-worktrees/main-bak3-test-wt` is a branch in a worktree, and every glyph in
+  // that window says so. A folder's name matching its branch is not the fact — the folder
+  // being a linked checkout is — so `lib/worktree-folder.ts` (the naming rule the
+  // new-worktree form shows) is not asked, in either chip.
+  assert.ok(!topbarChip.includes("branchOwnsWorktreeFolder"), "the header's glyph is the folder's, not a naming match");
+  assert.ok(!projectChip.includes("branchOwnsWorktreeFolder"), "and the composer's is the same fact");
+  assert.ok(!projectChip.includes("useProjectBranch"), "so the chip reads no branch at all");
 });
 
 test("the branch menu is fetched by checkout, and a worktree's answer belongs to it", () => {

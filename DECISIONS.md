@@ -1,4 +1,18 @@
 # DECISIONS
+- **The worktree glyph is a fact about the folder, not about a name match.** The header's
+  project chip, the composer's project chip and the branch list's current row show
+  `WorktreeIcon` when the checkout the session works in is a **linked** worktree
+  (`ProjectInfo.isWorktree` / `SessionInfo.isWorktree`), and the project folder on the main
+  checkout and in a plain folder. The rule used to be
+  `isWorktree && branchOwnsWorktreeFolder(path, branch)` — is this folder the
+  `<repo>-worktrees/<branch>` the app made for the branch we are on — so that a linked folder
+  switched to an ordinary branch read as a plain folder. The user's `main-bak` inside
+  `auto-toc-worktrees/main-bak3-test-wt` then wore the folder glyph in all three places, and
+  the user called it wrong: the folder is a worktree, the branch chip beside it already names
+  the branch, and a folder is what a session touches. `lib/worktree-folder.ts` stays as the
+  naming rule the new-worktree form shows while typing; no glyph asks it
+  (`components/AppShell.worktree-project.test.mjs`, `components/ProjectContextMenu.test.mjs`,
+  `e2e/branch-menu-filter.mjs`).
 
 - **Tests never spawn OS processes.** `app/api/cwd/pick` and `app/api/notifications/local` are tested through their gates (non-local → 403, empty body → 400, GET capability probe); `osascript`/`tailscale` invocation is verified by source sentinels, not by running the CLI.
 - **Tests follow the fork's own style**: pure-function tests plus source-regex sentinels (`components/*.test.mjs`), because the fork's guards are already source-based and upstream CSS/JSX files must stay mergeable.

@@ -6,10 +6,8 @@
 // handler closes every composer menu) and mounts this.
 
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import { useProjectBranch } from "@/hooks/useProjectBranch";
 import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import { getProjectDisplayName } from "@/lib/project-display";
-import { branchOwnsWorktreeFolder } from "@/lib/worktree-folder";
 import { useI18n } from "@/hooks/useI18n";
 import { WorktreeIcon } from "./GitIcons";
 
@@ -27,7 +25,8 @@ interface ComposerProjectChipProps {
   onOpenChange: Dispatch<SetStateAction<boolean>>;
   label: string;
   projectPath?: string | null;
-  /** The project is a linked worktree checkout: the checkout glyph, not the folder. */
+  /** The composer's folder is a linked worktree checkout: the checkout glyph, not the
+   *  folder. Asked of the folder alone — components/TopbarProjectChip.tsx says why. */
   isWorktree?: boolean;
   maxWidth: number;
   /** Active project roots a new-session composer can switch between. */
@@ -41,12 +40,12 @@ export function ComposerProjectChip({
   menuRef, open, onOpenChange, label, projectPath, isWorktree = false, maxWidth, projectOptions, onProjectChange, onSelectProject,
 }: ComposerProjectChipProps) {
   const { t } = useI18n();
-  // The chip's glyph answers a question about the branch, not only about the folder: a
-  // linked worktree switched to an ordinary branch is a plain folder to the person typing
-  // in it (lib/worktree-folder.ts). The branch is read through the same cached hook the
-  // branch chip beside this one uses, so the composer's two git chips ask once.
-  const projectBranch = useProjectBranch(projectPath);
-  const showsWorktreeGlyph = isWorktree && branchOwnsWorktreeFolder(projectPath, projectBranch);
+  // The same fact the header's project chip wears, and asked the same way: the folder this
+  // composer works in is a linked worktree, so the checkout glyph. It used to ask a second
+  // question through lib/worktree-folder.ts (is this folder the worktree of the branch we
+  // are on?), which turned a worktree folder carrying an ordinary branch into a plain
+  // folder — a folder the person typing in it knows is not.
+  const showsWorktreeGlyph = isWorktree;
   return (
     <div ref={menuRef} style={{ position: "relative", flexShrink: 0 }}>
       <button
