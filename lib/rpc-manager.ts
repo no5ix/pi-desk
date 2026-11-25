@@ -81,6 +81,7 @@ import { resolveShellTools } from "./powershell-settings";
 import { CHAT_ONLY_RESOURCE_LOADER_OPTIONS, contextFilesSystemPrompt } from "./chat-only";
 import { createExactSystemPromptExtension } from "./exact-system-prompt";
 import { createArtifactGuideExtension } from "./artifact-guide-extension";
+import { createUnparsedToolCallExtension } from "./unparsed-tool-call-extension.ts";
 import { createPiWebBuiltinExtensions, createSubagentCodemodeExtension, createSubagentMcpExtensions } from "./builtin-extensions";
 import type { McpHost } from "./mcp-host";
 import type { DebugMcpHost, DebugSessionLifecycle, DebugWrapperSnapshot } from "./debug-types";
@@ -3880,6 +3881,9 @@ export async function startRpcSession(
     }) : undefined;
     const subagentExtensionFactories = [
       llamaCppExtension,
+      // A background run that stops on a printed tool call is invisible, so the
+      // note that keeps it going matters more here than in a watched session.
+      createUnparsedToolCallExtension(),
       ...(subagentCodemode ? [subagentCodemode] : []),
       ...(subagentMcp && subagentResources
         ? [...subagentMcp.extensions, createSubagentMcpPolicyExtension(() => subagentResources)]
@@ -3945,6 +3949,7 @@ export async function startRpcSession(
               ...(builtins?.extensions ?? []),
               createReadOnlyMcpPolicyExtension(),
               createArtifactGuideExtension(),
+              createUnparsedToolCallExtension(),
               createProjectCommandBashExtension({
                 cwd: sessionCwd,
                 settings: settingsManager,

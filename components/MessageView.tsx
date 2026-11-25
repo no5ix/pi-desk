@@ -13,6 +13,7 @@ import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { formatDurationHms } from "@/lib/completion-notification";
 import { formatTurnDurationCompact } from "@/lib/turn-duration";
+import { UNPARSED_TOOL_CALL_CUSTOM_TYPE } from "@/lib/unparsed-tool-call";
 import { ClockIcon } from "./ClockIcon";
 import { ProcessDetailsContext } from "./process-details-context";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
@@ -2136,6 +2137,14 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
     // stays in the message the model reads.
     ? t("chat.subagentReportTitle")
     : formatCustomType(message.customType);
+  // Pi Web's own note is named here, not by the generic labeler: its custom type
+  // is a protocol string the model reads, and "pi-web:unparsed-tool-call" in the
+  // middle of a transcript reads as a token, not as a note about the last reply.
+  // Only the plain header reads it — a folded card is a subagent report, whose
+  // label `title` already carries.
+  const headerTitle = message.customType === UNPARSED_TOOL_CALL_CUSTOM_TYPE
+    ? t("chat.unparsedToolCallTitle")
+    : title;
   const time = formatTime(message.timestamp, locale);
 
   const copyContent = () => {
@@ -2217,7 +2226,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
           }}
         >
           <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)", fontWeight: "var(--fw-semibold)" }}>
-            {title}
+            {headerTitle}
           </span>
           {isHiddenDisplay && <span style={{ color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{t("i18n.hiddenExtensionMessage")}</span>}
           {time && <span className="message-meta" style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>{time}</span>}

@@ -96,7 +96,21 @@ Every session the user opens starts a wrapper that the 10-minute idle timer keep
 ## Session automation surface (0.86)
 `get_state` reports `autoCompactionEnabled`, `autoRetryEnabled`, `steeringMode`, `followUpMode`; the composer's gear popover toggles them through `set_auto_compaction` / `set_auto_retry` / `set_steering_mode` / `set_follow_up_mode`, and `abort_retry` backs the "Cancel retry" link in the retry banner. `useAgentSession.automation` mirrors the four values inside `syncLiveModel` — every get_state path updates them automatically; a new session shows no gear until a wrapper exists (values null). Thinking levels come from `getSupportedThinkingLevels` per model; do not reintroduce a manual DeepSeek xhigh clamp — 0.86 `setThinkingLevel` clamps to `getAvailableThinkingLevels()` itself and a manual `state.thinkingLevel` write bypasses the append/emit path.
 
+## A run that ends on a tool call printed as text is continued (`lib/unparsed-tool-call.ts`, `lib/unparsed-tool-call-extension.ts`)
+
+A small model served from a GGUF file writes the XML tool-call grammar of its chat template badly — the `antml:` namespace gone, `<parameter=path>` closed by `</parameter>`, the call opened by `<tool_call>` and closed by `</function>`. Nothing parses that, so the call stays a `text` block: the assistant message carries **zero** tool calls, the provider reported a normal `stop`, and pi ends the run. The user watches the agent stop mid-thought with its next tool call printed as prose and no explanation (session `2026-11-25T11-25-45Z` is the captured sample the tests pin).
+
+`agent_before_settle` is pi's last actionable boundary — it may append session entries and request one continuation — so the fork extension appends a displayed `pi-web:unparsed-tool-call` custom message naming what the model wrote and asks for one more request. The rules, all in the pure detector:
+
+- The text must *open* with a call marker (`<tool_call`, `<antml:invoke`, `<invoke`, `<function=`, the collapsed `<=read>` a quantized Qwen template emits) **and** carry a `<parameter…>` row, outside any code fence. A message that quotes the format starts with prose and keeps the grammar in a fence, so it never matches — a reply documenting tool calls must not trigger a continuation.
+- Only a `completed` outcome is continued. `aborted` is the user's Stop, `error` the provider's; answering either invents work.
+- Skip when another handler already asked to continue, and when `context.canContinue` is false (pi reports an invalid boundary continuation otherwise).
+- Two continuations per session between two real tool calls (`UNPARSED_TOOL_CALL_BUDGET`); `tool_call` and `agent_start` buy the budget back. A model that keeps printing calls is broken, not unlucky, and a third ask only spends the user's tokens.
+
+The note is `display: true`, so the chat shows *why* the run carried on: a silent continuation reads as the agent ignoring its own stop. `components/MessageView.tsx` names that card through `headerTitle` (`chat.unparsedToolCallTitle`) — not through `formatCustomType`, whose call site `components/MessageView.subagent-report.test.mjs` pins byte-for-byte — and `lib/message-display.ts` makes it a turn anchor, so the printed call stays in the turn it ended. Registered for normal sessions and subagent runs in `lib/rpc-manager.ts`, never for a chat: a chat has no file or shell tool to print (CHAT_DELEGATION policy keeps those tools away).
+
 ## Composer send path is single-shot and guarded
+
 The prompt-anchor spacer must subtract the floating composer's separate trailing spacer (`composerOverlaySpacerRef`). Both contribute to the same scroll height; counting the composer clearance twice makes the first streaming tail-follow scroll push the sent message above the viewport.
 
 `ChatInput.handleSend` routes slash commands through `runBuiltinCommand` (the pending-guard wrapper) and sends exactly one `onSend` with the `#session`-mention-resolved text. A merge once left a second raw `onSend(msg, …)` behind it: the first send flips `agentRunningRef`, the second hits the running guard and *restores the just-sent text back into the composer* — every message appeared to "stick". `components/ChatInput.test.mjs` runs the extracted handler in a VM to pin one-send semantics.
