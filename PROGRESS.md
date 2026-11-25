@@ -1,3 +1,42 @@
+# PROGRESS — the worktree glyph is the folder's, in all three places
+Branch `feat/branch-picker-header-worktrees`. The task is the user's two screenshots
+(`pic1`, `pic2`): clicking a branch that lives in a worktree (`main-bak` in
+`auto-toc-worktrees/main-bak3-test-wt`) left every icon in the red frame on the plain
+project folder.
+**Implemented; `npm test`, `tsc --noEmit`, `npm run lint` and the three e2e checks that own
+this UI (`e2e/branch-menu-rows.mjs`, `e2e/branch-menu-filter.mjs`,
+`e2e/topbar-project-row.mjs`) pass.**
+## What changed
+| # | Icon the user circled | Now |
+| --- | --- | --- |
+| 1 | The header's project chip (`auto-toc`) | `WorktreeIcon` whenever the session's folder is a linked worktree |
+| 2 | The composer's project chip (`auto-toc`) | the same rule, read from the same `isWorktree` |
+| 3 | The branch list's current row (`main-bak`) | `WorktreeIcon` in a linked checkout, `ProjectFolderIcon` on the main checkout (`BranchRow.holderIsMain` says which) |
+## Implementation state
+* **The rule is one question, of the folder**: `ProjectInfo.isWorktree` /
+  `SessionInfo.isWorktree` (lib/worktree.ts, lib/session-reader.ts). A linked worktree
+  wearing a branch it did not create (`main-bak` in `…/main-bak3-test-wt`) is still a
+  worktree — that is the case the old rule read as a plain folder.
+* **`components/TopbarProjectChip.tsx`**: `{isWorktree ? <WorktreeIcon/> : <ProjectFolderIcon/>}`;
+  the `branch` prop is gone (nothing asks it any more), and AppShell stopped passing it.
+* **`components/ComposerProjectChip.tsx`**: `const showsWorktreeGlyph = isWorktree;` — the
+  chip reads no branch and imports no naming rule, so the composer's git row asks once.
+* **`components/ProjectContextMenu.tsx`**: `branchMark` / `branchTitle` split the `current`
+  row on `row.holderIsMain`; new key `sidebar.currentWorktreeBranchTitle` ("This worktree is
+  on {branch}") in en / zh-CN / zh-TW and in both branch-menu e2e fixtures.
+* **`lib/worktree-folder.ts`** keeps only `worktreeDirNameForBranch` (the new-worktree form's
+  folder hint, kept in parity with `sanitizeBranchForDir` by its test);
+  `branchOwnsWorktreeFolder` is deleted, and `lib/worktree-folder.test.mjs` is the naming test.
+* Docs: `docs/agents/fork-ui.md` (the branch-list glyph paragraph and the header row's glyph
+  rule, with the reason the old one is gone) and the `AGENTS.md` topic line.
+## Verification
+* `npm test` (all unit suites) — exit 0.
+* `node_modules/.bin/tsc --noEmit` — clean. `npm run lint` — 0 errors (5 pre-existing warnings).
+* `node e2e/branch-menu-rows.mjs`, `node e2e/branch-menu-filter.mjs` (now asserts the current
+  row's title *and* its glyph drawing), `node e2e/topbar-project-row.mjs` — all exit 0.
+
+---
+
 # PROGRESS — the composer's branch picker, its tree, and the adopted user stylesheet
 
 Branch `wt/2wt-branch-picker-header-worktrees`. The task is the seven items in

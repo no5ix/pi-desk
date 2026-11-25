@@ -2549,7 +2549,7 @@ export function AppShell() {
                   /* A control, like the branch chip: the label is a short name, the path
                      it stands for is longer than a phone, and nothing else in the header
                      says where the session works. Tap it for `Path` over the full path. */
-                  <TopbarProjectChip name={topBarSubtitle} path={visibleProjectCwd ?? ""} branch={topBarBranch} isWorktree={headerProjectIsWorktree} />
+                  <TopbarProjectChip name={topBarSubtitle} path={visibleProjectCwd ?? ""} isWorktree={headerProjectIsWorktree} />
                 ) : (
                   <small className="app-topbar-project">
                     <span>{topBarSubtitle}</span>

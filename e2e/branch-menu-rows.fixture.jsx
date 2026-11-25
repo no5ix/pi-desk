@@ -25,6 +25,7 @@ const TRANSLATED = {
   "sidebar.switchBranchTitle": "Check out {branch} in the current checkout",
   "sidebar.branchRemoteTitle": "Remote branch — checking it out creates a local tracking branch",
   "sidebar.currentBranchTitle": "This folder is on {branch}",
+  "sidebar.currentWorktreeBranchTitle": "This worktree is on {branch}",
   "sidebar.mainCheckoutBranchTitle": "{branch} is checked out in the project's own folder — work there",
   "sidebar.branchInWorktreeTitle": "{branch} is already checked out in another worktree — open that worktree",
   "sidebar.worktreeFromBranchTitle": "New worktree from {branch}",

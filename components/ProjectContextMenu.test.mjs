@@ -98,6 +98,17 @@ test("the current checkout is the selected worktree, else the main one", () => {
 });
 
 const noop = () => {};
+/** Which of the three glyphs a row wears, read off the drawing inside its mark. */
+function glyphFor(html, branch) {
+  const name = html.indexOf(`data-branch="${branch}"`);
+  assert.notEqual(name, -1, `a row for ${branch}`);
+  const mark = html.lastIndexOf("sidebar-project-context-menu-branch-mark", name);
+  const slice = html.slice(mark, name);
+  if (slice.includes("m6 14 1.5-2.9")) return "folder";
+  if (slice.includes("M4 4h9a2 2")) return "worktree";
+  if (slice.includes('x1="6" y1="3"')) return "branch";
+  throw new Error(`no glyph in the row for ${branch}`);
+}
 function render(overrides = {}) {
   const props = {
     menuRef: { current: null },
@@ -156,7 +167,10 @@ test("a branch row's worktree button opens the form, and only where a worktree c
   }
   // The name is the switch, and it is the one that says what it will do.
   assert.ok(chip.includes('aria-current="true"'), "the checked-out branch is marked in its own row");
-  assert.equal(chip.match(/sidebar\.currentBranchTitle\(/g)?.length, 1, "the current row says this folder is on it");
+  assert.equal(chip.match(/sidebar\.currentWorktreeBranchTitle\(feature\)/g)?.length, 1,
+    "the current row of a linked worktree names the worktree, not just the branch");
+  assert.equal(chip.match(/sidebar\.currentBranchTitle\(/g)?.length ?? 0, 0,
+    "the plain-folder title belongs to the main checkout's row, not to this one");
   assert.equal(chip.match(/sidebar\.mainCheckoutBranchTitle\(/g)?.length, 1,
     "the row for a branch the project's own folder holds names that folder");
   assert.equal(chip.match(/sidebar\.branchInWorktreeTitle\(/g)?.length, 1,
@@ -171,6 +185,27 @@ test("a branch row's worktree button opens the form, and only where a worktree c
   assert.ok(!plain.includes(">sidebar.worktrees<"));
   assert.ok(!chip.includes("sidebar.moreActions"), "the branch page opens on its own: no Project actions step back");
   assert.ok(!chip.includes("sidebar-project-context-menu-back"), "and no back button");
+});
+test("the current row wears the glyph of the folder it is on", () => {
+  // The screenshot: `main-bak` is checked out in `auto-toc-worktrees/main-bak3-test-wt`,
+  // the user clicks it, and every glyph in the window goes back to the plain folder — on
+  // the old rule that a folder whose name does not match its branch is an ordinary folder.
+  // The folder is a linked worktree, and the glyph is how the user checks which folder a
+  // prompt runs in, so the current row wears the checkout glyph too. `holderIsMain` (the
+  // checkout that holds the branch — here, this folder) is what says which of the two.
+  const menu = {
+    root: ROOT, projectRoot: ROOT, isGit: true,
+    branches: ["main", "feature", "dev"], remoteBranches: [], worktrees: [MAIN, FEATURE, DEV], loaded: true,
+  };
+  const inWorktree = render({ view: "branches", branchMenu: menu, selectedCwd: FEATURE.path });
+  assert.equal(glyphFor(inWorktree, "feature"), "worktree", "the branch this linked worktree is on");
+  assert.equal(glyphFor(inWorktree, "dev"), "worktree", "a branch another linked worktree holds");
+  assert.equal(glyphFor(inWorktree, "main"), "folder", "a branch the project's own folder holds stays the project");
+  assert.ok(inWorktree.includes("sidebar.currentWorktreeBranchTitle(feature)"), "and the row's title says worktree");
+  const onMain = render({ view: "branches", branchMenu: menu, selectedCwd: MAIN.path });
+  assert.equal(glyphFor(onMain, "main"), "folder", "the main checkout's branch is the project's own folder");
+  assert.ok(onMain.includes("sidebar.currentBranchTitle(main)"), "and its title says folder");
+  assert.equal(glyphFor(onMain, "feature"), "worktree", "the linked rows keep theirs either way");
 });
 test("the branch list narrows from its filter box once it is long", () => {
   const many = {

@@ -21,8 +21,8 @@ test("the title and the project line keep their positions in the title block", (
   assert.ok(block, "topbar title block found");
   assert.match(block[0], /<span>\{topBarTitle\}<\/span>/, "the title stays the first span child");
   assert.match(block[0], /className="app-topbar-subtitle-row"/, "the project line is a row inside the title block");
-  assert.match(block[0], /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} branch=\{topBarBranch\} isWorktree=\{headerProjectIsWorktree\} \/>/,
-    "the project name is a chip, its path is the folder the session works in, and its glyph is asked of the branch");
+  assert.match(block[0], /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} isWorktree=\{headerProjectIsWorktree\} \/>/,
+    "the project name is a chip, its path is the folder the session works in, and its glyph is asked of that folder");
   assert.match(projectChip, /<small className="app-topbar-project app-topbar-project--chip">[\s\S]*<span>\{name\}<\/span>/,
     "it stays a <small>, so the narrow-screen rule that hid the row still hides it");
 });
@@ -72,8 +72,10 @@ test("the project label opens the same tip with the folder it points at", () => 
   assert.match(projectChip, /className="app-topbar-project-hit"/);
   assert.match(projectChip, /aria-label=\{t\("chat\.projectTipTitle", \{ projectRoot: path \}\)\}/, "and says it to a screen reader");
   assert.match(projectChip, /\{open && path \? \(/, "no path, no tip");
-  assert.match(projectChip, /\{isWorktree && branchOwnsWorktreeFolder\(path, branch\) \? <WorktreeIcon size=\{13\} \/> : \(\s*<ProjectFolderIcon size=\{13\} \/>\s*\)\}/,
+  assert.match(projectChip, /\{isWorktree \? <WorktreeIcon size=\{13\} \/> : <ProjectFolderIcon size=\{13\} \/>\}/,
     "the project label is the chip that says which folder this is: the checkout glyph in a linked worktree, the project folder everywhere else");
+  assert.ok(!projectChip.includes("branchOwnsWorktreeFolder"),
+    "and the glyph asks nothing beyond the folder: a worktree folder carrying an ordinary branch is still a worktree (the user's main-bak)");
   assert.match(gitIcons, /m6 14 1\.5-2\.9/,
     "the sidebar's folder shape, so the header, the project tree and the branch list's project glyph are one drawing in one file");
   assert.match(css, /\.app-topbar-project-hit,\n\.app-topbar-branch-hit,\n\.app-topbar-context-hit \{/,
