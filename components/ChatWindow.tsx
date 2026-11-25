@@ -294,8 +294,6 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
           width: "auto",
           minHeight: 24,
           padding: "2px 0",
-          border: "none",
-          background: "transparent",
           color: "var(--text-muted)",
           cursor: "pointer",
           fontSize: "var(--fs-caption)",
@@ -1716,7 +1714,6 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                     key={`${keyPrefix}-view-${messageKey}`}
                     message={msg}
                     toolResults={toolResultsMap}
-                    modelNames={modelNames}
                     cwd={messageCwd}
                     onOpenFile={openFile}
                     onOpenFileDiff={onOpenFileDiff}
@@ -1895,7 +1892,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
               );
             })()}
             {streamState.isStreaming && hasStreamingContent && streamState.streamingMessage && (
-              <MessageView message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={openFile} onOpenSession={onOpenSession} expandLatestThinking />
+              <MessageView message={streamState.streamingMessage as AgentMessage} toolResults={toolResultsMap} isStreaming cwd={messageCwd} onOpenFile={openFile} onOpenSession={onOpenSession} expandLatestThinking />
             )}
 
             {agentRunning && !hasStreamingContent && (agentPhase || isCompacting) && (

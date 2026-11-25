@@ -35,8 +35,8 @@ test("a subagent report is collapsed by default, and its header is the toggle", 
   assert.match(card, /onClick=\{\(\) => setContentExpanded\(\(value\) => !value\)\}/, "and one click toggles it");
   assert.match(card, /className="compaction-card-chevron"\s*\n\s*data-expanded=\{contentExpanded \? "true" : "false"\}/,
     "the same chevron the compaction card turns, so the two collapsed notes read alike");
-  assert.match(card, /borderBottom: contentExpanded \? "var\(--hairline\) solid var\(--border\)" : "none",/,
-    "folded, there is no divider under the header: a line over nothing reads as an empty card");
+  assert.doesNotMatch(card, /borderBottom: contentExpanded/,
+    "no divider under the header, folded or open: the header and the body read as one flat card");
   assert.match(card, /title=\{t\(contentExpanded \? "chat\.collapseSubagentReport" : "chat\.expandSubagentReport"\)\}/);
   // Folded, the card is its header alone: no body, no Copy row.
   assert.match(card, /\{contentExpanded \? \(\s*<div style=\{\{ padding: "6px 9px" \}\}>[\s\S]*?\) : isHiddenDisplay \? \(/,
@@ -57,9 +57,10 @@ test("every model line in a run is dated", () => {
   assert.match(assistant, /const modelTime = formatTime\(message\.timestamp, locale\);/,
     "the reply's own time, not the footer's sparser `showTimestamp` rule");
   const line = assistant.slice(assistant.indexOf('className="message-assistant-model"'), assistant.indexOf("{isStreaming &&"));
-  const nameAt = line.indexOf("getModelDisplayName(message.provider, message.model, modelNames)");
+  assert.doesNotMatch(line, /getModelDisplayName|modelNames/,
+    "the model line carries no model info: the provider and the model stay out of the transcript");
   const timeAt = line.indexOf('className="message-assistant-model-time"');
-  assert.ok(nameAt > 0 && timeAt > nameAt, "the time follows the model name, as `model  [clock] 11:46 PM`");
+  assert.ok(timeAt > 0, "the time keeps the line — `[clock] 11:46 PM`");
   assert.match(line, /<ClockIcon size=\{10\} \/>/);
   assert.match(css, /\.message-assistant-model-time \{[\s\S]*?font-variant-numeric: tabular-nums;/);
 });

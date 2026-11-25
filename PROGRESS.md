@@ -339,3 +339,64 @@ after the pointer was released the line stayed lit until the user clicked elsewh
 - Verified: live app at 1280px — rest / hover / mid-drag / after release all
   `rgba(0, 0, 0, 0)` with the sidebar 260 → 350; `npm test` 4811/4812 (0 fail);
   `tsc --noEmit` and eslint clean; the e2e passes in light and dark.
+
+## 2026-11-25 — the chat's blocks go flat, headings are tinted, a footer stops naming the model
+
+Three asks from the user's screenshots of a conversation: every block and small button
+in a reply wore a hairline; the assistant's footer printed `ukisai/Swift-…:IQ3_S(Splash)`
+beside the clock; and h1…h6 all rendered in one ink.
+
+- `app/native-theme.css` (fork CSS only, `globals.css`/`settings.css` untouched) added a
+  "The conversation: one surface, no hairlines" layer: `.process-details-trigger`,
+  `.tool-call-card`, `.thinking-card`, `.compaction-card`, `.custom-message-card`,
+  `.markdown-code-block` and its header/fold seam lose their outlines, and every borderless
+  small control (Copy, No wrap, Wrap, the report's Copy/Details, the subagent's Open,
+  the footer's Copy, the user's action row, a cancelled badge, the truncation's Compact)
+  gets a fill instead — `--bg-subtle` at rest, `--bg-selected` pressed, an accent mix while
+  active. Fills carry the affordance the outlines used to. The trigger and the report's
+  buttons carried `border: none, background: transparent` inline, so their CSS needed
+  `!important`; a card's tinted background is left to the component, which picks it per
+  tool state (running / waiting / error).
+- The six heading levels get their own token (`--heading-1`…`--heading-6`) in both themes,
+  applied to the rendered Markdown and to an artifact's own document.
+- `components/MessageView.tsx`: the footer's model text is gone — the line keeps the clock,
+  the streaming dot, and routing. `getModelDisplayName` and the `modelNames` prop are gone
+  from the component and from `components/ChatWindow.tsx`'s call site; a reply's model is
+  still in the header's model picker and in Process details.
+- New classes on the fork's own nodes (`.tool-call-card`, `.thinking-card`,
+  `.custom-message-card`, `.tool-result-body`, `.tool-call-open`, `.message-copy-action`)
+  so the CSS names the block instead of reaching through inline styles.
+- Tests: `components/MessageView.test.mjs` (a reply's line keeps its clock and prints no
+  provider or model), `components/MessageView.subagent-report.test.mjs` (the report's buttons
+  name the class the CSS fills), `app/native-theme-chat-flat.test.mjs` (the flat rules, the
+  fills in every state, the six heading inks, and the rule that an upstream border is named
+  `0` in `native-theme.css` — dropping the declaration leaves `globals.css` drawing it, which
+  is how the code fence's header kept its underside line through the flat pass; the live app
+  measured `1px` there before it was named).
+- Verified against the running app with real sessions: `h2` = `rgb(162,28,175)`,
+  `h3` = `rgb(21,128,61)`; the fence, its header, its chips, the process card and a reply's
+  Copy are all `0px/0px/0px/0px` with a fill; the line reads `01:14 AM`.
+  `npm test` 0 failures, `tsc --noEmit` clean, eslint 0 errors.
+
+## 2026-11-25 — the phone's model picker stops wearing the composer strip's width
+
+On a phone the model picker opened ~82px wide: every model name (`provider/model`, a
+50-character identifier) was cut to a fragment and the list scrolled sideways.
+
+- Root cause: the composer's narrow-screen control row is the strip the More button
+  opens — `position: absolute; width: max-content`, `backdrop-filter: blur(10px)`, and
+  `translate`/`scale` transitions. `backdrop-filter` and a non-`none` `scale` make an
+  element the containing block for a `position: fixed` descendant, so the picker's phone
+  rule (`left: 8; right: 8`, written for the viewport) measured the *strip*: a 100px box.
+  Measured in a real browser at 390px: `position: fixed`, panel 82px inside a 100px strip.
+- `components/ModelSelector.tsx` gains `composerAnchored`: the composer's chip opens a
+  `position: absolute` panel hung above itself, placed by the shared
+  `composerPanelAnchoring()` with a real width (`COMPOSER_MODEL_MENU_WIDTH`, 420).
+  `components/ChatInput.tsx` passes it; a settings field keeps the old fixed box.
+- Measured after: 390px viewport → panel 16…374 (358 = the page minus two 16px gutters),
+  rows 340px, its bottom 700 against the strip's top 704 — it hangs above the strip that
+  opened it. 1440px desktop → 420px wide at the composer's left edge.
+- Tests: `lib/composer-panel-placement.test.mjs` (the picker takes the box's whole width
+  on a phone and keeps its own width on a desktop; every composer menu goes through the
+  helper, now four of them) and `components/ModelSelector.test.mjs` (the composer passes
+  `composerAnchored`; the absolute branch precedes the fixed one; a phone gets the page).

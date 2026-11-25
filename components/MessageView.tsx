@@ -203,7 +203,6 @@ interface Props {
   message: AgentMessage;
   isStreaming?: boolean;
   toolResults?: Map<string, ToolResultMessage>;
-  modelNames?: Record<string, string>;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
   /**
@@ -246,25 +245,6 @@ interface Props {
    *  and the "expand thinking by default" switch reaches this reply's thinking — not every
    *  thinking card in the file, which turned a long conversation into a wall of open text. */
   expandLatestThinking?: boolean;
-}
-
-export function getModelDisplayName(
-  provider: string,
-  responseModel: string,
-  modelNames?: Record<string, string>,
-): string {
-  const normalizedProvider = provider.toLowerCase();
-  const normalizedResponse = responseModel.toLowerCase();
-  const configured = Object.entries(modelNames ?? {}).flatMap(([key, name]) => {
-    const separator = key.indexOf(":");
-    return separator > 0 && key.slice(0, separator).toLowerCase() === normalizedProvider
-      ? [{ id: key.slice(separator + 1).toLowerCase(), name }]
-      : [];
-  });
-  return configured.find((model) => model.id === normalizedResponse)?.name
-    ?? configured.find((model) => normalizedResponse.endsWith(`/${model.id}`))?.name
-    ?? Object.entries(modelNames ?? {}).find(([key]) => key.toLowerCase() === normalizedResponse)?.[1]
-    ?? `${provider}/${responseModel}`;
 }
 
 // Dates follow the app language, not the OS locale, so an English UI never
@@ -317,12 +297,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, onOpenFileDiff, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs, expandLatestThinking }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, cwd, onOpenFile, onOpenFileDiff, onOpenSession, entryId, searchBlock, onFork, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs, expandLatestThinking }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onEditContent={onEditContent} editDisabled={editDisabled} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenFileDiff={onOpenFileDiff} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} turnDurationMs={turnDurationMs} expandLatestThinking={expandLatestThinking} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} cwd={cwd} onOpenFile={onOpenFile} onOpenFileDiff={onOpenFileDiff} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} turnDurationMs={turnDurationMs} expandLatestThinking={expandLatestThinking} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -345,7 +325,6 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
   return prev.message === next.message
     && prev.isStreaming === next.isStreaming
     && haveSameRelevantToolResults(prev.message, prev.toolResults, next.toolResults)
-    && prev.modelNames === next.modelNames
     && prev.cwd === next.cwd
     && prev.onOpenFile === next.onOpenFile
     && prev.onOpenFileDiff === next.onOpenFileDiff
@@ -690,7 +669,6 @@ function AssistantMessageView({
   message,
   isStreaming,
   toolResults,
-  modelNames,
   cwd,
   onOpenFile,
   onOpenFileDiff,
@@ -711,7 +689,6 @@ function AssistantMessageView({
   message: AssistantMessage;
   isStreaming?: boolean;
   toolResults?: Map<string, ToolResultMessage>;
-  modelNames?: Record<string, string>;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
   onOpenFileDiff?: (filePath: string, sessionId?: string) => void;
@@ -889,9 +866,6 @@ function AssistantMessageView({
           gap: 6,
         }}
       >
-        {message.provider && (
-          <span>{getModelDisplayName(message.provider, message.model, modelNames)}</span>
-        )}
         {modelTime && (
           <span className="message-assistant-model-time">
             <ClockIcon size={10} />
@@ -938,7 +912,7 @@ function AssistantMessageView({
           style={{
             marginTop: blocks.length > 0 ? 8 : 0,
             padding: "7px 10px",
-            border: "var(--hairline) solid color-mix(in srgb, var(--danger) 30%, transparent)",
+            border: "none",
             borderRadius: "var(--radius-sm)",
             background: "color-mix(in srgb, var(--danger) 7%, transparent)",
             color: "var(--danger)",
@@ -973,7 +947,7 @@ function AssistantMessageView({
           style={{
             marginTop: blocks.length > 0 || providerError ? 8 : 0,
             padding: "7px 10px",
-            border: "var(--hairline) solid rgba(234,179,8,0.3)",
+            border: "none",
             borderRadius: "var(--radius-sm)",
             background: "rgba(234,179,8,0.07)",
             color: "var(--warning)",
@@ -994,9 +968,9 @@ function AssistantMessageView({
                 display: "block",
                 marginTop: 8,
                 padding: "3px 8px",
-                border: "var(--hairline) solid currentColor",
+                border: "none",
                 borderRadius: "var(--radius-sm)",
-                background: "transparent",
+                background: "var(--bg-selected)",
                 color: "inherit",
                 cursor: isCompacting ? "default" : "pointer",
                 font: "inherit",
@@ -1033,7 +1007,7 @@ function AssistantMessageView({
             style={{
               display: "flex", alignItems: "center", gap: 4,
               padding: "3px 8px", height: "var(--control-h-sm)",
-              background: "none", border: "none",
+              background: "var(--bg-selected)", border: "none",
               borderRadius: "var(--radius-sm)",
               color: copied ? "var(--accent)" : "var(--text-dim)",
               cursor: "pointer",
@@ -1188,7 +1162,6 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
   return (
     <div style={{
       display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
-      border: "var(--hairline) solid var(--border)",
       borderRadius: "var(--radius-md)",
       padding: "6px 10px",
       background: "var(--bg)",
@@ -1310,11 +1283,6 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
         borderRadius: "var(--radius-md)",
         overflow: "hidden",
         fontSize: "var(--fs-caption)",
-        border: isError
-          ? "1px solid rgba(248,113,113,0.45)"
-          : aborted
-            ? "1px solid rgba(148,163,184,0.4)"
-            : "1px solid rgba(34,197,94,0.25)",
         background: isError
           ? "rgba(248,113,113,0.05)"
           : aborted
@@ -1353,7 +1321,7 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
             ) : block.toolName}
           </span>
           {aborted && (
-            <span title={t("chat.toolCancelled")} style={{ flexShrink: 0, fontSize: "var(--fs-micro)", color: "var(--text-dim)", border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-xs)", padding: "1px 5px" }}>
+            <span title={t("chat.toolCancelled")} style={{ flexShrink: 0, fontSize: "var(--fs-micro)", color: "var(--text-dim)", border: "none", background: "var(--bg-selected)", borderRadius: "var(--radius-xs)", padding: "1px 5px" }}>
               {t("chat.toolCancelled")}
             </span>
           )}
@@ -1377,10 +1345,11 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
         {subagent && onOpenSession && (
           <button
             type="button"
+            className="tool-call-open"
             onClick={() => onOpenSession(subagent.sessionId)}
             title={t("subagent.open")}
             aria-label={t("subagent.open")}
-            style={{ width: 32, display: "grid", placeItems: "center", border: "none", borderLeft: "var(--hairline) solid var(--border)", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
+            style={{ width: 32, display: "grid", placeItems: "center", border: "none", background: "none", color: "var(--text-muted)", cursor: "pointer", flexShrink: 0 }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
           </button>
@@ -1398,7 +1367,6 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
             lineHeight: 1.5,
             overflow: "auto",
             background: "var(--bg-subtle)",
-            borderTop: isError ? "1px solid rgba(248,113,113,0.25)" : "1px solid rgba(34,197,94,0.2)",
             whiteSpace: "pre-wrap",
             wordBreak: "break-all",
           }}
@@ -1413,14 +1381,14 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
       )}
 
       {/* ── Result images — always visible, independent of the collapsed details ── */}
-      {resultImages.length > 0 && <ResultImages images={resultImages} isError={isError} />}
+      {resultImages.length > 0 && <ResultImages images={resultImages} />}
 
       {/* ── A file the chat saved to Downloads — always visible ── */}
       {savedFile && <SavedFileCard file={savedFile} />}
 
       {/* ── Expanded: applied-patch split diff ── */}
       {expanded && patchFiles && (
-        <div style={{ borderTop: "var(--hairline) solid rgba(34,197,94,0.15)", background: "var(--bg)" }}>
+        <div style={{ background: "var(--bg)" }}>
           <ApplyPatchDiffView files={patchFiles} />
         </div>
       )}
@@ -1460,7 +1428,6 @@ function PairedDiffResult({ diff }: {
   return (
     <div
       style={{
-        borderTop: "var(--hairline) solid rgba(34,197,94,0.15)",
         background: "var(--bg)",
       }}
     >
@@ -1841,7 +1808,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 // Images a tool returned — including ones a codemode script generated with an image model,
 // which pi never writes to disk — so each one can be saved.
-function ResultImages({ images, isError }: { images: ImageContent[]; isError: boolean }) {
+function ResultImages({ images }: { images: ImageContent[] }) {
   const { t } = useI18n();
   return (
     <div
@@ -1851,7 +1818,6 @@ function ResultImages({ images, isError }: { images: ImageContent[]; isError: bo
         flexWrap: "wrap",
         padding: "10px",
         background: "var(--bg)",
-        borderTop: `1px solid ${isError ? "rgba(248,113,113,0.3)" : "rgba(34,197,94,0.15)"}`,
       }}
     >
       {images.map((image, index) => {
@@ -1902,7 +1868,6 @@ function PairedResult({ text, isEmpty, isError }: {
   return (
     <div
       style={{
-        borderTop: `1px solid ${isError ? "rgba(248,113,113,0.3)" : "rgba(34,197,94,0.15)"}`,
         background: isError ? "rgba(248,113,113,0.04)" : "var(--bg-subtle)",
       }}
     >
@@ -2018,7 +1983,7 @@ function CompactionMessageView({ message, kind = "compaction" }: { message: Cust
       <div
         className="compaction-card"
         style={{
-          border: "var(--hairline) solid var(--border)",
+          border: "none",
           borderRadius: "var(--radius-md)",
           overflow: "hidden",
           background: "var(--bg)",
@@ -2036,7 +2001,6 @@ function CompactionMessageView({ message, kind = "compaction" }: { message: Cust
             gap: 8,
             width: "100%",
             padding: "7px 10px",
-            borderBottom: expanded ? "var(--hairline) solid var(--border)" : "none",
             background: "var(--bg-panel)",
             color: "var(--text-muted)",
             textAlign: "left",
@@ -2158,7 +2122,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
     <div style={{ marginBottom: 16 }}>
       <div
         style={{
-          border: "var(--hairline) solid var(--border)",
+          border: "none",
           borderRadius: "var(--radius-md)",
           overflow: "hidden",
           background: isHiddenDisplay ? "var(--bg-subtle)" : "var(--bg)",
@@ -2179,10 +2143,6 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
               width: "100%",
               padding: "7px 10px",
               border: "none",
-              // Only a card with a body gets the divider under its header, exactly
-              // as the compaction card does: folded, a line under the header alone
-              // reads as a strip of an empty card.
-              borderBottom: contentExpanded ? "var(--hairline) solid var(--border)" : "none",
               background: "var(--bg-panel)",
               color: "var(--text-muted)",
               textAlign: "left",
@@ -2219,7 +2179,6 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             alignItems: "center",
             gap: 8,
             padding: "7px 10px",
-            borderBottom: "var(--hairline) solid var(--border)",
             background: "var(--bg-panel)",
             color: "var(--text-muted)",
             fontSize: "var(--fs-caption)",
@@ -2283,7 +2242,6 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             alignItems: "center",
             gap: 8,
             padding: "4px 9px",
-            borderTop: "var(--hairline) solid var(--border)",
             background: "var(--bg-subtle)",
           }}
         >
@@ -2293,7 +2251,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
               style={{
                 padding: "3px 7px",
                 border: "none",
-                background: "none",
+                background: "var(--bg-selected)",
                 color: copied ? "var(--accent)" : "var(--text-dim)",
                 cursor: "pointer",
                 fontSize: "var(--fs-micro)",
@@ -2312,7 +2270,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                 marginLeft: "auto",
                 padding: "3px 7px",
                 border: "none",
-                background: "none",
+                background: "var(--bg-selected)",
                 color: "var(--text-dim)",
                 cursor: "pointer",
                 fontSize: "var(--fs-micro)",
@@ -2331,7 +2289,6 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             style={{
               margin: 0,
               padding: "9px 10px",
-              borderTop: "var(--hairline) solid var(--border)",
               background: "var(--bg)",
               color: "var(--text-muted)",
               fontSize: "calc(12px + var(--chat-font-size-offset, 0px))",

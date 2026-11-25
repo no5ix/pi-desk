@@ -11,7 +11,6 @@ const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const {
   MessageView,
   ThinkingBlock,
-  getModelDisplayName,
   getTokenEstimateText,
   getToolCallInputText,
   replaceUserMessageText,
@@ -49,17 +48,6 @@ test("updates a reused message when its written files change", () => {
   const props = { message: { role: "assistant", content: [] } };
   assert.equal(MessageView.compare(props, props), true);
   assert.equal(MessageView.compare(props, { ...props, writtenFiles: [{ path: "/tmp/result.txt" }] }), false);
-});
-
-test("matches response model aliases and otherwise includes the provider", () => {
-  const names = {
-    "gateway:claude-sonnet-5": "Sonnet 5",
-    "custom-api:GLM-5.3": "GLM 5.3",
-  };
-
-  assert.equal(getModelDisplayName("gateway", "anthropic/claude-sonnet-5", names), "Sonnet 5");
-  assert.equal(getModelDisplayName("CUSTOM-API", "glm-5.3", names), "GLM 5.3");
-  assert.equal(getModelDisplayName("gateway", "unknown-model", names), "gateway/unknown-model");
 });
 
 test("previews the first thinking line and reveals the full text with the saved default", () => {
@@ -272,7 +260,7 @@ test("renders subagents as standard tool calls with only an extra session button
     onOpenSession() {},
   });
 
-  assert.match(html, /border:1px solid rgba\(34,197,94,0\.25\)/);
+  assert.match(html, /background:rgba\(34,197,94,0\.04\)/);
   assert.match(html, />Agent</);
   assert.match(html, />Explore</);
   assert.match(html, /aria-label="Open sub-agent session"/);
@@ -502,9 +490,9 @@ test("marks apply_patch returned failures as errors even when isError is unset",
     content: [block],
   }, { toolResults: new Map([[block.toolCallId, failed]]) });
 
-  assert.match(html, /border:1px solid rgba\(248,113,113,0\.45\)/);
+  assert.match(html, /background:rgba\(248,113,113,0\.05\)/);
   assert.match(html, />apply_patch</);
-  assert.doesNotMatch(html, /border:1px solid rgba\(34,197,94,0\.25\)/);
+  assert.doesNotMatch(html, /background:rgba\(34,197,94,0\.04\)/);
 });
 
 test("renders custom-message images as buttons that open a larger preview", () => {
@@ -737,4 +725,23 @@ test("keeps the registered name where no result names the server and tool", (t) 
     details: { calls: [{ id: "call-codemode-mcp/1", name: "mcp__docs_v2__search_pages", args: "{}", status: "ok" }] },
   });
   assert.match(textOf(html), /mcp__docs_v2__search_pages\{\}/);
+});
+
+test("a reply's model line keeps its time and names no model", () => {
+  // The web chat used to print `ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF:IQ3_S(Splash)`
+  // above every answer: a quantisation string the user reads as noise, and the one
+  // place a self-hosted model's whole identifier lands in the transcript.
+  const html = renderMessage({
+    role: "assistant",
+    provider: "ukisai",
+    model: "Swift-1.5-Qwen3.8-Flash:IQ3_S(Splash)",
+    timestamp: 1763000000000,
+    content: [{ type: "text", text: "Done." }],
+  });
+  const at = html.indexOf("message-assistant-model");
+  assert.ok(at > 0, "the line is there");
+  const line = html.slice(at, html.indexOf("message-assistant-content"));
+  assert.ok(line.length > 20, `the line before the reply's body (${line.length})`);
+  assert.match(line, /message-assistant-model-time/, "the clock stays");
+  assert.doesNotMatch(line, /ukisai|Swift|IQ3_S/, "the provider and the model do not");
 });

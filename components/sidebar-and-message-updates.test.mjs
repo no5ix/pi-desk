@@ -37,6 +37,6 @@ test("interrupted tool calls render a cancelled marker instead of success stylin
   // Loaded (non-streaming) message + no paired result ⇒ aborted.
   assert.match(messageSource, /aborted=\{!isStreaming && !result\}/);
   assert.match(messageSource, /t\("chat\.toolCancelled"\)/);
-  // Aborted styling is neutral slate, distinct from the green success border.
-  assert.match(messageSource, /rgba\(148,163,184,0\.4\)/);
+  // Aborted styling is neutral slate, distinct from the green success tint.
+  assert.match(messageSource, /rgba\(148,163,184,0\.06\)/);
 });
