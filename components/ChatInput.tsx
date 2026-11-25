@@ -3239,7 +3239,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </svg>
               </button>
             )}
-            <div style={{
+            {/* `data-strip-open` is rendered only in the narrow tier, so the strip's
+                appearance/disappearance animation (app/native-theme.css) is scoped to the
+                phone by the attribute and never fires on the desktop's inline row. */}
+            <div
+              className="composer-controls-strip"
+              data-strip-open={isNarrow ? (controlsMenuOpen ? "true" : "false") : undefined}
+              style={{
               display: isNarrow ? (controlsMenuOpen ? "flex" : "none") : "flex",
               alignItems: "center",
               gap: isNarrow ? 1 : 2,

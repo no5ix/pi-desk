@@ -6089,6 +6089,61 @@ html.dark {
   font-weight: var(--fw-medium);
 }
 
+/* The phone's controls strip appears and disappears; it does not blink into the row.
+   The strip stays mounted and React flips its `display` (ChatInput's `controlsMenuOpen`),
+   and CSS animates that toggle: `display` is a discrete property, so the exit needs
+   `transition-behavior: allow-discrete` — without it the strip is gone before the first
+   frame of the fade — and the entry needs `@starting-style`, because a browser skips the
+   transition on the first style update after `display: none`. Both are given their own
+   declaration: `allow-discrete` inside the `transition` shorthand would make an older
+   engine drop the whole transition. Firefox parses allow-discrete without transitioning
+   `display` (bug 1882408), so there the strip fades in and closes at once — the guide's
+   graceful degradation, not a jump. The strip is anchored at the More button's own edge
+   (`left: 0`, `bottom: 0`), so it grows out of the glyph that opened it and sinks back
+   into it. `data-strip-open` is rendered only in the narrow tier, so the desktop's inline
+   row never animates. */
+.composer-controls-strip[data-strip-open] {
+  transform-origin: left bottom;
+  opacity: 1;
+  translate: 0 0;
+  scale: 1;
+  transition:
+    display var(--dur-base) linear,
+    opacity var(--dur-base) var(--ease-native),
+    translate var(--dur-base) var(--ease-native),
+    scale var(--dur-base) var(--ease-native);
+  transition-behavior: allow-discrete;
+}
+.composer-controls-strip[data-strip-open="false"] {
+  opacity: 0;
+  translate: 0 6px;
+  scale: 0.96;
+  /* The fading strip keeps its box for the exit's duration, so it must not eat the taps
+     aimed at the row underneath it. */
+  pointer-events: none;
+}
+@starting-style {
+  .composer-controls-strip[data-strip-open="true"] {
+    opacity: 0;
+    translate: 0 6px;
+    scale: 0.96;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-controls-strip[data-strip-open],
+  .composer-controls-strip[data-strip-open="false"] {
+    translate: none;
+    scale: none;
+    transition-duration: var(--dur-fast);
+  }
+  @starting-style {
+    .composer-controls-strip[data-strip-open="true"] {
+      translate: none;
+      scale: none;
+    }
+  }
+}
+
 .chat-project-context {
   display: inline-flex;
   align-items: center;

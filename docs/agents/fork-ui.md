@@ -198,6 +198,20 @@ it put a 22px gap after the model glyph), and the control that closes the strip 
 36px box (`.composer-controls-close { flex-shrink: 0 }`; it was squeezed to 15px once the
 strip grew). Measured in Chromium and WebKit at 390px.
 
+The strip appears and disappears; it does not blink into the row. A closed phone row keeps
+it mounted and flips its `display`, and CSS animates that flip
+(`.composer-controls-strip[data-strip-open]` in `app/native-theme.css`; the attribute ships
+only in the narrow tier, so the desktop's inline row never moves). `display` is a discrete
+property, so the exit needs `transition-behavior: allow-discrete` — as its **own**
+declaration, because inside the `transition` shorthand an older engine drops the whole
+transition — and the entry needs `@starting-style`, because a browser skips the transition
+on the first style update after `display: none` (Firefox parses allow-discrete without
+transitioning `display`, bug 1882408: there the strip fades in and closes at once). The
+strip fades and scales from `left bottom`, the More button's edge it is anchored to, over
+`--dur-base`; the closed state sets `pointer-events: none` because the fading strip keeps
+its box, and reduced motion drops the travel and shortens the fade. Pinned by
+`components/ChatInput.composer-row.test.mjs`.
+
 ## Conversation find
 
 `ConversationFind` is mounted by `ChatWindow`. Ctrl+F / Cmd+F searches the current
