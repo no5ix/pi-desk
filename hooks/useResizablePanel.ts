@@ -136,7 +136,13 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     if (activeDrag) finishResize(activeDrag.pointerId);
 
     const target = event.currentTarget;
-    target.focus({ preventScroll: true });
+    // No `target.focus()` here, on purpose. `preventDefault()` above already cancels the
+    // compatibility `mousedown`, so this call was the only thing focusing the separator
+    // during a drag — and Chromium grants `:focus-visible` to a programmatically focused
+    // `div[role=separator][tabindex=0]`, so the divider stayed lit after the drag ended:
+    // the pointer's own gesture left the line highlighted, which is what the user
+    // reported. A drag needs no focus (pointer capture works without it), and the
+    // keyboard user Tabs to the separator — the one state that has a cue to show.
     target.setPointerCapture(event.pointerId);
     dragRef.current = {
       pointerId: event.pointerId,
