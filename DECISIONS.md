@@ -1,4 +1,11 @@
 # DECISIONS
+- **A plain-text surface strips ANSI; it never renders it.** The running-tool status line
+  ("Running bash… <progress>") and a tool card's result pane run a command's streamed
+  output through `stripAnsi` (`lib/ansi.ts`) — the fork's existing rule for extension
+  dialogs, notices, a folded panel's summary and the page title. Colourising the card with
+  `AnsiText` was declined: that pane is deliberately muted plain text the user selects and
+  copies, the palette belongs to the terminal theme, and the interactive bash pane
+  (`components/ChatWindow.tsx`) is already the place that paints colours.
 - **The worktree glyph is a fact about the folder, not about a name match.** The header's
   project chip, the composer's project chip and the branch list's current row show
   `WorktreeIcon` when the checkout the session works in is a **linked** worktree
