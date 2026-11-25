@@ -70,3 +70,49 @@ PLAN.md (six from the user's screenshots of 2026-11-25, plus the user's
   (`components/AgentSessionPanel.test.mjs` was updated to pin that corner as the panel's
   own call). Those are the user's look, adopted on request; say the word and any one of
   them goes back.
+
+## The merge into `feat/branch-picker-header-worktrees`
+
+Both worktree branches are in `feat/branch-picker-header-worktrees`:
+`2ce3bcdd` merges `wt/wt-branch-picker-header-worktrees` (the header/composer/Agents pass,
+its ink checks, `lib/worktree-folder.ts`), `46518d67` merges this branch. Git merged both
+with no textual conflict — the two lines had touched the same files (`app/native-theme.css`,
+`components/ProjectContextMenu.tsx`, the header chips, `docs/agents/fork-ui.md`) in
+disjoint regions — and only the composer needed a human.
+
+**What the merge met, and what was done** (`f0c4945f`, `8cf4c3ca`):
+
+* The header branch pinned the composer's **ink** (`justify-content: flex-start` on the
+  `+`, a top-only textarea margin, `e2e/composer-geometry.mjs` measuring glyph and text
+  edges); this branch restyled the same rules by hand (the glyph centered, `margin: 8px 0
+  18px 8px`, 13px right padding, 15px in front of Send, the card's border removed for the
+  shadow). The newer CSS is kept and the pins moved to what the layout is for:
+  the text area's left margin is `calc(var(--composer-send-size) / 2 - 10px)`, so the
+  prompt's first character stands on the glyph's left edge on the 36px tier *and* on the
+  touch tier's 44px disc (4px off there, measured); the card's radius lost the border term
+  the adopted section removes, so the arc and the Send disc share their center again; and
+  the two width checks now count the text area's own horizontal margins, so they keep
+  catching the overflow they were written for.
+* `docs/agents/fork-ui.md` and the stylesheet's own comments say what the rules do now —
+  the old wording ("the margin is vertical only", "left-aligning the glyph") described a
+  layout that no longer exists, and that is how a hand-edit gets reverted.
+
+**Verification** (all from the merged tip `8cf4c3ca`):
+
+* `node_modules/.bin/tsc --noEmit` clean; `npm run lint` 0 errors (the 5 pre-existing
+  warnings); `npm test` **4713 pass, 0 fail**.
+* The 23 fixture-based scripts of `npm run test:e2e` are green, including
+  `branch-menu-rows`, `branch-menu-filter`, `topbar-project-row`, `composer-outbox`,
+  `option-controls`, `chat-appearance`, `composer-ios`.
+* `e2e/title-feedback.mjs` and `e2e/run.mjs` spawn their own `next dev` **in the repo
+  root**, so they must be run where no dev server holds that `.next`: from the main repo,
+  with the app's dev server on 30141 up, the page reloads forever (the document is
+  requested 300+ times, the server logs one `Compiled in 3ms` per request, and no app
+  code is involved — no `window.location.reload`, no `router.replace` in the app's own
+  frames). In a worktree with its own `.next`, both are green: title-feedback PASSes.
+
+**Next**
+
+* Push `feat/branch-picker-header-worktrees` (it tracks `origin/`).
+* The two worktrees (`wt-…`, `wt-2wt-…`) still hold their branch checkouts; removing them
+  is the user's call, as their branches are now inside the feature branch.
