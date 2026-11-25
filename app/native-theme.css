@@ -3551,9 +3551,10 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   border-bottom: var(--hairline) solid var(--separator);
 }
 
-/* The top-bar "More" panels (session stats, system prompt, agents, tools)
-   sit over chat content — keep all four fully opaque and on one surface
-   (unlike --bg-panel, which is intentionally translucent for the chrome). */
+/* The top-bar "More" panels (session stats, system prompt, agents, tools) are cards that
+   sit over chat content: all four wear `.app-menu`'s surface, and this group keeps them
+   opaque and on one surface (unlike --bg-panel, which is intentionally translucent for
+   the chrome). The cards' own compound rules above outrank it. */
 .session-info-popover,
 .system-prompt-panel,
 .tool-definitions-panel,
@@ -3561,9 +3562,6 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   background: var(--surface-elevated) !important;
   box-shadow: var(--shadow-popover) !important;
   border-color: var(--separator) !important;
-}
-.session-info-popover {
-  border-bottom: var(--hairline) solid var(--separator) !important;
 }
 
 .app-topbar-title {
@@ -13148,22 +13146,78 @@ html.dark {
   box-shadow: var(--shadow-composer) !important;
 }
 
+/* ── The header's read-only cards: system prompt, tools, session stats ─────────────
+   All three open from the More button at the header's right end, and all three wear the
+   surface every popup in the app already uses: `.app-menu`'s radius, elevated ink and
+   popover shadow, hanging below the header with a gutter (lib/top-panel-placement.ts).
+   They used to be sheets — the column's whole width, welded to the bar's bottom, squared
+   off by a rule at the tail of this stylesheet, with a hairline facing the conversation.
+   The compound selectors state the three things a card is judged on, so no single-class
+   rule can square them, paint them with the translucent chrome ink, or drop the shadow.
+   Like the Agents card, they draw no rules inside themselves; the tools card's pane
+   separator is the one line, because it separates two panes, not rows. */
+.system-prompt-panel.app-menu,
+.tool-definitions-panel.app-menu,
+.session-info-popover.app-menu {
+  border-radius: var(--menu-radius) !important;
+  background: var(--surface-elevated) !important;
+  box-shadow: var(--shadow-popover) !important;
+  padding: 0 !important;
+}
+/* One head line per card: the name, the state it is in, the count where there is one. */
+.system-prompt-head,
+.tool-definitions-head,
+.session-stats-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 12px 8px;
+}
+.system-prompt-title,
+.tool-definitions-title,
+.session-stats-title {
+  color: var(--text);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+}
+.system-prompt-hint,
+.tool-definitions-hint,
+.tool-definitions-count,
+.session-stats-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+.tool-definitions-count {
+  margin-left: auto;
+  color: var(--text-muted);
+}
+.system-prompt-scroll,
+.session-stats-body {
+  padding: 0 12px 12px;
+}
+.session-stats-body {
+  max-height: min(66dvh, 620px);
+  overflow-y: auto;
+}
+/* The tools card: the head spans both panes, and the list column is the menu's own
+   surface — the muted column, the separator token between the panes. */
+.tool-definitions-panel .tool-definitions-head {
+  grid-column: 1 / -1;
+}
+.tool-definitions-panel .tool-definitions-sidebar {
+  border-right: 1px solid var(--separator) !important;
+  background: var(--surface-muted) !important;
+}
+
 /* The read-only panels that dock beside the conversation: the panel's own ink,
-  and the two edges that face the conversation. The Agents panel is NOT in this group:
-  it is a card that hangs below the header's count, so the app menu's rounded, shadowed
-  surface owns it (`.agent-session-panel.app-menu`). Squaring it here — what this rule
-  used to do with `border-radius: 0` and the topbar's translucent `--bg-panel` — left a
-  grey sheet with right angles, floating on the page with no shadow. */
-.session-info-popover {
-  background: var(--bg-panel) !important;
-  border-bottom: var(--hairline) solid var(--border) !important;
-  border-left: var(--hairline) solid var(--border) !important;
-}
-.system-prompt-panel {
-  background: var(--bg-panel) !important;
-  border-bottom: var(--hairline) solid var(--border) !important;
-  border-left: var(--hairline) solid var(--border) !important;
-}
+  and the two edges that face the conversation. No header panel is in this group any
+  more — the session stats, system prompt, tools and Agents panels are all cards that
+  hang below the header, and the rules above own their surface. Squaring a card here is
+  what left the grey sheets in the user's screenshots. */
 
 /* The extension status line (LSP, background tasks): one line of 17px, so the
    strip never takes a row of its own height away from the conversation. */

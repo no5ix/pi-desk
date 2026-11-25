@@ -21,6 +21,16 @@
 
 /** The card's own width; a narrower column caps it. */
 export const AGENT_PANEL_WIDTH = 420;
+/** The two read-only panels opened from the header's More button that keep a reading
+ *  width of their own: the prompt is prose, the tool list plus its detail pane needs two
+ *  panes. The session stats card takes the whole column instead. */
+export const SYSTEM_PROMPT_PANEL_WIDTH = 680;
+export const TOOLS_PANEL_WIDTH = 780;
+/** The session stats card fills the conversation column. Below this width its three
+ *  columns no longer fit side by side — the first column's floor, the two numbers
+ *  columns' content, the gaps and the card's padding — and the caller stacks them
+ *  (AppShell). */
+export const SESSION_STATS_STACK_WIDTH = 760;
 /** How far the card hangs below the header, so its top edge and shadow are on the page. */
 export const AGENT_PANEL_DROP_GAP = 8;
 /** The clear space kept from the column's (and the window's) edges. */
@@ -68,4 +78,33 @@ export function placeAgentsPanel(
     Math.max(topBar.left + gutter, topBar.right - width - gutter),
   );
   return { top: topBar.bottom + AGENT_PANEL_DROP_GAP, left, width, floating: true };
+}
+
+/**
+ * Places one of the read-only panels the header's **More** button opens (system prompt,
+ * tools, session stats). The button sits at the topbar's right end, so the card opens
+ * under it: its right edge keeps the gutter, exactly like the More menu's own popup.
+ * On a phone the same rule as the Agents card — the row is the whole page, so the card
+ * centres on the page and keeps a gutter from both edges.
+ *
+ * `width` is the card's own width, capped by the column; pass "fill" for a card that
+ * takes the column's whole width — the session stats card is three columns of numbers
+ * and wants the horizontal space the conversation has. The caller lays its content out
+ * for the width it gets (the stats card drops from three columns to one below
+ * SESSION_STATS_STACK_WIDTH).
+ */
+export function placeHeaderCard(topBar: PanelBox, isMobile: boolean, maxWidth: number | "fill"): TopPanelPlacement {
+  const gutter = AGENT_PANEL_EDGE_GUTTER;
+  const available = topBar.width - gutter * 2;
+  const width = maxWidth === "fill" ? available : Math.min(maxWidth, available);
+  const left = isMobile
+    ? (topBar.left + topBar.right) / 2 - width / 2
+    : topBar.right - gutter - width;
+  // A column narrower than the card plus both gutters: the left gutter is the floor.
+  return {
+    top: topBar.bottom + AGENT_PANEL_DROP_GAP,
+    left: Math.max(left, topBar.left + gutter),
+    width,
+    floating: true,
+  };
 }

@@ -122,7 +122,14 @@ import { addSideTab, pruneSideTabs, readSideTabs, SIDE_TABS_KEY, writeSideTabs, 
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
 import { archivedProjectRootFor, restoreProjectRoot } from "@/lib/archived-projects";
 import { getProjectDisplayName } from "@/lib/project-display";
-import { AGENT_PANEL_EDGE_GUTTER, placeAgentsPanel } from "@/lib/top-panel-placement";
+import {
+  AGENT_PANEL_EDGE_GUTTER,
+  SESSION_STATS_STACK_WIDTH,
+  SYSTEM_PROMPT_PANEL_WIDTH,
+  TOOLS_PANEL_WIDTH,
+  placeAgentsPanel,
+  placeHeaderCard,
+} from "@/lib/top-panel-placement";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
 /** A page covering the chat area, named by `?view=`. */
@@ -608,6 +615,22 @@ export function AppShell() {
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number; floating?: boolean } | null>(null);
 
+  // The session's live one-liner: `↑44k · ↓3k · $1.20 · 17.3% ctx`. The More menu's row
+  // carries it and the Session stats card's head carries it, so it is built once.
+  const statsSummary = useMemo(() => {
+    const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
+    const tokens = sessionStats?.tokens;
+    const cost = sessionStats?.cost ?? 0;
+    const parts: string[] = [];
+    if (tokens && tokens.input > 0) parts.push(`↑${fmt(tokens.input)}`);
+    if (tokens && tokens.output > 0) parts.push(`↓${fmt(tokens.output)}`);
+    if (cost > 0) parts.push(cost >= 0.01 ? `$${cost.toFixed(2)}` : "<$0.01");
+    if (contextUsage?.contextWindow && contextUsage.percent !== null) {
+      parts.push(`${contextUsage.percent.toFixed(1)}% ctx`);
+    }
+    return parts.length > 0 ? parts.join(" · ") : translate("appshell.statsHint");
+  }, [sessionStats, contextUsage, translate]);
+
   useEffect(() => {
     if (!sessionHasBranches) {
       setActiveTopPanel((panel) => panel === "branches" ? null : panel);
@@ -788,6 +811,24 @@ export function AppShell() {
         // placement.ts). `topbarSubagentsRef` is null when the family is empty — no chip,
         // no anchor, so the placement centres.
         setTopPanelPos(placeAgentsPanel(topBarRect, topbarSubagentsRef.current?.getBoundingClientRect() ?? null, isMobile));
+        return;
+      }
+      if (activeTopPanel === "system" || activeTopPanel === "tools" || activeTopPanel === "session") {
+        // The three read-only panels are opened from the More button at the header's right
+        // end, so they open as cards under it — the same card the Agents panel wears, and
+        // the same rule on a phone: centred on the page. They used to be sheets: full
+        // column width, welded to the bar's bottom, squared off, with a hairline facing
+        // the conversation.
+        setTopPanelPos(placeHeaderCard(
+          topBarRect,
+          isMobile,
+          // The prompt is prose and the tool list is two panes: both keep a reading width.
+          // The stats card is three columns of numbers, so it takes the conversation's
+          // whole width and lays its columns out for the width it gets.
+          activeTopPanel === "system" ? SYSTEM_PROMPT_PANEL_WIDTH
+            : activeTopPanel === "tools" ? TOOLS_PANEL_WIDTH
+              : "fill",
+        ));
         return;
       }
       setTopPanelPos({ top: topBarRect.bottom, left, width: available });
@@ -2682,21 +2723,7 @@ export function AppShell() {
                     ? autoNameStatus.message
                     : translate("title.generateSession");
 
-                const statsSummary = (() => {
-                  const fmt = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
-                  const t = sessionStats?.tokens;
-                  const c = sessionStats?.cost ?? 0;
-                  const parts: string[] = [];
-                  if (t && t.input > 0) parts.push(`↑${fmt(t.input)}`);
-                  if (t && t.output > 0) parts.push(`↓${fmt(t.output)}`);
-                  if (c > 0) parts.push(c >= 0.01 ? `$${c.toFixed(2)}` : "<$0.01");
-                  if (contextUsage?.contextWindow && contextUsage.percent !== null) {
-                    parts.push(`${contextUsage.percent.toFixed(1)}% ctx`);
-                  }
-                  return parts.length > 0 ? parts.join(" · ") : translate("appshell.statsHint");
-                })();
-
-                // Desktop shell: the same five actions as a native popup. A
+                // Desktop shell: the same four actions as a native popup. A
                 // native item holds one line, so the DOM menu's caption is
                 // appended to the label where it carries live state.
                 const historyDisabled = !selectedSession || selectedSession.transient;
@@ -2717,11 +2744,6 @@ export function AppShell() {
                       label: `${translate("system.prompt")}${systemPrompt === null ? "" : systemPrompt ? "" : ` (${translate("appshell.toolsDisabled")})`}`,
                       checked: activeTopPanel === "system" ? true : undefined,
                       onSelect: () => handleSystemInfoToggle("system"),
-                    },
-                    {
-                      label: translate("agentSwitcher.title"),
-                      checked: activeTopPanel === "agents" ? true : undefined,
-                      onSelect: () => toggleTopPanel("agents"),
                     },
                     {
                       label: translate("tools.label"),
@@ -2900,26 +2922,12 @@ export function AppShell() {
                             <small>{systemPrompt === null ? translate("appshell.systemLoads") : systemPrompt ? translate("appshell.viewInstructions") : translate("appshell.toolsDisabled")}</small>
                           </span>
                         </button>
-                        <button
-                          className="app-topbar-more-item"
-                          type="button"
-                          role="menuitem"
-                          onClick={() => toggleTopPanel("agents")}
-                        >
-                          <span
-                            className="app-topbar-more-icon"
-                            style={{ color: activeTopPanel === "agents" ? "var(--accent)" : "var(--text-muted)" }}
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <rect x="5" y="7" width="14" height="11" rx="2" />
-                              <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
-                            </svg>
-                          </span>
-                          <span className="app-topbar-more-copy">
-                            <span>{translate("agentSwitcher.title")}</span>
-                            <small>{translate("agentSwitcher.subagent")}</small>
-                          </span>
-                        </button>
+                        {/* No Agents row here, in this menu or in the native one: the
+                            header's project row carries the family's counts (`[head] ✓2 ⚠1 ↻3`)
+                            as the control that opens the Agents card, and it carries the live
+                            state. A menu row for the same panel was a second, state-blind
+                            target — a row that says "Sub-agent" next to a count that says
+                            "1 running". */}
                         <button
                           className="app-topbar-more-item"
                           type="button"
@@ -3019,12 +3027,18 @@ export function AppShell() {
                 />
               )}
               {activeTopPanel === "session" && (
-                <div className="session-info-popover" style={{
-                  background: "var(--bg-panel)",
-                  borderBottom: "var(--hairline) solid var(--border)",
-                  boxShadow: "var(--shadow-popover)",
-                  padding: "12px 16px",
-                }}>
+                <div
+                  className="session-info-popover app-menu"
+                  role="dialog"
+                  aria-label={translate("appshell.sessionStats")}
+                >
+                  {/* The card's head says what it is and carries the live summary the
+                      More menu's row shows, so the panel opens on a sentence, not a wall
+                      of numbers. */}
+                  <div className="session-stats-head">
+                    <strong className="session-stats-title">{translate("appshell.sessionStats")}</strong>
+                    <span className="session-stats-summary">{statsSummary}</span>
+                  </div>
                   {sessionStats ? (() => {
                     const formatDuration = (ms: number) => {
                       if (ms <= 0) return "0s";
@@ -3083,6 +3097,10 @@ export function AppShell() {
                           <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{title}</div>
                           <div style={{
                             display: "grid",
+                            // A compact column (numbers) keeps label and value tight: both
+                            // tracks size to their content, so a wide column never pushes
+                            // a value away from its label. The card's outer grid gives this
+                            // section a max-content track, so the pairs cannot outgrow it.
                             gridTemplateColumns: compact ? "max-content max-content" : "auto minmax(0, 1fr)",
                             columnGap: compact ? 14 : 12,
                             rowGap: 4,
@@ -3151,56 +3169,50 @@ export function AppShell() {
                       : [];
                     const cacheWarmingInfo = panelCacheWarming ?? sessionStats.cacheWarming;
                     const cacheWarmingSectionRows = cacheWarmingInfo ? cacheWarmingRows(cacheWarmingInfo, translate) : [];
-                    const sessionInfoSection = (
+                    // A field row is label + value + the copy button that belongs to that
+                    // value, in one cell: the card fills the conversation column, and a
+                    // stretched value track would push the button to the far edge, far from
+                    // the path it copies.
+                    const fieldSection = (title: string, rows: { label: string; value: string; copyField: SessionCopyField | null }[]) => (
                       <div style={{ minWidth: 0 }}>
-                         <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
-                          {sessionRows.map((row) => (
-                            <div key={`session-info:${row.label}`} style={{ display: "contents" }}>
+                        <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{title}</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", columnGap: 12, rowGap: 8, alignItems: "start" }}>
+                          {rows.map((row) => (
+                            <div key={`${title}:${row.label}`} style={{ display: "contents" }}>
                               <div style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>{row.label}</div>
-                              <div style={{
-                                color: "var(--text-muted)",
-                                minWidth: 0,
-                                overflowWrap: "anywhere",
-                                wordBreak: "break-word",
-                                whiteSpace: "normal",
-                              }}>{row.value}</div>
-                              <div>{row.copyField ? copyButton(row.copyField, row.value) : null}</div>
+                              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", minWidth: 0 }}>
+                                <span style={{
+                                  color: "var(--text-muted)",
+                                  minWidth: 0,
+                                  overflowWrap: "anywhere",
+                                  wordBreak: "break-word",
+                                  whiteSpace: "normal",
+                                }}>{row.value}</span>
+                                {row.copyField ? copyButton(row.copyField, row.value) : null}
+                              </div>
                             </div>
                           ))}
                         </div>
                       </div>
                     );
-                    const projectInfoSection = projectRows.length > 0 ? (
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{translate("session.projectSection")}</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
-                          {projectRows.map((row) => (
-                            <div key={`project-info:${row.label}`} style={{ display: "contents" }}>
-                              <div style={{ color: "var(--text-dim)", whiteSpace: "nowrap" }}>{row.label}</div>
-                              <div style={{
-                                color: "var(--text-muted)",
-                                minWidth: 0,
-                                overflowWrap: "anywhere",
-                                wordBreak: "break-word",
-                                whiteSpace: "normal",
-                              }}>{row.value}</div>
-                              <div>{row.copyField ? copyButton(row.copyField, row.value) : null}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null;
+                    const sessionInfoSection = fieldSection(translate("session.infoSection"), sessionRows);
+                    const projectInfoSection = projectRows.length > 0
+                      ? fieldSection(translate("session.projectSection"), projectRows)
+                      : null;
 
                     return (
-                      <div style={{
+                      <div className="session-stats-body app-menu-list" style={{
                         display: "grid",
-                        // The clamped popover can be narrower than the three
-                        // columns' combined min width (~770px); stack instead
-                        // of overflowing under the file panel.
-                        gridTemplateColumns: isMobile || topPanelPos.width < 780
+                        padding: "10px 12px 14px",
+                        // The card fills the conversation column. The numbers columns
+                        // size to their content and hug the card's right edge, so every
+                        // label keeps its value in sight; the slack of a wide conversation
+                        // goes to the first column, which carries the long paths. Their
+                        // floors are what still reads — below SESSION_STATS_STACK_WIDTH
+                        // the whole card stacks into one column.
+                        gridTemplateColumns: isMobile || topPanelPos.width < SESSION_STATS_STACK_WIDTH
                           ? "1fr"
-                          : "minmax(360px, 1.7fr) minmax(140px, 0.55fr) minmax(190px, 0.75fr)",
+                          : "minmax(280px, 1fr) minmax(150px, max-content) minmax(190px, max-content)",
                         gap: isMobile ? 16 : 24,
                         fontSize: "var(--fs-caption)",
                         lineHeight: 1.5,
@@ -3217,7 +3229,7 @@ export function AppShell() {
                       </div>
                     );
                   })() : (
-                    <div style={{ fontSize: "var(--fs-caption)", color: "var(--text-muted)", fontStyle: "italic" }}>
+                    <div className="session-stats-body app-menu-list" style={{ padding: "10px 12px 14px", fontSize: "var(--fs-caption)", color: "var(--text-muted)", fontStyle: "italic" }}>
                        {translate("session.load")}
                     </div>
                   )}

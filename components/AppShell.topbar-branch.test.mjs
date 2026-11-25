@@ -330,7 +330,7 @@ test("the Agents panel opens under the count it belongs to, and centres on a pho
   assert.ok(block, "the agents branch of the top-panel placement exists");
   assert.match(block[0], /setTopPanelPos\(placeAgentsPanel\(topBarRect, topbarSubagentsRef\.current\?\.getBoundingClientRect\(\) \?\? null, isMobile\)\)/,
     "the card is placed from the header's subagent count — the control that opens it — and from the phone flag; pinned to the topbar's right edge it used to cover the file panel");
-  assert.match(appShell, /import \{ AGENT_PANEL_EDGE_GUTTER, placeAgentsPanel \} from "@\/lib\/top-panel-placement";/,
+  assert.match(appShell, /import \{\s*AGENT_PANEL_EDGE_GUTTER,[\s\S]*?placeAgentsPanel,[\s\S]*?\} from "@\/lib\/top-panel-placement";/,
     "the card's numbers and its clamp live in the pure module the unit test measures");
   assert.match(appShell, /anchorRef=\{topbarSubagentsRef\}/, "the shell hands the count's box to the placement");
   const subagents = readFileSync(new URL("./TopbarSubagents.tsx", import.meta.url), "utf8");
@@ -342,4 +342,17 @@ test("the Agents panel opens under the count it belongs to, and centres on a pho
     "the card's layer never scrolls, so the menu's shadow survives");
   assert.match(appShell, /topPanelPos\.floating \? ` - \$\{AGENT_PANEL_EDGE_GUTTER\}px` : ""/,
     "the card keeps a gutter at the bottom, so its shadow is not cut by the window's edge");
+});
+
+test("the session stats card fills the conversation column", () => {
+  const block = appShell.match(/if \(activeTopPanel === "system" \|\| activeTopPanel === "tools" \|\| activeTopPanel === "session"\) \{[\s\S]*?\n      \}/);
+  assert.ok(block, "the read-only cards' placement branch exists");
+  assert.match(block[0], /: "fill",/,
+    "the stats card takes the column's whole width: three columns of numbers want the horizontal space the conversation has");
+  assert.match(block[0], /activeTopPanel === "system" \? SYSTEM_PROMPT_PANEL_WIDTH\s*\n\s*: activeTopPanel === "tools" \? TOOLS_PANEL_WIDTH/,
+    "the prompt is prose and the tool list is two panes: both keep a reading width of their own");
+  assert.match(appShell, /gridTemplateColumns: isMobile \|\| topPanelPos\.width < SESSION_STATS_STACK_WIDTH\s*\n\s*\? "1fr"\s*\n\s*: "minmax\(280px, 1fr\) minmax\(150px, max-content\) minmax\(190px, max-content\)"/,
+    "the numbers columns size to their content and hug the card's right edge; below the module's floor the card stacks into one column");
+  assert.match(appShell, /gridTemplateColumns: compact \? "max-content max-content" : "auto minmax\(0, 1fr\)"/,
+    "a number row keeps its label and its value tight, so a wide column cannot push a value out of the card (its overflow is hidden)");
 });
