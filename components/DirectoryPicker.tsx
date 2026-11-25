@@ -64,7 +64,6 @@ const textInputStyle: CSSProperties = {
   border: 0,
   borderRadius: "var(--radius-sm)",
   outline: "none",
-  background: "var(--bg-panel)",
   color: "var(--text)",
   fontFamily: "var(--font-mono)",
   fontSize: "var(--fs-caption)",
