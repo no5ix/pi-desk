@@ -440,6 +440,18 @@ composer's / the sidebar's circle-and-plus), so the row reads
 control: two `<small role="button">` neighbours would be two targets for one action and two
 tab stops on a phone, and the accessible name is both sentences joined.
 
+**The kind's head is one drawing, the state's head is another.** The chip's leading robot
+is the app's subagent head — the same `<rect x="5" y="7" …>` + `M9 11h.01M15 11h.01M9 15h6
+M12 7V4M10 4h4` the sidebar's subagent row, the Agents panel's rows and the
+Settings › Agents icon draw. It used to be a second robot (an antenna ball with vertical-bar
+eyes) ten pixels from the first, so the same delegate read as two different things. The
+running bucket keeps its own lit-eyes head (`AgentRunningIcon`, the pulsing one the Agents
+panel imports at row size): merging the two would make the chip's leading glyph and its live
+count one shape, and the row would stop separating "this family delegates runs" from "one of
+them is going right now". `AppShell.topbar-branch.test.mjs` asserts the head's paths match
+the sidebar, the panel and the Settings icon, and that the running eyes stay `M8 13h2` /
+`M14 13h2`.
+
 **No rule is drawn between the two groups.** A vertical divider inside a single control
 reads as two controls, which is exactly what the row looked like; the 10px gap plus each
 group's own leading glyph (robot / circle-and-plus) is what separates them.

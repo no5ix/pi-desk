@@ -110,18 +110,18 @@ function CheckIcon() {
   );
 }
 
-/* The header's own copy of the subagent head components/AgentSessionPanel.tsx draws in
-   its rows (the sidebar's "Subagents" fold): the header is a tenth of the width, so it
-   draws the same paths at 11px. The running head below is shared the other way — the
-   panel imports that one, at row size, so a running run has one shape. */
+/* The app's subagent head, at header size: the leading glyph on a subagent's sidebar
+   row, the head in the Agents panel's rows (components/AgentSessionPanel.tsx) and the
+   Settings › Agents icon all draw these same paths, and the header's kind glyph drew a
+   different head — an antenna ball and vertical-bar eyes — ten pixels from all three.
+   One shape, one meaning: the knobbed head says "this family delegates runs". The
+   running head below is shared the other way — the panel imports that one, at row
+   size, so a running run has one shape. */
 function AgentIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 8V5z" />
-      <circle cx="12" cy="3" r="1" />
-      <rect x="3" y="8" width="18" height="12" rx="2" />
-      <path d="M9 13v2" />
-      <path d="M15 13v2" />
+      <rect x="5" y="7" width="14" height="11" rx="2" />
+      <path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
     </svg>
   );
 }

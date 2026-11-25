@@ -186,6 +186,16 @@ test("the family chip counts subagents and side chats apart, in one button", () 
   assert.match(counter, /className="app-topbar-family-group app-topbar-family-group--side"[^>]*>\s*<SideChatIcon \/>/);
   assert.match(counter, /<path d="M21 12a8 8 0 0 1-8 8H5\.5a2 2 0 0 1-1\.4-3\.4A8 8 0 1 1 21 12z" \/>\s*<path d="M13 8\.5v7M9\.5 12h7" \/>/,
     "the side-chat glyph is the composer's and the sidebar's, not a new drawing");
+  // The subagent group's glyph is the app's subagent head, not a second drawing of it.
+  // The sidebar row's leading glyph, the Agents panel's rows and the Settings › Agents
+  // icon all draw these paths; the header drew an antenna ball with vertical-bar eyes
+  // ten pixels from all three, so one delegate read as two different things.
+  const head = /<rect x="5" y="7" width="14" height="11" rx="2" \/>\s*<path d="M9 11h\.01M15 11h\.01M9 15h6M12 7V4M10 4h4" \/>/;
+  assert.match(counter, head, "the head the sidebar's row, the Agents panel and the Settings icon already use");
+  for (const file of ["./SessionSidebar.tsx", "./AgentSessionPanel.tsx", "./SettingsPanel.tsx"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8").replace(/\s+/g, " ");
+    assert.ok(head.test(source), `${file} draws the same head, so the header is not the odd one`);
+  }
   // The chip is a control, so it takes the row's pill: hovering it washes both groups,
   // the same way the branch's label does.
   const chipRule = css.match(/\.app-topbar-subagents \{[^}]*\}/);
@@ -248,6 +258,13 @@ test("the chip prints the buckets, not a total", () => {
   assert.match(counter, /function Bucket\(\{ kind, count, title \}[\s\S]*?if \(count === 0\) return null;/,
     "a zero bucket renders nothing: \"\u27130\" is a claim about runs that do not exist");
   assert.match(counter, /<AgentIcon \/>\s*<Buckets/, "the kind's glyph is followed by its buckets");
+  // The kind's head and the running head stay two drawings. Merging them would make the
+  // chip's leading glyph and its live bucket one shape, and the row would stop separating
+  // "this family delegates runs" from "one of them is going right now".
+  const kindHead = counter.match(/function AgentIcon\(\) \{[\s\S]*?\n\}/);
+  assert.ok(kindHead, "the chip's kind glyph is a component of its own");
+  assert.ok(!kindHead[0].includes("<circle"), "the kind's head is the app's head, not the antenna-ball variant");
+  assert.match(counter, /<path d="M8 13h2" \/>\s*<path d="M14 13h2" \/>/, "the running head keeps its lit eyes");
   assert.match(counter, /className=\{`app-topbar-subagent-count is-\$\{kind\}`\}/,
     "the buckets keep the classes the row colours by");
   assert.match(counter, /kind === "aborted" && \([\s\S]*?<circle cx="12" cy="12" r="9" \/>/,
