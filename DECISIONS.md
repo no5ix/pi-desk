@@ -336,3 +336,45 @@
 - **The browser checks keep their control passes.** `e2e/branch-menu-rows.mjs` re-serves
   the fixture with the four width rules surgically removed and expects the overlap back;
   a check that cannot see the bug it was written for is not a check.
+
+- **The composer's cross-device mirror is deleted, not repaired.** Its whole
+  failure class came from one shared record that every device wrote and read
+  back: a copy arriving from the server repainted the composer the user was
+  typing in (text replaced, screenshots dropped), the device whose clock ran
+  ahead won every race, a blank copy wiped a prompt, an oversized attachment
+  made the write land trimmed — and the fix for each was another stamp,
+  signature or "this composer stopped being mirrored" set. Per-device copies
+  remove the surface, so the guards go with it: `components/ChatInput.device-copies.test.mjs`
+  pins `lib/composer-sync.ts`, `lib/composer-draft-store.ts` and
+  `app/api/composer-draft/**` absent, because a merge that restores them restores
+  the wipe with them.
+- **"No device edits another's content" is enforced by the store, not by the
+  client's good manners.** A record is addressed by `(composer identity, the
+  caller's own deviceId)` — the device id is a segment of the record, never of
+  the key, so there is no address that names another device's copy — and the
+  store mints a write token on a device's first write and requires it on every
+  later write and delete (403 without it). Two browsers on one Mac are two
+  devices, each holding only its own token, which is exactly what the feature
+  needs.
+- **A copy never writes the composer.** The poll updates a list; the only path
+  from a copy into the text is the row's click, which prepends the copy before
+  what is typed here and joins its attachments — the existing prepend /
+  `mergeRestoredSubmissionDraft` rule, not a second merge path. The row stays
+  after the click: the copy belongs to the device that typed it, and picking it
+  up twice is the user's business.
+- **A row is read-only by construction.** `components/ComposerDeviceCopies.tsx`
+  borrows the outbox's surface and drops its action column: no edit, no delete,
+  no send. Its glyph is the device (computer / phone / tablet) and it never hides
+  below 480px, where the outbox's queue mark does — on a phone, "whose draft is
+  this" is the row's whole information.
+- **The device slug, not a hostname, names a copy.** `mac-content-copy`,
+  `iphone-content-copy`, `ipad-content-copy`: the label is a sanitised slug from
+  what the browser reports (iPadOS 13+ asks for the desktop site, so
+  `maxTouchPoints` decides before the platform name does), and a second device of
+  the same label carries its own short id. A visible name must not carry a
+  hostname, path or user name.
+- **A partial copy says so.** The caps drop an oversized image and count it
+  (`droppedImages`/`droppedFiles`) and the row names what is missing. A read-only
+  copy that reports itself incomplete is honest; the mirror's silently trimmed
+  copy was what repainted a composer without the screenshots the user had just
+  added.

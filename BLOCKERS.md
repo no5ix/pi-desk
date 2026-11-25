@@ -151,3 +151,27 @@ claim rests on WebKit's documented focus rule and the fork's own 59px notch floo
   `web-push.ts`, `request-security.ts`, `PwaRegistration.tsx`,
   `directory-browser.ts`), verified identical on `pi-desk-main`. Update them with
   the next upstream sync's `npm run drift`, not on a feature branch.
+
+- **`npm run drift` exits 1 on six pre-existing threshold crossings.** Measured
+  on 2026-11-25 with this task's changes in the tree:
+  `components/FileExplorer.tsx` (511 structural, manifest medium),
+  `components/MarkdownBody.tsx` (282, medium), `lib/web-push.ts` (264, medium),
+  `lib/request-security.ts` (62, low), `components/PwaRegistration.tsx` (56, low),
+  `lib/directory-browser.ts` (48, low). All six files are committed and untouched
+  by the composer-copies task, so raising them in the manifest would be a claim
+  about someone else's work; the manifest keeps its old entries and
+  `scripts/fork-ownership.test.mjs` (which checks risk, not exact numbers) passes.
+  Whoever owns those files should re-measure and raise them.
+- **`lib/model-catalog-refresh.integration.test.mjs` flakes under suite
+  concurrency.** "a refreshed catalog reaches the model list the way the pi CLI's
+  did" failed once inside the 4603-test run and passed alone (3/3). It fetches a
+  provider catalog; the composer-copies task touches no models code.
+
+- **`node e2e/option-controls.mjs` fails at HEAD, before this task.** Verified on
+  2026-11-25 in a clean `git worktree` at `HEAD` (`61574543 fix: the header's
+  subagent head leads at 17px, on a light stroke`): clicking the model button times
+  out because the mobile toolbar's `更多控件` overflow button intercepts the click
+  (the composer tail collapses the model control into the overflow at the fixture's
+  width). Unrelated to composer copies; the composer geometry that the task touches
+  is covered by `e2e/composer-outbox.mjs` and `e2e/composer-device-copies.mjs`, both
+  green.

@@ -15,7 +15,13 @@ import {
   setDraft,
   type ChatDraftImage,
 } from "@/lib/draft-store";
-import { clearComposerDraft, pushComposerDraft, watchComposerDraft } from "@/lib/composer-sync";
+import { clearDeviceCopy, pushDeviceCopy, watchDeviceCopies } from "@/lib/composer-copies";
+import {
+  COMPOSER_RUN_MENU_WIDTH,
+  COMPOSER_TOOL_MENU_WIDTH,
+  composerPanelAnchoring,
+} from "@/lib/composer-panel-placement";
+import type { ComposerDeviceCopy } from "@/lib/composer-copy-store";
 import type { ComposerHistoryEntry } from "@/lib/composer-history";
 import {
   MAX_ATTACHED_IMAGE_BYTES,
@@ -61,6 +67,7 @@ import type { ChatAccessControls } from "@/hooks/useChatAccess";
 import { ComposerProjectChip, getProjectLabel } from "./ComposerProjectChip";
 import { ComposerBranchChip } from "./ComposerBranchMenu";
 import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
+import { ComposerDeviceCopies } from "./ComposerDeviceCopies";
 import { SideChatPlusIcon } from "./SideChatIcon";
 import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
 
@@ -615,23 +622,6 @@ function revokeImagePreview(image: AttachedImage): void {
   }
 }
 
-/** A cheap fingerprint of a composer's content: the text, each image's kind and
- *  size, each file's id. Used to tell "this device typed something" from "this
- *  composer was just loaded", so a load is never pushed back as an edit. */
-function draftSignature(
-  value: string,
-  images: { data: string; mimeType: string }[],
-  files: { id: string }[],
-): string {
-  return JSON.stringify([
-    value,
-    images.map((image) => `${image.mimeType}:${image.data.length}`),
-    files.map((file) => file.id),
-  ]);
-}
-
-/** The signature of nothing: no text, no image, no file. */
-const BLANK_DRAFT_SIGNATURE = draftSignature("", [], []);
 
 function QueuedMessageRow({ kind, label, text }: { kind: "steer" | "follow-up"; label: string; text: string }) {
   return (
@@ -984,11 +974,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const fileIndexMetaRef = useRef<{ cwd: string; fetchedAt: number } | null>(null);
   const fileIndexFetchingRef = useRef<string | null>(null);
   const draftKeyRef = useRef(draftKey);
-  /** The composer's cross-device mirror (lib/composer-sync.ts): the stamp of the
-   *  last write this device made, and the content it last mirrored. A composer
-   *  applies a remote copy only when it is newer than its own typing. */
-  const composerSyncStampRef = useRef(0);
-  const syncedSignatureRef = useRef<string | null>(null);
+  /** The other devices' copies of this composer (lib/composer-copies.ts). They are
+   *  never applied on their own: the row above the composer prepends one when the
+   *  user clicks it, and a copy belongs to the device that typed it. */
+  const [deviceCopies, setDeviceCopies] = useState<ComposerDeviceCopy[]>([]);
   const valueRef = useRef(value);
   const attachedImagesRef = useRef(attachedImages);
   const pendingImageCountRef = useRef(0);
@@ -1339,11 +1328,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setHistoryMenuOpen(false);
     if (draftKey) clearDraft(draftKey);
     if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDraft(draftKeyRef.current);
-    // The sent prompt is no longer a draft anywhere: the server's copy goes too,
-    // or the other device's composer would fill up again with what was just sent.
-    if (draftKey) clearComposerDraft(draftKey);
-    if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearComposerDraft(draftKeyRef.current);
-    syncedSignatureRef.current = draftSignature("", [], []);
+    // The sent prompt is no longer a draft anywhere: this device's copy goes too,
+    // or the other devices' rows would keep offering what was just sent.
+    if (draftKey) clearDeviceCopy(draftKey);
+    if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDeviceCopy(draftKeyRef.current);
     clearImages();
     clearAttachedFiles();
     if (textareaRef.current) {
@@ -1359,20 +1347,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       files: attachedFiles,
     };
     setDraft(draftKey, draft);
-    // Cross-device mirror. Only a composer this device actually changed is
-    // pushed: the content a composer loaded when it mounted (or switched key)
-    // was already written by whoever typed it, and pushing it back would make
-    // this device the newest writer and bury the other one's typing.
-    const signature = draftSignature(draft.value, draft.images, draft.files);
-    if (syncedSignatureRef.current === signature) return;
-    syncedSignatureRef.current = signature;
-    // The stamp is this device's own write, and the mirror effect below compares every
-    // server copy against it. A composer the mirror cannot carry (a pasted screenshot
-    // past the image cap) is local-only, and its stamp keeps advancing all the same —
-    // otherwise a keystroke drops the guard to zero and the composer's own last
-    // accepted snapshot, read back by the poll, replaces the text and the images.
-    const stamp = pushComposerDraft(draftKey, draft);
-    if (stamp > composerSyncStampRef.current) composerSyncStampRef.current = stamp;
+    // This device's copy of its own composer (lib/composer-copies.ts). No other
+    // device can write this record, so there is no race to lose and nothing that
+    // can come back over what is being typed: the other devices read the copy as
+    // a row, and a row never writes here.
+    pushDeviceCopy(draftKey, draft);
   }, [attachedFiles, attachedImages, draftKey, value]);
 
   useEffect(() => {
@@ -1392,10 +1371,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const nextValue = draft?.value ?? "";
     const nextImages = draftImagesToAttachedImages(draft?.images);
     const nextFiles = draft?.files ?? [];
-    // What the composer starts with is not this device's edit (see the mirror
-    // effect below), and no write of ours is in flight for the new key.
-    syncedSignatureRef.current = draftSignature(nextValue, nextImages.map(imageToDraftImage), nextFiles);
-    composerSyncStampRef.current = 0;
     valueRef.current = nextValue;
     attachedImagesRef.current = nextImages;
     attachedFilesRef.current = nextFiles;
@@ -1410,52 +1385,61 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
   }, [draftKey, setHashQuery]);
 
-  // The other devices' composer, read back from the server (the phone shows the
-  // prompt typed on the laptop). A copy older than this device's own last write
-  // is its own echo and is dropped, so typing is never overwritten mid-word.
+  // The other devices' copies of this composer: the prompt typed on the laptop,
+  // listed on the phone. Nothing is applied from here. A copy arriving from the
+  // server used to repaint the composer the user was typing in — text replaced,
+  // screenshots gone — which is why the copies are a row the user picks up, and
+  // never a write that lands on a live composer.
   useEffect(() => {
-    if (!draftKey) return;
-    return watchComposerDraft(draftKey, (remote) => {
-      if (remote.updatedAt <= composerSyncStampRef.current) return;
-      const nextImages = draftImagesToAttachedImages(remote.images);
-      const nextFiles = remote.files;
-      const remoteSignature = draftSignature(remote.value, nextImages.map(imageToDraftImage), nextFiles);
-      const localSignature = draftSignature(
-        valueRef.current,
-        attachedImagesRef.current.map(imageToDraftImage),
-        attachedFilesRef.current,
-      );
-      if (remoteSignature === localSignature) {
-        // The composer's own content, seen from the other side: nothing to repaint.
-        composerSyncStampRef.current = remote.updatedAt;
-        syncedSignatureRef.current = remoteSignature;
-        return;
-      }
-      if (remoteSignature === BLANK_DRAFT_SIGNATURE && localSignature !== BLANK_DRAFT_SIGNATURE) {
-        // An empty copy landing on a composer that has a prompt in it. The store keeps
-        // no empty draft (lib/composer-draft-store.ts), so this is a copy from before a
-        // send, or a device behind by a clock: it must never wipe what the user is
-        // typing, which is how a prompt and its attachments used to vanish at the end
-        // of a run.
-        return;
-      }
-      composerSyncStampRef.current = remote.updatedAt;
-      const nextValue = remote.value;
-      syncedSignatureRef.current = remoteSignature;
-      valueRef.current = nextValue;
-      attachedImagesRef.current = nextImages;
-      attachedFilesRef.current = nextFiles;
-      setValue(nextValue);
-      setAttachedImages((prev) => {
-        prev.forEach(revokeImagePreview);
-        return nextImages;
-      });
-      setAttachedFiles(nextFiles);
-      if (draftKeyRef.current === draftKey) {
-        setDraft(draftKey, { value: nextValue, images: remote.images, files: nextFiles });
-      }
-    });
+    if (!draftKey) {
+      setDeviceCopies([]);
+      return;
+    }
+    return watchDeviceCopies(draftKey, setDeviceCopies);
   }, [draftKey]);
+
+  /** A copy the user picked up: its text goes *before* what is typed here, with
+   *  its attachments joined to the composer's own, and the row stays — the same
+   *  copy can be added again, and it belongs to the device that typed it. */
+  const applyDeviceCopy = useCallback((copy: ComposerDeviceCopy) => {
+    const ta = textareaRef.current;
+    const merged = mergeRestoredSubmissionDraft(
+      copy.value,
+      copy.images,
+      valueRef.current,
+      attachedImagesRef.current.map(imageToDraftImage),
+      copy.files,
+      attachedFilesRef.current,
+    );
+    const nextImages = draftImagesToAttachedImages(merged.images);
+    const nextFiles = merged.files ?? [];
+    valueRef.current = merged.value;
+    attachedImagesRef.current = nextImages;
+    attachedFilesRef.current = nextFiles;
+    setValue(merged.value);
+    setAttachedFiles(nextFiles);
+    setAtQuery(null);
+    setHashQuery(null);
+    setHistoryMenuOpen(false);
+    setAttachedImages((prev) => {
+      prev.forEach(revokeImagePreview);
+      return nextImages;
+    });
+    if (draftKeyRef.current) {
+      setDraft(draftKeyRef.current, {
+        value: merged.value,
+        images: nextImages.map(imageToDraftImage),
+        files: attachedFilesRef.current,
+      });
+    }
+    requestAnimationFrame(() => {
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(merged.value.length, merged.value.length);
+      ta.style.height = "auto";
+      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    });
+  }, [setHashQuery]);
 
   const resizeTextarea = useCallback(() => {
     const ta = textareaRef.current;
@@ -3015,6 +2999,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             );
           })()}
+          <ComposerDeviceCopies copies={deviceCopies} onUse={applyDeviceCopy} />
           <ComposerOutbox items={queuedMessages?.pending ?? []} onAction={onQueuedMessageAction} />
           <div
             ref={composerRef}
@@ -3307,11 +3292,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 {thinkingDropdownOpen && (() => {
                   const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
                   const maxH = Math.max(120, vh * 0.6);
+                  // A number for the width, and a box that stops at the sidebar: an
+                  // absolute box with only minWidth collapses to the 36px button and
+                  // clips its own rows, and its left half lands in the sidebar's
+                  // column, which clips it and paints above it. See the helper.
+                  const anchoring = composerPanelAnchoring(thinkingDropdownRef.current, COMPOSER_RUN_MENU_WIDTH, { alignLeft: isMobile });
                   return (
                   <div className="native-popover app-menu composer-run-menu" role="listbox" style={{
                     position: "absolute",
                     bottom: "calc(100% + 6px)",
-                    ...(isMobile ? { left: 0 } : { right: 0 }),
+                    ...(anchoring ? { left: anchoring.left, width: anchoring.width } : isMobile ? { left: 0 } : { right: 0 }),
                     zIndex: 100,
                     overflow: "hidden", minWidth: 240,
                     maxHeight: maxH, display: "flex", flexDirection: "column",
@@ -3452,13 +3442,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 {toolDropdownOpen && (() => {
                   const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
                   const maxH = Math.max(120, vh * 0.6);
-                  const vw = window.innerWidth;
-                  const width = Math.min(304, vw - 32);
-                  const anchorRight = toolDropdownRef.current?.getBoundingClientRect().right ?? vw - 16;
-                  const left = Math.max(16, Math.min(anchorRight - width, vw - width - 16));
+                  // Clamped to the conversation column, not to the viewport: 16px from
+                  // the window's left edge is under the sidebar, and the menu opened
+                  // there was cut to "n defaultTools".
+                  const anchoring = composerPanelAnchoring(toolDropdownRef.current, COMPOSER_TOOL_MENU_WIDTH, { alignLeft: isMobile });
                   return (
                   <div className="native-popover app-menu composer-tool-menu" role="listbox" aria-label={t("chat.changeToolPreset")} style={{
-                    position: "absolute", bottom: "calc(100% + 6px)", right: anchorRight - left - width,
+                    position: "absolute", bottom: "calc(100% + 6px)",
+                    ...(anchoring ? { left: anchoring.left, width: anchoring.width } : { right: 0 }),
                     zIndex: 100, background: "var(--bg)", border: "var(--hairline) solid var(--border)",
                     borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-popover)",
                     overflow: "hidden", minWidth: 120,

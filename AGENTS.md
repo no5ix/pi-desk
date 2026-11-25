@@ -251,6 +251,9 @@ lib/
   desktop-native.ts    native dialogs, open/reveal path, external links, save/import, window lifecycle
   desktop-notify.ts    native completion notifications (skipped while the window is focused)
   draft-store.ts       local draft persistence helpers
+  composer-copy-store.ts  one composer copy per device: shared composer key, per-device record, write token, size caps
+  composer-copies.ts   the client's push (debounced) and poll (visible tab) for its own copy and the other devices' list
+  device-identity.ts   this browser's device id, its slug (`mac`/`iphone`/`ipad`) and its copy tokens
   file-access.ts       allowed file roots for /api/files and worktrees
   file-watch-stream.ts  one SSE for a page's file watchers (`?type=watch-all`); the per-file `?type=watch` stays
   file-watch-channel.ts  the client's leader-elected file-watch stream, per-file dispatch (the browser's six connections per host)
@@ -289,6 +292,7 @@ components/
   TopbarElapsed.tsx   the header's live clock since the last prompt; its own component so a 1s tick re-renders the chip, not the shell
   ClockIcon.tsx       the clock glyph every duration label shares
   ChatInput.tsx       input bar + model/thinking/tools/compact controls
+  ComposerDeviceCopies.tsx  one read-only row per other device's composer copy, docked above the composer
   SideChatIcon.tsx    the side-chat bubble every place that marks one draws (composer, sidebar, header, panel, tab, quote bar)
   MessageView.tsx     renders one message (user/assistant/toolCall/toolResult)
   BranchNavigator.tsx in-session branch switcher
@@ -352,7 +356,7 @@ Fork notes:
 - [fork-tools-subagents.md](docs/agents/fork-tools-subagents.md): new-session tool presets and Chat only, exact system prompts through `before_agent_start`, built-in subagents (setting, disabled built-ins, profile files, notifications).
 - [fork-files-security.md](docs/agents/fork-files-security.md): security posture (web password, OAuth tokens, preview sandboxes), worktrees and branch switching, the file access allow-list, web password throttling, the one sentence a finished task is announced with (the server alone: `lib/task-completion-server.ts`, shared tag and windows: `lib/notification-tags.ts`, the title of a nameless session: `lib/session-prompt-title.ts`) and the phone pushes.
 - [fork-desktop.md](docs/agents/fork-desktop.md): the Tauri shell (desktop token, native menus in Rust, file context menu, window state, tauri plugin version pairing), workspace terminals and node-pty / quickjs staging, Windows overwrite installs, and the payload credential scan that keeps `.pi/mcp.json` out of an installer.
-- [fork-ui.md](docs/agents/fork-ui.md): who contains whom in the topbar / chat column / right panel, the header's `[folder] project  [branch|worktree] branch  [clock]  [subagents] ✓ ⚠ ↻` row (desktop and phone) with the worktree glyph's folder rule (the checkout is a linked worktree, `isWorktree` — not a name match against the branch) and the chips' hover lift, the Agents panel as an `.app-menu` card (rounded, shadowed, its layer never scrolls) placed under the count it opens from and centred under the header on a phone (`lib/top-panel-placement.ts`), the composer's branch chip (the name is the switch; worktree from a branch; the second row when the width runs out), the composer's ink alignment and the running-status line's clearance, the composer draft mirror across devices, the right panel opening on a terminal, the settings dialog tabs, touch affordances, completion sound, plugins and skills.
+- [fork-ui.md](docs/agents/fork-ui.md): who contains whom in the topbar / chat column / right panel, the header's `[folder] project  [branch|worktree] branch  [clock]  [subagents] ✓ ⚠ ↻` row (desktop and phone) with the worktree glyph's folder rule (the checkout is a linked worktree, `isWorktree` — not a name match against the branch) and the chips' hover lift, the Agents panel as an `.app-menu` card (rounded, shadowed, its layer never scrolls) placed under the count it opens from and centred under the header on a phone (`lib/top-panel-placement.ts`), the composer's branch chip (the name is the switch; worktree from a branch; the second row when the width runs out), the composer's ink alignment and the running-status line's clearance, the composer's per-device copies (one read-only row per other device, docked above the composer; no device edits another's draft), the right panel opening on a terminal, the settings dialog tabs, touch affordances, completion sound, plugins and skills.
 - [fork-chat-workspace.md](docs/agents/fork-chat-workspace.md): the non-project Chats section, the hidden `chat-workspace` cwd and `workspaceKind` identity, project-workbench suppression, and the server-enforced chat policy (skills and MCP yes; no file, shell or other extension tools; no context files), text attachments, and continuing a chat in a project.
 
 ### AgentSession lifecycle (`lib/rpc-manager.ts`)
