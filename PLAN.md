@@ -1,45 +1,52 @@
-# Branch picker: tree, icons, worktree form; the custom.css rules adopted
+# Composer drafts: one copy per device, never a shared surface
 
-Branch: `wt/2wt-branch-picker-header-worktrees`. Six fixes from the user's
-screenshots (`pic1`…`pic7`, 2026-11-25) plus the user stylesheet.
+Branch: `feat/branch-picker-header-worktrees`. User request (pic1 = the
+`ComposerOutbox` row): the cross-device composer **mirror** is replaced by
+per-device **copies** that no other device can edit or delete.
+
+## The ask, as acceptance criteria
 
 | # | Ask | Where |
-| --- | --- | --- |
-| 1 | Apply every rule in `~/Desktop/custom-bak.css` to the project's own CSS | `app/native-theme.css` (fork CSS lives only there; `custom.css` is a per-user file served by `/api/custom-css`) |
-| 2 | A branch row's worktree button opens the **new-worktree form**, not a plain branch list | `components/ComposerBranchMenu.tsx` (`openWorktreeForm`), asserted in the panel's tests |
-| 3 | The new-worktree page: no back button, no "Switch worktree" heading; the hint names the base branch **and** the folder the worktree will land in | `components/ProjectContextMenu.tsx` (`view === "new-worktree"`), `lib/worktree-folder.ts` (the folder rule), `sidebar.newWorktreeFrom` / `sidebar.newWorktreeInto` |
-| 4 | The header's branch glyph is the **branch** glyph, not the worktree glyph | `components/TopbarBranchChip.tsx` |
-| 5 | The branch page: no back button / "Project actions"; the panel is as wide as its longest branch name, nothing cut off | `components/ProjectContextMenu.tsx`, `.sidebar-project-context-menu--wide` in `app/native-theme.css` |
-| 6 | The branch list: current branch on top with a blue project glyph, worktree branches next with a blue worktree glyph, everything else in a foldable prefix tree (pic7) | `lib/branch-tree.ts` (new, pure), `components/ProjectContextMenu.tsx`, CSS |
-| 7 | No "Worktrees…" item in the branch page | `components/ProjectContextMenu.tsx`; the DOM worktree rows keep a remove button so a checkout is still removable |
+|---|-----|-------|
+| 0 | Remove the existing sync (`lib/composer-sync.ts`, `lib/composer-draft-store.ts`, `app/api/composer-draft/**`, its 3 tests, the ChatInput mirror effects, the two doc sections) | done in phase A/B |
+| 1 | Every device saves **its own** copy; no device can edit/delete another's content; any device can *use* another's | `lib/composer-copy-store.ts` (per-`(composer, device)` record + write token) |
+| 2-4 | Copy names `mac-content-copy` / `iphone-content-copy` / `ipad-content-copy` | `lib/device-identity.ts` (`<label>-content-copy`) |
+| 5.1 | On the phone: one row above the composer, outbox-row UI, **computer icon**, no edit/delete buttons; clicking prepends the copy (text + attachments) into the composer and the row stays | `components/ComposerDeviceCopies.tsx`, `ChatInput.useDeviceCopy` |
+| 5.2 | On the iPad: two rows, mac first, iPhone second with a **phone icon**; same click behaviour | kind order desktop → phone → tablet |
 
-## Order
+## Design decisions (see DECISIONS.md for the reasoning)
 
-1. `lib/branch-tree.ts` + `lib/branch-tree.test.mjs` (pure row order, tree, flatten).
-2. `components/ProjectContextMenu.tsx`: branch page (tree, glyphs, width, no
-   back, no Worktrees item, inline worktree removal), worktrees page (no back),
-   new-worktree page (no back/heading, folder in the hint, cancel closes).
-3. `components/GitIcons.tsx`: the project folder glyph shared with the header.
-4. `components/TopbarBranchChip.tsx`: always `BranchIcon`.
-5. i18n: en / zh-CN / zh-TW keys, same placeholders.
-6. CSS: the tree's rows + the width rule + the adopted custom.css rules.
-7. Tests: `components/ProjectContextMenu.test.mjs`,
-   `components/ComposerBranchMenu.test.mjs`,
-   `components/AppShell.topbar-branch.test.mjs`, `e2e/branch-menu-rows*`,
-   `e2e/branch-menu-filter*`.
-8. Docs: `docs/agents/fork-ui.md`, `docs/agents/sessions.md`,
-   `docs/agents/files-and-security.md`, `docs/native-theme.md`.
-9. Verify: unit tests, `tsc --noEmit`, `npm run lint`,
-   `node e2e/branch-menu-rows.mjs`, `node e2e/branch-menu-filter.mjs`,
-   `node --test scripts/ui-menu-consistency.test.mjs`, `npm run drift`.
-10. Commit and `git push -u origin wt/2wt-branch-picker-header-worktrees`.
+- **Key** = the shared composer identity (`session:<id>`, `cwd:<folder>` from
+  `new:<id>:<cwd>`, `parked-new:<cwd>`), exactly the old `composerSyncKey` rule,
+  kept and tested (Windows drive letters included). Device ids are segments of
+  the record, never of the key, so a client cannot address another device's copy.
+- **Ownership token**: minted server-side on a device's first write, returned to
+  that device, required on every later write/delete; a foreign token is 403.
+- **Nothing is ever applied automatically.** The old failure class (a remote copy
+  repainting the composer, clock races, blank copies wiping prompts, 413
+  un-mirroring) is gone with the mechanism, not guarded against.
+- Attachments that exceed the caps are stored as what fits **and reported**
+  (`droppedImages`/`droppedFiles`) — a read-only copy may be partial, a silently
+  trimmed one that repaints is what used to destroy work.
 
-## Notes / decisions
+## Phases
 
-- `custom.css` (repo root) is a copy of the user's `<agentDir>/desktop/custom.css`;
-  the rules are **copied** into `app/native-theme.css`, and the repo's
-  `custom.css` is left alone (it is the user's own file, not app source).
-- Removing the "Worktrees…" item does not remove the feature: the branch page
-  shows a worktree glyph on every branch a worktree holds, and that row carries
-  the remove button the worktree page had. The right-click native popup keeps
-  its "Worktrees…" entry.
+- **A** Checkpoints (this file, PROGRESS, DECISIONS). ✅
+- **B** Server: `lib/composer-copy-store.ts` + `app/api/composer-copies/route.ts`
+  + `node --test` for both.
+- **C** Client: `lib/device-identity.ts`, `lib/composer-copies.ts` + tests.
+- **D** UI: `components/ComposerDeviceCopies.tsx`, CSS in
+  `app/native-theme.css`, i18n keys in `lib/i18n/locale-plugins.ts` (en/zh-CN/zh-TW).
+- **E** `components/ChatInput.tsx`: drop the mirror, push own copy, watch copies,
+  render the rows, `useDeviceCopy` prepends (text + attachments) with the
+  existing prepend/merge rule.
+- **F** Delete the removed files/tests; refresh `scripts/measure-fork-drift.mjs`
+  numbers in `scripts/fork-ownership.json` + a dated `decisionLog` entry.
+- **G** Docs: rewrite the fork-ui.md section, the fork-files-security.md section,
+  the AGENTS.md file map and the fork-ui index phrase.
+- **H** Verify: `tsc --noEmit`, `npm run lint`, `node --test lib components hooks app`,
+  `components/fork-extractions.test.mjs`, `scripts/fork-ownership.test.mjs`,
+  `components/test-imports.test.mjs`, `node e2e/composer-outbox.mjs`
+  (isolated `PI_WEB_DESKTOP_BUILD=1` build; the desktop shell's `__NEXT_PRIVATE_*`
+  env must be cleared).
+- **I** Commit the touched files, `git push -u origin feat/branch-picker-header-worktrees`.

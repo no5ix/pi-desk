@@ -11234,6 +11234,30 @@ html.native-desktop :is(
   .composer-outbox button { transition: none; }
 }
 
+/* The other devices' composer copies, docked above this composer (`lib/composer-copies.ts`).
+   Same surface as the outbox, one action per row: a copy belongs to the device that
+   typed it, so there is no edit and no delete — the row adds its content here. */
+.composer-device-copies + .composer-outbox {
+  margin-top: -12px;
+  border-top: 0;
+  border-radius: 0;
+  padding-top: 0;
+}
+.composer-copy-row .composer-outbox-mark { color: var(--text-muted); }
+.composer-copy-use {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.composer-copy-name { flex: 0 0 auto; color: var(--text-dim); }
+.composer-copy-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 480px) {
+  /* The glyph names the device: on a phone, where the outbox hides its queue mark, a
+     copy row's mark is the row's whole point and never goes away. */
+  .composer-device-copies .composer-outbox-mark { display: flex; }
+  .composer-copy-use { gap: 4px; }
+}
+
 .native-primary-button.composer-send-button:hover:not(:disabled) {
   background: var(--accent-hover);
   box-shadow: none;

@@ -818,42 +818,61 @@ the chat. The branch name is polled (`hooks/useProjectBranch.ts`: 3s on the chea
 `GET /api/worktrees/branch`, refresh on tab focus, 60s client cache, `setBranch` only
 on a change) — a checkout made in a terminal shows up without a reload.
 
-## Composer text across devices
+## Composer drafts: one copy per device
 
-A composer's draft is mirrored to the server (`lib/composer-draft-store.ts`,
-`PUT/GET/DELETE /api/composer-draft`) so the prompt typed on the laptop appears in the
-phone's composer: `lib/composer-sync.ts` pushes on a 700ms debounce and polls every 4s
-while the tab is visible. The key is a shared identity (`composerSyncKey`: a session id,
-`parked-new:<cwd>`, or the folder of a `new:<id>:<cwd>` draft — the device's own draft id
-is dropped), the newest `updatedAt` wins, and a client applies a remote copy only when it
-is newer than its own last write, so typing is never overwritten by its own echo. A
-composer that only *loaded* a draft never pushes it: that content was written by the
-device that typed it. Sending clears the server's copy. Two rules keep the mirror from
-eating the composer it mirrors, and both came from real losses:
+A composer's content is saved **per device**, never on one shared surface: the
+prompt typed on the laptop appears on the phone as a row above the phone's
+composer, and nothing ever writes into a composer from another device. The local
+draft (`lib/draft-store.ts`, `pi-chat-drafts-v1`) is this browser's own copy;
+`lib/composer-copy-store.ts` with `PUT/GET/DELETE /api/composer-copies` keeps one
+record per `(composer identity, device id)`, and `lib/composer-copies.ts` pushes
+on a 700ms debounce and polls every 4s while the tab is visible.
 
-- **The store keeps no empty draft.** An empty snapshot is written by the debounced
-  mirror right after a send cleared the composer; applied elsewhere it wipes a prompt
-  that was being typed. `pushComposerDraft` answers an empty composer with a DELETE, and
-  `writeComposerDraft` treats an empty write as the clear (never stale). The composer
-  also refuses a remote copy that is blank while it holds content
-  (`BLANK_DRAFT_SIGNATURE` in `components/ChatInput.tsx`).
-- **A draft the mirror cannot carry stays local.** A pasted screenshot is routinely
-  larger than the store's image cap, so a push used to store the prompt *without* the
-  screenshots and the composer's own 4s poll painted that trimmed copy back: the
-  attachments vanished mid-typing, with no reload and no send. `normalizeComposerDraft`
-  reports what the size guards refused, `writeComposerDraft` refuses such a write (the
-  route answers **413**, and a whole-snapshot refusal is a `refused` result, never a
-  "newer draft" 409 the client would answer by reading the store), and
-  `lib/composer-sync.ts` then stops pushing and polling that composer for the tab's life —
-  checked when the watcher starts *and* on the tick that learns the key is unmirrored.
-  Such a composer keeps its own **monotonic stamp** (`nextStamp`): `pushComposerDraft`
-  handing back `0` used to flatten the composer's echo guard, and the next accepted
-  snapshot then looked newer than anything the composer had written. The user's composer,
-  with its attachments, beats the other device's copy.
+- **The key is a shared composer identity** (`composerCopyKey`: a session id,
+  `parked-new:<cwd>`, or the folder of a `new:<id>:<cwd>` draft — the device's own
+  draft id is dropped), so two devices that open the same session, or a fresh
+  composer in the same folder, are at the same composer. The device id is a segment
+  of the record, never of the key: there is no address that names another device's copy.
+- **A write needs this device's token.** The store mints one on a device's first
+  write and hands it back; every later write and delete presents it, and a foreign
+  token is **403** (`lib/device-identity.ts` keeps the id and the tokens in
+  `pi-web:device-copy-identity`). Two browsers on one Mac are two devices, each with
+  its own token, so "no device edits or deletes another's content" is a server rule,
+  not a convention.
+- **Nothing is applied automatically.** A polled copy updates only the list
+  (`watchDeviceCopies(draftKey, setDeviceCopies)`); composer state is touched by a
+  click and by nothing else.
+- **An empty composer is a DELETE**, so a row never offers a prompt that has already
+  been sent. Sending clears this device's copy (`clearDeviceCopy` in `clearInput`),
+  and a snapshot past the caps (413) stops this device's pushes for the tab's life
+  while the rows keep reading.
+- **A copy may be partial, and says so.** Attachments past the caps are dropped and
+  counted (`droppedImages` / `droppedFiles`) and the row names what is missing. A
+  read-only copy that reports itself incomplete is honest; the mirror's trimmed copy
+  repainted a composer without the screenshots the user had just added.
 
-`lib/composer-sync.test.mjs`, `app/api/composer-draft/route.test.mjs` and
-`components/ChatInput.composer-sync.test.mjs` pin each half. See
-[fork-files-security](fork-files-security.md) for what the mirror may hold.
+`components/ComposerDeviceCopies.tsx` renders one row per other device, wearing the
+outbox's surface (`.composer-outbox composer-device-copies`): the device's glyph —
+a computer, a phone, a tablet, and on a phone it stays, where the outbox's own queue
+mark hides — the copy's name (`mac-content-copy`, `iphone-content-copy`,
+`ipad-content-copy`, from `deviceCopyNames`), the content, and notes for attachments
+carried or refused. **No edit button, no delete button**: a row is another device's
+draft. The row is one action — `applyDeviceCopy` in `components/ChatInput.tsx`
+prepends the copy's text *before* what is typed here and joins its attachments to
+this composer's, through the existing prepend / `mergeRestoredSubmissionDraft` rule,
+focuses the textarea, and leaves the row in place so the same copy can be picked up
+again. The rows dock above the composer, over the outbox
+(`.composer-device-copies + .composer-outbox` joins the two docks into one panel),
+ordered desktop → phone → tablet and newest first within a kind, so an iPad lists the
+mac's copy above the phone's.
+
+`lib/composer-copy-store.test.mjs`, `app/api/composer-copies/route.test.mjs`,
+`lib/composer-copies.test.mjs`, `components/ComposerDeviceCopies.test.mjs` and
+`components/ChatInput.device-copies.test.mjs` pin each half; the last pins the old
+mirror (`lib/composer-sync.ts`, `lib/composer-draft-store.ts`,
+`app/api/composer-draft/**`) **absent** — restoring it restores the bug class it
+carried, a copy from the server repainting the composer the user was typing in. See
+[fork-files-security](fork-files-security.md) for what a copy may hold.
 
 ## The right panel opens on a terminal
 

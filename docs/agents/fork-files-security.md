@@ -29,12 +29,33 @@ Fork-owned notes moved out of `AGENTS.md` to keep it short. The upstream doc on 
 - State lives on `globalThis` under `Symbol.for("pi-web:auth-throttle")` so it survives hot reload and is shared by every module instance. Tests reset it with `recordAuthSuccess()`.
 - `POST /api/web-auth` and every `Authorization: Basic` header on `/api/*` share the counter; `proxy.ts` checks Basic before its `/api/web-auth` exemption, so `GET /api/web-auth` is not an unthrottled password oracle. A valid session cookie is checked first and is never blocked. While blocked, Basic gets `429` even with the right password (otherwise the answer leaks), and a Basic success does not reset the counter: Basic clients authenticate on every request, so a reset would restart an interleaved guesser at the base delay. The proxy and route handlers share the `globalThis` state under both `next dev` and `next start` (checked by failing one and observing `429` on the other).
 
-## Composer drafts on the server
+## Composer copies on the server
 
-- A composer's text, its attached images and its attached text files are mirrored to the server (`lib/composer-draft-store.ts`, `GET/PUT/DELETE /api/composer-draft`) so the same draft appears on every device that reaches the app. It is the composer's own content, which the session file stores anyway once sent: nothing secret beyond what the user typed, and no credentials, no file contents beyond attachments the user attached. The mirror holds no empty draft, and a draft whose attachments are larger than the caps is refused (413) rather than stored trimmed — that composer stays on the device that typed it ([fork-ui](fork-ui.md)).
-- The route is under `proxy.ts`'s `/api/:path*` matcher, so it carries the web password like the session APIs; it is deliberately **not** local-only, because the phone reaches it through the relay. Reading a draft needs the key, and a key is a session id, `parked-new:<cwd>`, or `cwd:<folder>` — the same identity the sidebar shows. A paired phone is the owner of this installation (see the Tailscale trust model above).
-- The store is process memory on `globalThis` (it survives hot reload), 24h TTL, 40 drafts, and per-write caps: 200k characters of text, 8 images at the local store's 400 KB each, 8 files, 4 MB per snapshot. A snapshot over the total cap is refused, not truncated; oversized images are dropped.
-- Writes are last-write-wins on the client's clock and a stale write gets `409` with the copy it is behind. The composer keeps its localStorage draft (lib/draft-store.ts) as the offline copy and applies a remote snapshot only when it is newer than its own last write, so a device that is typing is never overwritten by its own echo.
+- A composer's text, its attached images and its attached text files are saved on the
+  server **one copy per device** (`lib/composer-copy-store.ts`,
+  `GET/PUT/DELETE /api/composer-copies`) so the prompt typed on the laptop appears as a
+  row on the phone. It is the composer's own content, which the session file stores
+  anyway once sent: nothing secret beyond what the user typed, no credentials, no file
+  contents beyond the attachments the user attached. No empty copy is kept, and a copy
+  whose attachments are past the caps carries what fits and counts what it lost
+  ([fork-ui](fork-ui.md)).
+- The route is under `proxy.ts`'s `/api/:path*` matcher, so it carries the web password
+  like the session APIs; it is deliberately **not** local-only, because the phone
+  reaches it through the relay. Reading needs the key, and a key is a session id,
+  `parked-new:<cwd>`, or `cwd:<folder>` — the same identity the sidebar shows. A paired
+  phone is the owner of this installation (see the Tailscale trust model above).
+- The store is process memory on `globalThis` (it survives hot reload), 24h TTL per
+  copy, 40 composers, 8 copies per composer, and per-write caps: 200k characters of
+  text, 8 images at the local store's 400 KB each, 5 files, 4 MB per snapshot. A
+  snapshot past the total cap is refused (413), never truncated.
+- **A device cannot write or delete another device's copy.** The record is addressed by
+  the caller's own `deviceId` and the store mints a write token on that device's first
+  write; every later write and delete must present it (`x-composer-copy-token`), and a
+  foreign token gets `403`. The tokens are not secrets with wider reach: they live in
+  the writing browser's own localStorage (`pi-web:device-copy-identity`), which is the
+  point — a second browser on the same Mac is a second device with its own token, and
+  the copies of other devices are read-only data whose only action is to prepend into
+  the local composer.
 
 ## Remote access through Tailscale Serve
 - Settings › General › Remote access (`components/RemoteAccessSection.tsx`, `app/api/remote-access/route.ts`) stores `remoteAccess: { hostname, logins }` in `pi-web/settings.json`. The server keeps binding `127.0.0.1`; the user runs `tailscale serve --bg <port>` so their tailnet reaches it over HTTPS.

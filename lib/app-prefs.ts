@@ -53,6 +53,13 @@ export const APP_PREF_KEYS = {
   closeQuits: "pi-desktop-close-quits",
   notifyOnComplete: "pi-desktop-notify-on-complete",
   chatDrafts: "pi-chat-drafts-v1",
+  /**
+   * This browser's device id and the write tokens the composer-copy store handed
+   * it (`lib/device-identity.ts`). The id is what makes two browsers on one Mac
+   * two devices, and a token is the only thing that lets a device write its own
+   * copy — it is never sent to another device.
+   */
+  deviceCopyIdentity: "pi-web:device-copy-identity",
   diffViewMode: "pi-diff-view-mode",
   /** Tasks page layout: "calendar" or the list (anything else). */
   tasksMode: "pi-web:tasks-mode",
