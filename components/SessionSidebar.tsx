@@ -2922,9 +2922,10 @@ function SessionItem({
         <>
           {/* Leading icon: running / unread, falling back to the standard
               chat-bubble glyph for every session. Subagent child rows carry
-              the robot glyph, side chats the app's side-chat bubble (a bubble
-              with a plus, its tail at the right) — the same mark the composer's
-              own side-chat button uses, from components/SideChatIcon.tsx. */}
+              the robot glyph, side chats the app's side-chat bubble (a square
+              bubble with a plus, its tail at the left) — the same mark the
+              composer's own side-chat button uses, from
+              components/SideChatIcon.tsx. */}
           {isRunning ? (
             <RunningSessionIndicator />
           ) : isUnread ? (

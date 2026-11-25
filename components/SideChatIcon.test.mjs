@@ -53,12 +53,12 @@ test("the retired circle-and-plus glyph is out of the app", () => {
   }
 });
 
-test("the bubble is a square bubble with its tail at the right, and the plus sits in its body", () => {
-  // The tail at the bottom right is what keeps the mark off the plain session bubble (a
-  // round bubble, tail bottom left) at 11px, and it points at the panel a side chat opens
-  // in. The plus is centred in the body, not at the rim.
-  assert.match(source, /export const SIDE_CHAT_BUBBLE = "M3 15a2 2 0 0 0 2 2h12l4 4V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z";/);
-  assert.match(source, /export const SIDE_CHAT_PLUS = "M12 7v6M9 10h6";/);
+test("the bubble is the square chat bubble with a plus centred in its body", () => {
+  // The shape the user picked: a square bubble, rounded corners, tail at the bottom left,
+  // plus centred in the body (lucide's `message-square-plus`). The square is what keeps it
+  // off the plain session bubble, which is a circle.
+  assert.match(source, /export const SIDE_CHAT_BUBBLE = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";/);
+  assert.match(source, /export const SIDE_CHAT_PLUS = "M12 7v6M9 10h6";/, "the plus sits in the body, not at the rim");
   assert.match(source, /strokeLinecap="round"\n\s*strokeLinejoin="round"/, "the round caps the app's other glyphs use");
   assert.match(source, /aria-hidden="true"/, "the glyph is decoration; the labels carry the words");
   assert.match(source, /stroke = "currentColor"/, "it colours with the row it sits in");

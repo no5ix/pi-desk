@@ -3,16 +3,16 @@
 // Fork-owned: the app's one side-chat glyph.
 //
 // A side chat is a conversation opened beside the main one, in the panel on the right.
-// The mark is a chat bubble whose tail sits at the **bottom right**: the tail points at
-// the side it opens on, and it keeps the shape away from the app's plain session bubble
-// (a round bubble with a tail at the bottom left), so the two never read as one glyph at
-// 11px in the header.
+// The mark is the app's chat bubble: a square bubble with rounded corners, its tail at
+// the **bottom left**, and a plus centred in the body (lucide's `message-square-plus`).
+// It is the shape the user picked from a set of candidates, and it stays legible at the
+// header's 11px: the bubble is a square, where the plain session bubble is a circle, so
+// the two do not read as one glyph.
 //
-// The shape replaces a hand-drawn circle with a cut corner and a plus: at 11px its plus
-// touched the rim, and the cut corner read as a chip. The two candidates that lost the
-// draw at 11px were lucide's `message-square-plus` (tail bottom-left, i.e. the same
-// silhouette as the plain session bubble) and `messages-square` (two bubbles, which
-// falls apart into a bubble and a detached tail at 12px).
+// It replaces a hand-drawn circle with a cut corner and a plus: at 11px its plus touched
+// the rim, and the cut corner read as a chip. The candidate that lost the draw at 12px
+// was `messages-square` (two bubbles, which falls apart into a bubble and a detached
+// tail).
 //
 // **One drawing, every place.** The composer's side-chat button, the sidebar's leading
 // glyph on a side chat's row, the header's family chip, the Agents panel's row head and
@@ -30,8 +30,8 @@
 
 import type { CSSProperties } from "react";
 
-/** The bubble: a chat bubble with rounded corners and its tail at the bottom right. */
-export const SIDE_CHAT_BUBBLE = "M3 15a2 2 0 0 0 2 2h12l4 4V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z";
+/** The bubble: a square chat bubble, rounded corners, tail at the bottom left. */
+export const SIDE_CHAT_BUBBLE = "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z";
 /** The plus, centred in the bubble's body (x 3–21, y 3–17). */
 export const SIDE_CHAT_PLUS = "M12 7v6M9 10h6";
 
