@@ -33,10 +33,11 @@ function del(key, deviceId, token) {
 
 test("a device's first write is handed its token, and every later write needs it", async () => {
   clearAllComposerCopies();
-  const first = await put({ key: "session:s1", deviceId: MAC, label: "mac", kind: "desktop", value: "typed on the mac", images: [], files: [], updatedAt: T + 1000 });
+  const first = await put({ key: "session:s1", deviceId: MAC, label: "mac", kind: "desktop", browser: "safari", value: "typed on the mac", images: [], files: [], updatedAt: T + 1000 });
   assert.equal(first.status, 200);
   const { token } = await first.json();
   assert.ok(typeof token === "string" && token.length > 8);
+  assert.equal(readDeviceCopies("session:s1", PHONE)[0].browser, "safari", "a write carries the browser its row is marked with");
 
   const stolen = await put({ key: "session:s1", deviceId: MAC, label: "iphone", kind: "phone", value: "overwritten", images: [], files: [], updatedAt: T + 5000 });
   assert.equal(stolen.status, 403, "no device edits another device's copy");
@@ -47,12 +48,13 @@ test("a device's first write is handed its token, and every later write needs it
 
 test("GET answers the other devices' copies and never the caller's own", async () => {
   clearAllComposerCopies();
-  await put({ key: "session:s2", deviceId: MAC, label: "mac", kind: "desktop", value: "on the mac", images: [{ data: "AAA", mimeType: "image/png" }], files: [{ id: "f1", name: "notes.md", size: 3, text: "abc" }], updatedAt: T + 1000 });
-  await put({ key: "session:s2", deviceId: PHONE, label: "iphone", kind: "phone", value: "on the iphone", images: [], files: [], updatedAt: T + 2000 });
+  await put({ key: "session:s2", deviceId: MAC, label: "mac", kind: "desktop", browser: "safari", value: "on the mac", images: [{ data: "AAA", mimeType: "image/png" }], files: [{ id: "f1", name: "notes.md", size: 3, text: "abc" }], updatedAt: T + 1000 });
+  await put({ key: "session:s2", deviceId: PHONE, label: "iphone", kind: "phone", browser: "chrome", value: "on the iphone", images: [], files: [], updatedAt: T + 2000 });
 
   const onPhone = await get("session:s2", PHONE);
   const phoneView = (await onPhone.json()).copies;
   assert.deepEqual(phoneView.map((copy) => [copy.label, copy.kind]), [["mac", "desktop"]]);
+  assert.equal(phoneView[0].browser, "safari", "the row's mark travels with the copy");
   assert.deepEqual(phoneView[0].images, [{ data: "AAA", mimeType: "image/png" }], "the row carries the attachments it will prepend");
   assert.deepEqual(phoneView[0].files.map((file) => file.name), ["notes.md"]);
 
@@ -120,6 +122,8 @@ test("a bad request is answered, and a foreign composer key shape is normalised"
   const broken = await route.PUT(new Request("http://localhost/api/composer-copies", { method: "PUT", body: "{not json" }));
   assert.equal(broken.status, 400);
   assert.equal((await put({ key: "session:s7", value: "no device", images: [], files: [] })).status, 400);
+  const wideBrowser = await put({ key: "session:s7", deviceId: MAC, label: "mac", kind: "desktop", browser: "Safari/605.1.15 (KHTML, like Gecko) Version/17.4", value: "a browser slug is a word", images: [], files: [], updatedAt: T + 1000 });
+  assert.equal(wideBrowser.status, 400, "a browser is one word from a fixed set, not a user agent");
 
   // A fresh composer's draft id is the device's own; the folder is the shared key.
   const written = await put({ key: "new:7f3a:/repo", deviceId: MAC, label: "mac", kind: "desktop", value: "fresh composer", images: [], files: [], updatedAt: T + 1000 });

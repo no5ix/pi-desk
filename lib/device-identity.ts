@@ -12,9 +12,9 @@
 // The label is a slug, never a path, host or user name. It is shown in a row.
 
 import { APP_PREF_KEYS, getPrefJson, setPrefJson } from "./app-prefs";
-import type { ComposerDeviceKind } from "./composer-copy-store";
+import type { ComposerBrowser, ComposerDeviceKind } from "./composer-copy-store";
 
-export type { ComposerDeviceKind };
+export type { ComposerBrowser, ComposerDeviceKind };
 
 export interface DeviceIdentity {
   /** Stable per browser install. The store's second key segment. */
@@ -22,6 +22,8 @@ export interface DeviceIdentity {
   /** `mac`, `iphone`, `ipad`, `windows`, … The slug the copy is named after. */
   label: string;
   kind: ComposerDeviceKind;
+  /** `safari`, `chrome`, … The mark the copy's row wears. */
+  browser: ComposerBrowser;
   /** The token the store handed this device for one composer. */
   tokenFor: (composerKey: string) => string | null;
   /** Remembered from a write's answer, and sent with every later write and delete. */
@@ -72,7 +74,48 @@ export function detectDevice(info: NavigatorLike): { label: string; kind: Compos
   return { label: "device", kind: "other" };
 }
 
-/** The name the user reads on the row: `mac-content-copy`. */
+/**
+ * The browser this copy was typed in, from what the UA reports.
+ *
+ * Order is the whole trick: every Chromium fork ends its UA with
+ * `Chrome/… Safari/537.36`, so the brand-specific tokens decide first and plain
+ * `Safari/` is asked last. A browser we have no mark for (Vivaldi, the DuckDuckGo
+ * app, an Android WebView) is `other`, and its row falls back to the device
+ * glyph: a computer is honest, a wrong brand is not.
+ *
+ * The desktop app is a WKWebView/WebView2 shell, so its UA *is* the system
+ * browser's — a copy written in the app wears the same mark as one written in
+ * Safari, which is what the user sees when they open the same site in Safari.
+ */
+export function detectBrowser(info: NavigatorLike): ComposerBrowser {
+  const userAgent = info.userAgent ?? "";
+  if (/\bEdg(A|iOS)?\b|\bEdge\//i.test(userAgent)) return "edge";
+  if (/\bOPR\/|\bOPiOS\/|\bOpera\b/i.test(userAgent)) return "opera";
+  if (/\bFirefox\/|\bFxiOS\//i.test(userAgent)) return "firefox";
+  if (/\bVivaldi\//i.test(userAgent)) return "other";
+  // No leading word boundary: a headless Chromium says "HeadlessChrome/", and it
+  // is Chromium — the `Safari/537.36` that ends every Blink UA is not Safari.
+  if (/Chrome\/|CriOS\//i.test(userAgent)) return "chrome";
+  if (/\bVersion\/\d|\bSafari\//i.test(userAgent)) return "safari";
+  return "other";
+}
+
+/** Brand names stay brand names in every locale: zh-CN writes "Safari". */
+const BROWSER_NAMES: Record<ComposerBrowser, string> = {
+  safari: "Safari",
+  chrome: "Chrome",
+  edge: "Edge",
+  firefox: "Firefox",
+  opera: "Opera",
+  other: "browser",
+};
+
+/** The browser's name, for a row's tooltip and its accessible name. */
+export function browserDisplayName(browser: ComposerBrowser | null | undefined): string {
+  return BROWSER_NAMES[browser ?? "other"] ?? BROWSER_NAMES.other;
+}
+
+/** The name the user reads on a row's tooltip: `mac-content-copy`. */
 export function deviceCopyName(label: string, deviceId: string): string {
   const name = `${label || "device"}-content-copy`;
   const suffix = deviceId.slice(0, 6).replace(/[^a-z0-9]/gi, "").toLowerCase();
@@ -110,7 +153,7 @@ function readStoredIdentity(): StoredIdentity | null {
   return { id: stored.id, tokens: stored.tokens && typeof stored.tokens === "object" ? stored.tokens : {} };
 }
 
-let identity: (StoredIdentity & { label: string; kind: ComposerDeviceKind }) | null = null;
+let identity: (StoredIdentity & { label: string; kind: ComposerDeviceKind; browser: ComposerBrowser }) | null = null;
 
 function ensureIdentity() {
   if (identity) return identity;
@@ -123,7 +166,8 @@ function ensureIdentity() {
       maxTouchPoints: navigator.maxTouchPoints,
       uaMobile: (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData?.mobile,
     });
-  identity = { id: stored?.id ?? newDeviceId(), tokens: stored?.tokens ?? {}, ...device };
+  const browser = detectBrowser(typeof navigator === "undefined" ? {} : { userAgent: navigator.userAgent });
+  identity = { id: stored?.id ?? newDeviceId(), tokens: stored?.tokens ?? {}, ...device, browser };
   if (!stored) persistIdentity();
   return identity;
 }
@@ -137,13 +181,14 @@ function persistIdentity(): void {
   setPrefJson(APP_PREF_KEYS.deviceCopyIdentity, { id: identity.id, tokens: trimmed });
 }
 
-/** This device: a stable id, a slug for the copy's name, and its write tokens. */
+/** This device: a stable id, a slug for the copy's name, its browser, and its write tokens. */
 export function getDeviceIdentity(): DeviceIdentity {
   const self = ensureIdentity();
   return {
     id: self.id,
     label: self.label,
     kind: self.kind,
+    browser: self.browser,
     tokenFor: (composerKey) => self.tokens[composerKey] ?? null,
     rememberToken: (composerKey, token) => {
       if (self.tokens[composerKey] === token) return;

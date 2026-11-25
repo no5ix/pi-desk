@@ -87,6 +87,7 @@ async function sendPush(key: string): Promise<void> {
         token: device.tokenFor(key),
         label: device.label,
         kind: device.kind,
+        browser: device.browser,
         ...snapshot,
         updatedAt: Date.now(),
       }),

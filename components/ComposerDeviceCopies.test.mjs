@@ -10,13 +10,16 @@ import { createJiti } from "jiti";
  * The row is the outbox's row with two differences, and both are the design:
  * a copy belongs to the device that typed it, so there is **no edit button and
  * no delete button** — no device edits or deletes another's content — and the
- * glyph names that device (a computer, a phone, a tablet), because "whose draft
- * is this" is the only question a row has to answer. The row's one action is
- * `onUse`, which prepends the copy into this composer and leaves the row alone.
+ * row is marked by the **browser** that typed it (Safari's compass, Chrome's
+ * wheel), because "whose draft is this" is the only question a row has to answer
+ * and a mark is read where a `mac-content-copy` slug is scan noise. The name the
+ * slug carries is not gone: it is the row's tooltip and its accessible name.
+ * The row's one action is `onUse`, which prepends the copy into this composer
+ * and leaves the row alone.
  */
 
 const jiti = createJiti(import.meta.url, { tsconfigPaths: true });
-const { deviceCopyNames, detectDevice } = await jiti.import("@/lib/device-identity.ts");
+const { browserDisplayName, detectBrowser, deviceCopyNames, detectDevice } = await jiti.import("@/lib/device-identity.ts");
 
 const row = readFileSync(new URL("./ComposerDeviceCopies.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8").replace(/\r\n/g, "\n");
@@ -29,17 +32,31 @@ test("a copy row is read-only: no edit, no delete, no send", () => {
   assert.match(row, /className="composer-outbox composer-device-copies"/, "it reuses the outbox's docked surface");
 });
 
-test("the glyph names the device: computer, phone, tablet", () => {
-  assert.match(row, /desktop: "M2 5h20v12H2zM9 21h6M12 17v4"/, "a computer");
-  assert.match(row, /phone: "M8 2h8v20H8zM11 19h2"/, "a phone");
-  assert.match(row, /tablet: "M5 3h14v18H5zM11 18h2"/, "a tablet");
-  assert.match(row, /<DeviceCopyGlyph kind=\{copy\.kind\} \/>/, "the glyph follows the device kind");
-  const narrow = css.slice(css.indexOf("@media (max-width: 480px) {\n  /* The glyph names the device"));
+test("the mark is the browser the copy came from, with the device glyph as its fallback", () => {
+  for (const browser of ["safari", "chrome", "edge", "firefox", "opera"]) {
+    assert.match(row, new RegExp(`^  ${browser}: \\[`, "m"), `${browser} has a mark`);
+  }
+  assert.match(row, /const strokes = BROWSER_GLYPHS\[browser \?\? "other"\] \?\? DEVICE_GLYPHS\[kind\] \?\? DEVICE_GLYPHS\.other;/,
+    "a browser with no mark, and a copy written before the browser was recorded, wear the device glyph");
+  assert.match(row, /<DeviceCopyGlyph kind=\{copy\.kind\} browser=\{copy\.browser\} \/>/, "the mark follows the copy's browser and device");
+  assert.doesNotMatch(row, /other: \[[^\]]*\],?\s*\n\};[\s\S]*safari/, "`other` has no brand mark: it falls back, it does not guess");
+  // The phone glyph used to be a thin slab; at 16px it read as a line. A rounded
+  // body, a speaker and a home dot survive the size.
+  assert.match(row, /"M6 5a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v14a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2v-14"/, "a phone with a body");
+  assert.match(row, /strokeWidth="2"/, "the app's stroke weight, not a thin 1.75");
+  const narrow = css.slice(css.indexOf("@media (max-width: 480px) {\n  /* The mark names the browser"));
   assert.match(narrow, /\.composer-device-copies \.composer-outbox-mark \{ display: flex; \}/,
     "on a phone the mark stays: the outbox hides its queue glyph, a copy row's glyph is its point");
 });
 
-test("the copy is named after the device: mac-content-copy, iphone-content-copy, ipad-content-copy", () => {
+test("the row prints no `mac-content-copy`: the mark is the row's text, the name is its tooltip", () => {
+  assert.doesNotMatch(row, /className="composer-copy-name"/, "the slug is not printed in the row");
+  assert.match(row, /title=\{`\$\{name\} · \$\{browser\} · \$\{copy\.value \|\| text\}`\}/, "the tooltip says whose copy, in which browser");
+  assert.match(row, /aria-label=\{`\$\{t\("chat\.deviceCopyUse"\)\}: \$\{name\} · \$\{browser\}`\}/, "the accessible name names its owner and its browser");
+  assert.ok(!css.includes(".composer-copy-name"), "the name's style went with the name");
+});
+
+test("the copy keeps a name for its tooltip: mac-content-copy, iphone-content-copy, ipad-content-copy", () => {
   assert.deepEqual(deviceCopyNames([
     { label: "mac", deviceId: "mac-aaaaaa" },
     { label: "iphone", deviceId: "iphone-bbbbbb" },
@@ -64,6 +81,29 @@ test("the labels come from the browser's own description of itself", () => {
   assert.deepEqual(detectDevice({ userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8 Mobile)", platform: "Linux armv81" }), { label: "android-phone", kind: "phone" });
   assert.deepEqual(detectDevice({ userAgent: "Mozilla/5.0 (Linux; Android 14; SM-X710)", platform: "Linux x86_64" }), { label: "android-tablet", kind: "tablet" });
   assert.deepEqual(detectDevice({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", platform: "Win32" }), { label: "windows", kind: "desktop" });
+});
+
+test("the browser mark comes from the browser's own description of itself", () => {
+  const ua = (rest) => ({ userAgent: `Mozilla/5.0 (${rest})` });
+  const mac = "Macintosh; Intel Mac OS X 10_15_7";
+  const phone = "iPhone; CPU iPhone OS 18_1 like Mac OS X";
+  assert.equal(detectBrowser(ua(`${mac}) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15`)), "safari", "Safari on a MacBook: the compass");
+  assert.equal(detectBrowser(ua(`${phone}) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1`)), "safari", "an iPhone's Safari");
+  assert.equal(detectBrowser(ua(`${mac}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36`)), "chrome", "Chromium ends its UA with Safari/ and is not Safari");
+  assert.equal(detectBrowser(ua(`${mac}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0`)), "edge", "Edge wins over its Chrome/ token");
+  assert.equal(detectBrowser(ua("Linux; Android 14; Pixel 8 Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36 EdgA/131.0.0.0")), "edge", "Edge on Android");
+  assert.equal(detectBrowser(ua("Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/46.0.2486.0 Safari/537.36 Edge/13.10586")), "edge", "legacy Edge");
+  assert.equal(detectBrowser(ua(`${phone}) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.199 Mobile/15E148 Safari/604.1`)), "chrome", "Chrome on iOS");
+  assert.equal(detectBrowser(ua(`${mac}; rv:132.0) Gecko/20100101 Firefox/132.0`)), "firefox");
+  assert.equal(detectBrowser(ua(`${phone}) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/132.0 Mobile/15E148 Safari/605.1.15`)), "firefox", "Firefox on iOS");
+  assert.equal(detectBrowser(ua(`${mac}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 OPR/116.0.0.0`)), "opera");
+  assert.equal(detectBrowser(ua(`${mac}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Vivaldi/6.12`)), "other", "a browser with no mark is other, never a guess");
+  assert.equal(detectBrowser(ua("Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/131.0.0.0 Mobile Safari/537.36")), "chrome", "an Android WebView");
+  assert.equal(detectBrowser(ua(`${mac}) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/131.0.0.0 Safari/537.36`)), "chrome", "a headless Chromium is Chromium, not the Safari/537.36 that ends every Blink UA");
+  assert.equal(detectBrowser(ua("Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)")), "other", "the desktop shell's webview with no Version/ token: no guess");
+  assert.equal(detectBrowser({}), "other", "nothing reported: the device glyph");
+  assert.equal(browserDisplayName("safari"), "Safari", "a brand name is a brand name in every locale");
+  assert.equal(browserDisplayName(undefined), "browser", "an unknown browser is named honestly");
 });
 
 test("a copy that lost attachments says so, in the row", () => {

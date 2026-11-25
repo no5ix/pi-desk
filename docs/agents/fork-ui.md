@@ -325,6 +325,8 @@ shared radius, spacing and semantic colors in both themes.
 `hooks/useKeyboardShortcuts.ts` owns app-level shortcuts. Cmd/Ctrl+\ closes the right workspace (never bare `\`), Cmd/Ctrl+/ opens the shortcut reference dialog, Cmd/Ctrl+B toggles the sidebar, and Cmd/Ctrl+L focuses the composer. Browser-reserved variants may not fire in the web build; the desktop shell receives them. Help must not layer over Settings or let another global shortcut fire through it: pass the other callbacks as `undefined` while it is open, then focus the dialog, capture Escape (so closing it does not also stop a run), and keep Tab inside the dialog.
 The sidebar project tree nests only subagent runs and side chats under the session that started them (`buildSessionTree()` in `lib/sidebar-session-nodes.ts`); a fork (`relation.kind: "fork"`) is a row of its own beside its source, with the fork glyph and "Forked from …" in its tooltip, so it keeps its own pin / archive / Fork menu and is never hidden by folding its source. A fork's own subagents nest under the fork. Children start folded: the row's toggle shows their count, the folded row still carries their running and selected state, and the ids of rows the user unfolded live in localStorage (`pi-web:expanded-subagent-rows`, newest 300; `lib/sidebar-subagent-expansion.ts`, read through `useSyncExternalStore` so the first render matches the server's all-folded HTML). A selected child unfolds the rows above it (#237).
 
+**A row's fold head breathes while its family has a live run.** `countRunningSubagentRuns()` (`lib/sidebar-session-nodes.ts`) walks the row's subtree and counts members whose `relation.kind === "subagent"` are in the live running set or say `running` / `queued` on the relation — the same two sources, in the same order, as the header's `countSubagents`. A non-zero count puts `is-running` on `.session-item-children-toggle` and the shared `.agent-status-icon--pulse` (the 1.6s opacity cycle the header's bucket and the composer's Stop use) on `.session-item-children-glyph`, and appends "N running" (`chat.subagentsRunning`) to the toggle's tooltip and `aria-label`. A live **side chat** never breathes: it is a conversation the user drives, not a run the session waits on — the rule that keeps it out of the composer's Stop — and its own row leads with the spinner. `components/SessionSidebar.project-row.test.mjs` pins the wiring and the reduced-motion exit; `lib/sidebar-session-nodes.test.mjs` pins the counting.
+
 The sidebar project tree is a keyboard `tree`: rows move focus with Up/Down/Home/End, project and subagent groups expand/collapse with Right/Left, Enter/Space activates, F2 starts rename, and Delete opens the same shared confirmation dialog as the row menu. Roving-tabindex extraction is intentionally not used yet because timeline rows and future non-session tree rows still need one shared focus model.
 
 ## Projects pane views
@@ -904,13 +906,26 @@ on a 700ms debounce and polls every 4s while the tab is visible.
   counted (`droppedImages` / `droppedFiles`) and the row names what is missing. A
   read-only copy that reports itself incomplete is honest; the mirror's trimmed copy
   repainted a composer without the screenshots the user had just added.
+- **The row's mark is the browser that typed the copy.** `browser` is part of the
+  record: `detectBrowser` (`lib/device-identity.ts`) reads the UA — Chromium forks
+  first, so the `Safari/537.36` that ends every Blink UA is not Safari — the client
+  sends it with every write, and the store keeps it inside a fixed set (`browserFor`,
+  `other` for anything else, capped at `MAX_BROWSER_CHARS` on the route), so no
+  caller-supplied string reaches the renderer.
 
 `components/ComposerDeviceCopies.tsx` renders one row per other device, wearing the
-outbox's surface (`.composer-outbox composer-device-copies`): the device's glyph —
-a computer, a phone, a tablet, and on a phone it stays, where the outbox's own queue
-mark hides — the copy's name (`mac-content-copy`, `iphone-content-copy`,
-`ipad-content-copy`, from `deviceCopyNames`), the content, and notes for attachments
-carried or refused. **No edit button, no delete button**: a row is another device's
+outbox's surface (`.composer-outbox composer-device-copies`): the mark of that
+browser — Safari's compass, Chrome's wheel, Edge's swirl, Firefox's fox, Opera's O,
+drawn as strokes on a 24 grid at the app's weight (2, round caps) — and the content,
+plus notes for attachments carried or refused. **No `mac-content-copy` text is
+printed**: a column of brand marks is read at a glance where a slug is scan noise,
+so the name from `deviceCopyNames` lives in the row's `title` and its `aria-label`
+(`mac-content-copy · Safari`) — which is also what tells two Safaris on two Macs
+apart. A browser with no mark, and a copy written before browsers were recorded,
+falls back to the device glyph: a computer, a rounded phone with a speaker and a
+home dot, a tablet. A device shape is honest, a guessed brand is not. On a phone the
+mark stays, where the outbox's own queue mark hides. **No edit button, no delete
+button**: a row is another device's
 draft. The row is one action — `applyDeviceCopy` in `components/ChatInput.tsx`
 prepends the copy's text *before* what is typed here and joins its attachments to
 this composer's, through the existing prepend / `mergeRestoredSubmissionDraft` rule,

@@ -9,11 +9,13 @@ import { checkComposerGeometry } from './composer-geometry.mjs';
  * The composer's per-device copies, as rows (the outbox's surface, a read-only row).
  *
  * Pinned here, live: the rows are the other devices' copies in device order
- * (mac, then iPhone), each named `<device>-content-copy`, each with its device's
- * glyph — a computer and a phone — and **one button each: no edit, no delete**,
- * because no device edits or deletes another's content. Clicking a row prepends
+ * (mac, then iPhone), each marked by the **browser** that typed it — Safari's
+ * compass and Chrome's wheel, not a `mac-content-copy` slug — and **one button
+ * each: no edit, no delete**, because no device edits or deletes another's
+ * content. The slug is not printed, but it is not lost: the row's tooltip and its
+ * accessible name carry `mac-content-copy · Safari`. Clicking a row prepends
  * that copy, image included, before what is typed here, and the row stays. At a
- * phone's width the glyph is visible where the outbox's queue glyph hides, and the
+ * phone's width the mark is visible where the outbox's queue glyph hides, and the
  * dock joins the composer the way the outbox does.
  */
 const dir = 'test-results/composer-device-copies';
@@ -28,8 +30,19 @@ const server = createServer(async (request, response) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = 'http://127.0.0.1:' + server.address().port;
-/** The glyphs `ComposerDeviceCopies` draws per device kind. */
-const GLYPHS = { desktop: 'M2 5h20v12H2zM9 21h6M12 17v4', phone: 'M8 2h8v20H8zM11 19h2', tablet: 'M5 3h14v18H5zM11 18h2' };
+/** The strokes `ComposerDeviceCopies` draws per browser mark, in order. */
+const GLYPHS = {
+  safari: ['M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0', 'M8 16l2 -6l6 -2l-2 6l-6 2'],
+  chrome: [
+    'M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0',
+    'M9 12a3 3 0 1 0 6 0a3 3 0 1 0 -6 0',
+    'M12 9h8.4',
+    'M14.6 13.5l-4.2 7.3',
+    'M9.4 13.5l-4.2 -7.3',
+  ],
+};
+/** All of a row's strokes, the way the mark is drawn: one `<path>` per stroke. */
+const strokesOf = locator => locator.evaluateAll(rows => rows.map(row => [...row.querySelectorAll('.composer-copy-glyph path')].map(path => path.getAttribute('d'))));
 let browser;
 try {
   browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : undefined, headless: true });
@@ -46,16 +59,17 @@ try {
     const editor = page.locator('textarea');
 
     assert.equal(await rows.count(), 2, 'one row per other device');
-    assert.deepEqual(await page.locator('.composer-copy-name').allInnerTexts(), ['mac-content-copy', 'iphone-content-copy'],
-      'the mac copy leads the iPhone copy, each named after its device');
-    assert.deepEqual(await rows.evaluateAll(rows => rows.map(row => row.querySelector('.composer-copy-glyph path').getAttribute('d'))),
-      [GLYPHS.desktop, GLYPHS.phone],
-      'the marks are a computer and a phone');
+    assert.equal(await page.locator('.composer-copy-name').count(), 0, 'no `mac-content-copy` text is printed: the mark carries it');
+    assert.deepEqual(await page.locator('.composer-copy-text').allInnerTexts(), ['在 macbook 上打的提示词', '在 iphone 上打的一段话'],
+      'the copy is the row\'s text, the mac\'s above the iPhone\'s');
+    assert.deepEqual(await strokesOf(rows), [GLYPHS.safari, GLYPHS.chrome],
+      'the marks are Safari and Chrome — the browsers that typed the copies');
     assert.equal(await page.locator('.composer-outbox-actions').count(), 0, 'a copy row has no action column');
     assert.deepEqual(await rows.evaluateAll(rows => rows.map(row => row.querySelectorAll('button').length)), [1, 1],
       'one action per row: no edit, no delete, no send');
     assert.match(await rows.first().innerText(), /1 个附件过大未同步/, 'a copy that lost attachments says so');
-    assert.match(await rows.first().locator('button').getAttribute('aria-label'), /^添加到我的消息: mac-content-copy$/, 'the row names its action and its owner');
+    assert.match(await rows.first().locator('button').getAttribute('aria-label'), /^添加到我的消息: mac-content-copy · Safari$/, 'the row names its action, its owner and its browser');
+    assert.match(await rows.first().locator('button').getAttribute('title'), /^mac-content-copy · Safari · 在 macbook 上打的提示词$/, 'the tooltip keeps the device name the mark cannot show');
 
     await checkComposerGeometry(page);
     const dock = await page.locator('.composer-device-copies').evaluate(el => {
@@ -83,6 +97,9 @@ try {
     const pushed = await page.evaluate(() => window.__copiesCalls.filter(call => call.method === 'PUT' && call.body.value.includes('我自己的内容')).at(-1).body);
     assert.ok(pushed.label && /^[a-z-]+$/.test(pushed.label), JSON.stringify(pushed.label), 'this device writes under its own slug');
     assert.ok(['desktop', 'phone', 'tablet', 'other'].includes(pushed.kind), JSON.stringify(pushed));
+    // The headless Chromium this runs in reports Chrome, and Chrome is what its
+    // row's mark will be on the other devices.
+    assert.ok(['safari', 'chrome', 'edge', 'firefox', 'opera', 'other'].includes(pushed.browser), JSON.stringify(pushed.browser), 'this device writes the browser its row is marked with');
     // The token the store handed back comes along on the next write, so this device
     // keeps ownership of its own record.
     await editor.fill(joined + '，继续写');
@@ -95,7 +112,7 @@ try {
     assert.deepEqual(errors, [], 'no page errors');
     await page.close();
   }
-  console.log(`composer device copies: ${['light', 'dark'].map(t => `${t} 1280/390`).join(', ')} — two read-only rows, mac then iPhone, prepend with attachments, passed`);
+  console.log(`composer device copies: ${['light', 'dark'].map(t => `${t} 1280/390`).join(', ')} — two read-only rows marked Safari and Chrome, prepend with attachments, passed`);
 } finally {
   await browser?.close();
   server.close();

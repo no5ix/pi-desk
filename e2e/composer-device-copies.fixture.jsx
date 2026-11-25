@@ -7,19 +7,20 @@ import { I18nProvider } from '../hooks/useI18n';
  * A composer with two other devices' copies.
  *
  * The rows come from the server (`GET /api/composer-copies`), so the fixture
- * answers that endpoint itself: a mac's copy (text, one image, one attachment the
- * caps refused) and an iPhone's copy. Everything else about the composer is real.
+ * answers that endpoint itself: a mac's Safari copy (text, one image, one
+ * attachment the caps refused) and an iPhone's Chrome copy. Everything else about
+ * the composer is real.
  */
 const ONE_PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const NOW = Date.now();
 const COPIES = [
   {
-    deviceId: 'iphone-e2e0001', label: 'iphone', kind: 'phone',
+    deviceId: 'iphone-e2e0001', label: 'iphone', kind: 'phone', browser: 'chrome',
     value: '在 iphone 上打的一段话', images: [], files: [],
     updatedAt: NOW, droppedImages: 0, droppedFiles: 0,
   },
   {
-    deviceId: 'mac-e2e0002', label: 'mac', kind: 'desktop',
+    deviceId: 'mac-e2e0002', label: 'mac', kind: 'desktop', browser: 'safari',
     value: '在 macbook 上打的提示词', images: [{ data: ONE_PIXEL_PNG, mimeType: 'image/png' }], files: [],
     updatedAt: NOW - 5000, droppedImages: 0, droppedFiles: 1,
   },
