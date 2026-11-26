@@ -18,6 +18,7 @@ import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-fi
 import { TurnWrittenFiles } from "./TurnWrittenFiles";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { MessageView } from "./MessageView";
+import { MessageBranchAction } from "./message-branch-action";
 import { useReportDesktopReady } from "./desktop";
 import { MarkdownBody } from "./MarkdownBody";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
@@ -1747,7 +1748,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                 if (idx === lastUserIdx) { (lastUserMsgRef as { current: HTMLDivElement | null }).current = el; }
               };
 
-              const renderMessage = (idx: number, options: { attachRef?: boolean; keyPrefix?: string; messageOverride?: AgentMessage; showTimestamp?: boolean; writtenFiles?: WrittenFile[]; recoverTruncation?: boolean } = {}): ReactNode => {
+              const renderMessage = (idx: number, options: { attachRef?: boolean; keyPrefix?: string; branchRow?: boolean; messageOverride?: AgentMessage; showTimestamp?: boolean; writtenFiles?: WrittenFile[]; recoverTruncation?: boolean } = {}): ReactNode => {
                 const msg = options.messageOverride ?? messages[idx];
                 // C1: a side chat's hidden boundary message is drawn as the line where it starts.
                 if (msg.role === "custom" && msg.customType === SIDE_BOUNDARY_MESSAGE_TYPE) return <SideChatDivider key="side-chat-divider" />;
@@ -1785,7 +1786,16 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                     onContentToggle={handleContentToggle}
                     searchBlock={entryIds[idx] === pendingSearchScroll?.entryId ? searchBlock : undefined}
                     forking={forkingEntryId === entryIds[idx]}
-                    onBranchInNewChat={bashRunning || isNew ? undefined : handleBranchInNewChat}
+                    // Only the conversation's newest reply carries the chip. Every
+                    // finished turn and every unfolded step used to draw one, which made
+                    // a running task a column of identical buttons that all fork the same
+                    // conversation. A shell command holds the session file and a
+                    // not-yet-saved chat has no file to copy, so neither gets the chip.
+                    // The chip belongs to the row that ENDS the turn: the report. A step
+                    // inside the turn (folded in the card, or a running turn's unfolded
+                    // block) is never handed it — that was a column of identical buttons
+                    // that all fork the same conversation.
+                    onBranchInNewChat={options.branchRow && !bashRunning && !isNew ? handleBranchInNewChat : undefined}
                     onEditContent={handleEditContent}
                     editDisabled={sessionBusy}
                     onCancelEdit={cancelEdit}
@@ -1933,12 +1943,36 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                   const writtenFiles = liveTail ? undefined : getTurnWrittenFiles(finalAssistant, messages.slice(userIdx + 1, finalAssistantIdx + 1), toolResultsMap, messageCwd);
                   rendered.push(renderMessage(finalAssistantIdx, {
                     messageOverride: finalAnswerMessage,
+                    // The chip belongs to the row that ENDS the turn: the report.
+                    branchRow: true,
                     writtenFiles,
                     recoverTruncation: endIdx === messages.length && !streamState.isStreaming && !hasAssistantAnswer(finalAnswerMessage),
                   }));
                 }
                 for (let renderIdx = finalAssistantIdx + 1; renderIdx < endIdx; renderIdx++) {
                   rendered.push(renderMessage(renderIdx));
+                }
+                // One chip per turn, below that turn's last block. A turn that ends on an
+                // answer puts it in the report's footer (above); a turn cut short — an
+                // aborted tool call, an interrupted reply, an `Error:` line — has no
+                // report, so all of its rows are folded inside the Process details card
+                // and nothing below carries a footer. The chip gets a row of its own,
+                // under the card, so a turn that stopped mid-work is continuable exactly
+                // where it stopped: the copy runs through the newest entry of that turn.
+                // A shell command holds the session file and a not-yet-saved chat has no
+                // file to copy: no chip in either case.
+                const turnBranchEntryId = finalAnswerMessage || isNew || bashRunning
+                  ? null
+                  : (entryIds[finalAssistantIdx] ?? null);
+                if (turnBranchEntryId) {
+                  rendered.push(
+                    <div className="chat-branch-tail" key={`branch-tail-${messageKeys[finalAssistantIdx] ?? finalAssistantIdx}`}>
+                      <MessageBranchAction
+                        forking={forkingEntryId === turnBranchEntryId}
+                        onBranch={() => { handleBranchInNewChat(turnBranchEntryId); }}
+                      />
+                    </div>,
+                  );
                 }
                 idx = endIdx;
               }

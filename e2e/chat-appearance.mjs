@@ -40,7 +40,7 @@ export async function checkChatAppearanceReset(page) {
 
 export async function checkChatAppearance(page) {
   await page.setViewportSize({ width: 2560, height: 1100 });
-  await checkComposerGeometry(page);
+  await checkComposerGeometry(page, { cornerCapable: true });
   const textarea = page.locator(".chat-input-textarea");
   const openSettings = () => openGeneralSettings(page);
   const closeSettings = () => page.keyboard.press("Escape");
@@ -119,6 +119,6 @@ export async function checkChatAppearance(page) {
   await textarea.fill("A mobile draft wraps and resizes within the available space.");
   await fittedHeight();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  await checkComposerGeometry(page);
+  await checkComposerGeometry(page, { cornerCapable: true });
   console.log("PASS: chat appearance persistence, typography, draft resizing, and short settings panels");
 }

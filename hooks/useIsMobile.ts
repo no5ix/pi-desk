@@ -6,6 +6,11 @@ import { useSyncExternalStore } from "react";
 const MOBILE_QUERY = "(max-width: 640px)";
 // Narrow phones keep secondary toolbar actions behind the More button.
 const NARROW_MOBILE_QUERY = "(max-width: 480px)";
+// A touch device: the finger is the pointer, so a row of small icon buttons is a row of
+// taps that land beside their targets. The composer keeps its row to the `+`, the prompt
+// and Send there, and every other control goes into the `+`'s menu (a phone in landscape
+// and a tablet are wide, and their fingers do not get narrower).
+const COARSE_POINTER_QUERY = "(pointer: coarse)";
 
 function subscribeToQuery(query: string, cb: () => void): () => void {
   if (typeof window === "undefined" || !window.matchMedia) return () => {};
@@ -40,4 +45,17 @@ export function useIsMobile(): boolean {
 /** Returns true when the compact mobile toolbar should collapse extra actions. */
 export function useIsNarrowMobile(): boolean {
   return useSyncExternalStore(subscribeNarrowMobile, getNarrowMobileSnapshot, getServerSnapshot);
+}
+
+/**
+ * True on a touch device (no precise pointer), false on SSR and the first client paint —
+ * the same SSR-safe shape as `useIsMobile`, so a server render never picks the menu tier
+ * and the composer's own measurement settles it a frame later.
+ */
+export function useCoarsePointer(): boolean {
+  return useSyncExternalStore(
+    (cb) => subscribeToQuery(COARSE_POINTER_QUERY, cb),
+    () => queryMatches(COARSE_POINTER_QUERY),
+    getServerSnapshot,
+  );
 }

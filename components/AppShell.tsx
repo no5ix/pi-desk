@@ -68,6 +68,7 @@ import { useDesktopWorkspaceTabs } from "@/hooks/useDesktopWorkspaceTabs";
 import { useWorkspaceAvailability } from "@/hooks/useWorkspaceAvailability";
 import { WindowControls, useDesktopChrome, useReportDesktopReady, useWindowDrag } from "./desktop";
 import { SystemPromptPanel } from "./SystemPromptPanel";
+import { usePopTransition, useShownWhileClosing } from "@/hooks/usePopTransition";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
 import { ExtensionStatusList, visibleExtensionStatuses } from "./ExtensionStatusLine";
 import { AgentSessionPanel } from "./AgentSessionPanel";
@@ -363,6 +364,10 @@ export function AppShell() {
     if (settingsExitRef.current !== null) window.clearTimeout(settingsExitRef.current);
   }, []);
   const [topMoreOpen, setTopMoreOpen] = useState(false);
+  // The menu is mounted by the click that opens it. Held for the shared exit animation
+  // (hooks/usePopTransition.ts), it leaves the way it came; `topMorePos` is never cleared,
+  // so the closing menu keeps its spot.
+  const topMorePop = usePopTransition(topMoreOpen);
   const topMoreRef = useRef<HTMLDivElement>(null);
   const topMoreMenuRef = useRef<HTMLDivElement>(null);
   const [topMorePos, setTopMorePos] = useState<{ top: number; right: number } | null>(null);
@@ -631,6 +636,12 @@ export function AppShell() {
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number; floating?: boolean } | null>(null);
+  // The header's cards (Agents, System prompt, Tools, Session stats) are mounted by the
+  // chip that opens them. The wrapper is held for the shared exit animation, and keeps the
+  // card it was showing for its length: a wrapper that lost its panel mid-exit animates an
+  // empty box. Closing clears `activeTopPanel`, so both the flag and the card are kept.
+  const topPanelPop = usePopTransition(activeTopPanel !== null);
+  const shownTopPanel = useShownWhileClosing(activeTopPanel, topPanelPop.closing);
 
   // The session's live one-liner: `↑44k · ↓3k · $1.20 · 17.3% ctx`. The More menu's row
   // carries it and the Session stats card's head carries it, so it is built once.
@@ -702,7 +713,7 @@ export function AppShell() {
   // Cache warming moves on its own between runs (scheduled → refreshing → stopped), so the
   // panel asks the live wrapper again each time it opens. GET never starts a dormant session.
   const [panelCacheWarming, setPanelCacheWarming] = useState<CacheWarmingInfo | null>(null);
-  const sessionPanelSessionId = activeTopPanel === "session" ? selectedSession?.id ?? null : null;
+  const sessionPanelSessionId = shownTopPanel === "session" ? selectedSession?.id ?? null : null;
   useEffect(() => {
     setPanelCacheWarming(null);
     if (!sessionPanelSessionId) return;
@@ -769,7 +780,9 @@ export function AppShell() {
 
   // The menu is measured after rendering, so a short window flips it above
   // the trigger instead of letting its last entries fall off the screen.
-  const placedTopMorePos = useMenuPlacement(topMoreOpen ? topMoreAnchor : null, topMoreMenuRef);
+  // Placement stays keyed to the mounted flag, not the click flag: the closing menu has to
+  // keep the spot it was placed in, or it jumps on the way out.
+  const placedTopMorePos = useMenuPlacement(topMorePop.mounted ? topMoreAnchor : null, topMoreMenuRef);
 
   useEffect(() => {
     if (!topMoreOpen) return;
@@ -2864,10 +2877,10 @@ export function AppShell() {
                         <circle cx="19" cy="12" r="1.65" />
                       </svg>
                     </button>
-                    {topMoreOpen && topMorePos && createPortal(
+                    {topMorePop.mounted && topMorePos && createPortal(
                       <div
                         ref={topMoreMenuRef}
-                        className="native-popover app-menu app-topbar-more-menu"
+                        className={`native-popover app-menu app-topbar-more-menu${topMorePop.className}`}
                         role="menu"
                         aria-label={translate("appshell.moreActions")}
                         style={{
@@ -3054,8 +3067,10 @@ export function AppShell() {
           {!isMobile && renderProjectTrustWarning(false)}
           {!isMobile && showFilePanelToggle && renderMainFileToggle()}
           {/* Top panel dropdown — shared, only one active at a time */}
-          {activeTopPanel && topPanelPos && (
-            <div style={{
+          {topPanelPop.mounted && shownTopPanel && topPanelPos && (
+            <div
+              className={`top-panel-card${topPanelPop.className}`}
+              style={{
               position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,
@@ -3068,7 +3083,7 @@ export function AppShell() {
               overflowY: topPanelPos.floating ? "visible" : "auto",
               zIndex: 500,
             }}>
-              {activeTopPanel === "agents" && activeSessionFamily && selectedSession && (
+              {shownTopPanel === "agents" && activeSessionFamily && selectedSession && (
                 <AgentSessionPanel
                   rootSession={activeSessionFamily.root}
                   subagents={activeSessionFamily.subagents}
@@ -3081,21 +3096,21 @@ export function AppShell() {
                   onDeleteSideChat={handleDeleteSideChat}
                 />
               )}
-              {activeTopPanel === "system" && (
+              {shownTopPanel === "system" && (
                 <SystemPromptPanel
                   loading={systemInfoLoading}
                   prompt={systemPrompt}
                   translate={translate}
                 />
               )}
-              {activeTopPanel === "tools" && (
+              {shownTopPanel === "tools" && (
                 <ToolDefinitionsPanel
                   loading={systemInfoLoading}
                   tools={systemTools}
                   translate={translate}
                 />
               )}
-              {activeTopPanel === "session" && (
+              {shownTopPanel === "session" && (
                 <div
                   className="session-info-popover app-menu"
                   role="dialog"

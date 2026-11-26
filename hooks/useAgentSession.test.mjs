@@ -211,8 +211,8 @@ test("forking stays available during a run while in-session branch switches wait
 
   // Branching out copies finished entries into a new file, so only a shell command
   // blocks it; the in-session edit still waits because pi refuses navigate_tree mid-run.
-  assert.match(chatWindowSource, /onBranchInNewChat=\{bashRunning \|\| isNew \? undefined : handleBranchInNewChat\}/,
-    "a reply's Branch in new chat is offered during a run, and hidden only with no file to copy");
+  assert.match(chatWindowSource, /onBranchInNewChat=\{options\.branchRow && !bashRunning && !isNew \? handleBranchInNewChat : undefined\}/,
+    "the turn's last row is offered its Branch in new chat during a run, and hidden only with no file to copy");
   assert.match(branchSource, /if \(bashRunningRef\.current\) return;/, "the shell guard, as Fork's");
   assert.match(chatWindowSource, /onEditContent=\{handleEditContent\}/);
   assert.match(chatWindowSource, /editDisabled=\{sessionBusy\}/);
@@ -232,14 +232,14 @@ test("forking stays available during a run while in-session branch switches wait
   assert.equal((appShellSource.match(/locked=\{branchSwitchLocked\}/g) ?? []).length, 1);
 });
 
-test("branch actions and edit travel to every message, by role and not by position", () => {
+test("the branch chip reaches the row that ends a turn, and edit travel to every message, by role and not by position", () => {
   const navigateSource = source.slice(
     source.indexOf("  const handleNavigate = useCallback"),
     source.indexOf("  const handleLeafChange = useCallback"),
   );
 
-  assert.match(chatWindowSource, /onBranchInNewChat=\{bashRunning \|\| isNew \? undefined : handleBranchInNewChat\}/,
-    "every finished reply is offered the branch-out, the first turn included");
+  assert.match(chatWindowSource, /onBranchInNewChat=\{options\.branchRow && !bashRunning && !isNew \? handleBranchInNewChat : undefined\}/,
+    "one branch chip per turn, on the row the turn ends on — the last block above the next prompt");
   assert.doesNotMatch(chatWindowSource, /onFork=\{/,
     "the prompt row has no branch chip: one entry point, on the reply a new chat continues from");
   assert.doesNotMatch(chatWindowSource, /idx === 0 && msg\.role === "user"/);

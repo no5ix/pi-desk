@@ -9,6 +9,7 @@ import { createJiti } from "jiti";
 const css = readFileSync(new URL("./native-theme.css", import.meta.url), "utf8");
 const cssNoComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
 const messageView = readFileSync(new URL("../components/MessageView.tsx", import.meta.url), "utf8");
+const branchChip = readFileSync(new URL("../components/message-branch-action.tsx", import.meta.url), "utf8");
 const mermaid = readFileSync(new URL("../components/MermaidBlock.tsx", import.meta.url), "utf8");
 const chatInput = readFileSync(new URL("../components/ChatInput.tsx", import.meta.url), "utf8");
 
@@ -38,10 +39,17 @@ test("the scroll-to-latest disc has no edge and a shadow that lifts it (pic: the
   }
   const shadows = declared(".chat-scroll-to-bottom.is-visible", "box-shadow");
   assert.ok(shadows.length > 0, "the disc has a shadow rule");
-  const widest = shadows.map((d) => d.slice(d.indexOf(":") + 1)).join(";");
-  const layers = widest.split(/,(?![^(]*\))/).filter((layer) => layer.trim().length > 0);
-  assert.ok(layers.length >= 2, `the shadow is a pair of layers, not the one quiet drop upstream drew (${widest.trim()})`);
-  assert.match(widest, /rgba\(0, 0, 0, 0\.[3-9]/, "a dark, obvious shadow: it has to read over prose and over a code fence");
+  // The disc takes the app's own floating-layer token (fec93a2b), the same lift the
+  // topbar and the panels wear, so the value to judge is the token, not a literal.
+  assert.match(shadows.join("\n"), /box-shadow: var\(--shadow-composer\)/, "the disc lifts with the shared token");
+  const token = [...cssNoComments.matchAll(/--shadow-composer:([^;]*);/g)].map((m) => m[1]);
+  const winning = token.filter((value) => /!important/.test(value));
+  assert.ok(winning.length > 0, "the token is set with !important, so a theme's value wins the cascade");
+  for (const value of winning) {
+    const layers = value.split(/,(?![^(]*\))/).filter((layer) => layer.trim().length > 0);
+    assert.ok(layers.length >= 2, `the shadow is a pair of layers, not the one quiet drop upstream drew (${value.trim()})`);
+    assert.match(value, /#[0-2][0-9a-f][0-2][0-9a-f][0-2][0-9a-f][4-9a-f][0-9a-f]/, "a dark, obvious shadow (near-black ink at a quarter alpha or more): it has to read over prose and over a code fence");
+  }
 });
 
 test("the scroll-to-latest disc rests as a translucent plate, and a hover closes it (pic: the disc at rest, then hovered)", () => {
@@ -77,16 +85,42 @@ test("a code fence stands off the page (pic: the json fence in the conversation)
 });
 
 test("a subagent report is a panel with a thinking card's type (pic: the opened report)", () => {
+  // The plates read one step lighter than --bg-panel since 2f78d4a2 ("four chat
+  // plates read lighter"): a report is a step off the page, not a sidebar.
   for (const selector of [".custom-message-card", ".custom-message-body", ".custom-message-footer"]) {
-    assert.match(declared(selector, "background").join("\n"), /background: var\(--bg-panel\) !important/, `${selector} is the recessed panel, not the page`);
+    assert.match(declared(selector, "background").join("\n"), /background: var\(--bg-subtle\) !important/, `${selector} is the plate off the page, not the page`);
   }
   for (const name of ["custom-message-card", "custom-message-body", "custom-message-footer"]) {
     assert.ok(messageView.includes(`className="${name}"`), `the report draws ${name}`);
   }
   const size = declared(".markdown-custom-message", "font-size").join("\n");
-  assert.match(size, /font-size: calc\(11px \+ var\(--chat-font-size-offset, 0px\)\)/, "the report's text is the thinking card's size");
+  assert.match(size, /font-size: var\(--fs-caption\)/, "the report's text is the thinking card's size");
   assert.match(declared(".markdown-custom-message", "font-weight").join("\n"), /font-weight: var\(--fw-regular\)/, "…and its weight");
-  assert.match(messageView, /fontSize: "calc\(11px \+ var\(--chat-font-size-offset, 0px\)\)"/, "the thinking card keeps the size this rule is measured against");
+  assert.match(messageView, /fontSize: "var\(--fs-caption\)"/, "the thinking card's body keeps the size this rule is measured against");
+});
+
+test("a report's and a compaction's body read as the reply's prose (pic: both cards beside a report)", () => {
+  // Asked for: the thinking card's font size, the final report's font type,
+  // character spacing and line spacing. Upstream's report is a 13px terminal face
+  // on 1.32 leading (globals.css) and a compaction inherits the 14px reply body,
+  // so the two cards read as two kinds of text the conversation is not made of.
+  for (const selector of [".markdown-custom-message", ".markdown-compaction-message"]) {
+    assert.match(declared(selector, "font-family").join("\n"), /font-family: var\(--font-ui\)/, `${selector} is the app's reading face, not a terminal face`);
+    assert.match(declared(selector, "letter-spacing").join("\n"), /letter-spacing: normal/, `${selector} keeps the reply's character spacing`);
+    assert.match(declared(selector, "line-height").join("\n"), /line-height: 1\.7/, `${selector} keeps the reply's line spacing`);
+    assert.match(declared(selector, "font-size").join("\n"), /font-size: var\(--fs-caption\)/, `${selector} is the thinking card's size`);
+  }
+  // The reply is what those values are copied from.
+  assert.match(cssNoComments, /\.markdown-body \{[^}]*line-height: 1\.7/, "1.7 is a reply's leading");
+  assert.match(cssNoComments, /html, body \{[^}]*font-family: var\(--font-ui\)/, "--font-ui is the face a reply is set in");
+  // A chip of inline code is sized to the prose it sits in, not to a 14px reply.
+  for (const selector of [".markdown-custom-message .markdown-inline-code", ".markdown-compaction-message .markdown-inline-code"]) {
+    assert.match(declared(selector, "font-size").join("\n"), /font-size: 1em/, `${selector} fits the 12px prose around it`);
+  }
+  // The compaction card's own body paints its type inline, so the intro line and
+  // the markdown summary under it are one body of text at one size.
+  assert.match(messageView, /fontSize: "var\(--fs-caption\)"[\s\S]{0,160}lineHeight: 1\.7/, "the compaction body carries the size and leading inline");
+  assert.doesNotMatch(messageView, /marginTop: 3, marginBottom: 10, color: "var\(--text\)", fontSize: "calc\(14px/, "the intro line no longer sizes itself above the summary");
 });
 
 test("a turn's Process details group stands on a translucent plate (pic: the folded steps)", () => {
@@ -159,8 +193,10 @@ test("a tool call's band stands off the page, its clock is readable, and a phone
   // The clock beside a reply's model: 10px was a dot; the row shares the app's 12px glyph.
   assert.match(messageView, /className="message-assistant-model-time">\s*<ClockIcon size=\{12\} \/>/, "the message's clock is the app's 12px glyph");
 
-  // "Branch in new chat" under every tool call is a phone's column of identical buttons.
-  assert.match(messageView, /className="message-assistant-action message-branch-action"/, "the chip is addressable by name");
+  // The branch chip — the newest reply's footer copy and the tail row's — is dropped on a
+  // phone: the sidebar's Fork and the composer carry branching there, and a small chip
+  // under a long reply is noise.
+  assert.match(branchChip, /className="message-assistant-action message-branch-action"/, "the chip is addressable by name");
   const hidden = cssNoComments.match(/@media \(max-width: 640px\)\s*\{[^}]*\.message-branch-action\s*\{[^}]*display: none !important/g);
   assert.ok(hidden, "on a phone's width the chip is not drawn, and the rule is strong enough to beat the chip's inline display: flex");
   assert.ok(!/\.message-copy-action\s*\{[^}]*display: none/.test(cssNoComments), "Copy is not taken with it");
@@ -171,17 +207,21 @@ test("the composer's corner: a plate, a gutter, and a tall editor that out-inlin
   // the fork's 36px. `declarations()` flattens the media wrappers, so both tiers of one
   // selector come back together and the assertion reads the pair.
   const plate = declarations(".chat-composer > .chat-composer-expand");
-  assert.ok(plate.some((d) => /^width:\s*30px/.test(d)), "the plate is 30px at rest");
+  assert.ok(plate.some((d) => /^width:\s*26px/.test(d)), "the plate is 26px at rest (the card's 80% row)");
   assert.ok(plate.some((d) => /^width:\s*36px/.test(d)), "and 36px for a finger");
   assert.ok(plate.some((d) => /^height:\s*36px/.test(d)), "the finger's plate is square");
   assert.ok(plate.some((d) => /^position:\s*absolute/.test(d)), "the corner is anchored, not floated into the text");
+  assert.ok(plate.some((d) => /^left:\s*(4|2)px/.test(d)), "the corner is the card's UPPER-LEFT: the `+` keeps the row's bottom-left");
+  assert.ok(!plate.some((d) => /^right:/.test(d)), "and has no right anchor (the corner is not the card's top-right)");
   assert.ok(declarations(".chat-composer").some((d) => /^position:\s*relative/.test(d)),
     "the card is the anchor, so the glyph lands in the card's own corner");
 
   // The text stops short of the corner: the first line is never typed under the glyph.
-  const gutter = declared(".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea", "padding-right");
-  assert.ok(gutter.some((d) => d.includes("38px")), "the card reserves 38px for the corner");
+  const gutter = declared(".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea", "padding-left");
+  assert.ok(gutter.some((d) => d.includes("34px")), "the card reserves 34px for the corner");
   assert.ok(gutter.some((d) => d.includes("44px")), "and 44px where the plate is a finger's");
+  assert.ok(!declarations(".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea")
+    .some((d) => /^padding-right:\s*(38|44)px/.test(d)), "no gutter on the right: the corner is not there");
 
   // The composer sizes its textarea with inline styles (`min-height: 24px`,
   // `max-height: 200px`, and a height it grew to the text), so the tall editor has to be

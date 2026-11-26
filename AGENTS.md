@@ -101,6 +101,26 @@ suite passes:
   tree clean (`git status --short` empty apart from files
   that were already dirty).
 
+### 7. Report commits in the final report
+
+A task that modified project files and created commits MUST end with a
+**Git Commit Summary** section, one block per commit in chronological
+order, each with:
+
+- the complete commit subject;
+- the full commit hash (not abbreviated);
+- the commit timestamp, with its timezone;
+- every file the commit changed.
+
+Read these from Git, never from memory: `git log --format=fuller`
+(subject, author date with timezone, full hash), `git show --stat --format=%H`
+and `git diff-tree --no-commit-id --name-only -r <hash>` (the files).
+Never guess, fabricate, or reconstruct commit metadata.
+
+If no commit was created, say so explicitly. Never imply that changes
+were committed when they were not. Files left dirty go in a separate
+"uncommitted" list, clearly marked as not part of any commit.
+
 ## Quick Start
 
 ```bash
@@ -452,6 +472,25 @@ separate OS tasks. Run `node --test scripts/ui-menu-consistency.test.mjs` after 
 changes to shared choices also run `node e2e/option-controls.mjs`.
 
 `app/globals.css` and `app/settings.css` are pi-web's and stay byte-identical to upstream — `scripts/upstream-css-baseline.test.mjs` fails on any edit. Put every fork rule in `app/native-theme.css` (imported last in `app/layout.tsx`); overrides of upstream rules that other theme rules must beat go in its "fork base layer" at the top. After an upstream merge run `node scripts/upstream-css-baseline.mjs update <upstream-ref>` (the sync workflow does). Layout of the theme file and the design intent to restore after a merge: `docs/native-theme.md`.
+
+### Reusable classes, not inline styles (user requirement)
+
+- Style through the semantic, reusable classes of `app/native-theme.css`
+  (and the upstream sheets where they already exist). Before writing a
+  style, read the existing sheets, tokens and component classes; reuse
+  what is there.
+- No inline `style`, no generated inline style, no styling values written
+  in TSX, except where the value must be computed at runtime (a measured
+  box, a drag size, a `--var` the layout needs). Even then keep the
+  static part in a class and pass only the measured number inline.
+- A new style goes in the right sheet under a semantic class name — never
+  in a component, never as a one-off rule attached to an element type.
+- Do not duplicate declarations and do not add a second class that does
+  what an existing one does; extend the existing selector.
+- Keep structure in the component and appearance in CSS. Do not add
+  hardcoded colors, spacing, radii, shadows, or font sizes when a token
+  from **CSS Variables** below (or a shared `.app-menu` / `SettingsUi`
+  block) already expresses the value.
 
 ## CSS Variables (`app/globals.css`, re-tokened in `app/native-theme.css`)
 

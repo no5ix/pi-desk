@@ -43,7 +43,7 @@ import { quoteSeparator } from "@/lib/quoted-selection";
 import { isBareMcpCommand, isBuiltinMcpCommand } from "@/lib/mcp-command";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { ImagePreview } from "./ImagePreview";
-import { useIsMobile } from "@/hooks/useIsMobile";
+import { useCoarsePointer, useIsMobile } from "@/hooks/useIsMobile";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
 import { usePopTransition } from "@/hooks/usePopTransition";
 import { useEnterSendMode } from "@/hooks/useEnterSendMode";
@@ -75,7 +75,7 @@ import { ComposerDeviceCopies } from "./ComposerDeviceCopies";
 import { ComposerPlusMenu } from "./ComposerPlusMenu";
 import { ComposerReasoningRows } from "./ComposerReasoningRows";
 import { ComposerToolPresetRows } from "./ComposerToolPresetRows";
-import { growComposerTextarea } from "@/lib/composer-textarea-height";
+import { growComposerTextarea, measureComposerTextLines } from "@/lib/composer-textarea-height";
 import { TOOL_PRESET_MAP, type ThinkingLevelChoice } from "@/lib/composer-option-data";
 import { SideChatPlusIcon } from "./SideChatIcon";
 import { ComposerExpandIcon } from "./ComposerExpandIcon";
@@ -848,6 +848,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const { t } = useI18n();
   const { fontSize } = useChatAppearance();
   const isMobile = useIsMobile();
+  // A finger is not a pointer: on any touch device the composer is the menu tier, however
+  // wide the window is (a phone in landscape, a tablet). The row keeps the `+`, the prompt,
+  // the side chat and Send; the model, the reasoning, the tools, the session automation and
+  // the file picker are rows of the `+`'s menu, where each one is a full-width target.
+  const coarsePointer = useCoarsePointer();
   const composerRef = useRef<HTMLDivElement | null>(null);
   const [composerTier, setComposerTier] = useState<ComposerTier>(() => (isMobile ? "narrow" : "normal"));
 
@@ -857,7 +862,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
     const updateTier = (width: number) => {
       let nextTier: ComposerTier = "normal";
-      if (isMobile || width < 400) {
+      if (isMobile || coarsePointer || width < 400) {
         nextTier = "narrow";
       } else if (width < 560) {
         nextTier = "compact";
@@ -876,7 +881,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     });
     observer.observe(el);
     return () => observer.disconnect();
-  }, [isMobile]);
+  }, [isMobile, coarsePointer]);
 
   const isNarrow = composerTier === "narrow";
   const isCompact = composerTier === "compact" || isNarrow;
@@ -961,6 +966,44 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     void ta.offsetHeight;
     ta.style.height = `${target}px`;
   }, [expanded]);
+  // How many lines the prompt takes, and the corner that follows it. The card is one row
+  // while the text fits on a line; the second line — typed or wrapped — is what raises the
+  // corner in the card's upper-left, and the line going away takes the corner back. The
+  // prompt, the tier and the card's own height are what the answer depends on, and a resize
+  // (a window drag, a keyboard, a panel) re-wraps the same text, so the box is observed too.
+  const [textLines, setTextLines] = useState(1);
+  const cornerVisible = !compact && Boolean(onExpandedChange) && (expanded || textLines > 1);
+  const measureTextLines = useCallback(() => {
+    const ta = textareaRef.current;
+    if (!ta) {
+      setTextLines(1);
+      return;
+    }
+    const lines = measureComposerTextLines(ta);
+    setTextLines((current) => (current === lines ? current : lines));
+  }, []);
+  useEffect(() => {
+    measureTextLines();
+  }, [value, expanded, composerTier, measureTextLines]);
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta || typeof ResizeObserver !== "function") return;
+    const observer = new ResizeObserver(() => measureTextLines());
+    observer.observe(ta);
+    return () => observer.disconnect();
+  }, [measureTextLines]);
+  // A prompt that shrinks back to one line is a resting card again: the corner goes, and
+  // with it the tall editor it had opened. The rule only closes a card the corner opened —
+  // opening the editor on an empty box (to write a long prompt in) is kept.
+  const wasMultilineRef = useRef(false);
+  useEffect(() => {
+    if (textLines > 1) {
+      wasMultilineRef.current = true;
+      return;
+    }
+    if (wasMultilineRef.current && expanded && onExpandedChange) onExpandedChange(false);
+    wasMultilineRef.current = false;
+  }, [textLines, expanded, onExpandedChange]);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
@@ -2273,6 +2316,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // reports them, and manual compaction whenever it can start.
   const automationKnown = Boolean(onSetAutomation && automation && (automation.autoCompactionEnabled !== null || automation.autoRetryEnabled !== null || automation.steeringMode !== null));
   const canCompactNow = Boolean(onCompact && !isStreaming && !isCompacting);
+  // The project and the branch are picked before a run; while one is running there is
+  // nothing to pick, and switching a branch under a running session is not a thing the
+  // composer offers. The two pickers go away for the run and come back when it ends.
+  const pickersIdle = !isStreaming && !isCompacting;
   // The row is icon-only, so this title is where the level, the preset and the chat
   // state are written down (hover, and the accessibility tree).
   const runSettingsTitle = [
@@ -2994,7 +3041,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <ComposerOutbox items={queuedMessages?.pending ?? []} onAction={onQueuedMessageAction} />
           <div
             ref={composerRef}
-            className={`chat-composer${compact ? " is-compact" : ""}${expanded ? " is-expanded" : ""}${!compact && onExpandedChange ? " has-expand" : ""}`}
+            className={`chat-composer${compact ? " is-compact" : ""}${expanded ? " is-expanded" : ""}${cornerVisible ? " has-expand" : ""}`}
             onPointerDown={(event) => {
               // The card is the editor's box: a finger's tap anywhere in it that is not a
               // control puts the caret in the text, and the keyboard that comes with the
@@ -3008,7 +3055,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             // run that will take this message as a steer / follow-up.
             data-state={compact ? undefined : bashMode ? "bash" : undefined}
           >
-          {!compact && onExpandedChange && (
+          {/* The corner is the way into the tall editor, and the way back. It is not part
+              of the resting card: a one-line prompt is a one-row card and needs no affordance
+              above it. The corner arrives with the second line — typed or wrapped, both are
+              measured (lib/composer-textarea-height.ts) — in the card's upper-LEFT, over the
+              text that now has to stop short of it, and it goes away again when the prompt
+              shrinks back to a line. While the card is open as the editor, the corner is the
+              only way back, so it stays. */}
+          {cornerVisible && (
             <button
               type="button"
               className="chat-composer-expand"
@@ -3016,27 +3070,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               aria-expanded={expanded}
               aria-label={t(expanded ? "chat.collapseComposer" : "chat.expandComposer")}
               title={t(expanded ? "chat.collapseComposer" : "chat.expandComposer")}
-              onClick={() => onExpandedChange(!expanded)}
+              onClick={() => onExpandedChange?.(!expanded)}
             >
               <ComposerExpandIcon expanded={expanded} />
             </button>
           )}
           <div
             className="chat-composer-editor"
-            // The phone's card is one row: the `+`, the prompt, Send. `data-inline` is the
-            // hook app/native-theme.css lays that row out on and animates the card's height
-            // with; the wider tiers keep the column, where the text is typed across the
-            // card above the control row.
-            data-inline={isNarrow && !compact ? "true" : undefined}
+            // The card is one row on every platform — desktop, pad, phone: the `+`, the
+            // prompt, the session controls, Send. `data-inline` is the hook
+            // app/native-theme.css lays that row out on and animates the card's height with,
+            // and every tier carries it; only the quote dialog's box (`compact`) keeps a
+            // column, where the text is a tall area above its own Send.
+            data-inline={compact ? undefined : "true"}
             style={{
               minWidth: 0,
               display: "flex",
-              // The text area owns the card's whole width and the controls share one row
-              // under it: a long prompt is typed across the card, not beside a button.
-              // In the inline tier the text is *in* that row, between the `+` and Send.
-              flexDirection: isNarrow && !compact ? "row" : "column",
+              // One row, and the text takes the width the `+` and the controls leave. It
+              // grows downward as the prompt wraps, and the row's controls stay at its
+              // bottom edge (`flex-end`), so a one-line prompt is a short card and a long
+              // one is a tall box with its controls under the last line.
+              flexDirection: compact ? "column" : "row",
               gap: compact ? 8 : 0,
-              alignItems: "stretch",
+              alignItems: compact ? "stretch" : "flex-end",
               background: "var(--bg)",
               borderRadius: compact ? 0 : 14,
               padding: compact ? 0 : isMobile ? "6px 6px 6px 12px" : "10px 10px 10px 14px",
@@ -3044,91 +3100,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               transition: "border-color var(--dur-base) var(--ease-native), background var(--dur-base) var(--ease-native), box-shadow var(--dur-base) var(--ease-native)",
             } as React.CSSProperties}
           >
-          <textarea
-            ref={textareaRef}
-            className="chat-input-textarea"
-            onPointerDown={(event) => {
-              // A finger's tap is the only reason iOS accepts for raising its keyboard,
-              // and a tap on a field WebKit already counts as focused is no focus event
-              // at all: the keyboard comes up with no caret. Arm it inside the gesture.
-              if (isTouchPointer(event.nativeEvent)) armComposerCaret(textareaRef.current);
-            }}
-            aria-label={compact ? t("chat.quoteQuestion") : undefined}
-            value={value}
-            onChange={(e) => {
-              valueRef.current = e.target.value;
-              setValue(e.target.value);
-              setHistoryMenuOpen(false);
-              updateAtQuery(e.target.value, e.target.selectionStart);
-              updateHashQuery(e.target.value, e.target.selectionStart);
-            }}
-            onSelect={(e) => {
-              const el = e.currentTarget;
-              updateAtQuery(el.value, el.selectionStart);
-              updateHashQuery(el.value, el.selectionStart);
-            }}
-            onKeyDown={handleKeyDown}
-            onCompositionStart={() => {
-              isComposingRef.current = true;
-            }}
-            onCompositionEnd={(e) => {
-              isComposingRef.current = false;
-              lastCompositionEndAtRef.current = Date.now();
-              const el = e.currentTarget;
-              updateAtQuery(el.value, el.selectionStart);
-              updateHashQuery(el.value, el.selectionStart);
-            }}
-            onInput={handleInput}
-            onPaste={handlePaste}
-            placeholder={
-              isStreaming && (onSteer || onFollowUp)
-                ? t("chat.queuePlaceholder")
-                : isStreaming ? t("chat.agentPlaceholder")
-                : isNarrow
-                ? (t("chat.messagePlaceholderShort") || "Message…")
-                : t("chat.messagePlaceholder")
-            }
-            rows={1}
-            style={{
-              // The card is a column: the text area keeps the height its auto-grow logic
-              // computed (`flex: 1` would be a zero basis in a column and clip it), and the
-              // control row sits under it. No inline width: the column stretches it to the
-              // card, so a horizontal margin (the card's own inset) can only inset it, never
-              // push it past the card's right edge — `width: 100%` plus a margin did exactly
-              // that, and a stray margin edit in the stylesheet reproduced it on a phone.
-              // The column tiers take the height the auto-grow computed and stretch the
-              // text across the card; the inline tier puts the text in the row, where it
-              // takes the width the `+` and Send leave.
-              flex: isNarrow && !compact ? "1 1 auto" : "none",
-              minWidth: 0,
-              background: "none",
-              border: "none",
-              outline: "none",
-              resize: "none",
-              color: "var(--text)",
-              fontSize: "var(--chat-content-font-size, 14px)",
-              lineHeight: 1.6,
-              fontFamily: "inherit",
-              minHeight: compact ? 96 : 24,
-              maxHeight: 200,
-              overflow: "auto",
-            }}
-          />
-
-          {/* The / @ # triggers, kept out of the placeholder: shown faintly
-              beside Send only while the card is focused and empty. */}
-          {!compact && !isNarrow && !isStreaming && value.length === 0 && (
-            <span className="composer-trigger-hint" aria-hidden="true">
-              {t(chatOnly ? "chat.composerHintChatOnly" : "chat.composerHint")}
-            </span>
-          )}
-
-          {/* One row. The wider tiers: attach, the session controls, then Send, under the
-              text. The phone: the `+`, the prompt, Send — one line, where the `+` is the
-              control that carries everything the row has no room for. */}
-          <div className="chat-composer-actions">
-          {/* Attaching is a content action, so it lives in the card with the text it
-              goes with — in the same row as Send, ahead of the session controls. */}
+          {/* The card is one row on every platform: the `+`, the prompt, the session
+              controls, Send. The `+` opens the file picker (the wider tier) or every
+              control the row has no room for (the phone's menu); it is the row's first
+              control so the prompt starts where reading starts, and the row grows
+              downward from one line as the prompt wraps. */}
           {!compact && (isNarrow ? (
             <ComposerPlusMenu
               menuRef={plusMenuRef}
@@ -3202,55 +3178,108 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </svg>
             </button>
           ))}
+          <textarea
+            ref={textareaRef}
+            className="chat-input-textarea"
+            onPointerDown={(event) => {
+              // A finger's tap is the only reason iOS accepts for raising its keyboard,
+              // and a tap on a field WebKit already counts as focused is no focus event
+              // at all: the keyboard comes up with no caret. Arm it inside the gesture.
+              if (isTouchPointer(event.nativeEvent)) armComposerCaret(textareaRef.current);
+            }}
+            aria-label={compact ? t("chat.quoteQuestion") : undefined}
+            value={value}
+            onChange={(e) => {
+              valueRef.current = e.target.value;
+              setValue(e.target.value);
+              setHistoryMenuOpen(false);
+              updateAtQuery(e.target.value, e.target.selectionStart);
+              updateHashQuery(e.target.value, e.target.selectionStart);
+            }}
+            onSelect={(e) => {
+              const el = e.currentTarget;
+              updateAtQuery(el.value, el.selectionStart);
+              updateHashQuery(el.value, el.selectionStart);
+            }}
+            onKeyDown={handleKeyDown}
+            onCompositionStart={() => {
+              isComposingRef.current = true;
+            }}
+            onCompositionEnd={(e) => {
+              isComposingRef.current = false;
+              lastCompositionEndAtRef.current = Date.now();
+              const el = e.currentTarget;
+              updateAtQuery(el.value, el.selectionStart);
+              updateHashQuery(el.value, el.selectionStart);
+            }}
+            onInput={handleInput}
+            onPaste={handlePaste}
+            placeholder={
+              isStreaming && (onSteer || onFollowUp)
+                ? t("chat.queuePlaceholder")
+                : isStreaming ? t("chat.agentPlaceholder")
+                : isNarrow
+                ? (t("chat.messagePlaceholderShort") || "Message…")
+                : t("chat.messagePlaceholder")
+            }
+            rows={1}
+            style={{
+              // The card is a column: the text area keeps the height its auto-grow logic
+              // computed (`flex: 1` would be a zero basis in a column and clip it), and the
+              // control row sits under it. No inline width: the column stretches it to the
+              // card, so a horizontal margin (the card's own inset) can only inset it, never
+              // push it past the card's right edge — `width: 100%` plus a margin did exactly
+              // that, and a stray margin edit in the stylesheet reproduced it on a phone.
+              // The row gives the text the free width (`1 1 auto`); only the quote box's
+              // column keeps the auto-grown height and the card's whole width.
+              flex: compact ? "none" : "1 1 auto",
+              minWidth: 0,
+              background: "none",
+              border: "none",
+              outline: "none",
+              resize: "none",
+              color: "var(--text)",
+              fontSize: "var(--chat-content-font-size, 14px)",
+              lineHeight: 1.6,
+              fontFamily: "inherit",
+              minHeight: compact ? 96 : 24,
+              maxHeight: 200,
+              overflow: "auto",
+            }}
+          />
+
+          {/* The / @ # triggers, kept out of the placeholder: shown faintly
+              beside Send only while the card is focused and empty. */}
+          {!compact && !isNarrow && !isStreaming && value.length === 0 && (
+            <span className="composer-trigger-hint" aria-hidden="true">
+              {t(chatOnly ? "chat.composerHintChatOnly" : "chat.composerHint")}
+            </span>
+          )}
+
+          {/* The row's tail: the session controls (the wider tiers), the side chat, Send.
+              The stylesheet folds this box into the card's row (`display: contents`), so its
+              children are the row's, sharing one line with the prompt. */}
+          <div className="chat-composer-actions">
+          {/* The row's controls after the prompt: the session controls, the side chat,
+              Send. The `+` that opens a file is the row's first control — above, not
+              here — where the prompt starts. */}
         {/* Bottom bar: left | center (context) | right */}
         {/* Bottom bar: left | center (context) | right. A phone has no controls cell: its
             row is the `+`, the prompt and Send, and the chips sit under the card. */}
         {!compact && !isNarrow && <div className="chat-composer-controls" style={{
           marginTop: 0,
-          flex: "1 1 auto",
+          // The row's filler is the prompt, not the chips: the controls take their own
+          // width and shrink when the row runs out, so a one-line card stays one line.
+          flex: "0 1 auto",
           minWidth: 0,
           display: "flex",
           alignItems: "center",
           gap: 6,
         }}>
 
-          {/* LEFT: project context + model selector (idle) or steer/followup toggle (streaming) */}
-
-          {/* The chips' cell shrinks (`min-width: 0`), so the chips ellipsize instead of
-              pushing the controls out of the row. */}
-          <div style={{ flex: "0 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
-            {/* Only a new session picks its project from the composer. Once a
-                session exists, its project is fixed and the header names it, so the
-                composer row drops the chip rather than showing a second, inert one. */}
-            {showProjectChip && projectLabel && (
-              <ComposerProjectChip
-                menuRef={projectDropdownRef}
-                open={projectDropdownOpen}
-                onOpenChange={setProjectDropdownOpen}
-                label={projectLabel}
-                projectPath={projectPath}
-                isWorktree={projectIsWorktree}
-                maxWidth={isCompact ? 120 : 170}
-                projectOptions={projectOptions}
-                onProjectChange={onProjectChange}
-                onSelectProject={onSelectProject}
-              />
-            )}
-            {/* Fork: the branch of that project, right behind it, on a new-session
-                composer. It opens the project menu's branch page (the same code the
-                sidebar's "…" menu renders) with a check-out and a new-worktree
-                button on every branch. */}
-            {branchChipCwd && (
-              <ComposerBranchChip
-                cwd={branchChipCwd}
-                maxWidth={isCompact ? 110 : 150}
-                onBranchSwitched={onBranchSwitched}
-                onWorktreeCreated={onComposerWorktreeCreated}
-                onWorktreeSelected={onComposerWorktreeSelected}
-                onWorktreeRemoved={onComposerWorktreeRemoved}
-              />
-            )}
-          </div>
+          {/* LEFT: the session controls. The project and its branch are not in the row:
+              a new session picks them from the row under the card, and a session that is
+              running has nothing to pick (see `.composer-context-row` below the card). */}
 
           {/* THE CLUSTER: model + reasoning + tools preset + automation (a running
               compaction takes its own cell in the run), then the spacer, so the glyphs
@@ -3295,8 +3324,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     // word ("medium", "Think") is what the user asked to drop.
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 0,
                     padding: 0,
-                    width: "var(--control-h-lg)",
-                    height: "var(--control-h-lg)",
+                    width: "var(--composer-send-size)",
+                    height: "var(--composer-send-size)",
                     background: thinkingDropdownOpen ? "var(--bg-hover)" : "none",
                     border: "none",
                     borderRadius: "var(--radius-md)",
@@ -3381,8 +3410,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   style={{
                       display: "flex", alignItems: "center", justifyContent: "center", gap: 0,
                       padding: 0,
-                      width: "var(--control-h-lg)",
-                      height: "var(--control-h-lg)",
+                      width: "var(--composer-send-size)",
+                      height: "var(--composer-send-size)",
                       background: "color-mix(in srgb, var(--danger) 8%, transparent)",
                       border: "none",
                       borderRadius: "var(--radius-md)",
@@ -3415,8 +3444,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     // carries the attach button, the session controls and Send.
                     display: "flex", alignItems: "center", justifyContent: "center", gap: 0,
                     padding: 0,
-                    width: "var(--control-h-lg)",
-                    height: "var(--control-h-lg)",
+                    width: "var(--composer-send-size)",
+                    height: "var(--composer-send-size)",
                     background: toolDropdownOpen ? "var(--bg-hover)" : "none",
                     border: "none",
                     borderRadius: "var(--radius-md)",
@@ -3478,8 +3507,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {!isNarrow && routedModelHint}
           </div>
 
-          {/* spacer */}
-          {!isNarrow && !compact && <div style={{ flex: 1 }} />}
+          {/* No spacer: the prompt is the row's filler, so the cluster sits against Send
+              and the card's own width is spent on the text. */}
 
         </div>}
           {/* No "clear the composer" button: the text is a textarea, and selecting it and
@@ -3526,32 +3555,38 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </button>
           </div>
           </div>
-          {/* The phone's row is the prompt, the `+` and Send, so the chips a new session
-              picks before its first message — the project, and the branch of it — sit in
-              the strip under the card. Their menus open upward from here, capped to the
-              space between the strip and the header (#63). */}
-          {isNarrow && !compact && (showProjectChip || branchChipCwd || routedModelHint) && (
+          {/* The card is the row: the `+`, the prompt, Send. Session controls sit below it,
+              not inside it — on a phone the chips strip belongs to the wrap, under the card
+              (that is what `app/native-theme.css` selects with `.chat-composer-wrap:has(> .composer-context-row)`),
+              so the card is one row on a phone exactly as on a desktop. The strip's menus
+              open upward from here, capped to the space between the strip and the header (#63). */}
+          </div>
+          {/* The row under the card, on every tier: the project a new session picks and the
+              branch of it. They are not in the composer's row — the row is the `+`, the
+              prompt, Send — and a running session hides them. The row also carries the
+              model line on a phone, which is news, not a picker, so it stays. */}
+          {!compact && ((pickersIdle && (showProjectChip || branchChipCwd)) || routedModelHint) && (
             <div className="composer-context-row">
-              {showProjectChip && projectLabel && (
+              {pickersIdle && showProjectChip && projectLabel && (
                 <ComposerProjectChip
                   menuRef={projectDropdownRef}
                   open={projectDropdownOpen}
                   onOpenChange={setProjectDropdownOpen}
-                  // The strip is the card's width; the folder name is what identifies a
+                  // The row is the card's width; the folder name is what identifies a
                   // project (the owner prefix ate the whole chip on a phone).
-                  label={projectLabel.split("/").pop() || projectLabel}
+                  label={isNarrow ? (projectLabel.split("/").pop() || projectLabel) : projectLabel}
                   projectPath={projectPath}
                   isWorktree={projectIsWorktree}
-                  maxWidth={168}
+                  maxWidth={isNarrow ? 168 : 200}
                   projectOptions={projectOptions}
                   onProjectChange={onProjectChange}
                   onSelectProject={onSelectProject}
                 />
               )}
-              {branchChipCwd && (
+              {pickersIdle && branchChipCwd && (
                 <ComposerBranchChip
                   cwd={branchChipCwd}
-                  maxWidth={150}
+                  maxWidth={isNarrow ? 150 : 200}
                   onBranchSwitched={onBranchSwitched}
                   onWorktreeCreated={onComposerWorktreeCreated}
                   onWorktreeSelected={onComposerWorktreeSelected}
@@ -3561,8 +3596,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               {isNarrow && routedModelHint}
             </div>
           )}
-          {/* Session controls sit below the input card, not inside it. */}
-          </div>
 
         {/* Bash mode status label */}
         {bashMode && (

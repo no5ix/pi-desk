@@ -16,6 +16,7 @@ import { formatTurnDurationCompact } from "@/lib/turn-duration";
 import { UNPARSED_TOOL_CALL_CUSTOM_TYPE } from "@/lib/unparsed-tool-call";
 import { ClockIcon } from "./ClockIcon";
 import { ProcessDetailsContext } from "./process-details-context";
+import { MessageBranchAction } from "./message-branch-action";
 import { getAssistantErrorMessage, getThinkingPreview, hasAssistantAnswer, isAssistantTruncated, isEmptyThinkingBlock } from "@/lib/message-display";
 import { fillContentGaps } from "@/lib/assistant-content";
 import { isThinkingLevelRefusal, refusalAllowedValues } from "@/lib/thinking-level-error";
@@ -620,9 +621,9 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onEditContent, edi
                   onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
                   onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; }}
                 >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="15 10 20 15 15 20" />
-                    <path d="M4 4v7a4 4 0 0 0 4 4h12" />
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.128 3.58a1 1 0 0 0 1.212 1.212l3.58-1.128a2 2 0 0 0 .83-.5Z" />
+                    <path d="m15 5 4 4" />
                   </svg>
                    {t("i18n.editFromHere")}
                 </button>
@@ -729,11 +730,10 @@ function AssistantMessageView({
   const unansweredTruncation = truncated && !hasAssistantAnswer(message);
   const [copied, setCopied] = useState(false);
   // A finished, saved reply has an entry to branch from; the streaming tail has none
-  // (its entry is not on disk, and forking it would copy a half answer). Inside a turn's
-  // "Process details" the chip is gone too: the group is the record of how a turn worked,
-  // and a step's intermediate reply is not what a new chat continues from — the report
-  // below the group is, and it keeps its own chip. Opening the group and meeting a chip
-  // under every step is a column of buttons that all fork the same conversation.
+  // (its entry is not on disk, and forking it would copy a half answer). The caller hands
+  // the callback to the row that ENDS a turn — the report — so every turn has exactly one
+  // branch control, below the blocks it produced. A step inside the turn is never handed
+  // it: that was a column of identical buttons that all fork the same conversation.
   const insideProcessDetails = useContext(ProcessDetailsContext);
   const canBranchInNewChat = !isStreaming && !!entryId && !!onBranchInNewChat && !insideProcessDetails;
   const streamStartRef = useRef<number | null>(null);
@@ -1044,39 +1044,7 @@ function AssistantMessageView({
             answer — the report included — and this chat keeps running. The footer's
             own row, because the report is what a new chat wants to continue from. */}
         {canBranchInNewChat && (
-          <button
-            onClick={() => { onBranchInNewChat!(entryId!); }}
-            disabled={forking}
-            title={forking ? t("i18n.creatingSession") : t("i18n.branchInNewChatTitle")}
-            className="message-assistant-action message-branch-action"
-            aria-live="polite"
-            style={{
-              display: "flex", alignItems: "center", gap: 4,
-              padding: "3px 8px", height: "var(--control-h-sm)",
-              background: "none", border: "none",
-              borderRadius: "var(--radius-sm)",
-              color: forking ? "var(--accent)" : "var(--text-dim)",
-              cursor: forking ? "not-allowed" : "pointer",
-              fontSize: "var(--fs-micro)", fontWeight: "var(--fw-regular)",
-              whiteSpace: "nowrap",
-              transition: "color var(--dur-fast) var(--ease-native)",
-            }}
-            onMouseEnter={(e) => { if (!forking) e.currentTarget.style.color = "var(--accent)"; }}
-            onMouseLeave={(e) => { if (!forking) e.currentTarget.style.color = "var(--text-dim)"; }}
-          >
-            {/* A fork: two heads above, one trunk below — the reply splits into a
-                session of its own. The same mark the sidebar puts on a forked row
-                (`.session-item-fork-glyph`), so the chip and the row it creates share
-                one shape. Thinner stroke than the row's: at 12px on a filled chip the
-                2px glyph reads heavy next to Copy's 1.75. */}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="6" cy="6" r="2.5" />
-              <circle cx="18" cy="6" r="2.5" />
-              <circle cx="12" cy="18" r="2.5" />
-              <path d="M6 8.5V10a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V8.5M12 13v2.5" />
-            </svg>
-            <span className="message-action-label">{forking ? t("i18n.creating") : t("i18n.branchInNewChat")}</span>
-          </button>
+          <MessageBranchAction forking={forking} onBranch={() => { onBranchInNewChat!(entryId!); }} />
         )}
         {/* How long this turn took, between Copy and the timestamp: the task is over
             when the reply is, so it appears with the finished footer. The compact
@@ -2087,11 +2055,24 @@ function CompactionMessageView({ message, kind = "compaction", onContentToggle }
         </button>
 
         {expanded && (
-        <div style={{ padding: "11px 13px 12px" }}>
+        <div
+          className="compaction-card-body"
+          style={{
+            padding: "11px 13px 12px",
+            // The summary is read as prose: the reply's type (the app's UI face, its
+            // character spacing, its leading) at the thinking card's size. The CSS
+            // rule for `.markdown-compaction-message` carries the same values, so the
+            // title above and the intro line below are measured against one body.
+            fontFamily: "var(--font-ui)",
+            fontSize: "var(--fs-caption)",
+            letterSpacing: "normal",
+            lineHeight: 1.7,
+          }}
+        >
           <div style={{ color: "var(--text)", fontSize: "calc(15px + var(--chat-font-size-offset, 0px))", fontWeight: "var(--fw-bold)", lineHeight: 1.35 }}>
              {t(kind === "branch_summary" ? "i18n.branchSummaryTitle" : "i18n.conversationCompacted")}
           </div>
-          <div style={{ marginTop: 3, marginBottom: 10, color: "var(--text)", fontSize: "calc(14px + var(--chat-font-size-offset, 0px))", lineHeight: 1.5 }}>
+          <div style={{ marginTop: 3, marginBottom: 10, color: "var(--text)" }}>
              {t(kind === "branch_summary" ? "i18n.branchSummaryDescription" : "i18n.compactionDescription")}
           </div>
           {parsedSummary.body ? (

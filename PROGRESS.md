@@ -1016,3 +1016,150 @@ fold animates; (5) the sidebar's subagent icon a little bigger.
 size, the overlay plate's two alphas), `docs/agents/sessions.md` (the Fork
 bullet), `docs/agents/fork-sessions.md` (the card's band and animation, the
 prompt box's caps), `docs/agents/client-platform.md` (the overlay's controls).
+
+## 2026-11-26 — one branch chip per chat; the header's head at 19px (`fix/flat-chat-blocks`)
+
+**Task** — two asks: (1) remove every "Branch in new chat" button except the
+one above the prompt / below the last message; (2) make the subagent icon on
+the session title a little bit bigger.
+
+**Implementation**
+- `components/ChatWindow.tsx`: `onBranchInNewChat` is handed to exactly one row,
+  `idx === lastAssistantIndex`, so a conversation carries a single branch
+  control (the newest reply: below the last message, above the composer). Every
+  finished turn used to draw one in its footer, and a running turn's unfolded
+  tail drew one per step — a long task became a column of identical buttons that
+  all fork the same conversation. The old terms survive as part of the same
+  gate: during a shell command, and for a not-yet-saved chat, the row is handed
+  `undefined`.
+- `components/MessageView.tsx`: the gate expression is untouched
+  (`!isStreaming && !!entryId && !!onBranchInNewChat && !insideProcessDetails`);
+  its comment now says the caller picks one row.
+- `app/native-theme.css`: the phone rule is unchanged (the chip is not drawn
+  under 640px); only its comment matches the one-chip reality.
+- `components/TopbarSubagents.tsx`: the family's leading head 17 → 19px with the
+  stroke 1.55 → 1.4, which paints the same 1.1px line (the size grows, the ink
+  does not); the chip is 19 → 21px tall and `placeAgentsPanel` follows its box.
+  The bucket glyphs (check, stop, running head) and the side-chat bubble stay 11px.
+
+**Tests** — `components/MessageView.branch-in-new-chat.test.mjs` (the one-row
+gate), `hooks/useAgentSession.test.mjs` (the two asserts that pinned "every
+finished reply"), `components/AppShell.topbar-branch.test.mjs` (the head at
+19/1.4, the buckets still 11), `app/native-theme-phone-pass.test.mjs` (the
+phone rule's comment).
+
+**Docs** — `docs/agents/fork-ui.md` (the one-chip paragraph; the head's size and
+stroke, English and Chinese), `docs/agents/sessions.md` (the Fork bullet).
+
+**Verification**
+- `node --test` over app/lib/scripts/components/hooks/relay/public: 4895 tests,
+  4887 pass, **7** fail. None of the seven is this task's: `app/css-variables`,
+  `scripts/upstream-css-baseline` (globals.css), `SessionSidebar` (pinned S2),
+  `AgentsConfig`, two `ChatInput`, `MobilePwaLayout`. A clean `HEAD` worktree
+  (`2f78d4a2`) of those seven files reproduces **the same 7** failures, so the
+  set is the tree's own in-progress work, not this change.
+- Targeted: 29 tests over the chip and topbar files, 29 pass;
+  `hooks/useAgentSession.test.mjs` 44/44.
+- `node_modules/.bin/tsc --noEmit` clean; eslint clean on the touched sources.
+- `node e2e/agents-panel-card.mjs` and `node e2e/subagent-run-glyph.mjs` pass.
+  `e2e/topbar-project-row.mjs` fails "leaving closes the tip"; the same run with
+  the head back at 17px fails identically, so the head's size is not the cause
+  (it is the branch tip's hover, in the tree's WIP).
+- Live Chromium on :30141: sessions with 4 and with 8 assistant footers show
+  **1** `.message-branch-action` — the newest reply, in view above the composer;
+  the header's head measures 19×19 with `stroke-width="1.4"` inside a 21px chip.
+
+## 2026-11-27 — the branch chip is the conversation's last control, interrupted tail included (`fix/flat-chat-blocks`)
+
+**Task** — the rule the user set: one "Branch in new chat" below the message/tool call
+above the prompt and below the last message/tool call. A turn cut short (aborted tool
+call, interrupted reply, an `Error: server is shutting down` line) had no chip at all:
+its only rows are the turn's Process details steps, folded inside the card, so no footer
+was drawn below them.
+
+**Implementation**
+- `components/message-branch-action.tsx` (new) — the chip is one component, used in a
+  reply's footer and in the tail row. Its shape left the inline style object and lives in
+  `.message-branch-action` (with `:hover` / `:disabled` ink); the component ships no
+  styling, no JS hover handler (AGENTS.md: reusable classes, not inline styles).
+- `components/ChatWindow.tsx` — `renderProcessView` marks a step with `inProcessCard`
+  (`index < foldCount`), and `renderMessage` sets `branchFooterRows` when the newest
+  assistant row is drawn outside the card (a report, or a running turn's unfolded step:
+  that one carries the footer chip). When no row drew one, the same component is rendered
+  in `.chat-branch-tail` — the conversation's last element, above the prompt — forking at
+  `entryIds[lastAssistantIndex]`, i.e. through the aborted call / interrupted reply /
+  error line. `isNew` and `bashRunning` still suppress it.
+- `app/native-theme.css` — `.message-branch-action` (shape, hover, Creating…),
+  `.chat-branch-tail` (the row, flex-wrap, `margin-top: 4px`) and its plate
+  (`--bg-subtle`, hover `--bg-selected`), since the footer fill is scoped to
+  `.message-assistant`; the 640px block hides the chip **and** the now-empty row.
+- `components/MessageView.tsx` — the footer renders `<MessageBranchAction …>`; the gate
+  `canBranchInNewChat` is unchanged.
+
+**Tests** — `components/MessageView.branch-in-new-chat.test.mjs` (the shared component,
+its CSS shape, the footer, the one-row gate, `inProcessCard`, the tail row and its
+place after `rendered.slice(startIndex)`, the phone pair),
+`components/MessageView.turn-duration.test.mjs` (the footer order reads
+`<MessageBranchAction`), `app/native-theme-phone-pass.test.mjs` (the chip's class is now
+in its own file).
+
+**Docs** — `docs/agents/fork-ui.md` (the chip's two places, the component, the CSS),
+`docs/agents/sessions.md` (the Fork bullet).
+
+**Verification**
+- Full `node --test` suite: 4905 tests, 4897 pass, **7** fail — the tree's own
+  in-progress set (`app/css-variables`, `scripts/upstream-css-baseline`,
+  `SessionSidebar` pinned S2, `AgentsConfig`, two `ChatInput`, `MobilePwaLayout`),
+  reproduced at a clean `HEAD` worktree. Nothing from this change.
+- Targeted: 94 tests over the chip, footer, process-details, topbar and phone files, 94
+  pass. `node_modules/.bin/tsc --noEmit` clean; eslint clean on the touched sources.
+- Live Chromium on :30141, 14 sessions (40–1462 messages): **exactly 1**
+  `.message-branch-action` in every one, **0** inside a `.process-details` card, and 3
+  sessions with a turn that has no report show the visible tail chip under the card
+  (`Process details · 2 messages · 2 tool calls` → `Branch in new chat`, 24px row, 16px
+  under the card, above the composer).
+
+## 2026-11-27 — one branch chip per TURN, not per chat (`fix/flat-chat-blocks`)
+
+**The rule, as the user wrote it:**
+`[thinking] / [tool call] / [message] / [report] / [any block, interrupted or aborted]`
+→ `[branch in new chat]` → `[next prompt]` → the same again.
+My previous pass read it as one chip per conversation and gated the callback on
+`idx === lastAssistantIndex`, which took the chip away from every finished turn whose
+report sat under a newer prompt (the report's footer read `Copy 39m9s 08:10 PM` with no
+chip). Corrected: the chip is **per turn**, on the row that turn ends on.
+
+**Implementation** (`components/ChatWindow.tsx`)
+- `renderMessage` takes a `branchRow` option; only the report push passes
+  `branchRow: true`, so `onBranchInNewChat={options.branchRow && !bashRunning && !isNew ? … : undefined}`.
+  The step renderer (`renderProcessView`) never hands it out — no chip per step, folded or
+  unfolded — and the `inProcessCard` machinery from the last pass is gone with it.
+- A turn with no report (aborted tool call, interrupted reply, `Error:` line — every one
+  of its rows folded inside the Process details card) pushes a `.chat-branch-tail` row
+  after its last row, keyed `branch-tail-${messageKeys[finalAssistantIdx]}`, forking at
+  `entryIds[finalAssistantIdx]`: the copy runs through the entry the turn stopped at.
+- `components/MessageView.tsx` / `components/message-branch-action.tsx`: comments now say
+  the caller picks the row that ENDS a turn.
+
+**Tests** — `components/MessageView.branch-in-new-chat.test.mjs` (the report row is the
+`branchRow`; the step renderer never is; the tail row is per turn and keyed; the row's CSS
+and the phone pair), `hooks/useAgentSession.test.mjs` (the two gate asserts, reworded to
+per-turn).
+
+**Docs** — `docs/agents/fork-ui.md` (the rule in the chat's own shape; what is not
+allowed), `docs/agents/sessions.md` (the Fork bullet).
+
+**Verification**
+- Live Chromium on :30141, 12 sessions (75–1462 messages), walking the rendered rows:
+  **0** chips inside a `.process-details` card, **no row with two chips**, and every
+  Process details card is followed by exactly one chip — a report footer
+  (`Copy | Branch in new chat | 32m48s | 08:55 PM`) when the turn ends on an answer, a
+  `chat-branch-tail: Branch in new chat` row when it does not (7 cards → 7 tail rows in
+  the 886-message session). Screenshot of the live session: blocks →
+  `Branch in new chat` → `Running bash…` → composer.
+- Targeted: 77 tests over the chip, footer, process-details, phone and session-hook
+  files, 77 pass. `node_modules/.bin/tsc --noEmit` clean.
+- Full suite: 4905 tests, 4897 pass, **7** fail — the tree's own in-progress set
+  (`app/css-variables`, `scripts/upstream-css-baseline`, `SessionSidebar` pinned S2,
+  `AgentsConfig`, two `ChatInput`, `MobilePwaLayout`), the same seven a clean `HEAD`
+  worktree fails. None is this change.

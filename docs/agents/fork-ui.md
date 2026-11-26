@@ -341,11 +341,13 @@ dialog open while deleting, with local errors and retry, and restore row focus o
 
 Session rows render the "…" action menu when `(hovered || touchMode)` — `touchMode` is a post-mount `matchMedia("(hover: none)")` check, so hover styling is untouched on desktop and rename/delete stay reachable on touch. The composer's single circular action shows Stop while a run is active and the draft is empty; typing switches it to queued Send, including on narrow screens. A live subagent run counts as a run: a background run leaves the main session idle, and an empty card that offered a send arrow while the header read `↻1` sent the user into the Agents panel for the only Stop in the app — so `subagentsRunning` (the family's running set, `components/AppShell.tsx`) puts the square back, and `stopRuns` calls the session's abort for a live turn (its signal already ends the children it waits on) or the per-run `POST /api/subagents/[id] {action:"abort"}` when the session is idle. Escape follows the same order. Side chats are conversations the user drives, never runs to stop, so they stay out of the set. Escape remains available to stop while drafting. Rename/delete failures use the global shell notice shelf (`appNotify.error` with `sidebar.renameFailed` / `sidebar.deleteFailed`) instead of being swallowed.
 Message-row copy/edit actions and a reply's footer chips (Copy, "Branch in new chat") use CSS hover/focus-within reveal instead of JS hover state, and are always visible under `(hover: none)`. They must remain pointer-enabled when focused so keyboard tabbing does not land on invisible controls. The footer's chips share the `.message-assistant-action` class (the Copy chip carries both it and `.message-copy-action`), so one reveal and one fill rule covers the row; the row wraps (`flex-wrap`) because Copy plus "Branch in new chat" plus the duration and the time is wider than a phone, and its labels are `.message-action-label` spans, dropped under 380px where the glyph and the title carry the action.
-While a session runs, in-session "Edit from here" stays visible but disabled with the Esc hint; a finished reply's "Branch in new chat" stays available, because `fork_branch` copies the finished entries to an independent file and never touches the running session.
+While a session runs, in-session "Edit from here" stays visible but disabled with the Esc hint; the newest reply's "Branch in new chat" stays available, because `fork_branch` copies the finished entries to an independent file and never touches the running session.
 
-**A turn's "Process details" carries no branch chip at all** (`ProcessDetailsContext`, `components/process-details-context.ts` — the same context a thinking card reads): the group is the record of how a turn worked, and a step's intermediate reply is not what a new chat continues from — the report under the group is, and it keeps its own chip. Opening the group used to reveal a chip under every step: a column of identical buttons that all fork the same conversation, on rows with no text of their own, so the chip was the row's whole content. The gate is one expression, `canBranchInNewChat` in `components/MessageView.tsx`, which also covers the streaming tail (no entry on disk to copy) and a render with no session (a side-chat preview).
+**One chip per turn, below the blocks that turn produced.** The rule the user set is the shape of the chat: `[thinking] / [tool call] / [message] / [report] / [any block, interrupted or aborted]` → **`Branch in new chat`** → `[next prompt]`. `components/ChatWindow.tsx` hands `onBranchInNewChat` to one row per turn — `options.branchRow`, set only on the row the turn ends on, the report. A turn that ends **without a report** — an aborted tool call, an interrupted reply, an `Error:` line — has all of its rows folded inside the Process details card, so nothing below carries a footer: the same component (`components/message-branch-action.tsx`) is drawn in a row of its own, `.chat-branch-tail`, pushed under the card and forking at `entryIds[finalAssistantIdx]` — the copy runs through the entry the turn stopped at, so a turn cut short is continuable exactly where it stopped. What is **not** allowed is a chip per step: the old gate let every step of a turn (folded in the card, and the running turn's unfolded tail) answer the same callback, and a long task became a column of identical buttons that all fork the same conversation. The gate keeps its other terms — during a shell command, and for a not-yet-saved chat with no file to copy, no row is handed the callback.
 
-Its glyph is a **fork**: two heads above one node — the sidebar's `.session-item-fork-glyph` shape, at the chip's 1.75 stroke so it matches Copy's glyph on the filled plate — because the chip creates exactly the row that mark labels in the tree. The rail it replaces (one long line, one arc, two dots) read as "branch" only to someone who reads git diagrams, and it leaned to one side of the chip. `components/MessageView.branch-in-new-chat.test.mjs` pins the gate's four terms and the glyph's circles; the live probe and the process-details tests count zero `.message-branch-action` inside `.process-details`.
+**A turn's "Process details" carries no branch chip of its own** (`ProcessDetailsContext`, `components/process-details-context.ts` — the same context a thinking card reads): the group is the record of how a turn worked, and a step's intermediate reply is not what a new chat continues from — the row the turn ends on is. Opening the group used to reveal a chip under every step: a column of identical buttons that all fork the same conversation, on rows with no text of their own, so the chip was the row's whole content. The gate is one expression, `canBranchInNewChat` in `components/MessageView.tsx`, which also covers the streaming tail (no entry on disk to copy) and a render with no session (a side-chat preview); the caller decides the row, and a step is never handed the callback at all.
+
+Its glyph is a **fork**: two heads above one node — the sidebar's `.session-item-fork-glyph` shape, at the chip's 1.75 stroke so it matches Copy's glyph on the filled plate — because the chip creates exactly the row that mark labels in the tree. The rail it replaces (one long line, one arc, two dots) read as "branch" only to someone who reads git diagrams, and it leaned to one side of the chip. The chip is one component in both places, with no styling of its own: its shape is `.message-branch-action` in the sheet, its plate the footer rule (`.chat-branch-tail` takes the plate `.message-assistant` normally supplies), and a phone under 640px hides the chip and the empty row with it. `components/MessageView.branch-in-new-chat.test.mjs` pins the component, the footer, the one-row gate, the tail row and the glyph's circles; the live probe and the process-details tests count zero `.message-branch-action` inside `.process-details`.
 
 ## Global operation notices
 Persistent operations use `persistent: true` and replace their progress notice with
@@ -616,18 +618,19 @@ them is going right now". `AppShell.topbar-branch.test.mjs` asserts the head's p
 the sidebar, the panel and the Settings icon, and that the running eyes stay `M8 13h2` /
 `M14 13h2`.
 
-**The leading head is drawn well above the buckets (17px vs 11px).** At the buckets' size
+**The leading head is drawn well above the buckets (19px vs 11px).** At the buckets' size
 the head read smaller than the count beside it, so the row's label looked like one more
-bucket; the user asked for the leading robot, not for the running one. It carries a light
-1.55 stroke: at 17px that paints a 1.1px line, a shade heavier than the 11px glyphs' 0.87px,
-which is what a label wants, while the 1.75 this file uses just past 12px would paint 1.24px
-and turn the head bold next to them. The state glyphs — the check, the stop, the running
-head — and the side-chat bubble stay at 11px: a bucket's glyph belongs to the number it
-counts, and `AgentRunningIcon` is the Agents panel's row glyph at its default size. The chip
-grows with the head (15px → 19px tall) and `placeAgentsPanel` reads the chip's live box, so
-the card follows it. The test pins the head at `width="17" height="17"` /
-`strokeWidth="1.55"` and the running head's `{ size = 11 }` default, so the next tweak
-cannot grow the buckets by accident.
+bucket; the user asked for the leading robot, not for the running one, and then for that
+head a little bigger again. It carries a light 1.4 stroke: at 19px that paints the same
+1.1px line 1.55 painted at 17px — the size grows, the ink does not — a shade heavier than
+the 11px glyphs' 0.87px, which is what a label wants, while the 1.75 this file uses just
+past 12px would paint 1.4px and turn the head bold next to them. The state glyphs — the
+check, the stop, the running head — and the side-chat bubble stay at 11px: a bucket's
+glyph belongs to the number it counts, and `AgentRunningIcon` is the Agents panel's row
+glyph at its default size. The chip grows with the head (15px → 21px tall) and
+`placeAgentsPanel` reads the chip's live box, so the card follows it. The test pins the
+head at `width="19" height="19"` / `strokeWidth="1.4"` and the running head's
+`{ size = 11 }` default, so the next tweak cannot grow the buckets by accident.
 
 **No rule is drawn between the two groups.** A vertical divider inside a single control
 reads as two controls, which is exactly what the row looked like; the 10px gap plus each
@@ -1132,7 +1135,7 @@ worktree 自己的路径没丢：项目 tip 的 `Path` 行就是正在工作的�
 
 **头部行的顺序是 `[文件夹] 项目  [分支] 分支  [机器人] ✓2 ⚠1 ↻3  [侧聊] 2 ↻1  [时钟] 11m5s  [上下文]`。** 家族运行的计数紧跟在分支后面（它们是工作的状态），时钟是这段状态的尾巴，上下文环收尾；时钟曾排在计数之前，整行读起来像以标签结束。`components/TopbarSubagents.tsx` 是**一个按钮、两个分组**：一个家族含两种成员（ADR 0007），`countSubagents` 与 `countSideChats` 分开计数 —— 委派运行与用户自己开的会话是两件事，混在一起的 “6 runs” 无法据以行动。每组以该类型在别处已使用的图标开头（Agents 面板的机器人头、输入框与侧栏的圆圈加号）。两组打开同一个面板，所以放在**一个**控件里：两个 `role="button"` 兄弟节点等于同一动作两个目标，手机上还多一次 Tab。可访问名是两句拼在一起。
 
-**引导的机器人头比计数的图标大很多（17px 对 11px）**：在 11px 时它比旁边的数字还小，行首的标签看起来像一个计数桶；用户要的是引导图标，不是运行中的图标。描边用较轻的 1.55：在 17px 上画出 1.1px 的线，比 11px 图标的 0.87px 略重（标签正该如此），而本文件在 12px 之后用的 1.75 会画出 1.24px，紧挨着 11px 图标时显粗。计数图标（对勾、停止、运行头）与侧聊气泡保持 11px —— 计数图标的尺寸属于它所计数的那个数字，而 `AgentRunningIcon` 是 Agents 面板行图标的默认尺寸。药丸随之变高（15px → 19px），`placeAgentsPanel` 读的是药丸的实时盒子，面板会跟着走。测试钉住 `width="17" height="17"` 与 `strokeWidth="1.55"`，以及运行头的 `{ size = 11 }` 默认值（该图标另有 `pulse`，默认 `true`：Agents 面板的 “Current” 借同一颗头，但以 `pulse={false}` 静止地画 —— 闪烁属于正在运行的执行）。
+**引导的机器人头比计数的图标大很多（19px 对 11px）**：在 11px 时它比旁边的数字还小，行首的标签看起来像一个计数桶；用户要的是引导图标，不是运行中的图标，之后又请把这个头再放大一点。描边用较轻的 1.4：在 19px 上画出 1.55 在 17px 时同样的 1.1px 线 —— 变的是尺寸，不是墨色 —— 比 11px 图标的 0.87px 略重（标签正该如此），而本文件在 12px 之后用的 1.75 会画出 1.4px，紧挨着 11px 图标时显粗。计数图标（对勾、停止、运行头）与侧聊气泡保持 11px —— 计数图标的尺寸属于它所计数的那个数字，而 `AgentRunningIcon` 是 Agents 面板行图标的默认尺寸。药丸随之变高（15px → 21px），`placeAgentsPanel` 读的是药丸的实时盒子，面板会跟着走。测试钉住 `width="19" height="19"` 与 `strokeWidth="1.4"`，以及运行头的 `{ size = 11 }` 默认值（该图标另有 `pulse`，默认 `true`：Agents 面板的 “Current” 借同一颗头，但以 `pulse={false}` 静止地画 —— 闪烁属于正在运行的执行）。
 
 **两组之间不画分隔线**：一个按钮内部出现竖线，会被读成两个控件（就是用户指出的样子）。
 间隔只靠 10px `margin-left` 和每组自己的引导图标（机器人 / 圆圈加号）；测试断言兄弟规则只有 `margin-left: 10px`、**没有** `border-left`，且不存在 `.app-topbar-family-group--side::before`。

@@ -23,12 +23,17 @@ test("the compaction card is collapsed when a session opens, and its header togg
     "one click toggles it, and the scroll viewport is told first so the page keeps its place");
   assert.match(card, /title=\{t\(expanded \? "chat\.collapseCompaction" : "chat\.expandCompaction"\)\}/);
   assert.match(card, /className="compaction-card-chevron"\s+data-expanded=\{expanded \? "true" : "false"\}/);
-  assert.match(card, /\{expanded && \(\s*<div style=\{\{ padding: "11px 13px 12px" \}\}>/,
+  assert.match(card, /\{expanded && \(\s*<div\s+className="compaction-card-body"\s+style=\{\{\s*padding: "11px 13px 12px",[\s\S]*?\}\}\s*>/,
     "the body, the summary and the file lists are what collapses");
+  assert.match(card, /fontFamily: "var\(--font-ui\)",\s*fontSize: "var\(--fs-caption\)",\s*letterSpacing: "normal",\s*lineHeight: 1\.7,/,
+    "the body carries the reply's type at the thinking card's size, so the intro line and the summary are one prose");
   assert.match(card, /\{kind === "branch_summary" \? "branch summary" : "compaction"\}/,
     "the label and the time stay visible while it is closed");
   assert.match(css, /\.compaction-card-header:hover \{\s*background: var\(--bg-hover\);/);
   assert.match(css, /\.compaction-card-header:focus-visible \{/);
+  // One plate, header and body: the flat layer fills both with the same token.
+  assert.match(css, /\.compaction-card-header,\s*\.compaction-card-body \{\s*background: var\(--bg-subtle\) !important;/,
+    "the opened summary wears the header's background, so the card is one tinted note");
   assert.match(css, /\.compaction-card-chevron\[data-expanded="true"\] \{\s*transform: rotate\(90deg\);/);
 });
 

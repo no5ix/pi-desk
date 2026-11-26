@@ -54,6 +54,8 @@ test("a reply's blocks are told apart by fill, never by an outline", () => {
   }
   // The collapsed process card sits on the page's own canvas, so its fill carries it.
   assert.match(declared(".process-details-trigger", "background").join("\n"), /background: var\(--bg-subtle\) !important/);
+  // The compaction card's opened body wears the header's fill: one tinted note, not a strip over a bare body.
+  assert.match(declared(".compaction-card-body", "background").join("\n"), /background: var\(--bg-subtle\) !important/);
   // The file list and the fold strip had a border and a fill; the fill stays.
   assert.match(declared(".compaction-file-list", "background").join("\n"), /background: var\(--bg-panel\)/);
   assert.match(declared(".markdown-code-fold", "background").join("\n"), /background: var\(--bg-panel\)/);

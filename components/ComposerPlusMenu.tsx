@@ -117,7 +117,7 @@ export function ComposerPlusMenu({
     + (summarizationRetry ? ` · ${t("chat.compactingRetry", { attempt: summarizationRetry.attempt, max: summarizationRetry.maxAttempts })}` : "");
 
   return (
-    <div ref={menuRef} style={{ position: "relative", display: "flex" }}>
+    <div ref={menuRef} className="composer-plus-anchor">
       <button
         type="button"
         className="native-toolbar-button composer-plus-button"

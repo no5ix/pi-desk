@@ -53,10 +53,11 @@ const server = createServer((req, res) => {
 const chatInput = await readFile("components/ChatInput.tsx", "utf8");
 for (const needle of [
   'className="chat-composer-editor"',
-  'flexDirection: "column"',
-  'alignItems: "stretch"',
+  'data-inline={compact ? undefined : "true"}',
+  'flexDirection: compact ? "column" : "row",',
+  'alignItems: compact ? "stretch" : "flex-end",',
   'className="chat-input-textarea"',
-  'flex: "none",',
+  'flex: compact ? "none" : "1 1 auto",',
   'className="chat-composer-actions"',
   'className="native-toolbar-button composer-attach-button"',
   'className="chat-composer-controls"',
@@ -93,6 +94,10 @@ const measure = () => {
       return { left: parseFloat(s.paddingLeft) + parseFloat(s.borderLeftWidth), right: parseFloat(s.paddingRight) + parseFloat(s.borderRightWidth) };
     })(),
     actions: rect(actions),
+    plus: (() => {
+      const el = document.querySelector(".composer-plus-button, .composer-attach-button");
+      return el ? rect(el) : null;
+    })(),
     controls: (() => {
       const el = document.querySelector(".chat-composer-controls");
       return { ...rect(el), display: getComputedStyle(el).display };
@@ -132,16 +137,19 @@ for (const state of ["rest", "keyboard"]) {
   const cardRightInner = m.card.right - m.insetRight;
   const cardLeftInner = m.card.left + m.inset;
 
-  assert.equal(m.actions.w > 0, true, `${state}: the control row has a width`);
+  assert.ok(m.plus && m.plus.w > 0 && m.plus.h > 0, `${state}: the row's first control is the \`+\``);
+  assert.ok(m.send.w > 0 && m.send.h > 0, `${state}: Send has a box`);
   // Send stays in the card's bottom-right corner, concentric with its arc.
   assert.ok(Math.abs(m.send.right - cardRightInner) <= 1.5,
     `${state}: Send is at the card's right edge (${Math.round(m.send.right)} of ${Math.round(cardRightInner)})`);
   assert.ok(Math.abs(m.send.bottom - m.card.bottom + m.insetRight) <= 2,
     `${state}: Send sits on the card's bottom edge (${Math.round(m.send.bottom)} of ${Math.round(m.card.bottom)})`);
   assert.ok(Math.abs(m.sendSize.w - m.sendSize.h) < 0.6, `${state}: Send stays circular`);
-  // The row never packs into the middle of the card: the controls it keeps start at the
-  // left inset.
-  assert.ok(m.actions.left >= cardLeftInner - 1.5, `${state}: the row starts at the card's inset`);
+  // The row is not packed into the middle of the card: it starts at the card's inset, with
+  // the text in its own column between the `+` and Send.
+  assert.ok(m.plus.left >= cardLeftInner - 1.5, `${state}: the row starts at the card's inset`);
+  assert.ok(m.textarea.left >= m.plus.right - 0.5 && m.textarea.right <= m.send.left + 0.5,
+    `${state}: the text keeps its column, the \`+\` to its left and Send to its right`);
   // The text area is inside the card, and as wide as the box it is stretched in. That
   // box is `.chat-composer-editor`'s content: the card's padding, then 4px of editor
   // padding on the left (the card's own inset), so measuring against the card's box
@@ -159,8 +167,12 @@ for (const state of ["rest", "keyboard"]) {
   const contentWidth = editorRight - editorLeft - m.textareaMargin.left - m.textareaMargin.right;
   assert.ok(m.textarea.right <= editorRight + 0.5,
     `${state}: the text area does not pass the card's right edge (${Math.round(m.textarea.right)} of ${Math.round(editorRight)})`);
-  assert.ok(Math.abs(m.textarea.w - contentWidth) <= 1,
-    `${state}: the text area is the card's content width, its own inset counted (${Math.round(m.textarea.w)} of ${Math.round(contentWidth)})`);
+  // The text is the row's filler: it never outgrows the card's content box, and it is not
+  // the browser's 20-character default left under the controls.
+  assert.ok(m.textarea.w <= contentWidth + 1,
+    `${state}: the text stays inside the card's content (${Math.round(m.textarea.w)} of ${Math.round(contentWidth)})`);
+  assert.ok(m.textarea.w >= contentWidth * 0.35,
+    `${state}: the text fills the row, not a 20-character box (${Math.round(m.textarea.w)} of ${Math.round(contentWidth)})`);
   assert.ok(m.scrollWidth <= m.viewport, `${state}: the page does not scroll sideways (${m.scrollWidth} of ${m.viewport})`);
 
   if (state === "keyboard") {
@@ -177,19 +189,24 @@ for (const state of ["rest", "keyboard"]) {
       }
     }
     await page.screenshot({ path: `${out}/keyboard.png`, clip: { x: 0, y: Math.max(0, m.card.y - 8), width: 390, height: m.card.h + 16 } });
-    // The control pass: the corner is bought, not given. Two rules hold it — the strip's
-    // fill (`flex: 1 1 auto`, the row's flex filler) and Send's `margin-left: auto` — so
-    // take both away and the row packs to the left. Without this, the checks above could
-    // pass on a card that is simply narrow.
-    await page.addStyleTag({ content: ".chat-composer-actions > .chat-composer-controls { flex: 0 0 auto !important; margin-right: 0 !important; } .chat-composer-actions > .composer-send-button { margin-left: 0 !important; }" });
+    // The control pass: the corner is bought, not given. Two rules put Send where it is —
+    // the prompt's fill (`flex: 1 1 auto`, the row's only filler) and Send's
+    // `margin-left: auto` — so narrow the prompt, take the auto margin, and hide the
+    // controls that would otherwise fill the row. Without this, the checks above could pass
+    // on a card whose row simply happens to be full.
+    await page.addStyleTag({ content: [
+      ".chat-composer-editor[data-inline] > .chat-input-textarea { flex: 0 0 auto !important; width: 40px !important; }",
+      ".chat-composer-actions > .chat-composer-controls, .chat-composer-actions > .composer-side-chat-button { display: none !important; }",
+      ".chat-composer-actions > .composer-send-button { margin-left: 0 !important; }",
+    ].join(" ") });
     await page.waitForTimeout(120);
     const loose = await page.evaluate(measure);
     const gap = cardRightInner - loose.send.right;
-    assert.ok(gap > 24, `the control pass: without the fill and the auto margin, Send drifts ${Math.round(gap)}px from the corner`);
+    assert.ok(gap > 24, `the control pass: without the prompt's fill and the auto margin, Send drifts ${Math.round(gap)}px from the corner`);
     await page.screenshot({ path: `${out}/keyboard-broken.png`, clip: { x: 0, y: Math.max(0, m.card.y - 8), width: 390, height: m.card.h + 16 } });
     await page.evaluate(() => {
       for (const node of document.querySelectorAll("style")) {
-        if (node.textContent.includes("chat-composer-controls") || node.textContent.includes("composer-send-button")) node.remove();
+        if (node.textContent.includes("chat-input-textarea") || node.textContent.includes("composer-send-button")) node.remove();
       }
     });
     await page.waitForTimeout(120);
@@ -207,12 +224,11 @@ assert.ok(typed.card.h > 0 && typed.textarea.h > 0, "the card holds the typed te
 assert.ok(Math.abs(typed.send.right - (typed.card.right - typed.insetRight)) <= 1.5,
   `a filled composer keeps Send in the corner (${Math.round(typed.send.right)} of ${Math.round(typed.card.right - typed.insetRight)})`);
 assert.ok(typed.textarea.right <= typed.card.right - typed.insetRight + 0.5, "the typed text stays inside the card");
-// The stretched text keeps the editor's content width, margins counted: it is `width: auto`
-// in a stretched column, so the left margin (half the send disc less 10px) insets it and a
+// The text is the row's filler: it keeps the card's content width less the controls, and a
 // box wider than that content box is the overflow this check exists for.
 const typedContentWidth = typed.editor.w - typed.editorPad.left - typed.editorPad.right
   - typed.textareaMargin.left - typed.textareaMargin.right;
-assert.ok(Math.abs(typed.textarea.w - typedContentWidth) <= 1,
+assert.ok(typed.textarea.w <= typedContentWidth + 1 && typed.textarea.w >= typedContentWidth * 0.35,
   `the typed text keeps the card's width (${Math.round(typed.textarea.w)} of ${Math.round(typedContentWidth)})`);
 await page.screenshot({ path: `${out}/typed.png`, clip: { x: 0, y: Math.max(0, typed.card.y - 8), width: 390, height: typed.card.h + 16 } });
 assert.equal(rest.scrollWidth <= rest.viewport, true, "no sideways scroll with a long draft");

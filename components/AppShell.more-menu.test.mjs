@@ -19,7 +19,9 @@ test("the More menu is portaled to the body so the open file panel cannot cover 
   assert.match(source, /position: "fixed", zIndex: 700/);
   // The menu measures itself and flips above the trigger when the space below
   // is too small, so its last entries never fall off the window.
-  assert.match(source, /useMenuPlacement\(topMoreOpen \? topMoreAnchor : null, topMoreMenuRef\)/);
+  // Placement follows the mounted flag, not the click flag: the closing menu keeps the spot
+  // it was placed in, and the outside-click/Escape handlers stay keyed on the open flag.
+  assert.match(source, /useMenuPlacement\(topMorePop\.mounted \? topMoreAnchor : null, topMoreMenuRef\)/);
   assert.match(source, /placedTopMorePos\.top, left: placedTopMorePos\.left/);
   assert.match(source, /setTopMorePos\(\{ top: rect\.bottom \+ 7, right: window\.innerWidth - rect\.right - 2 \}\)/);
 });

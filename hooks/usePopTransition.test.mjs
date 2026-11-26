@@ -33,7 +33,10 @@ const declared = (selector, property) =>
 test("the machine only exits from a popup that is showing", () => {
   assert.equal(popStep(false, true), "open", "a click opens");
   assert.equal(popStep(true, false), "exit", "a click on an open popup starts its exit");
-  assert.equal(popStep(true, true), "open", "re-opened mid-exit: the exit is dropped, the node never left");
+  assert.equal(popStep(true, true), "idle", "a popup that stays open takes no step");
+  // Re-opened mid-exit: the owner's flag went false and true again, so the way back in is
+  // the open step, and the node never left.
+  assert.equal(popStep(false, true), "open", "a popup re-opened mid-exit takes the open step");
   assert.equal(popStep(false, false), "idle", "a popup that has never opened mounts nothing and animates nothing");
 });
 

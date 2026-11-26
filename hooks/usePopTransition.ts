@@ -1,85 +1,65 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 /**
- * The in/out motion every popup in the app plays.
+ * The shared appear/disappear for the app's popups.
  *
- * A menu, a header card, a picker or a tip that is mounted on a click and unmounted on
- * the next one blinks: the entrance plays (`.native-popover` animates in), the
- * disappearance does not, because the node is gone before anything can animate. An exit
- * needs the node in the DOM while it plays, so the owner cannot unmount on the click.
- * That is the idiom the settings dialog introduced (keep it mounted, put `is-closing` on
- * it, unmount when the animation is over), and this hook is that idiom for every other
- * popup: the owner's one open flag in, `mounted` and `closing` out.
+ * Every menu, panel, card, tip and picker in the app is mounted by the click that opens it
+ * and unmounted by the one that closes it, so it appears and vanishes between two frames.
+ * `app/native-theme.css` carries the pair (`app-pop-in` / `app-pop-out`, the `is-closing`
+ * state, and the opt-out under `prefers-reduced-motion`). The half a component owns is the
+ * mount: a node React has already removed cannot animate, so this hook keeps the node
+ * mounted for the length of the exit, and the owner puts `is-closing` on it.
  *
- * What the state machine keeps straight, learned from that dialog:
- * - an open popup is never `closing`, and re-opening during an exit drops the exit, so a
- *   popup never re-enters from a half-played one;
- * - an exit only starts from a popup that was open: one that has never opened mounts
- *   nothing and animates nothing;
- * - the pending unmount dies with the owner.
- *
- * `POP_EXIT_MS` is the length of the out animation in app/native-theme.css
- * (`--dur-fast`); change one, change the other, and `usePopTransition.test.mjs` says so.
+ * The flag flips in the **same render** the `open` value changes, not in an effect. Set in
+ * an effect, the popup unmounts for one frame first (`open` is false and `closing` is not
+ * yet true), and a surface that vanishes and reappears before fading reads as a flicker.
+ * Only the timer lives in an effect.
  */
+
+/** The exit's length. It equals the CSS token `--dur-fast` (120ms): a timer shorter than
+ *  the animation cuts the fade, a longer one leaves an invisible node on screen. */
 export const POP_EXIT_MS = 120;
 
-/** The one decision the machine makes, from "was it open" and "is it open now". */
-export type PopStep = "open" | "exit" | "idle";
+type Step = "open" | "exit" | "idle";
 
-export function popStep(wasOpen: boolean, open: boolean): PopStep {
-  if (open) return "open";
-  // Only a popup that was showing has anything to animate away.
+/** One transition step, given the previous and the new `open` value. Pure, so the pair is
+ *  testable without rendering: a popup that unmounts at once has no exit to play. */
+export function popStep(wasOpen: boolean, open: boolean): Step {
+  if (open) return wasOpen ? "idle" : "open";
   return wasOpen ? "exit" : "idle";
 }
 
 export interface PopTransition {
-  /** Render the popup while this is true; it stays true for the length of the exit. */
+  /** Render the popup while this is true. */
   mounted: boolean;
-  /** Put `is-closing` on the popup element while this is true. */
+  /** True for the length of the exit; the popup puts `is-closing` on itself. */
   closing: boolean;
-  /** The suffix for a popup's className: `` `app-menu${pop.className}` ``. */
+  /** `" is-closing"` while closing, `""` otherwise — for a composed className. */
   className: string;
 }
 
 export function usePopTransition(open: boolean, exitMs: number = POP_EXIT_MS): PopTransition {
   const [closing, setClosing] = useState(false);
-  const timer = useRef<number | null>(null);
-  const wasOpen = useRef(open);
+  const [prevOpen, setPrevOpen] = useState(open);
 
-  const cancelExit = useCallback(() => {
-    if (timer.current !== null) {
-      window.clearTimeout(timer.current);
-      timer.current = null;
-    }
-  }, []);
+  if (open !== prevOpen) {
+    const step = popStep(prevOpen, open);
+    setPrevOpen(open);
+    // React re-renders immediately with these, so no frame is committed with the popup
+    // unmounted: the closed popup is the closing popup, then it is gone.
+    if (step === "exit") setClosing(true);
+    else if (step === "open") setClosing(false);
+  }
 
-  // `closing` is deliberately not a dependency: the effect must not re-run when the exit
-  // it just scheduled flips the flag, because that re-run's cleanup is cancelExit, and
-  // that would clear the very timeout the exit is waiting on.
+  // The exit's length, and nothing else: `closing` turning off is the timer's job, and the
+  // timer is cleared when the popup re-opens (closing flips off) or the owner unmounts.
   useEffect(() => {
-    switch (popStep(wasOpen.current, open)) {
-      case "open":
-        // Opened, or re-opened mid-exit: the node never left, so the exit is dropped and
-        // the popup keeps the entrance it is already playing.
-        cancelExit();
-        setClosing(false);
-        break;
-      case "exit":
-        // The click that closed it. Hold the node for the animation, then let go.
-        setClosing(true);
-        timer.current = window.setTimeout(() => {
-          timer.current = null;
-          setClosing(false);
-        }, exitMs);
-        break;
-      case "idle":
-        break;
-    }
-    wasOpen.current = open;
-    return cancelExit;
-  }, [open, exitMs, cancelExit]);
+    if (!closing) return;
+    const timer = window.setTimeout(() => setClosing(false), exitMs);
+    return () => window.clearTimeout(timer);
+  }, [closing, exitMs]);
 
   return {
     mounted: open || closing,
@@ -101,9 +81,12 @@ export function popClass(closing: boolean): string {
  */
 export function useShownWhileClosing<T>(value: T | null, closing: boolean): T | null {
   const [last, setLast] = useState<T | null>(value);
-  useEffect(() => {
+  const [prev, setPrev] = useState<T | null>(value);
+  if (value !== prev) {
+    setPrev(value);
+    // Kept in render (the same-value guard React requires) rather than in an effect: an
+    // effect leaves the closing popup's first frame empty, which is the flash this avoids.
     if (value !== null) setLast(value);
-  }, [value]);
+  }
   return closing ? last : value;
 }
-

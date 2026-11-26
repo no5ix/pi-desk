@@ -31,6 +31,52 @@ export function measureComposerTextarea(textarea: HTMLTextAreaElement): number {
   return height;
 }
 
+/** The composer's resting line box, when the element's own `line-height` is unreadable. */
+const FALLBACK_LINE_RATIO = 1.4;
+
+/**
+ * How many lines the prompt takes, measured the same way {@link measureComposerTextarea}
+ * measures its height.
+ *
+ * The card is one row while the prompt fits on a line and a taller box once it wraps, and
+ * the composer's expand corner appears with the second line (components/ChatInput.tsx).
+ * Counting `\n` is not enough — a long sentence *wraps*, and a wrapped sentence must raise
+ * the corner just like a typed newline. So the answer comes from the box: the element is
+ * released from every height bound it carries — the inline height the autosize wrote, the
+ * card's `min-height`/`max-height` in the expanded editor, all of them written back as
+ * `!important` inline declarations, the only thing that beats a stylesheet `!important` —
+ * `scrollHeight` is read, and the element is restored. Nothing yields to the browser
+ * between the write and the restore, so no frame is ever painted released.
+ */
+export function measureComposerTextLines(textarea: HTMLTextAreaElement): number {
+  const style = textarea.style;
+  // The CSS property names, not the camelCase ones: `getPropertyValue`/`removeProperty`
+  // speak CSS, and a camelCase name reads back empty — which would leave the released box
+  // behind, and the expanded editor with no height of its own.
+  const properties = ["height", "min-height", "max-height"] as const;
+  const saved = properties.map((property) => ({
+    property,
+    value: style.getPropertyValue(property),
+    priority: style.getPropertyPriority(property),
+  }));
+  style.setProperty("height", "auto", "important");
+  style.setProperty("min-height", "0px", "important");
+  style.setProperty("max-height", "none", "important");
+  const content = textarea.scrollHeight;
+  const computed =
+    typeof window !== "undefined" ? window.getComputedStyle(textarea) : null;
+  const lineHeight = Number.parseFloat(computed?.lineHeight ?? "") || 0;
+  const fontSize = Number.parseFloat(computed?.fontSize ?? "") || 14;
+  for (const { property, value, priority } of saved) {
+    if (value) style.setProperty(property, value, priority);
+    else style.removeProperty(property);
+  }
+  const line = lineHeight > 0 ? lineHeight : fontSize * FALLBACK_LINE_RATIO;
+  // A text area's own box is the text: one line is one line-height, and rounding keeps a
+  // pixel of padding or a subpixel line box from reading as a second line.
+  return Math.max(1, Math.round(content / line));
+}
+
 /**
  * Set the composer text area to the prompt's natural height, in one animatable step.
  *

@@ -42,15 +42,15 @@ test("the footer order is Copy, Branch in new chat, the duration, then the times
   const footer = messageView.match(/<div className="message-assistant-footer"[\s\S]*?\n      <\/div>/);
   assert.ok(footer, "assistant footer found");
   const copyAt = footer[0].indexOf('className="message-copy-action message-assistant-action"');
-  const branchAt = footer[0].indexOf('className="message-assistant-action message-branch-action"');
+  const branchAt = footer[0].indexOf("<MessageBranchAction");
   const durationAt = footer[0].indexOf('className="message-turn-duration"');
   const timeAt = footer[0].indexOf('className="message-meta"');
   assert.ok(copyAt > 0 && branchAt > 0 && durationAt > 0 && timeAt > 0, "all four controls render");
   assert.ok(copyAt < branchAt && branchAt < durationAt && durationAt < timeAt,
     "Copy, Branch in new chat, duration, timestamp — the two existing controls keep their places");
   assert.match(footer[0], /marginLeft: "auto"/, "the timestamp stays pinned to the right edge");
-  // The branch chip is named for what a phone does with it: under every tool call of a
-  // turn it is a column of identical buttons, so app/native-theme.css hides it there.
+  // The branch chip is named for what a phone does with it: the newest reply's chip and
+  // the tail row's are both dropped there, so it is addressed by class in the sheet.
   const themeCss = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8");
   assert.match(themeCss, /\.message-branch-action\s*\{[^}]*display: none !important/);
   assert.match(footer[0], /\{formatTurnDurationCompact\(turnDurationMs\)\}/,
