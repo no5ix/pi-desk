@@ -19,7 +19,8 @@ test("the compaction card is collapsed when a session opens, and its header togg
   assert.match(card, /const \[expanded, setExpanded\] = useState\(false\);/, "collapsed by default");
   assert.match(card, /<button\s+type="button"\s+className="compaction-card-header"\s+aria-expanded=\{expanded\}/,
     "the header row is a real button, so it is reachable by keyboard and screen reader");
-  assert.match(card, /onClick=\{\(\) => setExpanded\(\(value\) => !value\)\}/);
+  assert.match(card, /onClick=\{\(event\) => \{\s*onContentToggle\?\.\(event\.currentTarget\);\s*setExpanded\(\(value\) => !value\);\s*\}\}/,
+    "one click toggles it, and the scroll viewport is told first so the page keeps its place");
   assert.match(card, /title=\{t\(expanded \? "chat\.collapseCompaction" : "chat\.expandCompaction"\)\}/);
   assert.match(card, /className="compaction-card-chevron"\s+data-expanded=\{expanded \? "true" : "false"\}/);
   assert.match(card, /\{expanded && \(\s*<div style=\{\{ padding: "11px 13px 12px" \}\}>/,

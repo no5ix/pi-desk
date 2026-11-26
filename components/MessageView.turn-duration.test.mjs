@@ -34,7 +34,7 @@ test("the value travels to the footer of the reply that closes the turn", () => 
   assert.match(messageView, /turnDurationMs\?: number;/, "the prop is optional: the streaming bubble and the side-chat renders pass nothing");
   assert.match(messageView, /turnDurationMs !== undefined && !isStreaming && \(/, "the footer element guards the value and streaming itself");
   const comparator = messageView.match(/\(prev, next\) => \{[\s\S]*?\n\}/)[0];
-  assert.match(comparator, /&& prev\.turnDurationMs === next\.turnDurationMs;/,
+  assert.match(comparator, /&& prev\.turnDurationMs === next\.turnDurationMs\b/,  // the list continues with later props
     "MessageView is memoized with a hand-written comparator: an unlisted prop never updates");
 });
 
@@ -42,13 +42,17 @@ test("the footer order is Copy, Branch in new chat, the duration, then the times
   const footer = messageView.match(/<div className="message-assistant-footer"[\s\S]*?\n      <\/div>/);
   assert.ok(footer, "assistant footer found");
   const copyAt = footer[0].indexOf('className="message-copy-action message-assistant-action"');
-  const branchAt = footer[0].indexOf('className="message-assistant-action"');
+  const branchAt = footer[0].indexOf('className="message-assistant-action message-branch-action"');
   const durationAt = footer[0].indexOf('className="message-turn-duration"');
   const timeAt = footer[0].indexOf('className="message-meta"');
   assert.ok(copyAt > 0 && branchAt > 0 && durationAt > 0 && timeAt > 0, "all four controls render");
   assert.ok(copyAt < branchAt && branchAt < durationAt && durationAt < timeAt,
     "Copy, Branch in new chat, duration, timestamp — the two existing controls keep their places");
   assert.match(footer[0], /marginLeft: "auto"/, "the timestamp stays pinned to the right edge");
+  // The branch chip is named for what a phone does with it: under every tool call of a
+  // turn it is a column of identical buttons, so app/native-theme.css hides it there.
+  const themeCss = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8");
+  assert.match(themeCss, /\.message-branch-action\s*\{[^}]*display: none !important/);
   assert.match(footer[0], /\{formatTurnDurationCompact\(turnDurationMs\)\}/,
     "the compact `1h50m`: the footer is read at a glance, and a task's hours and minutes are the whole story");
   assert.match(footer[0], /<ClockIcon size=\{11\} \/>/, "a clock glyph says what the number is");

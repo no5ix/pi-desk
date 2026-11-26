@@ -32,7 +32,8 @@ test("a subagent report is collapsed by default, and its header is the toggle", 
     "it starts folded; an ordinary extension message starts open, as it always did");
   assert.match(card, /className="custom-message-header"/);
   assert.match(card, /aria-expanded=\{contentExpanded\}/, "the header says what it opens");
-  assert.match(card, /onClick=\{\(\) => setContentExpanded\(\(value\) => !value\)\}/, "and one click toggles it");
+  assert.match(card, /onClick=\{\(event\) => \{\s*onContentToggle\?\.\(event\.currentTarget\);\s*setContentExpanded\(\(value\) => !value\);\s*\}\}/,
+    "and one click toggles it, telling the scroll viewport first so the page keeps its place");
   assert.match(card, /className="compaction-card-chevron"\s*\n\s*data-expanded=\{contentExpanded \? "true" : "false"\}/,
     "the same chevron the compaction card turns, so the two collapsed notes read alike");
   assert.doesNotMatch(card, /borderBottom: contentExpanded/,
@@ -62,7 +63,9 @@ test("every model line in a run is dated", () => {
     "the model line carries no model info: the provider and the model stay out of the transcript");
   const timeAt = line.indexOf('className="message-assistant-model-time"');
   assert.ok(timeAt > 0, "the time keeps the line — `[clock] 11:46 PM`");
-  assert.match(line, /<ClockIcon size=\{10\} \/>/);
+  // The clock is the row's only glyph and it has to be read at a glance: 10px was a dot
+  // on a phone, so the row carries the app's 12px glyph (the footer's is 11).
+  assert.match(line, /<ClockIcon size=\{12\} \/>/);
   assert.match(css, /\.message-assistant-model-time \{[\s\S]*?font-variant-numeric: tabular-nums;/);
 });
 

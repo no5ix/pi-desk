@@ -919,6 +919,41 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     scrollAnchorRef.current = null;
   }, []);
 
+  /** A row's "Expand" / "Collapse" grows the page under the finger. The reader was
+   *  left in two bad places: the text that appeared pushed the row out of the viewport
+   *  (a bubble that opens mid-conversation jumps), and a reader who was at the tail
+   *  handed the viewport back to the stream's tail-follow, which snapped the
+   *  conversation to its bottom — the page "goes to the bottom" by itself.
+   *
+   *  So the tapped row is anchored with the mechanism the older-pages prepend already
+   *  uses: its top keeps its distance in the scrollport while the text appears. The
+   *  window is short and expires on its own, and a reader who scrolls in the meantime
+   *  is answered by the scroll listener, not by this anchor. */
+  const handleContentToggle = useCallback((control: HTMLElement | null, entryIdHint?: string) => {
+    const container = scrollContainerRef.current;
+    if (!container || !control) return;
+    const row = (entryIdHint
+      ? container.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(entryIdHint)}"]`)
+      : null) ?? control.closest<HTMLElement>("[data-entry-id]") ?? null;
+    const entryId = row?.dataset.entryId ?? entryIdHint;
+    if (!row || !entryId) return;
+    const box = container.getBoundingClientRect();
+    const controlTop = control.getBoundingClientRect().top - box.top;
+    // Nothing to protect when the control is not on screen: the finger cannot have just
+    // pressed it, and moving the page from here is the app moving it on its own.
+    if (controlTop < 0 || controlTop > container.clientHeight) return;
+    scrollAnchorRef.current = {
+      entryId,
+      top: row.getBoundingClientRect().top - box.top,
+      until: Date.now() + CHAT_SCROLL_ANCHOR_WINDOW_MS,
+    };
+    // React commits the toggle before the next paint; a bubble whose cap is lifted keeps
+    // settling over the frames after it, so the row is put back as the height arrives.
+    requestAnimationFrame(() => requestAnimationFrame(() => applyScrollAnchor(container)));
+    window.setTimeout(() => applyScrollAnchor(container), 200);
+    window.setTimeout(() => applyScrollAnchor(container), 450);
+  }, [applyScrollAnchor, scrollContainerRef]);
+
   // IntersectionObserver on the sentinel div at the top of the message list.
   // When it becomes visible, load the next page of older messages.
   useEffect(() => {
@@ -1719,6 +1754,10 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                     onOpenFileDiff={onOpenFileDiff}
                     onOpenSession={onOpenSession}
                     entryId={entryIds[idx]}
+                    // A row that grows the page (a long prompt's "Expand", a report's
+                    // header) keeps its place: the handler is stable, and the row's own
+                    // entry id travels with the control.
+                    onContentToggle={handleContentToggle}
                     searchBlock={entryIds[idx] === pendingSearchScroll?.entryId ? searchBlock : undefined}
                     forking={forkingEntryId === entryIds[idx]}
                     onBranchInNewChat={bashRunning || isNew ? undefined : handleBranchInNewChat}

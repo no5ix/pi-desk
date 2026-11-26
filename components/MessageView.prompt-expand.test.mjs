@@ -36,6 +36,7 @@ test("the fade below the fold leaves at the end of the box", () => {
 test("Collapse returns the prompt to the scroll box", () => {
   // One toggle, both ways: the state travels up on every press, so the bubble
   // caps again and the box scrolls.
-  assert.match(source, /onClick=\{\(\) => \{\s*const next = !expanded;\s*setExpanded\(next\);\s*onExpandedChange\?\.\(next\);\s*\}\}/);
+  // The viewport is told before the row grows, so the page does not jump under the finger.
+  assert.match(source, /onClick=\{\(event\) => \{\s*const next = !expanded;[\s\S]*?onContentToggle\?\.\(event\.currentTarget\);\s*setExpanded\(next\);\s*onExpandedChange\?\.\(next\);\s*\}\}/);
   assert.match(source, /\{expanded \? t\("i18n\.collapse"\) : t\("i18n\.expand"\)\}/);
 });
