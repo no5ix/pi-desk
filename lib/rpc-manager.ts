@@ -472,6 +472,8 @@ export class AgentSessionWrapper {
   private agentRunSettled = false;
   // Whether the last run ended because it was stopped (pi 1.1's `agent_settled.aborted`), not finished.
   private lastRunAborted = false;
+  private readonly manualCompactionWork = new Set<Promise<void>>();
+  private readonly compactWithoutContinuation: AgentSessionLike["compact"] | undefined;
   private promptAdmissionTail: Promise<void> = Promise.resolve();
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
@@ -558,6 +560,57 @@ export class AgentSessionWrapper {
     });
     this.chatOnlyExtensionModel = options.chatOnlyExtensionModel;
     this.sideChat = options.sideChat === true;
+
+    // An extension's ctx.compact() calls the public SDK method, and its onComplete may
+    // start the next turn. Observe the call itself: agent_settled and the interrupted
+    // prompt can finish before compaction_start, so neither can tell us whether the
+    // abort is terminal. The wrapper's own `compact` command has no completion callback
+    // and keeps the untracked method: prompts parked meanwhile report their own prompt_done.
+    const compact = inner.compact?.bind(inner);
+    this.compactWithoutContinuation = compact;
+    if (compact) inner.compact = (...args) => this.trackManualCompactionWork(compact(...args));
+    const prompt = inner.prompt?.bind(inner);
+    if (prompt) inner.prompt = (...args) => {
+      // A completion callback can submit a prompt whose async input/auth preflight
+      // has not set isStreaming yet. Follow that promise as well as active runs.
+      const duringCompaction = this.manualCompactionWork.size > 0 && !inner.isCompacting;
+      const operation = prompt(...args);
+      return duringCompaction ? this.trackManualCompactionWork(operation) : operation;
+    };
+  }
+
+  private trackManualCompactionWork<T>(operation: Promise<T>): Promise<T> {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.manualCompactionWork.add(promise);
+    const finish = () => {
+      this.manualCompactionWork.delete(promise);
+      resolve();
+      // The fork has no extension-requested shutdown; the run's completion notice is what
+      // a compaction that resumes a turn has to re-arm (lib/rpc-manager.ts, agent_settled).
+      this.notifyAgentRunComplete();
+    };
+    // Attach after the caller: the SDK's await in ctx.compact() must get to run
+    // onComplete (or onError) before we decide whether its session will continue.
+    queueMicrotask(() => { void operation.then(finish, finish); });
+    return operation;
+  }
+
+  waitForCompactionContinuation(): Promise<void> | undefined {
+    if (this.manualCompactionWork.size === 0) return;
+    return this.drainManualCompactionWork();
+  }
+
+  private async drainManualCompactionWork(): Promise<void> {
+    for (;;) {
+      if (this.manualCompactionWork.size > 0) {
+        await Promise.all(this.manualCompactionWork);
+      } else if (this.inner.isStreaming) {
+        // sendCustomMessage({ triggerTurn: true }) starts a run without prompt().
+        await this.inner.waitForIdle();
+      } else {
+        return;
+      }
+    }
   }
 
   get sessionId(): string {
@@ -601,6 +654,7 @@ export class AgentSessionWrapper {
       || this.inner.isCompacting
       || this.inner.isBashRunning
       || sdkIdle === false
+      || this.manualCompactionWork.size > 0
     );
   }
 
@@ -1088,6 +1142,8 @@ export class AgentSessionWrapper {
           release();
         },
       });
+      const continuation = this.waitForCompactionContinuation();
+      if (continuation) await continuation;
     } catch (error) {
       failure = error;
     }
@@ -1666,10 +1722,12 @@ export class AgentSessionWrapper {
             throw error;
           }
 
-          void prompt.then(() => {
+          void prompt.then(async () => {
             // Compatibility fallback if a future SDK resolves without invoking
             // the internal callback. This waits for the run, but never acks early.
             acceptPreflight();
+            const continuation = this.waitForCompactionContinuation();
+            if (continuation) await continuation;
             finishPrompt();
             if (!streamingBehavior) this.emit(this.promptDoneEvent());
           }, (error) => {
@@ -1937,7 +1995,7 @@ export class AgentSessionWrapper {
       case "compact": {
         try {
           return await this.withFinalIdleReset(() =>
-            this.inner.compact(command.customInstructions as string | undefined)
+            (this.compactWithoutContinuation ?? this.inner.compact.bind(this.inner))(command.customInstructions as string | undefined)
           );
         } finally {
           invalidateSessionListCache();

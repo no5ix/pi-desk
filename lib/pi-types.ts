@@ -225,6 +225,7 @@ export interface AgentSessionLike {
   setFollowUpMode?(mode: "all" | "one-at-a-time"): void;
   /** pi ≥ 0.86: thinking levels the current model actually supports. */
   getAvailableThinkingLevels?(): string[];
+  waitForIdle(): Promise<void>;
   executeBash(command: string, onChunk?: (chunk: string) => void, options?: {
     excludeFromContext?: boolean;
     operations?: BashOperations;
