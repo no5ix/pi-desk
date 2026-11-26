@@ -9,6 +9,7 @@ import {
   countTreeDescendants,
   sessionRowTitle,
   treeContainsSession,
+  treeHasRunningSession,
   type SessionTreeNode,
 } from "@/lib/sidebar-session-nodes";
 import {
@@ -51,7 +52,7 @@ import { SessionSearch } from "./SessionSearch";
 import { ProjectViewMenu, type ProjectViewMode } from "./ProjectViewMenu";
 import { applySidebarFold, useProjectFold } from "@/lib/sidebar-fold-motion";
 import { ChatsSectionMenu } from "./ChatsSectionMenu";
-import { orderChatFamilies, toggleId, pinnedFirst } from "@/lib/chat-groups";
+import { orderChatFamilies, toggleId, pinnedFirst, pinnedThenRunning, familyHasRunningSession } from "@/lib/chat-groups";
 import { ArchivedProjectsSection } from "./ArchivedProjectsSection";
 import { ScheduledSidebarRow } from "./scheduled/ScheduledSidebarRow";
 import { ArtifactsSidebarRow } from "./artifacts/ArtifactsSidebarRow";
@@ -1348,7 +1349,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   );
   const allChatFamilies = listSessionFamilies(chatSessions);
   // Pinned first, then by recency. Archived chats leave the list unless a search is looking for them.
-  const orderedChatFamilies = orderChatFamilies(allChatFamilies, pinnedChats);
+  const orderedChatFamilies = orderChatFamilies(allChatFamilies, pinnedChats, runningSessionIds);
   const chatFamilies = trimmedSessionQuery
     ? orderedChatFamilies
     : orderedChatFamilies.filter((family) => !archivedChats.has(family.root.id));
@@ -1393,9 +1394,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const chatsFolded = !trimmedSessionQuery && chatsCollapsed;
   // Search reveals both active and archived matches without overwriting folds.
   const projectsSectionFolded = !trimmedSessionQuery && projectsSectionCollapsed;
+  // Every pinned and running chat stays in the preview window; the usual five rows of
+  // recency fill in below them.
+  const alwaysVisibleChatFamilies = chatFamilies.filter((family) => (
+    pinnedChats.has(family.root.id) || familyHasRunningSession(family, runningSessionIds)
+  )).length;
   let visibleChatFamilies = trimmedSessionQuery
     ? chatFamilies
-    : chatFamilies.slice(0, MAX_VISIBLE_CHAT_SESSIONS * (chatSessionPages + 1));
+    : chatFamilies.slice(0, Math.max(MAX_VISIBLE_CHAT_SESSIONS * (chatSessionPages + 1), alwaysVisibleChatFamilies));
   if (!trimmedSessionQuery && selectedSessionId) {
     const selectedFamily = chatFamilies.find((family) => (
       family.root.id === selectedSessionId
@@ -1407,7 +1413,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }
   const hiddenChatFamilyCount = chatFamilies.length - visibleChatFamilies.length;
   const chatRunningCount = chatFamilies.filter((family) => (
-    [family.root, ...family.subagents].some((session) => runningSessionIds.has(session.id))
+    familyHasRunningSession(family, runningSessionIds)
   )).length;
   const chatUnreadCount = chatFamilies.filter((family) => (
     [family.root, ...family.subagents].some((session) => unreadSessionIds.has(session.id))
@@ -1469,11 +1475,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const unarchivedGroupTree = archivedGroupTree.length > 0
       ? fullGroupTree.filter((node) => !archivedSessions.has(node.session.id))
       : fullGroupTree;
-    // Pinned sessions first, each part keeping its recency order (S2).
-    const groupTree = pinnedFirst(unarchivedGroupTree, (node) => pinnedSessions.has(node.session.id));
+    // Pinned sessions first, then the running ones, each part keeping its recency order (S2).
+    const rowIsPinned = (node: SessionTreeNode) => pinnedSessions.has(node.session.id);
+    const rowIsRunning = (node: SessionTreeNode) => treeHasRunningSession(node, group.runningIds);
+    const groupTree = pinnedThenRunning(unarchivedGroupTree, rowIsPinned, rowIsRunning);
     const showingArchived = projectsShowingArchived.has(group.projectRoot);
     const extraPages = projectSessionPages[group.projectRoot] ?? 0;
-    const visibleSessionLimit = MAX_VISIBLE_PROJECT_SESSIONS * (extraPages + 1);
+    // The preview window never buries what is live: every pinned row and every running family
+    // stays visible, and the usual five rows of recency fill in below them.
+    const alwaysVisibleRoots = unarchivedGroupTree.filter((node) => rowIsPinned(node) || rowIsRunning(node)).length;
+    const visibleSessionLimit = Math.max(MAX_VISIBLE_PROJECT_SESSIONS * (extraPages + 1), alwaysVisibleRoots);
     let visibleGroupTree = trimmedSessionQuery
       ? groupTree
       : groupTree.slice(0, visibleSessionLimit);
@@ -1567,27 +1578,24 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             <span className="sidebar-project-tree-name">
               {displayName}
             </span>
-            {/* A folded project hides its rows, so the count (and any running
-                or unread chips) must stay readable on the header itself. */}
-            {isCollapsed && (
-              <span className="sidebar-project-tree-count" title={t("sidebar.sessionCount", { count: groupTree.length })}>
-                ({groupTree.length})
-              </span>
-            )}
-            {isCollapsed && (
-              <span className="sidebar-project-tree-meta">
-                {runningCount > 0 && (
-                  <span className="sidebar-project-tree-chip is-running" title={t("sidebar.runningCount", { count: runningCount })}>
-                    {runningCount}
-                  </span>
-                )}
-                {unreadCount > 0 && (
-                  <span className="sidebar-project-tree-chip is-unread" title={t("sidebar.unreadCount", { count: unreadCount })}>
-                    {unreadCount}
-                  </span>
-                )}
-              </span>
-            )}
+            {/* The header carries the group's numbers all the time: a folded project hides
+                its rows, and an open one keeps the running and unread counts — which the
+                rows alone do not add up to — readable in one place. */}
+            <span className="sidebar-project-tree-count" title={t("sidebar.sessionCount", { count: groupTree.length })}>
+              ({groupTree.length})
+            </span>
+            <span className="sidebar-project-tree-meta">
+              {runningCount > 0 && (
+                <span className="sidebar-project-tree-chip is-running" title={t("sidebar.runningCount", { count: runningCount })}>
+                  {runningCount}
+                </span>
+              )}
+              {unreadCount > 0 && (
+                <span className="sidebar-project-tree-chip is-unread" title={t("sidebar.unreadCount", { count: unreadCount })}>
+                  {unreadCount}
+                </span>
+              )}
+            </span>
           </button>
           {/* A pinned project is marked by its own folder icon turning orange — no glyph
               to click, no extra column to fit: the row is dense and its trailing edge is
@@ -2024,26 +2032,24 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           >
             <span className="sidebar-project-tree-title">{t("sidebar.chats")}</span>
             {/* A folded section hides its rows, so the count and any running or
-                unread chips stay readable on the header, like a folded project. */}
-            {chatsFolded && chatFamilies.length > 0 && (
+                unread chips stay readable on the header, like a project's. */}
+            {chatFamilies.length > 0 && (
               <span className="sidebar-project-tree-count" title={t("sidebar.sessionCount", { count: chatFamilies.length })}>
                 ({chatFamilies.length})
               </span>
             )}
-            {chatsFolded && (
-              <span className="sidebar-project-tree-meta">
-                {chatRunningCount > 0 && (
-                  <span className="sidebar-project-tree-chip is-running" title={t("sidebar.runningCount", { count: chatRunningCount })}>
-                    {chatRunningCount}
-                  </span>
-                )}
-                {chatUnreadCount > 0 && (
-                  <span className="sidebar-project-tree-chip is-unread" title={t("sidebar.unreadCount", { count: chatUnreadCount })}>
-                    {chatUnreadCount}
-                  </span>
-                )}
-              </span>
-            )}
+            <span className="sidebar-project-tree-meta">
+              {chatRunningCount > 0 && (
+                <span className="sidebar-project-tree-chip is-running" title={t("sidebar.runningCount", { count: chatRunningCount })}>
+                  {chatRunningCount}
+                </span>
+              )}
+              {chatUnreadCount > 0 && (
+                <span className="sidebar-project-tree-chip is-unread" title={t("sidebar.unreadCount", { count: chatUnreadCount })}>
+                  {chatUnreadCount}
+                </span>
+              )}
+            </span>
           </button>
           <div className="sidebar-project-tree-tools">
             <button

@@ -207,6 +207,19 @@ Archived predicate (`isFamilyArchived()`, `lib/session-tree.ts`):
   `aria-label` (`pi-desk · Pinned · /path · branch`), and unpinning is the ⋯ menu's item
   (`sidebar.pinProject` / `sidebar.unpinProject`) — a row with no glyph must say what it is
   and stay changeable. `components/SessionSidebar.project-row.test.mjs`.
+- **A project header carries its numbers in both fold states** (`renderProjectGroup` in
+  `components/SessionSidebar.tsx`): the `(<session count>)` and the running / unread chips are
+  unconditional, so an open project states what it holds (the running and unread totals are not
+  something the visible rows add up to) and a folded one keeps them as its only signal. The Chats
+  header is the same, and so is its count. `components/SessionSidebar.test.mjs`.
+- **An open project leads with its pins, then every running family** (`pinnedThenRunning()` in
+  `lib/chat-groups.ts`, `treeHasRunningSession()` in `lib/sidebar-session-nodes.ts`): pinned rows
+  first, then the families that are live — the row's own session running, or a run nested under it,
+  because a subagent is only reachable through its parent's row — then the rest in recency order.
+  The preview window is `max(MAX_VISIBLE_PROJECT_SESSIONS * (pages + 1), pinned + running)`, so
+  "Show 5 more" can never bury a session that is working, and the five-row page size is unchanged.
+  The chats list follows the same order and the same floor
+  (`orderChatFamilies(allChatFamilies, pinnedChats, runningSessionIds)`).
 - A **fork** is marked at the row's end, immediately before the subagent count, not
   before the title: the row's leading glyph stays the plain chat bubble (a fork is a
   session, not a special row kind), and the title's tooltip keeps naming the source

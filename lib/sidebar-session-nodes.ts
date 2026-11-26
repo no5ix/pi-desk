@@ -19,6 +19,15 @@ export function treeContainsSession(node: SessionTreeNode, sessionId: string): b
   return node.session.id === sessionId || node.children.some((child) => treeContainsSession(child, sessionId));
 }
 
+/** Live right now: this row's session, or a run nested under it, is running.
+ *
+ * A project group's running chip counts these rows, and the preview window keeps them all
+ * visible — a running subagent is only reachable through its parent's row, so the family
+ * counts as running and leads the list under the pins. */
+export function treeHasRunningSession(node: SessionTreeNode, runningIds: ReadonlySet<string>): boolean {
+  return runningIds.has(node.session.id) || node.children.some((child) => treeHasRunningSession(child, runningIds));
+}
+
 export function countTreeDescendants(node: SessionTreeNode): number {
   return node.children.reduce((total, child) => total + 1 + countTreeDescendants(child), 0);
 }

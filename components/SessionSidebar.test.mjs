@@ -170,7 +170,7 @@ test("Chats sit beside Projects and never enter project grouping", () => {
 
 test("Chats show five families at a time even when there are no projects", () => {
   assert.match(source, /const MAX_VISIBLE_CHAT_SESSIONS = 5/);
-  assert.match(source, /: chatFamilies\.slice\(0, MAX_VISIBLE_CHAT_SESSIONS \* \(chatSessionPages \+ 1\)\)/);
+  assert.match(source, /: chatFamilies\.slice\(0, Math\.max\(MAX_VISIBLE_CHAT_SESSIONS \* \(chatSessionPages \+ 1\), alwaysVisibleChatFamilies\)\)/);
   assert.match(source, /setChatSessionPages\(\(pages\) => pages \+ 1\)/);
   assert.match(source, /!loading && !error && chatFamilies\.length === 0/);
   assert.match(source, /sidebar-chats-empty/);
@@ -232,13 +232,18 @@ test("the Chats header shows its menu and add buttons only on hover, like Projec
 });
 
 test("chats can be pinned and archived, ordered by recency with no date groups", () => {
-  // Pinned first, then recency; archived chats leave the list unless a search is running.
-  assert.match(source, /orderChatFamilies\(allChatFamilies, pinnedChats\)/);
+  // Pinned first, then the running chats, then recency.
+  assert.match(source, /orderChatFamilies\(allChatFamilies, pinnedChats, runningSessionIds\)/);
   assert.match(source, /trimmedSessionQuery\s*\? orderedChatFamilies\s*: orderedChatFamilies\.filter\(\(family\) => !archivedChats\.has\(family\.root\.id\)\)/);
   // Rows already show their own relative time, so the list has no Today / This week headings.
   assert.doesNotMatch(source, /sidebar-chats-group-label|chatsToday|CHAT_GROUP_LABEL_KEYS/);
-  // The +5 paging still runs over the whole order.
-  assert.match(source, /: chatFamilies\.slice\(0, MAX_VISIBLE_CHAT_SESSIONS \* \(chatSessionPages \+ 1\)\)/);
+  // The +5 paging still runs over the whole order, and the window never drops a
+  // pinned or running chat.
+  assert.match(source, /: chatFamilies\.slice\(0, Math\.max\(MAX_VISIBLE_CHAT_SESSIONS \* \(chatSessionPages \+ 1\), alwaysVisibleChatFamilies\)\)/);
+  assert.match(
+    source,
+    /const alwaysVisibleChatFamilies = chatFamilies\.filter\(\(family\) => \(\s*pinnedChats\.has\(family\.root\.id\) \|\| familyHasRunningSession\(family, runningSessionIds\)\s*\)\)\.length;/,
+  );
   // Archived chats stay reachable and recoverable.
   assert.match(source, /sidebar\.showArchivedChats/);
   assert.match(source, /APP_PREF_KEYS\.archivedChats/);
@@ -313,10 +318,14 @@ test("session rows swap a compact time for the action button in one fixed-width 
   assert.match(sessionItemSource, /\{!session\.transient && \(\s*<div\s+className="session-item-trailing"/);
 });
 
-test("project header shows a session count and chips only while folded", () => {
-  // A folded project hides its rows, so the header carries the count.
-  assert.match(source, /\{isCollapsed && \(\s*<span className="sidebar-project-tree-count"[^>]*>\s*\(\{groupTree\.length\}\)/);
-  assert.match(source, /\{isCollapsed && \(\s*<span className="sidebar-project-tree-meta">/);
+test("project header always shows its session count and running/unread chips", () => {
+  // Folded, the header is the only place the numbers show; open, it is the only
+  // place the running and unread totals show — so both states keep them.
+  assert.match(source, /<span className="sidebar-project-tree-count" title=\{t\("sidebar\.sessionCount", \{ count: groupTree\.length \}\)\}>\s*\(\{groupTree\.length\}\)/);
+  assert.match(source, /<span className="sidebar-project-tree-meta">\s*\{runningCount > 0 && \(/);
+  // The chips are no longer gated on the fold.
+  assert.doesNotMatch(source, /\{isCollapsed && \(\s*<span className="sidebar-project-tree-count"/);
+  assert.doesNotMatch(source, /\{isCollapsed && \(\s*<span className="sidebar-project-tree-meta"/);
   // The rendered path replaces the native tooltip; the accessible label keeps the branch.
   assert.doesNotMatch(source, /className="sidebar-project-tree-branch"/);
   assert.match(source, /const rowTitle = branchSubtitle \? `\$\{group\.projectRoot\} · \$\{branchSubtitle\}` : group\.projectRoot/);
@@ -357,7 +366,11 @@ test("folded projects persist across reloads", () => {
 test("show more reveals five sessions at a time and a project toggle resets it", () => {
   assert.match(source, /getPrefJson<unknown>\(APP_PREF_KEYS\.expandedProjects\)/);
   assert.match(source, /setPrefJson\(APP_PREF_KEYS\.expandedProjects, projectSessionPages\)/);
-  assert.match(source, /const visibleSessionLimit = MAX_VISIBLE_PROJECT_SESSIONS \* \(extraPages \+ 1\)/);
+  // The page grows by five, and never shrinks below the pinned + running rows.
+  assert.match(
+    source,
+    /const visibleSessionLimit = Math\.max\(MAX_VISIBLE_PROJECT_SESSIONS \* \(extraPages \+ 1\), alwaysVisibleRoots\);/,
+  );
   assert.match(
     source,
     /\[group\.projectRoot\]: \(prev\[group\.projectRoot\] \?\? 0\) \+ 1/,
@@ -370,6 +383,24 @@ test("show more reveals five sessions at a time and a project toggle resets it",
   assert.match(source, /setProjectSessionPages\(\(prev\) => \{[\s\S]*?delete next\[group\.projectRoot\]/);
   // Legacy arrays meant "expanded everything"; migrate them to one extra page.
   assert.match(source, /Array\.isArray\(stored\)[\s\S]*?\.map\(\(root\) => \[root, 1\]\)/);
+});
+
+test("an open project leads with its pinned rows, then every running one", () => {
+  // The preview window never buries what is live: pins, then the running families,
+  // then recency — and it widens past the five rows so all of them fit.
+  assert.match(source, /const rowIsPinned = \(node: SessionTreeNode\) => pinnedSessions\.has\(node\.session\.id\);/);
+  assert.match(source, /const rowIsRunning = \(node: SessionTreeNode\) => treeHasRunningSession\(node, group\.runningIds\);/);
+  assert.match(source, /const groupTree = pinnedThenRunning\(unarchivedGroupTree, rowIsPinned, rowIsRunning\);/);
+  assert.match(source, /const alwaysVisibleRoots = unarchivedGroupTree\.filter\(\(node\) => rowIsPinned\(node\) \|\| rowIsRunning\(node\)\)\.length;/);
+  assert.match(
+    source,
+    /const visibleSessionLimit = Math\.max\(MAX_VISIBLE_PROJECT_SESSIONS \* \(extraPages \+ 1\), alwaysVisibleRoots\);/,
+  );
+  // A running family is the family's live work: the row's own session, or any run
+  // nested under it (a subagent is only reachable through its parent's row).
+  assert.match(source, /treeHasRunningSession/);
+  // The header carries the running / unread chips in both fold states.
+  assert.match(source, /<span className="sidebar-project-tree-meta">/);
 });
 
 test("Projects pane chooses between grouped and chronological views", () => {
@@ -419,7 +450,18 @@ test("a project's sessions are pinned through the server's state, not this brows
   assert.doesNotMatch(source, /APP_PREF_KEYS\.pinned/);
   assert.doesNotMatch(source, /setPinnedSessions|setPinnedChats|setPinnedProjects/);
   assert.match(source, /pinned: pinnedSessions\.has\(id\),\s*onTogglePin: \(\) => \{ void pins\.toggleSessionPin\(id\); \},/);
-  assert.match(source, /const groupTree = pinnedFirst\(unarchivedGroupTree, \(node\) => pinnedSessions\.has\(node\.session\.id\)\);/);
+  assert.match(
+    source,
+    /const groupTree = pinnedThenRunning\(unarchivedGroupTree, rowIsPinned, rowIsRunning\);/,
+  );
+  // A running family (its own session, or a run nested under it) leads the list
+  // under the pins, and the preview window keeps all of them visible.
+  assert.match(source, /const rowIsRunning = \(node: SessionTreeNode\) => treeHasRunningSession\(node, group\.runningIds\);/);
+  assert.match(source, /const alwaysVisibleRoots = unarchivedGroupTree\.filter\(\(node\) => rowIsPinned\(node\) \|\| rowIsRunning\(node\)\)\.length;/);
+  assert.match(
+    source,
+    /const visibleSessionLimit = Math\.max\(MAX_VISIBLE_PROJECT_SESSIONS \* \(extraPages \+ 1\), alwaysVisibleRoots\);/,
+  );
   // A pin made in another window arrives: the running frames carry the state's
   // revision, and the sidebar hands it to the hook.
   assert.match(source, /noteRevision\(data\.sessionUiStateRevision\);/);
