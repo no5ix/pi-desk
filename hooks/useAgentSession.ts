@@ -16,6 +16,7 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { attachmentAwareTitle, splitAttachedFiles } from "@/lib/chat-attachments";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import { mergeComposerQueueSnapshot, type ComposerQueueActionResult, type PendingComposerMessage } from "@/lib/composer-queue-types";
+import { sampleClientMemory } from "@/lib/client-memory";
 import { fetchWithRetry } from "@/lib/fetch-timeout";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
 import { rememberScrollPosition, sessionScrollTops } from "@/lib/scroll-memory";
@@ -510,6 +511,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // re-subscribing it. Assigned every render like sessionPropIdRef below.
   const dataRef = useRef<SessionData | null>(null);
   const messagesRef = useRef<AgentMessage[]>([]);
+  const queuedMessagesRef = useRef<QueuedMessages>({ steering: [], followUp: [] });
   const entryIdsRef = useRef<string[]>([]);
   const activeLeafIdRef = useRef<string | null>(null);
   const historyCursorRef = useRef<string | null>(null);
@@ -518,6 +520,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   sessionPropIdRef.current = session?.id ?? null;
   dataRef.current = data;
   messagesRef.current = messages;
+  queuedMessagesRef.current = queuedMessages;
   entryIdsRef.current = entryIds;
   activeLeafIdRef.current = activeLeafId;
   historyCursorRef.current = historyCursor;
@@ -1224,6 +1227,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const response = await fetch(`/api/agent/${encodeURIComponent(sid)}/lease`, {
           method: "POST",
           cache: "no-store",
+          // The page's own memory numbers ride on the renewal it already sends
+          // (lib/client-memory.ts): the server meters the heap, the page meters
+          // its DOM and loaded window. A body the server does not understand
+          // leaves the renewal exactly as it was.
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            memory: sampleClientMemory({
+              messages: messagesRef.current.length,
+              queuedPrompts: queuedMessagesRef.current.steering.length + queuedMessagesRef.current.followUp.length,
+            }),
+          }),
         });
         if (!response.ok || disposed) return;
         const result = await response.json() as { renewed?: number };

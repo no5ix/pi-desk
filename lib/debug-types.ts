@@ -7,6 +7,10 @@
 
 // ── Server: GET /api/agent/debug?session=<id> ────────────────────────────────
 
+// Type-only: the memory report is built by the module that meters the process
+// (lib/server-memory.ts), so the panel's shape names it once.
+import type { DebugMemoryReport } from "./server-memory";
+
 export interface DebugWrapperRun {
   /** `isRunning()`: a prompt, a queued one, a `!` command or a compaction. */
   running: boolean;
@@ -217,6 +221,13 @@ export interface DebugServerGlobal {
     exited: number;
     nextCleanupAt: number | null;
   };
+  /**
+   * What the process is holding, by bucket (lib/server-memory.ts). Only with
+   * `?memory=1`: the panel polls every two seconds and the default snapshot
+   * stays small. The answer to "the server uses 10 GB" — which store, how many,
+   * and how much the store itself can name.
+   */
+  memory?: DebugMemoryReport | null;
 }
 
 export interface DebugSnapshotResponse {

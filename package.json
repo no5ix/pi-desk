@@ -48,6 +48,7 @@
     "release:manifest": "node scripts/write-component-versions.mjs",
     "release:verify": "node scripts/verify-release-components.mjs",
     "drift": "node scripts/measure-fork-drift.mjs",
+    "memory:bench": "node scripts/memory-bench.mjs",
     "preview-runtime": "node scripts/build-preview-runtime.mjs",
     "desktop:check-payload": "node scripts/check-packaged-payload.mjs",
     "desktop:verify": "node scripts/verify-packaged-codemode.mjs && node scripts/verify-packaged-terminal.mjs",

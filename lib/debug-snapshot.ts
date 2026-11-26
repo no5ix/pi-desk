@@ -20,6 +20,7 @@ import {
   type RpcSessionDebugEntry,
 } from "./rpc-manager";
 import { listRegisteredSessionLivenessProviders, listSessionLivenessProviders } from "./session-liveness";
+import { sampleServerMemory } from "./server-memory";
 import { hasUnsettledSubagentRun, subagentDebugSnapshot } from "./subagent-runtime";
 import { getTerminalStats } from "./terminal-manager";
 
@@ -90,7 +91,11 @@ function buildDetail(
  * opens no stream, moves no idle timer and never calls `send()`.
  * `sessions` holds every id with a wrapper or an event stream.
  */
-export function buildDebugSnapshot(sessionId: string | null, now = Date.now()): DebugSnapshotResponse {
+export function buildDebugSnapshot(
+  sessionId: string | null,
+  now = Date.now(),
+  options: { memory?: boolean } = {},
+): DebugSnapshotResponse {
   const wrappers = read(() => getRpcSessionDebugSnapshots(), []);
   const starting = read(() => getRpcStartingSessionIds(), []);
   // Registered, not asked: a summary runs no extension code.
@@ -163,6 +168,10 @@ export function buildDebugSnapshot(sessionId: string | null, now = Date.now()): 
     pages: [...pages.values()],
     fileWatches,
     terminals,
+    // `?memory=1`: the metered view (lib/server-memory.ts). A meter read is cheap
+    // and cannot throw the panel into an error, so it goes through `read` like
+    // every other source.
+    ...(options.memory ? { memory: read(() => sampleServerMemory(now), null) } : {}),
   };
 
   return {
