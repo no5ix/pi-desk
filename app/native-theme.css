@@ -11037,8 +11037,57 @@ html.native-desktop :is(
 .turn-files-row:hover {
   background: var(--bg-hover);
 }
+/* The header is a band, not the first row of the table: it carries the count and the
+   totals, and it is the control that opens and closes everything under it. The card's own
+   surface is a 48% wash under the transcript and the rows sit transparent on it, so the
+   header takes a plate of its own — the surface, and the palette's selected wash laid over
+   it as one flat gradient. The app's own plate recipe (see `.image-preview-close:hover`
+   and the panel's icon buttons): an opaque base with a tint over it, never a `color-mix`
+   of two colours that leaves a half-transparent layer the page shows through. */
+.turn-files-header {
+  background-color: color-mix(in srgb, var(--surface) 88%, transparent);
+  background-image: linear-gradient(color-mix(in srgb, var(--bg-selected) 62%, transparent), color-mix(in srgb, var(--bg-selected) 62%, transparent));
+}
+.turn-files-header:hover {
+  /* The tint token takes the plate off the band, so the control answers the pointer. */
+  background-color: color-mix(in srgb, var(--surface) 96%, transparent);
+  background-image: linear-gradient(var(--bg-hover), var(--bg-hover));
+}
 .turn-files-row {
   border-top: var(--hairline) solid var(--separator);
+}
+
+/* The expand/collapse. `grid-template-rows: 0fr → 1fr` with a child that clips is the
+   height-to-auto transition every engine here animates; `interpolate-size` and
+   `calc-size()` (the newer way) are Chromium-only, so on the desktop's WKWebView and on
+   a phone the card would jump. The rows fade with the track, so a collapse is one move
+   and not a stack of rows snapping. */
+.turn-files-list {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-base) var(--ease-native);
+}
+.turn-files-list.is-open {
+  grid-template-rows: 1fr;
+}
+.turn-files-list-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+.turn-files-list .turn-files-row {
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease-native), background var(--dur-fast) var(--ease-native);
+}
+.turn-files-list.is-open .turn-files-row {
+  opacity: 1;
+}
+/* The height is the motion; a reduced-motion reader gets the rows at their end state
+   at once, with the hover tint still answering (only the movement is damped). */
+@media (prefers-reduced-motion: reduce) {
+  .turn-files-list,
+  .turn-files-list .turn-files-row {
+    transition: background var(--dur-fast) var(--ease-native);
+  }
 }
 
 .turn-files-header-icon,
@@ -14036,7 +14085,8 @@ a:focus-visible {
 .custom-message-card,
 .custom-message-body,
 .custom-message-footer {
-  background: var(--bg-panel) !important;
+  background: var(--bg-subtle) !important
+  
 }
 
 /* The report's text is a thinking card's reading type, not the 13px terminal
@@ -14127,15 +14177,20 @@ a:focus-visible {
 
 /* The image overlay: a finger's swipe, a trackpad's flick, and a tap that means
    "enough". One image of a turn becomes the ring of that turn's images: the swipe
-   moves, the tap closes. The controls are the overlay's own control — the close
-   button's shape, its surface and its shadow — so the overlay has one kind of button.
-   A swipe is a gesture, so the image must not also pan under a finger: `touch-action`
-   says the vertical direction is the page's, the horizontal is the overlay's. */
+   moves, the tap closes. There are no direction plates: the ring is travelled by the
+   hand, and two big opaque discs over a photo hide the photo. What the overlay does
+   draw is its two little plates — the count and the close — and both let the picture
+   through, because the user came to look at the picture. `touch-action` says the
+   vertical direction is the page's, the horizontal is the overlay's. */
 .image-preview-image {
   cursor: zoom-out;
   touch-action: pan-y;
 }
 
+/* A translucent plate with a blur under it: over a photo that runs from blown-out
+   white to near black, a solid token is a sticker and bare text is unreadable. The
+   blur is what keeps the ink legible on whatever the picture is, and the plate stays
+   a plate, not a window: it takes the app's surface, mostly, and gives some back. */
 .image-preview-count {
   position: absolute;
   bottom: max(14px, env(safe-area-inset-bottom));
@@ -14143,51 +14198,29 @@ a:focus-visible {
   transform: translateX(-50%);
   padding: 3px 10px;
   border-radius: 999px;
-  background: var(--bg-panel);
+  background: color-mix(in srgb, var(--surface) 52%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   color: var(--text-muted);
   font-size: var(--fs-micro);
   font-variant-numeric: tabular-nums;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
 }
 
-.image-preview-swipe {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 max(10px, env(safe-area-inset-left));
-  pointer-events: none;
-}
-
-.image-preview-swipe-button {
-  display: none;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
+/* The close is a circle, like every control that floats over the page (the scroll
+   disc, the composer's disc). Upstream draws it as a 6px box with a hairline, which
+   reads as a form control pasted on the user's photograph; the hairline is what makes
+   it a box. The rest state is the same translucent plate as the count, and a hover
+   closes it — the plate solidifies under the pointer, so the control the user is about
+   to press is the least transparent thing on the screen. See
+   app/native-theme-hover.test.mjs: the hover is an opaque base with the tint laid over
+   it, never a translucent token (the fork's `--bg-hover` alone is a 5% wash). */
+.image-preview-close {
   border: 0;
   border-radius: 999px;
-  background: var(--bg-panel);
-  color: var(--text-muted);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
-  pointer-events: auto;
-  touch-action: manipulation;
-  cursor: pointer;
-}
-
-.image-preview-swipe-button:hover {
-  background: var(--bg-hover);
-  color: var(--text);
-}
-
-/* A thumb has no wheel and no arrow keys: on a touch device the ring says where it
-   goes, and the plate is a finger's size. */
-@media (pointer: coarse) {
-  .image-preview-swipe-button {
-    display: inline-flex;
-  }
+  background-color: color-mix(in srgb, var(--surface) 52%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
 }
 
 /* ═════ The right panel's Git view (components/GitPanel.tsx) ═════
