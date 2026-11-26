@@ -806,9 +806,15 @@ new-worktree form **from that branch** — the branch is created at the row's ti
 `<repo>-worktrees/<branch>`, and the new session moves into that folder while the
 folder the composer was opened from keeps its own branch. The row's **name is the
 switch** (it was always the only thing that could be): a second branch glyph that
-also checked the branch out was a target that did the same thing as the label, and a
-button on a row whose branch git would refuse (this folder's own branch, a branch a
-worktree already holds) promised a click that answers with an error. The form names the base
+also checked the branch out was a target that did the same thing as the label.
+**The worktree button sits on every row, the current branch included** — the row you
+are standing on is the branch you most want a worktree off, and hiding the button
+there read as a dead end. It never promises a click that answers with an error: the
+form types a **new** branch name and takes the row's branch as its base, so the call
+is `git worktree add -b <new> <folder> <row's branch>`, which collides with no
+checkout that exists. The one row with no worktree button is a branch a **linked**
+worktree already holds — its folder exists, its row carries the removal, and the row's
+name opens it. The form names the base
 branch and the folder the branch lands in, and picking an existing worktree moves the
 session there. A worktree the
 composer was sitting in, once removed, sends the composer to the project's main

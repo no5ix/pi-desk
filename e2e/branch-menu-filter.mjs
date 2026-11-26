@@ -162,8 +162,8 @@ assert.equal(
 );
 assert.equal(
   await page.locator('.sidebar-project-context-menu-row--branch:has([data-branch="feat/x"]) .sidebar-project-context-menu-branch-action').count(),
-  0,
-  "the branch this folder is on offers no worktree of its own: git would refuse it",
+  1,
+  "the branch this folder is on offers a worktree of its own: the form starts a new branch off it, so git is never asked to check it out twice",
 );
 // No "Worktrees…" page any more, and no step back to "Project actions": the branches
 // that own a folder are rows here, and the panel opened on this page.

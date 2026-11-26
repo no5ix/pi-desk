@@ -72,9 +72,10 @@ export function buildBranchRows(options: {
   const rowFor = (name: string, remote: boolean): BranchRow => {
     const holder = name === currentBranch
       // The current branch is held by *this* folder: git refuses to check it out
-      // twice, and a worktree from it would collide with the folder it already
-      // lives in. So the row gets no worktree button, and no removal either (the
-      // folder you are standing in is not one to take away).
+      // twice, so the row's name is not a switch, and it gets no removal either
+      // (the folder you are standing in is not one to take away). Its worktree
+      // button stays: the form starts a *new* branch off this one, which
+      // collides with no checkout.
       ? (checkout ? { path: checkout.path, isMain: checkout.isMain } : null)
       : holderOf.get(name) ?? null;
     const kind: BranchRowKind = name === currentBranch

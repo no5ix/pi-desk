@@ -136,9 +136,11 @@ assert.ok(widest.textWidth + 60 <= menuWidth,
 for (const row of rows) {
   const label = row.branch;
   // The row's own button is the switch, and the icons at its trailing edge are what
-  // only that row can do. The current branch has none: git refuses a worktree from
-  // the branch this folder is already on.
-  assert.equal(row.actions.length, row.current ? 0 : 1,
+  // only that row can do: the worktree this branch can start, on every row — the current
+  // branch included, because the form types a new branch based on it, so the checkout this
+  // branch lives in is untouched. (A row whose branch a linked worktree already holds wears
+  // the removal instead; this fixture has none.)
+  assert.equal(row.actions.length, 1,
     `${label}: ${row.actions.length} action icons — the worktree this branch can start, and the name is the switch`);
   assert.ok(!row.tagOverIcon, `${label}: the "${row.tagText}" tag does not overlap the row's icons`);
   assert.ok(!row.tagPastButton, `${label}: the "${row.tagText}" tag stays inside the row's button`);

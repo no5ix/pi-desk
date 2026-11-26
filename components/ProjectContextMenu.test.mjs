@@ -155,13 +155,16 @@ test("a branch row's worktree button opens the form, and only where a worktree c
   assert.ok(!plain.includes("sidebar-project-context-menu-branch-action\""), "the sidebar's own page gets no worktree button");
   const chip = render({ view: "branches", onCreateWorktreeFromBranch: () => {} });
   assert.match(chip, /sidebar-project-context-menu-row sidebar-project-context-menu-row--branch/);
-  // One button, on the rows where a worktree can start. The branch this folder is on and
-  // the branch a worktree already holds get none: git refuses both, and the row's name is
-  // the switch. The button is the way into the new-worktree form, the page that names the
-  // folder the branch will land in — it never opens a list of names.
-  assert.equal(chip.match(/class="sidebar-project-context-menu-branch-action"/g)?.length, 1,
-    "one action button, on the one branch that can start a worktree");
-  assert.equal(chip.match(/sidebar\.worktreeFromBranchTitle\(/g)?.length, 2, "the button is named (title and aria-label)");
+  // A button on every row a worktree can start from — the current branch included, because
+  // the form types a *new* branch based on it, so the checkout this branch lives in is not
+  // touched. Only a branch a linked worktree already holds is left with the removal alone:
+  // a folder for it exists and the row's name opens it. The button is the way into the
+  // new-worktree form, the page that names the folder the branch will land in.
+  assert.equal(chip.match(/class="sidebar-project-context-menu-branch-action"/g)?.length, 2,
+    "one action button on the current row and one on the remote row");
+  assert.ok(chip.includes("sidebar.worktreeFromBranchTitle(feature)"),
+    "the branch this folder is on offers the worktree too (the user asked for the row they are on)");
+  assert.equal(chip.match(/sidebar\.worktreeFromBranchTitle\(/g)?.length, 4, "the button is named (title and aria-label)");
   for (const key of ["sidebar.checkOutBranchTitle", "sidebar.openWorktreeForBranchTitle"]) {
     assert.ok(!chip.includes(key), `${key} belonged to the removed branch glyph`);
   }

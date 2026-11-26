@@ -522,8 +522,15 @@ export function ProjectContextMenuPanel({
    * here, or take the session to the folder that already holds it), and the
    * buttons at the row's trailing edge are the two things only this row can do:
    * start a worktree from this branch, or take away the checkout a worktree
-   * branch already has. A branch git would refuse (`already checked out`) gets
-   * neither worktree button, because the row's name is what opens that folder.
+   * branch already has.
+   *
+   * The worktree button is on every row, the current branch included: the form
+   * it opens types a *new* branch and names this row's branch as its base, so
+   * nothing collides with the checkout this branch already lives in. (Hiding it
+   * here read as a dead end — the branch you are on is the one you most want a
+   * worktree off.) A row whose branch a linked worktree already holds is the one
+   * row that needs no second worktree button: the removal is there, and the
+   * row's name opens that folder.
    */
   const branchLine = (row: BranchRow, label: string, depth: number) => {
     const key = `${row.remote ? "remote:" : "local:"}${row.name}`;
@@ -548,7 +555,7 @@ export function ProjectContextMenuPanel({
     );
     const actions = (
       <span className="sidebar-project-context-menu-branch-actions">
-        {onCreateWorktreeFromBranch && !row.holderPath && (
+        {onCreateWorktreeFromBranch && (!row.holderPath || row.kind === "current") && (
           <button
             type="button"
             className="sidebar-project-context-menu-branch-action"
