@@ -1266,6 +1266,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       disposed = true;
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
+      // The page is leaving this session — to another one, to a closed tab, to a
+      // closed side chat. Every renewal restarted the server's idle countdown, so
+      // the server learns about the leaving here and releases the transcript in
+      // seconds (POST /api/agent/[id]/release) instead of an idle timeout.
+      // `keepalive` so a tab that closes still delivers it; best effort, and the
+      // idle timeout is the backstop when the browser drops the request.
+      void fetch(`/api/agent/${encodeURIComponent(sid)}/release`, {
+        method: "POST",
+        cache: "no-store",
+        keepalive: true,
+      }).catch(() => {});
     };
   }, [closeEvents, maintainEventsConnected, session?.id]);
 

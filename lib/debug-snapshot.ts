@@ -16,6 +16,7 @@ import {
   getRpcSessionDebugSnapshots,
   getRpcSessionLifecycle,
   getRpcStartingSessionIds,
+  IDLE_SESSION_CAP_BYTES,
   SESSION_IDLE_TIMEOUT_MS,
   type RpcSessionDebugEntry,
 } from "./rpc-manager";
@@ -153,6 +154,7 @@ export function buildDebugSnapshot(
   const server: DebugServerGlobal = {
     startedAt: Math.round(now - process.uptime() * 1000),
     idleTimeoutMs: SESSION_IDLE_TIMEOUT_MS,
+    idleCapBytes: IDLE_SESSION_CAP_BYTES,
     heartbeatMs: AGENT_EVENT_HEARTBEAT_MS,
     wrappers: {
       alive: wrappers.filter((entry) => entry.snapshot.state === "alive").length,

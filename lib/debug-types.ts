@@ -197,6 +197,8 @@ export interface DebugServerGlobal {
   /** Process start, so a server restart reads apart from a reaped wrapper. */
   startedAt: number;
   idleTimeoutMs: number;
+  /** The warm-session byte budget (lib/idle-session-cap.ts): session-file bytes of unwatched wrappers. */
+  idleCapBytes: number;
   heartbeatMs: number;
   /**
    * `starting`: `startRpcSession()` calls under way with no alive wrapper yet, a fresh composer's

@@ -27,7 +27,7 @@ import type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 export type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 import { isVerboseLogging } from "../bin/pi-web-options.js";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
-import { IDLE_SESSION_CAP_GRACE_MS, selectIdleSessionsToEvict, type IdleSessionCandidate, type IdleSessionCapLimits } from "./idle-session-cap";
+import { resolveIdleSessionCapBytes, resolveIdleSessionCapGraceMs, selectIdleSessionsToEvict, type IdleSessionCandidate, type IdleSessionCapLimits } from "./idle-session-cap.ts";
 import type { AgentSession, LoadExtensionsResult, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
 import type { AgentSessionLike, ExtensionUiContextLike, NavigateTreeOptions, ToolInfo } from "./pi-types";
@@ -326,6 +326,63 @@ export function resolveSessionIdleTimeoutMs(
 /** Resolved once: the debug panel reads it rather than resolving the variable again, which warns. */
 export const SESSION_IDLE_TIMEOUT_MS = resolveSessionIdleTimeoutMs();
 
+// The warm-session budget and the grace that decides a wrapper is warm and
+// nobody is looking at it (lib/idle-session-cap.ts). Resolved once, like the
+// idle timeout, so the debug panel and the cap agree for the process's life.
+export const IDLE_SESSION_CAP_BYTES = resolveIdleSessionCapBytes();
+const IDLE_SESSION_CAP_GRACE_MS = resolveIdleSessionCapGraceMs();
+
+/**
+ * PI_WEB_VIEWER_RELEASE_MS: how long a session the page only READ has earned its
+ * idle timeout. Opening a session starts a full AgentSession — extensions bound,
+ * MCP host, the whole transcript parsed — and then the person moves on, leaving
+ * it warm for ten minutes. Ten minutes of browsing is a dozen loaded transcripts,
+ * and the read-only view cache (lib/session-reader.ts) serves the browsing it
+ * replaces. A wrapper that has never been prompted is the one this applies to:
+ * releasing a session that ran here is left to the byte cap and the idle
+ * timeout, because a wrapper that answered a prompt is the one a person expects
+ * to come back to. `0` turns the early release off.
+ */
+const DEFAULT_VIEWER_RELEASE_MS = 10_000;
+
+export function resolveViewerReleaseMs(
+  rawValue: string | undefined = process.env.PI_WEB_VIEWER_RELEASE_MS,
+): number {
+  const raw = (rawValue ?? "").trim();
+  if (raw === "") return DEFAULT_VIEWER_RELEASE_MS;
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  console.warn(`[pi-web] invalid PI_WEB_VIEWER_RELEASE_MS "${raw}", using ${DEFAULT_VIEWER_RELEASE_MS} ms`);
+  return DEFAULT_VIEWER_RELEASE_MS;
+}
+
+const VIEWER_RELEASE_MS = resolveViewerReleaseMs();
+
+/**
+ * PI_WEB_RELEASE_GRACE_MS: what a page leaving a session leaves it warm for.
+ * A selected page renews the session's lease every 30 seconds, and every renewal
+ * restarts the idle countdown, so "I closed this session" is news the server
+ * only learns when the page tells it (POST /api/agent/[id]/release). Without
+ * that news, closing a session costs the full idle timeout of loaded transcript.
+ * The grace covers the reconnect that a session switch or an EventSource drop
+ * causes, and a run in progress is never cut short by it: the idle timer
+ * re-arms while the session runs.
+ */
+const DEFAULT_RELEASE_GRACE_MS = 5_000;
+
+export function resolveReleaseGraceMs(
+  rawValue: string | undefined = process.env.PI_WEB_RELEASE_GRACE_MS,
+): number {
+  const raw = (rawValue ?? "").trim();
+  if (raw === "") return DEFAULT_RELEASE_GRACE_MS;
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  console.warn(`[pi-web] invalid PI_WEB_RELEASE_GRACE_MS "${raw}", using ${DEFAULT_RELEASE_GRACE_MS} ms`);
+  return DEFAULT_RELEASE_GRACE_MS;
+}
+
+const RELEASE_GRACE_MS = resolveReleaseGraceMs();
+
 const DEFAULT_SESSION_SHUTDOWN_DEADLINE_MS = 5_000;
 
 /**
@@ -499,6 +556,19 @@ export class AgentSessionWrapper {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   // Last time a listener was attached or left, or a command/event reset the idle timer.
   private lastUsedAt = Date.now();
+  /**
+   * A prompt has run through this wrapper, so it is a session the person used
+   * here rather than one they only read. The byte cap's grace is the reading
+   * case's short window; a session that answered a prompt keeps the full one
+   * (lib/idle-session-cap.ts, resolveViewerReleaseMs).
+   */
+  private everPrompted = false;
+  /**
+   * Set when a page reported leaving the session (releaseIdleTimer): the idle
+   * timeout is shortened to this grace until a page comes back (a lease) or a
+   * command arrives. Null: no release is pending.
+   */
+  private idleReleaseGraceMs: number | null = null;
   private onUnwatchedCallback: (() => void) | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private shutdownPromise: Promise<void> | null = null;
@@ -626,7 +696,33 @@ export class AgentSessionWrapper {
    */
   renewIdleTimer(): void {
     if (!this.isAlive()) return;
+    // A page renewed this session, so no release is pending any more: the full
+    // warm window is back.
+    this.idleReleaseGraceMs = null;
     this.resetIdleTimer();
+  }
+
+  /**
+   * A page reported that it left this session (POST /api/agent/[id]/release).
+   * Its lease renewals were restarting the idle countdown every 30 seconds, so
+   * without this news the session stays loaded for a full idle timeout after the
+   * person has moved on. The countdown is shortened to the release grace, which
+   * outlives the reconnect a session switch causes, and a run in progress is
+   * untouched: the timer re-arms while the session runs.
+   */
+  releaseIdleTimer(graceMs: number = RELEASE_GRACE_MS): void {
+    if (!this.isAlive()) return;
+    this.idleReleaseGraceMs = Math.max(1_000, Math.round(graceMs));
+    this.resetIdleTimer();
+  }
+
+  /**
+   * A page is streaming this session. The release a page reports when it leaves
+   * is only news while nobody else is watching: a second tab, a phone, an open
+   * terminal panel — any event stream — is a reason to stay loaded.
+   */
+  hasEventListeners(): boolean {
+    return this.listeners.size > 0;
   }
 
   /**
@@ -1349,13 +1445,19 @@ export class AgentSessionWrapper {
     // running until the server restarts (#656).
     const timeoutMs = SESSION_IDLE_TIMEOUT_MS
       || (this.forceShutdownOnIdle ? DEFAULT_SESSION_IDLE_TIMEOUT_MS : 0);
-    this.forcedIdleTimerArmed = timeoutMs !== 0 && this.forceShutdownOnIdle;
+    // A released session is the one a page said it left: keep the warm window
+    // short, and never shorten the forced cleanup Stop scheduled.
+    const released = this.idleReleaseGraceMs;
+    const effectiveTimeoutMs = timeoutMs !== 0 && !this.forceShutdownOnIdle && released !== null && released < timeoutMs
+      ? released
+      : timeoutMs;
+    this.forcedIdleTimerArmed = effectiveTimeoutMs !== 0 && this.forceShutdownOnIdle;
     this.idleLastResetAt = Date.now();
-    if (timeoutMs === 0) {
+    if (effectiveTimeoutMs === 0) {
       this.idleDeadlineAt = null;
       return;
     }
-    this.idleDeadlineAt = this.idleLastResetAt + timeoutMs;
+    this.idleDeadlineAt = this.idleLastResetAt + effectiveTimeoutMs;
     this.idleTimer = setTimeout(() => {
       this.idleDeadlineAt = null;
       if (!this.forceShutdownOnIdle && (this.isRunning() || hasActiveSessionLivenessProvider({
@@ -1368,7 +1470,7 @@ export class AgentSessionWrapper {
       void this.shutdown().catch((error) => {
         console.error("[pi-web] failed to shut down idle session:", error instanceof Error ? error.message : error);
       });
-    }, timeoutMs);
+    }, effectiveTimeoutMs);
   }
 
   private persistBashOnlySession(): void {
@@ -1414,11 +1516,12 @@ export class AgentSessionWrapper {
    * liveness provider, or use within the grace period. A session with no file on
    * disk yet is never a candidate: shutting it down would lose it.
    */
-  idleCapCandidate(now: number = Date.now()): IdleSessionCandidate | null {
+  idleCapCandidate(now: number = Date.now(), graceMsOverride?: number): IdleSessionCandidate | null {
     if (!this.isAlive() || this.isRunning() || this.forceShutdownOnIdle) return null;
     if (this.listeners.size > 0 || this.pendingUiRequests.size > 0 || this.activeCustomUis.size > 0) return null;
     if (this.composerQueue.snapshot().length > 0) return null;
-    if (now - this.lastUsedAt < IDLE_SESSION_CAP_GRACE_MS) return null;
+    const graceMs = graceMsOverride ?? (this.everPrompted ? IDLE_SESSION_CAP_GRACE_MS : VIEWER_RELEASE_MS);
+    if (now - this.lastUsedAt < graceMs) return null;
     const sessionFile = this.sessionFile;
     if (!sessionFile) return null;
     let bytes: number;
@@ -1428,7 +1531,7 @@ export class AgentSessionWrapper {
       return null;
     }
     if (hasActiveSessionLivenessProvider({ sessionId: this.sessionId, sessionFile })) return null;
-    return { id: this.sessionId, idleSince: this.lastUsedAt, bytes };
+    return { id: this.sessionId, idleSince: this.lastUsedAt, bytes, viewer: !this.everPrompted };
   }
 
   onDestroy(cb: () => void): void {
@@ -1486,6 +1589,8 @@ export class AgentSessionWrapper {
     if (type !== "get_state") {
       this.lastCommandType = typeof type === "string" ? type : null;
       this.lastCommandAt = Date.now();
+      // A command means a page is here: a pending release no longer applies.
+      this.idleReleaseGraceMs = null;
     }
     const allowedDuringReplacement = COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT.has(type);
     if (this.sessionReplacement && !allowedDuringReplacement) {
@@ -1531,6 +1636,7 @@ export class AgentSessionWrapper {
         await this.composerQueue.sendNow(command.id as string);
         return { item: null, pending: this.composerQueue.snapshot(), pendingVersion: this.composerQueue.version };
       case "prompt": {
+        this.everPrompted = true;
         // A chat's folder keeps a copy of the text files attached to the message.
         if (this.chatFolder && typeof command.message === "string") {
           saveAttachedFilesToFolder(this.cwd, command.message);
@@ -3045,13 +3151,15 @@ export function enforceIdleSessionCap(now: number = Date.now(), limits?: IdleSes
   const wrappers = new Map<string, AgentSessionWrapper>();
   for (const [key, wrapper] of registry) {
     // A wrapper registered before a hot reload may lack the method.
-    const candidate = typeof wrapper.idleCapCandidate === "function" ? wrapper.idleCapCandidate(now) : null;
+    const candidate = typeof wrapper.idleCapCandidate === "function"
+      ? wrapper.idleCapCandidate(now, limits?.graceMs)
+      : null;
     if (!candidate) continue;
     candidates.push({ ...candidate, id: key });
     wrappers.set(key, wrapper);
   }
   const evicted: string[] = [];
-  for (const id of selectIdleSessionsToEvict(candidates, limits)) {
+  for (const id of selectIdleSessionsToEvict(candidates, { ...limits, maxBytes: limits?.maxBytes ?? IDLE_SESSION_CAP_BYTES })) {
     const wrapper = wrappers.get(id)!;
     evicted.push(id);
     void wrapper.shutdown().catch((error) => {
