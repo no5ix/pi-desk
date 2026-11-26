@@ -66,30 +66,51 @@ rides in the meter's report.
   `scripts/upstream-css-baseline.test.mjs` (globals.css baseline) and
   `hooks/useAgentSession.test.mjs` → "keeps the compaction control reachable…".
 
-## Measured
+## Measured (capped production build, 127.0.0.1:30199)
 
-Capped production (desktop) build on `127.0.0.1:30199`, six of the largest
-sessions, 3 rounds, 45 s idle: heap 71 → 268 MB, `caches.sessionManager` 158.9 MB,
-peak RSS 512.8 MB, **0 MB given back** (ceiling 1024 ≫ live set). That run is the
-reason for the lower caps and the valve, and the same command is the "after"
-measurement:
+Same command, six of the largest sessions (21-47 MB), 3 rounds, 45 s idle:
 
-```
-PI_WEB_DESKTOP_BUILD=1 node_modules/next/dist/bin/next build --webpack
-E2E_SERVER_MODE=start PI_WEB_DESKTOP_BUILD=1 \
-  PI_WEB_MEMORY_BUDGET_MB=768 node scripts/memory-bench.mjs \
-  --url http://127.0.0.1:30199 --sessions 6 --rounds 3 --idle 45 --sample 2500
-```
+| phase | peak RSS | peak heap | SM cache |
+| --- | --- | --- | --- |
+| baseline | 181.0 MB | 71.2 MB | 0 |
+| round 1 | 484.7 | 169.8 | 91.7 |
+| round 3 | 595.0 | 191.7 | 91.7 |
+| idle | 579.3 | 165.0 | 88.3 |
+
+Peak RSS **595 MB**, final **309.1 MB**, **285.8 MB (48 %) given back** after the
+peak, ceiling 1216 MB, `sessions.live` 0 (every browsed wrapper released),
+`caches.sessionManager` 88.3 MB — the 96 MB cap, not the 158.9 MB the same run
+pinned before. The valve never fired: RSS stayed under the 768 MB budget, so the
+release is the caps and V8 with a ceiling, and the valve stays a backstop.
+
+Forcing it once (`?memory=1&pressure=1`) proves the backstop on a live server:
+`read-only session views -46 MB, garbage collected`, RSS 309 → **267 MB** in one
+request, cache 88.3 → 42.0 MB (halved, as designed).
+
+Before this branch, the identical run on an uncapped-ish server: peak 512.8 MB,
+final 512.8 MB, **0 MB given back**, cache 158.9 MB.
 
 ## Next
 
-1. Re-run the bench with the new caps + valve; record peak, retained, given back.
-2. Phase 5: the slim live append path (`hooks/useAgentSession.ts` appends the
-   completed message with full thinking and base64 images while history loads use
-   `deferThinking=1&deferMedia=1`).
-3. Phase 6: real collapse (`content-visibility` on chat rows, cap
-   `visibleCount` growth in `components/ChatWindow.tsx`, cap the prefetch cache).
-4. Phase 7: delta-only `tool_execution_update` + a per-event payload cap in
-   `lib/agent-event-stream.ts`.
-5. `docs/agents/fork-memory.md` + the AGENTS.md topic line; push after each green
-   pass.
+1. Phase 7: delta-only `tool_execution_update` payloads and a per-event payload
+   cap in `lib/agent-event-stream.ts` (the SSE backlog is 16 MB per stream by
+   default; a shell streaming megabytes per second is what fills it).
+2. Phase 6: real collapse for the fold that keeps its DOM — `.markdown-code-body
+   .is-folded` renders the whole highlighted document behind a 26 em clip; render
+   a preview while folded, the full text on Expand. The thinking card is already
+   preview-only (`components/MessageView.tsx`), so a collapsed thinking block
+   costs state, not DOM. `content-visibility` on chat rows was rejected: it
+   implies `contain: paint`, which clips the menus a row opens.
+3. Phase 5, the client append path, is blocked on an identifier, not on effort:
+   history loads send `deferThinking=1&deferMedia=1` and `MessageView` loads the
+   deferred block by `sessionId + entryId + blockIndex`. The streaming path has no
+   entry id for the message it appends (`setEntryIds` runs on the reload), so
+   deferring at append time shows "thinking unavailable" for the reply the person
+   is reading. Design first: the live message needs its entry id from the run
+   events, or the page needs a session-local cache that serves deferred content
+   for messages the file has not been re-read for.
+4. Dev-side follow-up: confirm on a real `npm run dev` session that the 2 GB
+   ceiling does not thrash a heavy multi-session run (the ceiling is
+   `PI_WEB_MAX_OLD_SPACE_SIZE`, so a person can raise it per project).
+5. The two pre-existing failures listed in BLOCKERS.md are worth fixing on
+   `pi-desk-main` (the CSS baseline, and the ChatInput source assert).
