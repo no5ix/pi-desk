@@ -2,14 +2,26 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 
-// The composer's corner: the way into the tall editor, and the same mark turned around as
-// the way back. It is NOT part of the resting card: a one-line prompt is a one-row card and
-// carries no affordance above it, so the corner arrives with the second line — typed or
-// wrapped, both measured — and leaves when the prompt shrinks back to a line. It sits in the
-// card's UPPER-LEFT (the card's right corner is Send's arc, and a glyph there sat on top of
-// the arrow), and the text stops short of it. What is pinned here: the pair of states, the
-// measurement that decides when the corner exists, the gutter the glyph takes out of the
-// text, and the fact that the expanded card is still the one row the resting card is.
+// The composer's corner: the way into the tall editor, and the same mark turned around is
+// the way back. It is NOT part of the resting card — a short prompt is a one-row card with no
+// affordance above it — so it arrives with the line past three (`COMPOSER_CORNER_MIN_LINES`,
+// typed or wrapped, both measured) and leaves with it.
+//
+// The mark is a corner of the card, and the two rules that place it are pinned: it sits on
+// Send's vertical line (the card's two right marks read as one column), and it keeps the same
+// distance to the card's top edge as to its right edge. Only the FIRST line of text stops
+// short of it, with `padding-right` on the field — never `padding-top` (a band of card the
+// user clicks into and cannot type in) and never `padding-left` (a second, ragged left column).
+//
+// The card has two shapes, and they are pinned here too: one row (the `+`, the prompt, Send)
+// while the prompt is one line, and the prompt on its own row above the `+` and Send once it
+// wraps, so the typing happens in the block and the band between the two controls is the card,
+// not the field. The line count is taken at the one-row width, so the layout cannot feed back
+// on the measurement.
+//
+// What is pinned here: the pair of states, the measurement that decides when the corner exists,
+// the room the mark takes out of the text, its placement, both shapes of the row, and the fact
+// that the expanded card is the stacked shape the resting card grows into.
 
 const chatInput = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const chatWindow = readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
@@ -66,8 +78,8 @@ test("the corner is measured out of the box, released and restored", () => {
   const measure = /export function measureComposerTextLines\(textarea: HTMLTextAreaElement\): number \{[\s\S]*?\n\}/.exec(heightSource);
   assert.ok(measure, "the measurement is exported");
   const body = measure[0];
-  assert.ok(/const properties = \["height", "min-height", "max-height"\] as const;[\s\S]*?const saved = properties\.map/.test(body),
-    "all three bounds are saved, by their CSS names: getPropertyValue and removeProperty speak CSS, and a camelCase name reads back empty — which leaves the released box behind and the expanded editor with no height of its own");
+  assert.ok(/const properties = \[\s*"height", "min-height", "max-height",\s*"width", "flex", "margin", "order", "box-sizing",\s*\] as const;/.test(body),
+    "all three height bounds AND the width pair are saved, by their CSS names: getPropertyValue and removeProperty speak CSS, and a camelCase name reads back empty — which leaves the released box behind and the expanded editor with no height of its own");
   assert.ok(/getPropertyPriority\(property\)/.test(body),
     "and each one's priority, because the box it returns to may be `!important`");
   for (const write of [
@@ -77,6 +89,20 @@ test("the corner is measured out of the box, released and restored", () => {
   ]) {
     assert.ok(body.includes(write), `the release writes ${write}`);
   }
+  // The width is pinned while the height is read, to the width the text has in the card's ONE
+  // row. The stacked card gives the text the whole width, so a count taken at the live width
+  // would drop to one line the moment the card stacked, un-stack it, wrap again, and loop.
+  // Read at one fixed width, the answer describes the prompt, not the card showing it.
+  assert.ok(/style\.setProperty\("width", "var\(--composer-text-row-width, 100%\)", "important"\)/.test(body),
+    "the count is taken at `--composer-text-row-width`, the number app/native-theme.css owns (the card's width less the two discs and the row's gaps)");
+  assert.ok(/style\.setProperty\("flex", "0 0 auto", "important"\)/.test(body)
+    && /style\.setProperty\("margin", "0", "important"\)/.test(body)
+    && /style\.setProperty\("box-sizing", "border-box", "important"\)/.test(body),
+    "the pinned width is the USED width: `flex: 1 1 auto` would grow the item back to the row's free space, a margin would eat into it, and a content-box width would not include the padding");
+  assert.ok(/style\.setProperty\("order", "0", "important"\)/.test(body),
+    "and the stacked card's `order: -1` is neutralised while the box is released");
+  const widthVar = /--composer-text-row-width: calc\(100% - \(2 \* var\(--composer-send-size\)\) - 12px\);/.exec(css);
+  assert.ok(widthVar, "the card owns the number the count is taken at: the two discs and the row's two 6px gaps");
   const read = body.indexOf("textarea.scrollHeight");
   const restore = body.indexOf("for (const { property, value, priority } of saved)");
   assert.ok(read > 0 && restore > read,
@@ -114,64 +140,141 @@ test("a prompt that shrinks back to one line folds the card again", () => {
     "no one-line threshold left behind: the corner's rule is one number, so a card of two or three lines stays a resting card");
 });
 
-test("the corner sits in the card's upper-LEFT, and the text stops short of it", () => {
+test("the corner sits in the card's upper-RIGHT, on Send's line, and only the first line stops short of it", () => {
   const corner = cssRule(css, ".chat-composer > .chat-composer-expand");
   assert.ok(corner, "the corner is styled against the card, as its direct child");
   assert.match(corner, /position: absolute;/, "it is laid over the card's padding band, not added to the row");
-  const inset = "calc(var(--composer-send-size) / 2 + 1px)";
+  const inset = "calc(var(--composer-send-size) / 2 - 5px)";
   assert.ok(corner.includes(`top: ${inset};`),
-    "the corner sits on the `+`'s vertical line: the disc is `--composer-send-size` wide inside the card's 14px left inset, so its centre is `14 + size/2`, and the 26px plate centres its 18px glyph there from `size/2 + 1px`");
-  assert.ok(corner.includes(`left: ${inset};`), "and the same number is the LEFT inset");
+    "the corner sits on Send's vertical line: the disc is `--composer-send-size` wide inside the card's 8px inset, so its centre is `8 + size/2`, and the 26px plate centres its 18px glyph there from `size/2 - 5px`");
+  assert.ok(corner.includes(`right: ${inset};`), "and the same number is the RIGHT inset");
   const topInset = /top: ([^;]+);/.exec(corner)?.[1];
-  const leftInset = /left: ([^;]+);/.exec(corner)?.[1];
-  assert.equal(topInset, leftInset,
-    "the **same distance to the card's top edge as to its left edge** — one inset read twice, so the mark reads as a corner of the card and not as a control pinned to the row");
-  assert.doesNotMatch(corner, /right:/,
-    "no right anchor: the card's right corner is Send's arc, and a corner glyph there sat on the arrow the row is built around");
+  const rightInset = /right: ([^;]+);/.exec(corner)?.[1];
+  assert.equal(topInset, rightInset,
+    "the **same distance to the card's top edge as to its right edge** — one inset read twice, so the mark reads as a corner of the card and not as a control pinned to the row");
+  assert.doesNotMatch(corner, /left:/,
+    "no left anchor: the card's left column is the `+`'s, and the ask put the corner in the upper-right, on Send's line");
   assert.match(corner, /width: 26px;[\s\S]*height: 26px;/, "a corner affordance, smaller than the row's discs");
   assert.match(corner, /border-radius: 9px;/, "a plate radius, not Send's disc");
   assert.match(corner, /background: transparent;/, "no plate at rest, so the card stays one surface");
+
   const coarse = cssRule(css, ".chat-composer > .chat-composer-expand", 1);
   assert.ok(coarse, "a finger's tier is its own block");
-  const fingerInset = "calc(var(--composer-send-size) / 2 - 6px)";
+  const fingerInset = "calc(var(--composer-send-size) / 2 - 10px)";
   assert.match(coarse, /width: 36px;[\s\S]*height: 36px;/,
     "the glyph is 18px, so the plate it lives on is the touch target");
-  assert.ok(coarse.includes(`top: ${fingerInset};`) && coarse.includes(`left: ${fingerInset};`),
-    "the phone's card insets 12px and its `+` disc is 44px, so the 36px plate centres on the disc from `size/2 - 6px` = 16px — written twice: 16px to the top edge, 16px to the left");
+  assert.ok(coarse.includes(`top: ${fingerInset};`) && coarse.includes(`right: ${fingerInset};`),
+    "the phone's disc is 44px inside the card's 8px inset, so the 36px plate centres on it from `size/2 - 10px` = 12px — written twice: 12px to the top edge, 12px to the right");
   assert.match(coarse, /border-radius: 12px;/, "a plate radius, not Send's disc");
-  // The corner sits in the card's upper-left, ON the text's first line, so the first line
-  // steps right of the glyph with `text-indent`. Two shapes failed before it: a
-  // `padding-left` of 34px (44px under a finger) moved the whole prompt far from the `+`
-  // and opened a second, ragged left column; a `padding-top` of 26px pushed the text under
-  // the glyph and left a band of card that clicked into nothing — "I should be able to type
-  // in the red frame area".
+
+  // The corner sits on the text's first line, so only that FIRST line stops short of it,
+  // with `padding-right` on the field: the glyph is on the field's right, and `text-indent`
+  // can only step text right, never off a right-side mark. What stays forbidden is what the
+  // earlier shape did: a `padding-top` of 26px pushed the text under the glyph and left a band
+  // of card that clicked into nothing — "I should be able to type in the red frame area" — and
+  // a `padding-left` opened a second, ragged left column.
   const gutter = cssRule(css, ".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea");
-  assert.ok(gutter, "the card indents only when the corner is drawn");
-  assert.match(gutter, /text-indent: 26px;/, "the plate ends ~41px in on the `+`'s column, the ink starts ~22px in: 26px stands the first line clear of the glyph");
-  for (const dead of ["padding-top", "padding-left", "padding-right"]) {
+  assert.ok(gutter, "the card steps the first line clear of the corner only when it is drawn");
+  assert.match(gutter, /padding-right: 34px;/, "the plate's left edge is ~35px in, the row's field ends 14px in: 34px of right padding stands the ink clear of the glyph");
+  for (const dead of ["padding-top", "padding-left"]) {
     assert.ok(!gutter.includes(`${dead}:`), `no ${dead}: the box is the editor from its first pixel, so every line is typeable`);
   }
+  const stackedGutter = cssRule(css, ".chat-composer.has-expand .chat-composer-editor[data-stacked] > .chat-input-textarea");
+  assert.match(stackedGutter ?? "", /padding-right: 40px;/,
+    "the stacked block carries no right margin (its field ends 8px in), so it needs 40px for the same clearance");
   const coarseGutter = cssRule(css, ".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea", 1);
-  assert.match(coarseGutter ?? "", /text-indent: 40px;/, "and the indent follows the finger's plate (36px from 16px in: its edge is 52px)");
-  assert.ok(!/\.chat-composer\.has-expand[^\n]*\{[^}]*padding-/.test(css),
-    "no padding shape anywhere on the expanded card: padding is not typeable, and it is what the ask called out");
+  assert.match(coarseGutter ?? "", /padding-right: 40px;/, "and the gutter follows the finger's plate (36px from 12px in: its edge is 48px)");
+  const coarseStacked = cssRule(css, ".chat-composer.has-expand .chat-composer-editor[data-stacked] > .chat-input-textarea", 1);
+  assert.match(coarseStacked ?? "", /padding-right: 46px;/, "and the finger's stacked block keeps the same clearance");
+  assert.ok(!/\.chat-composer\.has-expand[^\n]*\{[^}]*padding-top/.test(css),
+    "no band above the text anywhere on the expanded card: a band outside the box is not typeable, and it is what the ask called out");
 });
 
-test("the expanded card stays the row the resting card is", () => {
-  // The tall editor is the same composer, taller: the `+`, the controls and Send stay
-  // pinned to the text's bottom edge, Send in its arc. A `flex-direction: column` on the
-  // expanded card put the controls back under the text and moved Send out of the corner —
-  // two geometries for one card, and the animation between them jumped.
-  assert.doesNotMatch(css, /\.chat-composer\.is-expanded \.chat-composer-editor\s*\{[^}]*flex-direction: column/,
-    "the expanded editor does not become a column");
+test("the card has two shapes: one row for one line, the prompt above the controls past it", () => {
+  // The ask, from the two screenshots: a one-line prompt is one row (`+`, the text, Send);
+  // past one line the text is the card's block and the typing happens there, and the band
+  // between the `+` and Send is the card, not the field — a click there reaches nothing. The
+  // tall editor is the same stacked shape, taken further, so the expanded card is NOT a third
+  // geometry.
+  assert.match(chatInput, /const stacked = !compact && \(expanded \|\| textLines > 1\);/,
+    "the stacked shape is the card's own state: the prompt's second line, or the open editor; the quote box keeps its column");
+  assert.match(chatInput, /data-stacked=\{stacked \? "true" : undefined\}/,
+    "the card marks the shape and the stylesheet lays it out");
+  assert.match(chatInput, /useLayoutEffect\(resizeTextarea, \[value, fontSize, stacked, resizeTextarea\]\);/,
+    "the autosize runs again when the shape changes: the text's width changes with it, so the height it grew is stale");
+  const row = cssRule(css, ".chat-composer-editor[data-inline]");
+  assert.ok(row, "the row is styled in the stylesheet");
+  for (const declaration of ["display: flex;", "flex-direction: row;", "gap: 0;", "align-items: flex-end;"]) {
+    assert.ok(row.includes(declaration), `the one-row card keeps ${declaration}`);
+  }
+  const stacked = cssRule(css, ".chat-composer-editor[data-stacked]");
+  assert.ok(stacked, "the stacked card is a rule of its own");
+  assert.match(stacked, /flex-wrap: wrap;/, "one wrapping row is both shapes: the text's basis is the whole width, so the row breaks after it");
+  assert.match(stacked, /column-gap: 6px;/, "the controls' row keeps the row's 6px gaps");
+  const stackedText = cssRule(css, ".chat-composer-editor[data-stacked] > .chat-input-textarea");
+  assert.ok(stackedText, "the text's stacked box is a rule of its own");
+  assert.match(stackedText, /order: -1;/, "the text leads the wrapped row while the DOM keeps the row's order: the `+`, the prompt, Send");
+  assert.match(stackedText, /flex: 0 0 100%;/, "the text takes the card's whole width on its own row (the ask: type in the block)");
+  assert.match(stackedText, /margin: 0 0 6px;/, "no horizontal margin in the stacked shape — a full basis plus a margin is what pushed the text past the card's edge; the 6px below is the room above the controls");
+  assert.match(stackedText, /padding: 8px 13px 0 calc\(var\(--composer-send-size\) \/ 2 - 8px\);/,
+    "the block is inset by PADDING, not margins (a margin on a whole-width basis crosses the card's right edge): 8px of air over the first line, the caret 13px off the edge, and the left inset stands the prompt's first character on the `+` glyph's edge — half the disc less 8px");
+  // The inline style must not fight either shape: an inline `flex` beats the stylesheet, so a
+  // `1 1 auto` basis kept the text on the controls' line and the card never stacked.
+  const textareaStyle = /className="chat-input-textarea"[\s\S]*?overflow: "auto",/.exec(chatInput);
+  assert.ok(textareaStyle, "the text area's box is one style object");
+  assert.doesNotMatch(textareaStyle[0], /\bflex:/, "no inline flex: the stylesheet owns both shapes, and an inline `flex` beats them");
+  assert.match(textareaStyle[0], /minHeight: compact \? 96 : 24,/, "the height the autosize grew, and the card's cap, stay inline");
+  const editorCard = /className="chat-composer-editor"[\s\S]*?transition: "border-color/.exec(chatInput);
+  assert.ok(editorCard, "the editor's box is one style object");
+  assert.doesNotMatch(editorCard[0], /display:|flexDirection:|alignItems:/,
+    "the row and its two shapes are not written in the JSX: a second copy of the layout in the component is what drifts");
+  const column = cssRule(css, ".chat-composer-editor");
+  assert.ok(column, "the editor's base shape is a rule");
+  for (const declaration of ["display: flex;", "flex-direction: column;", "align-items: stretch;", "gap: 8px;"]) {
+    assert.ok(column.includes(declaration), `the quote box's column keeps ${declaration}`);
+  }
+  // Send keeps the card's bottom-right arc in both shapes, so the card's radius arithmetic
+  // (Send's centre at the arc's centre) survives the wrap.
+  const send = cssRule(css, ".chat-composer-actions > .composer-send-button");
+  assert.ok(send && send.includes("margin-left: auto"),
+    "Send is pushed to the right end of the controls' row, in the card's bottom-right arc");
+  // The shape change is a band of card appearing under the text, and the card's height is its
+  // content's height: pinned and flushed, the same px -> px pair the text's own height
+  // animates, is what keeps "one line to two lines" from reading as a jump (the ask: 生硬).
+  const cardHeight = cssRule(css, "\.chat-composer");
+  assert.match(cardHeight, /box-shadow var\(--dur-base\) var\(--ease-native\),\s*\n\s*height var\(--dur-fold\) var\(--ease-fold\),/,
+    "the card animates its height on the fold's own duration and easing: a whole band of card appearing in --dur-base is what read as a jump");
+  assert.ok(/const cardHeightRef = useRef\(0\);/.test(chatInput), "the card's height is kept in a ref");
+  const heightKeeper = /const cardHeightRef = useRef\(0\);[\s\S]*?\}, \[\]\);/.exec(chatInput);
+  assert.ok(heightKeeper && /new ResizeObserver/.test(heightKeeper[0]) && /observer\.observe\(card\)/.test(heightKeeper[0]),
+    "and a ResizeObserver on the card refreshes it on every box change, mid-animation frames included");
+  const shape = /useLayoutEffect\(\(\) => \{[\s\S]*?\}, \[stacked, expanded\]\);/.exec(chatInput);
+  assert.ok(shape, "an effect keyed to the card's shape AND the corner's open: the tall editor is the same move, taken further");
+  const shapeBody = shape[0];
+  assert.ok(/const from = cardHeightRef\.current \|\| card\.offsetHeight;/.test(shapeBody),
+    "the height the card STOOD AT is read from the ref, not from `offsetHeight`: a layout effect runs after the DOM carries the new shape, so `offsetHeight` in it is the target, and pinning that to itself (`from === to`) silently kills the animation — which is why one line to two landed as a jump");
+  assert.ok(/cardHeightRef\.current = to;/.test(shapeBody),
+    "and the animation's end is written back, so a quick reverse starts where the box finished");
+  assert.ok(/growComposerTextarea\(ta, \{ animate: false \}\);/.test(shapeBody),
+    "the text is put at its final height first, so the card's target is measured over the height the text is about to keep (the textarea's own transition animates a px -> px write)");
+  assert.ok(/card\.style\.height = "auto";\s*\n\s*const to = card\.offsetHeight;/.test(shapeBody),
+    "the target is the content's height, read with the box open");
+  assert.ok(/card\.style\.height = `\$\{from\}px`;\s*\n\s*void card\.offsetHeight;\s*\n\s*if \(prefersReducedMotion\(\) \|\| from === to\)/.test(shapeBody),
+    "pinned, flushed, and a reduced-motion reader (or a change with no height in it) gets the box back and the jump");
+  assert.ok(/card\.style\.overflow = "hidden";/.test(shapeBody) && /card\.style\.overflow = "";/.test(shapeBody),
+    "the taller content stays inside the card's own surface while the box grows, and the box goes back to `overflow: visible` (the `+`'s menu escapes the card)");
+  assert.ok(/event\.target !== card \|\| event\.propertyName !== "height"/.test(shapeBody),
+    "the box is handed back on the card's own height transition, not on a child's");
+  assert.ok(/return \(\) => \{[\s\S]*?card\.style\.height = "";/.test(shapeBody),
+    "and unmounted mid-transition, no inline height is left behind");
   const tall = cssRule(css, ".chat-composer.is-expanded .chat-composer-editor > .chat-input-textarea");
   assert.ok(tall, "the editor's height is a rule, not the composer's inline box");
   assert.match(tall, /height: auto !important;/, "it out-inlines the box the composer grew to the text");
   assert.match(tall, /min-height: min\(42dvh, 300px\) !important;/, "the bounds are the card's, not the text's");
   assert.match(tall, /max-height: min\(58dvh, 520px\) !important;/, "so a longer prompt scrolls inside the editor instead of pushing the card past the screen");
   const keyboard = cssRule(css, "html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .chat-input-textarea");
-  assert.match(keyboard, /min-height: calc\(var\(--app-viewport-height, 100dvh\) \* 0\.4\) !important;/,
-    "with the keyboard up the editor is measured against the keyboard's own height, never under it");
+  assert.match(keyboard, /min-height: clamp\(224px, calc\(var\(--app-viewport-height, 100dvh\) \* 0\.52\), calc\(var\(--app-viewport-height, 100dvh\) \* 0\.72\)\) !important;/,
+    "with the keyboard up the editor is measured against the keyboard's own height, and floored above the collapsed box's 200px: the keyboard may not size the open editor back under the box it grew out of (the phone's report: it 'changes back' when the keyboard pops out)");
 });
 
 test("the corner's choice is remembered, because it is a way of writing", () => {
@@ -213,17 +316,16 @@ test("Escape in the field folds the card, and a running agent keeps its abort", 
 
 test("the corner's mark is the same shape turned around", () => {
   assert.ok(/expanded \? \(/.test(icon), "one component, two states");
-  for (const path of ['d="M10 4H4v6"', 'd="M14 20h6v-6"', 'd="M4 10h6V4"', 'd="M20 14h-6v6"']) {
+  for (const path of ['d="M14 4h6v6"', 'd="M10 20H4v-6"', 'd="M20 10h-6V4"', 'd="M4 14h6v6"']) {
     assert.ok(icon.includes(path), `the glyph carries ${path}`);
   }
-  // The expand mark runs 左上斜向右下 (top-left to bottom-right): the old outward pair sat
-  // on the bottom-left/top-right diagonal, which read against the card's own left edge —
-  // the column where the corner and the `+` stand. The collapse mark is NOT mirrored onto
-  // that diagonal (the same ask reverted it: the inward fold is the shape the eye reads as
-  // "back to the row", and mirroring it made the two states look like one glyph), so the
-  // old outward paths stay out of the file while the inward pair comes back.
-  for (const gone of ['d="M14 4h6v6"', 'd="M10 20H4v-6"']) {
-    assert.ok(!icon.includes(gone), `the expanded state's outward pair no longer ships: ${gone}`);
+  // The expand mark runs 左下斜向右上 (bottom-left to top-right): the mark lives in the card's
+  // upper-RIGHT corner, and a corner glyph reads along the diagonal that starts at the corner
+  // it sits in — the old top-left/bottom-right pair read against the card's own left edge. The
+  // collapse mark is the same inward fold mirrored onto that diagonal, so the two states stay
+  // one shape turning around its centre, and the old pair stays out of the file.
+  for (const gone of ['d="M10 4H4v6"', 'd="M14 20h6v-6"', 'd="M4 10h6V4"', 'd="M20 14h-6v6"']) {
+    assert.ok(!icon.includes(gone), `the top-left/bottom-right pair no longer ships: ${gone}`);
   }
   assert.ok(icon.includes('aria-hidden="true"'), "the button's label carries the meaning, not the drawing");
   for (const locale of ["en", "zh-CN", "zh-TW"]) {
@@ -232,4 +334,18 @@ test("the corner's mark is the same shape turned around", () => {
       assert.ok(messages.includes(key), `${locale}: the corner's two states are named in ${locale}`);
     }
   }
+});
+
+test("the long prompt gets no second mark in the card's corner: the side chat stays a row of the `+` menu", () => {
+  // The corner is one mark, the editor's. A running session's side chat used to wear the same
+  // corner (the card's upper-right, on Send's line), and two marks on one line read as a
+  // toolbar: the ask took it back. The action stays where the row's other controls live — a
+  // row of the `+`'s menu — and the card keeps one corner glyph.
+  assert.ok(!/chat-composer-side-chat-corner/.test(chatInput),
+    "the card draws no side-chat corner");
+  assert.ok(!/chat-composer-side-chat-corner/.test(css),
+    "and no stylesheet carries it: a rule for a mark that is not drawn is how a merge brings it back");
+  assert.match(chatInput, /sideChat=\{isStreaming && onSideChat \? \{/, "the side chat is the `+` menu's row while the run streams");
+  const menu = readFileSync(new URL("./ComposerPlusMenu.tsx", import.meta.url), "utf8");
+  assert.match(menu, /sideChat/, "and the hub renders that row");
 });

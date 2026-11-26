@@ -6124,6 +6124,12 @@ html.dark {
   --composer-first-line-height: max(var(--composer-send-size), var(--composer-line-height));
   --composer-inset: 8px;
   --composer-border-width: 1px;
+  /* The width the prompt has in the card's ONE row: the card's width less the `+` and Send
+     discs and the row's two 6px gaps. The line count is taken at this width whatever shape
+     the card is showing (lib/composer-textarea-height.ts): the stacked card gives the text
+     the whole width, so a count taken at the live width would drop to one line the moment
+     the card stacked, un-stack it, wrap again, and loop. */
+  --composer-text-row-width: calc(100% - (2 * var(--composer-send-size)) - 12px);
   overflow: visible;
   padding: var(--composer-inset);
   background: var(--surface) !important;
@@ -6134,6 +6140,12 @@ html.dark {
   transition:
     border-color var(--dur-base) var(--ease-native),
     box-shadow var(--dur-base) var(--ease-native),
+    /* The card is the box that opens: the row -> stacked switch and the corner's tall editor
+       are both animated as the card's own height (components/ChatInput.tsx pins the height it
+       stood at and writes the height it is moving to), and one line to two is a whole band of
+       card. `--dur-fold` (240ms) is the fold's own duration — at `--dur-base` the band lands
+       before the eye catches the move, which is what read as a jump. */
+    height var(--dur-fold) var(--ease-fold),
     background var(--dur-base) var(--ease-native) !important;
 }
 
@@ -6155,6 +6167,15 @@ html.dark {
 
 .chat-composer-editor {
   position: relative;
+  /* The base shape is the quote dialog's column: the tall text area above its own Send, the
+     text keeping the height the autosize wrote (`flex: none`, because `flex: 1` in a column
+     is a zero basis and clips it). Every non-compact card overrides it with `data-inline`.
+     The card's own padding is the row's inset; the editor's left 4px is the gap in front of
+     the prompt. */
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding: 0 0 0 4px !important;
   border: 0 !important;
   border-radius: 0 !important;
@@ -6198,16 +6219,18 @@ html.dark {
      stands the prompt's first character on the glyph's left edge — and on the
      coarse-pointer tier, where the disc is 44px, the text follows it to 12px. */
   width: auto;
+  flex: none;
   margin: 8px 0 18px calc(var(--composer-send-size) / 2 - 10px);
 }
 
-  /* One row, everywhere: the `+`, the prompt, the session controls, Send — the way a chat
-   * app composes, on a desktop as on a phone. ChatInput puts `data-inline` on every tier
-   * except the quote dialog's box, so there is no second composer layout to keep honest.
+  /* Two shapes of one row, everywhere: the `+`, the prompt, Send — the way a chat app
+   * composes, on a desktop as on a phone. ChatInput puts `data-inline` on every tier except
+   * the quote dialog's box, and `data-stacked` on the card whose prompt needs more than a
+   * line, so there is no third composer layout to keep honest.
    *
-   * `display: contents` folds the action row's children (the session controls, the
-   * side-chat button, Send) into that one row; Send keeps `margin-left: auto` from the rule
-   * above and so keeps the card's corner.
+   * `display: contents` folds the action row's children (the session controls, the side-chat
+   * button, Send) into that row; Send keeps `margin-left: auto` from the rule above and so
+   * keeps the card's corner in both shapes.
    *
    * The same attribute carries the growth. The text's height is written in px by
    * lib/composer-textarea-height.ts, and a px -> px change is the only intrinsic-height
@@ -6218,15 +6241,52 @@ html.dark {
    * away. e2e/composer-geometry.mjs settles on the height *finishing*, and reduced motion
    * gets the jump back. */
   .chat-composer-editor[data-inline] {
+    display: flex;
+    flex-direction: row;
+    gap: 0;
     align-items: flex-end;
   }
   .chat-composer-editor[data-inline] > .chat-input-textarea {
     flex: 1 1 auto;
     margin: 0 6px;
-    transition: height var(--dur-base) var(--ease-native);
+    /* The text's box animates on every axis the two shapes and the corner's gutter move:
+       the height (the card follows it), the right gutter the corner takes out of the first
+       line, and the margins the shapes swap. Without `padding-right` the gutter appears in
+       one frame and the prompt's ink slides under the glyph and back out. */
+    transition:
+      height var(--dur-base) var(--ease-native),
+      padding-right var(--dur-fold) var(--ease-native),
+      margin var(--dur-fold) var(--ease-native);
   }
   .chat-composer-editor[data-inline] > .chat-composer-actions {
     display: contents;
+  }
+  /* The second shape: the prompt past one line takes the card's whole width on the row
+     above, and the `+` and Send keep a row of their own under it. The band between the two
+     controls is the card, not the field — a click there reaches nothing and the typing
+     happens in the block above, which is what the ask asked for. One wrapping flex row is
+     both shapes: the text's basis is the whole content width, so the row breaks after it,
+     and `order: -1` puts the text first, ahead of the `+` that leads the DOM (the DOM order
+     stays the row's — the `+`, the prompt, Send — for a screen reader and for the one-line
+     card). Send keeps `margin-left: auto`, so it lands at the right end of the control row,
+     in the card's bottom-right arc, and the text's 6px of bottom margin is the room above
+     it. */
+  .chat-composer-editor[data-stacked] {
+    flex-wrap: wrap;
+    column-gap: 6px;
+  }
+  .chat-composer-editor[data-stacked] > .chat-input-textarea {
+    order: -1;
+    flex: 0 0 100%;
+    margin: 0 0 6px;
+    /* The block is inset by padding, not by margins. A margin on an item whose basis is the
+       whole content width pushes the box past the card's right edge (flex-shrink is 0, so
+       nothing gives it back — the phone's Safari showed the caret in the card's border), while
+       padding sits inside the field and stays typeable. The 8px above is the card's own band
+       of air over the first line, and the left inset is the `+` glyph's edge (half the disc
+       less 8px: 6.4px on the 28.8px tier, 14px on the finger's 44px), so the prompt's first
+       character stands on the glyph below it. The right 13px keeps the caret off the edge. */
+    padding: 8px 13px 0 calc(var(--composer-send-size) / 2 - 8px);
   }
   .chat-composer-editor[data-inline] .chat-project-context {
     height: 26px;
@@ -6299,7 +6359,10 @@ html.dark {
   gap: 4px;
   min-width: 0;
   flex-wrap: nowrap;
-  padding: 6px 2px 0;
+  /* The chips stand on the composer's ink column — the `+` glyph's left edge, the same
+     line the prompt's first character is pinned to — not on the card's edge. A chip flush
+     with the card's border read as a page label outside the composer. */
+  padding: 12px 2px 0 var(--composer-ink-inset);
 }
 .chat-composer-wrap:has(> .composer-context-row) {
   overflow: visible;
@@ -6350,6 +6413,28 @@ html.dark {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The two pickers in the row under the card are controls, not labels on the page: a plain
+   transparent button in a row of text never says it opens a list. Each wears the same
+   quiet plate — `--bg-subtle`, the sheet's lightest fill — so the pair reads as two
+   buttons without competing with the composer above them. Hover, focus, or an open menu
+   lights the plate the way a `.app-menu` row lifts the label it stands on. Scoped to the
+   row: the inline composer's chip stays the flat text it is. */
+.composer-context-row .chat-project-context {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.composer-context-row .chat-project-context:hover:not(:disabled),
+.composer-context-row .chat-project-context:focus-visible,
+.composer-context-row .chat-project-context[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+}
+
+.composer-context-row .chat-project-context:disabled {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--text-dim);
 }
 
 /* Steer / Follow-up while a run is active. One shape, two theme hues; the
@@ -6476,8 +6561,10 @@ html.dark {
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--dur-base) var(--ease-native);
-  /* The row's gap to the controls that follow it. */
-  margin-right: 6px;
+  /* The row's gap to the controls that follow it. The text ends 6px before Send's disc
+     and the hint rides the same row, so 6px parked the hint's tail right against the disc
+     and it read as part of the control. A wider gap stands it clear of Send's disc. */
+  margin-right: 14px;
 }
 
 .chat-composer:focus-within .composer-trigger-hint {
@@ -6529,6 +6616,14 @@ html.dark {
 }
 
 .chat-input-shell {
+  /* The ink column under the card, for the row of chips (`.composer-context-row`) and
+     anything else that lines up with the composer's text: the card's band (1px border +
+     8px inset) plus half the `+` disc less the glyph's own 8px inset — the arithmetic of
+     `.chat-composer-editor > .chat-input-textarea`'s inset, so the chips stand on the
+     `+`'s left edge: 15px on the 28.8px tier, 23px under a finger's 44px (the block
+     below). The card declares its own `--composer-*` numbers; it is the row's sibling, so
+     the shell — their shared parent — carries this copy. */
+  --composer-ink-inset: calc(9px + (36px * 0.8) / 2 - 8px);
   /* The overlay's parent is sized to the scrollport at runtime, so the
      composer and message column share one centering axis without assuming a
      fixed scrollbar width. */
@@ -6537,6 +6632,13 @@ html.dark {
      show through the buttons. Only the top edge fades. */
   background:
     linear-gradient(to bottom, transparent, var(--bg) 18%) !important;
+}
+
+@media (pointer: coarse) {
+  /* The finger's card carries a 44px disc, so its ink column moves out with it. */
+  .chat-input-shell {
+    --composer-ink-inset: calc(9px + 44px / 2 - 8px);
+  }
 }
 
 .chat-empty-state {
@@ -10604,15 +10706,74 @@ html.native-desktop :is(
 /* Composer controls that used to track hover in JS                           */
 /* -------------------------------------------------------------------------- */
 
-.composer-queue-recall {
-  background: transparent;
+/* The queued steering / follow-up panel above the composer card. It is a card of
+   the same surface as the composer, so it sits shallower than the page behind it
+   and wears a wide arc; every chip inside it (the `Steer` label, `Recall to input`)
+   is a --bg-hover plate with no border of its own. */
+.composer-queue-panel {
+  margin-bottom: 8px;
   border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  padding: 5px 0;
+}
+.composer-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 8px 4px 10px;
+}
+.composer-queue-count {
+  font-size: var(--fs-micro);
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.composer-queue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px;
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  min-width: 0;
+}
+.composer-queue-kind {
+  flex-shrink: 0;
+  font-size: var(--fs-micro);
+  font-family: var(--font-mono);
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-dim);
+}
+.composer-queue-kind[data-kind="steer"] {
+  color: var(--accent);
+}
+.composer-queue-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-queue-recall {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: var(--fs-caption);
+  color: var(--text);
+  background: var(--bg-hover);
+  border: none;
   border-radius: var(--radius-md);
-  transition: background var(--dur-fast) var(--ease-native), border-color var(--dur-fast) var(--ease-native);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease-native);
 }
 .composer-queue-recall:hover {
-  background: var(--bg-hover);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: var(--bg-selected);
 }
 
 .composer-stop-button {
@@ -11718,6 +11879,15 @@ html.native-desktop :is(
 @media (pointer: coarse) {
   .chat-composer {
     --composer-send-size: 44px;
+  }
+  /* A finger's row is 44px tall and its two discs ride the bottom edge; the prompt's line
+     box (24px at the phone's 16px font) rode the same edge, so the empty `Message…` sat
+     ~10px under the discs' centres. On a one-line card the text is centred in the band the
+     discs define, so the placeholder sits on their line. A wrapped prompt is the row's
+     tallest item, so centring is a no-op there and the discs keep their bottom edge under
+     the last line (`align-self: flex-end` on the `+` and Send). */
+  .chat-composer-editor[data-inline] > .chat-input-textarea {
+    align-self: center;
   }
 }
 
@@ -14777,12 +14947,12 @@ button.custom-message-header {
    A long prompt is written in an editor, not in a box that stops at 200px and scrolls
    (components/ChatInput.tsx grows the textarea to `min(scrollHeight, 200px)`). The corner
    is not part of the resting card: a one-line prompt is a one-row card, and the corner
-   arrives with the second line (components/ChatInput.tsx measures the lines), in the card's
-   UPPER-LEFT, above the `+` that sits at the row's bottom edge. The same mark turned around
-   is the way back (components/ComposerExpandIcon.tsx), and it stays while the card is open
-   as the editor. The card's own geometry is untouched by this: Send keeps the bottom-right
-   arc, the row keeps its filler, and the conversation's spacer keeps measuring the card
-   with its ResizeObserver. */
+   arrives with the line past three (components/ChatInput.tsx measures the lines), in the
+   card's UPPER-RIGHT, above Send that sits at the row's bottom edge. The same mark turned
+   around is the way back (components/ComposerExpandIcon.tsx), and it stays while the card is
+   open as the editor. The card's own geometry is untouched by this: Send keeps the
+   bottom-right arc, the row keeps its filler, and the conversation's spacer keeps measuring
+   the card with its ResizeObserver. */
 .chat-composer {
   /* The corner is anchored to the card. The editor box is `position: relative` for the
      composer's own overlays, and it is inset by the card's padding, so a glyph pinned to
@@ -14793,17 +14963,17 @@ button.custom-message-header {
 .chat-composer > .chat-composer-expand {
   position: absolute;
   /* The ask is two rules, and they fix the position exactly:
-       1. the mark is **on the `+`'s vertical line** — the card's two left marks read as one
-          column, the corner above the `+`;
-       2. it keeps the **same distance to the card's top edge as to its left edge** — a
+       1. the mark is **on Send's vertical line** — the card's two right marks read as one
+          column, the corner above Send;
+       2. it keeps the **same distance to the card's top edge as to its right edge** — a
           corner mark, one inset read twice.
-     Rule 1 sets the inset: the `+` is a disc of `--composer-send-size` inside the card's 14px
-     left inset, so its centre is `14 + size/2`, and the 26px plate centres its 18px glyph there
-     when it starts at `14 - 13 + size/2` = `size/2 + 1px` = 15.4px. Rule 2 then writes that one
-     number twice. Both tiers do the same arithmetic with their own inset (14px here, 12px for a
-     finger) and their own plate (26px, 36px). */
-  top: calc(var(--composer-send-size) / 2 + 1px);
-  left: calc(var(--composer-send-size) / 2 + 1px);
+     Rule 1 sets the inset: Send is a disc of `--composer-send-size` inside the card's 8px
+     inset (the editor carries no right padding), so its centre is `8 + size/2` from the
+     card's right edge, and the 26px plate centres its 18px glyph there when it ends at
+     `8 + size/2 - 13` = `size/2 - 5px` = 9.4px. Rule 2 then writes that one number twice.
+     Both tiers do the same arithmetic with their own plate (26px, 36px for a finger). */
+  top: calc(var(--composer-send-size) / 2 - 5px);
+  right: calc(var(--composer-send-size) / 2 - 5px);
   z-index: 3;
   display: inline-flex;
   align-items: center;
@@ -14821,6 +14991,20 @@ button.custom-message-header {
   transition:
     color var(--dur-base) var(--ease-native),
     background var(--dur-base) var(--ease-native);
+  /* The corner is mounted, not moved, so without this it pops in over the first line. It
+     grows a step out of the corner it sits in and arrives on the card's own surface. */
+  animation: composer-corner-in var(--dur-base) var(--ease-native) both;
+}
+
+@keyframes composer-corner-in {
+  from {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .chat-composer > .chat-composer-expand:hover {
@@ -14833,18 +15017,26 @@ button.custom-message-header {
   outline-offset: 2px;
 }
 
-/* The corner sits in the card's upper-left, on the text's first line, so only that FIRST
-   line steps right of the glyph — `text-indent`, not padding, not a gutter. Two earlier
-   shapes both failed: a `padding-left` of 34px (44px under a finger) put the whole prompt
-   far from the `+` and opened a second, ragged left column; a `padding-top` of 26px pushed
-   the text below the glyph and left a band of card the user clicked into and could not type
-   in ("I should be able to type in the red frame area"). The box is the editor from its
-   first pixel: the corner shares the first line's row, every line is typeable, and the
-   caret is never under the glyph. */
+/* The corner sits in the card's upper-right, on the text's first line, so the first line
+   stops short of the glyph. The rule is `padding-right` on the field: the plate is the
+   card's top-right, so the room has to come off the text's right edge, and `text-indent`
+   only ever steps text right — it cannot reach a right-side glyph. What stays forbidden is
+   what the earlier shape did: a `padding-top` of 26px pushed the text below the glyph and
+   left a band of card the user clicked into and could not type in ("I should be able to
+   type in the red frame area"), and a `padding-left` opened a second, ragged left column.
+   The box is the editor from its first pixel: the corner shares the first line's row, every
+   line is typeable, and the caret is never under the glyph. */
 .chat-composer.has-expand .chat-composer-editor > .chat-input-textarea {
-  /* The plate's right edge is ~41px in (15.4px inset, 26px wide) and the text's ink starts
-     ~22px in, so 26px of indent stands the first line clear of the glyph. */
-  text-indent: 26px;
+  /* The plate's left edge is ~35px in (9.4px inset, 26px wide) and the row's field ends 14px
+     in (the card's 8px inset, the textarea's 6px margin), so 34px of right padding stands
+     the text's ink ~12px clear of the glyph. */
+  padding-right: 34px;
+}
+
+/* The stacked block carries no right margin, so its field ends 8px in and the same 34px
+   would leave the ink 3px from the plate. 40px stands it the same ~12px clear. */
+.chat-composer.has-expand .chat-composer-editor[data-stacked] > .chat-input-textarea {
+  padding-right: 40px;
 }
 
 /* A phone's finger: the glyph is 18px, so the plate it lives on is the touch target
@@ -14853,28 +15045,34 @@ button.custom-message-header {
   .chat-composer > .chat-composer-expand {
     width: 36px;
     height: 36px;
-    /* The same two rules on the finger's sizes: the `+`'s disc is 44px inside the phone card's
-       12px inset, so the centre is `12 + size/2` and the 36px plate starts at
-       `12 - 18 + size/2` = `size/2 - 6px` = 16px — and the inset is written twice, 16px to the
-       top edge and 16px to the left. */
-    top: calc(var(--composer-send-size) / 2 - 6px);
-    left: calc(var(--composer-send-size) / 2 - 6px);
+    /* The same two rules on the finger's sizes: Send's disc is 44px inside the phone card's
+       8px inset, so the centre is `8 + size/2` and the 36px plate ends at
+       `8 + size/2 - 18` = `size/2 - 10px` = 12px — and the inset is written twice, 12px to the
+       top edge and 12px to the right. */
+    top: calc(var(--composer-send-size) / 2 - 10px);
+    right: calc(var(--composer-send-size) / 2 - 10px);
     border-radius: 12px;
   }
 
   .chat-composer.has-expand .chat-composer-editor > .chat-input-textarea {
-    /* The finger's plate is 36px from 16px in, so its right edge is 52px; the text's ink
-       starts ~20px in on this tier, and 40px of indent clears the glyph with room to spare
-       — and the first line stays on the corner's row, typeable. */
-    text-indent: 40px;
+    /* The finger's plate is 36px from 12px in, so its left edge is 48px; the row's field ends
+       14px in, so 40px of right padding stands the ink 6px clear of the glyph — and the first
+       line stays on the corner's row, typeable. */
+    padding-right: 40px;
+  }
+
+  .chat-composer.has-expand .chat-composer-editor[data-stacked] > .chat-input-textarea {
+    /* The stacked field ends 8px in, so 46px keeps the same 6px of clearance. */
+    padding-right: 46px;
   }
 }
 
-/* Expanded: the card becomes the editor. The row stays a row — the text grows and the
-   `+`, the controls and Send stay pinned to its bottom edge, Send in the arc. The textarea
-   takes the height the collapsed card caps at 200px, and with the keyboard open the editor
-   is measured against the keyboard's own height (`--app-viewport-height`, which
-   hooks/useViewportHeight.ts keeps equal to the shell). */
+/* Expanded: the card becomes the editor. It is the card's stacked shape, taken further: the
+   text takes the card's top row at its full width and grows to the editor's own bounds, and
+   the `+` and Send keep the row under it, Send in the arc. The textarea takes the height the
+   collapsed card caps at 200px, and with the keyboard open the editor is measured against the
+   keyboard's own height (`--app-viewport-height`, which hooks/useViewportHeight.ts keeps
+   equal to the shell). */
 .chat-composer.is-expanded .chat-composer-editor > .chat-input-textarea {
   /* The composer sets its own collapsed box inline (`min-height: 24px`,
      `max-height: 200px`, and a height it grew to the text), so the tall editor has to
@@ -14889,9 +15087,16 @@ button.custom-message-header {
 html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .chat-input-textarea {
   /* Measured against the keyboard's own height: `--app-viewport-height` is the shell's
      height with the keyboard up (hooks/useViewportHeight.ts), so the editor fills the
-     room above it and never under it. */
-  min-height: calc(var(--app-viewport-height, 100dvh) * 0.4) !important;
-  max-height: calc(var(--app-viewport-height, 100dvh) * 0.62) !important;
+     room above it and never under it. The floor is the phone's report: the collapsed
+     card's text box is 200px (COMPOSER_TEXTAREA_MAX_HEIGHT), and a keyboard that leaves
+     ~350px of shell put the old ceiling at 0.62 * 350 = 217px and the old floor at
+     0.4 * 350 = 140px — so the moment the keyboard arrived, the editor was sized BELOW
+     the box it had grown out of and the card read as "collapsed back". The floor is
+     therefore the collapsed box plus the room that reads as an editor, and `clamp` keeps
+     it under the ceiling on a short shell, where a bare `min-height` would beat
+     `max-height` (CSS applies min after max) and the card would stand over the keyboard. */
+  min-height: clamp(224px, calc(var(--app-viewport-height, 100dvh) * 0.52), calc(var(--app-viewport-height, 100dvh) * 0.72)) !important;
+  max-height: calc(var(--app-viewport-height, 100dvh) * 0.72) !important;
 }
 
 @media (max-width: 640px) {
@@ -14909,6 +15114,7 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 @media (prefers-reduced-motion: reduce) {
   .chat-composer > .chat-composer-expand {
     transition: none;
+    animation: none;
   }
 
   .chat-composer > .chat-composer-expand svg {

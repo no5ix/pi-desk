@@ -18,7 +18,7 @@ import { mkdir } from "node:fs/promises";
  *    center keeps its arithmetic as the card grows;
  *  - the ink lines up, not only the boxes: the prompt's first character, the `+` glyph, the
  *    `/ @ #` hint's last character, Send's arrow;
- *  - the corner: absent on a one-line card, in the upper-left with the text clear of it
+ *  - the corner: absent on a one-line card, in the upper-right with the text clear of it
  *    once the prompt has a second line.
  */
 export async function checkComposerGeometry(page, { cornerCapable = false } = {}) {
@@ -100,12 +100,14 @@ export async function checkComposerGeometry(page, { cornerCapable = false } = {}
             bottomSpread: bottoms.length ? Math.max(...bottoms) - Math.min(...bottoms) : 99,
             flowCount: inFlow.length,
             corner: corner ? {
-              leftGap: rect(corner).left - cardBox.left,
+              rightGap: cardBox.right - rect(corner).right,
               topGap: rect(corner).top - cardBox.top,
               w: rect(corner).width,
               label: corner.getAttribute('aria-label') || '',
             } : null,
             taPadLeft: parseFloat(textStyle.paddingLeft),
+            taPadRight: parseFloat(textStyle.paddingRight),
+            stacked: el.querySelector('.chat-composer-editor')?.dataset.stacked === 'true',
             placeholderLine: parseFloat(getComputedStyle(text, '::placeholder').lineHeight),
             line: parseFloat(textStyle.lineHeight),
             overflow: text.scrollHeight - text.clientHeight,
@@ -125,9 +127,14 @@ export async function checkComposerGeometry(page, { cornerCapable = false } = {}
         const textHeight = (layout.textBottom - layout.textCenterY) * 2;
         const multiline = textHeight > layout.line * 1.8;
         if (multiline) {
-          // A wrapped prompt keeps its controls under the last line, not above the box.
-          assert.ok(Math.abs(layout.textBottom - (layout.sendCenterY + layout.sendHeight / 2)) < 4,
-            `The row stays at the text's bottom edge as the card grows at ${size}px`);
+          // Past one line the card is STACKED: the text is the card's block at its whole width
+          // and the `+` and Send keep a row of their own under it (the ask: the typing happens
+          // in the red frame, and the band between the two controls is not the field). The two
+          // controls still share one line and one bottom edge — asserted above — with Send in
+          // the card's bottom-right arc.
+          assert.ok(layout.stacked, `A prompt with a second line is the stacked card at ${size}px`);
+          assert.ok(layout.sendCenterY > layout.textBottom,
+            `The \`+\` and Send keep a row under the text at ${size}px: Send's centre ${Math.round(layout.sendCenterY)}, the text ends ${Math.round(layout.textBottom)}`);
         } else {
           // One row means the disc's center lies inside the text's own vertical band: the
           // two are on the same line, whichever of them is the taller (a 24px chat font
@@ -214,9 +221,12 @@ export async function checkComposerGeometry(page, { cornerCapable = false } = {}
         }
         assert.ok(Math.abs(layout.placeholderLine - layout.line) < 0.1, 'Placeholder must use the actual text line height');
         if (!draft) assert.ok(layout.overflow <= 1, `Empty input must not have a vertical scrollbar at ${size}px / ${page.viewportSize().width}px: ${JSON.stringify(layout)}`);
-        // The corner is not part of the resting card. It arrives with the second line, in
-        // the card's UPPER-LEFT, and the text keeps a gutter for it (components/ChatInput.tsx
-        // measures the lines; lib/composer-textarea-height.ts releases the box to do it).
+        // The corner is not part of the resting card. It arrives with the line PAST THREE, in
+        // the card's UPPER-RIGHT, on Send's vertical line, at an equal inset from the card's
+        // top and right edges, and only the text's FIRST line stops short of it (the field's
+        // `padding-right`, never a padding band above the box the user cannot type in).
+        // components/ChatInput.tsx measures the lines; lib/composer-textarea-height.ts
+        // releases the box at the one-row width to do it.
         const cornerChrome = await card.evaluate((el) => {
           const corner = el.querySelector('.chat-composer-expand');
           const cardBox = el.getBoundingClientRect();
@@ -224,22 +234,23 @@ export async function checkComposerGeometry(page, { cornerCapable = false } = {}
           const b = corner.getBoundingClientRect();
           return {
             present: true,
-            leftGap: b.left - cardBox.left,
+            rightGap: cardBox.right - b.right,
             topGap: b.top - cardBox.top,
             width: b.width,
             expanded: el.classList.contains('is-expanded'),
           };
         });
-        const hasSecondLine = draft.includes('\n') || multiline;
-        if (hasSecondLine && cornerCapable) {
-          assert.ok(cornerChrome.present, `A prompt with a second line raises the corner at ${size}px`);
-          assert.ok(cornerChrome.leftGap >= 0 && cornerChrome.leftGap <= 10,
-            `The corner is in the card's LEFT edge at ${size}px: ${Math.round(cornerChrome.leftGap)}px in`);
-          assert.ok(cornerChrome.topGap >= 0 && cornerChrome.topGap <= 10,
-            `The corner is in the card's top edge at ${size}px: ${Math.round(cornerChrome.topGap)}px in`);
-          assert.ok(layout.taPadLeft >= 30, `The text keeps a gutter for the corner at ${size}px: ${layout.taPadLeft}`);
+        const hasCornerLine = cornerCapable && draft.split('\n').length > 3;
+        if (hasCornerLine) {
+          assert.ok(cornerChrome.present, `A prompt past three lines raises the corner at ${size}px`);
+          assert.ok(Math.abs(cornerChrome.rightGap - cornerChrome.topGap) < 1,
+            `The corner keeps the same distance to the card's top edge as to its right edge at ${size}px: ${cornerChrome.topGap.toFixed(1)} / ${cornerChrome.rightGap.toFixed(1)}`);
+          assert.ok(cornerChrome.rightGap >= 4 && cornerChrome.rightGap <= 20,
+            `The corner sits on Send's vertical line at ${size}px: ${Math.round(cornerChrome.rightGap)}px in`);
+          assert.ok(layout.taPadRight >= 34,
+            `The text's FIRST line stops short of the corner (the field's padding-right, never a band above the box) at ${size}px: ${layout.taPadRight}`);
         } else {
-          assert.equal(cornerChrome.present, false, `A one-line card shows no corner at ${size}px`);
+          assert.equal(cornerChrome.present, false, `A prompt of three lines or fewer shows no corner at ${size}px`);
         }
         // No "clear" button, the text stays inside the card, and the `/ @ #` hint — shown
         // only on a wide, idle, empty card — never outlives the text.

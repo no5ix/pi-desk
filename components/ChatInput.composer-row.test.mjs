@@ -22,6 +22,13 @@ import test from "node:test";
 // row is 80% of its old size. Only the quote dialog keeps a column. So `data-inline` is on
 // every non-compact card, the phone's chips strip sits outside the card, and the row's
 // geometry below — order, filler, sizes, ink edges — is one geometry, not two.
+// 2026-11-28 (the same person, with two screenshots): one row is the ONE-LINE card. Past a
+// line the prompt is the card's block ("I should be able to type in the red frame area") and
+// the band between the `+` and Send is not the field ("I shouldn't be able to type in the
+// space between the `+` button and Send button"). So the same flex row gets `data-stacked`
+// with the prompt's second line: the text first at the full width, the `+` and Send in the
+// row under it, Send still in the arc. The row's geometry below is unchanged; the stacked
+// shape is pinned in components/ChatInput.composer-expand.test.mjs.
 const chatInput = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const modelSource = await readFile(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
 const plusSource = await readFile(new URL("./ComposerPlusMenu.tsx", import.meta.url), "utf8");
@@ -44,7 +51,7 @@ const controlsStyle = chatInput.match(/className="chat-composer-controls" style=
 const editorCard = chatInput.match(/className="chat-composer-editor"[\s\S]*?transition: "border-color/);
 const textareaStyle = chatInput.match(/className="chat-input-textarea"[\s\S]*?minHeight: compact \? 96 : 24,/);
 
-test("the card is ONE row on every tier, and only the quote box is a column", () => {
+test("the card is ONE row while the prompt is one line, and only the quote box is a column", () => {
   assert.ok(rowStart > 0, "the composer controls cell renders");
   // The phone is not the inline tier any more: every card that is not the quote dialog
   // carries the marker. A per-tier marker is what made the two layouts drift apart — the
@@ -53,22 +60,22 @@ test("the card is ONE row on every tier, and only the quote box is a column", ()
   assert.match(chatInput, /data-inline=\{compact \? undefined : "true"\}/,
     "every tier's card is marked for the row layout, and only the quote dialog is not");
   assert.ok(editorCard, "the editor's box is one style object");
-  assert.match(editorCard[0], /flexDirection: compact \? "column" : "row"/,
-    "one row for the card; the quote dialog keeps its tall area above its own Send");
-  assert.match(editorCard[0], /alignItems: compact \? "stretch" : "flex-end"/,
-    "the row's controls sit at the bottom edge of the growing text; only the column stretches");
+  assert.doesNotMatch(editorCard[0], /display:|flexDirection:|alignItems:/,
+    "the row's shape is the stylesheet's, not the JSX's: an inline `display: flex` beats the sheet, and a stacked card written in CSS then loses to it");
   assert.doesNotMatch(editorCard[0], /flexDirection: isNarrow|alignItems: isNarrow/,
     "no tier picks its own direction: the tier fork is what the row replaced");
   assert.ok(textareaStyle, "the text area's box is one style object");
-  assert.match(textareaStyle[0], /flex: compact \? "none" : "1 1 auto"/,
-    "the prompt buys the width the `+` and the controls leave; the quote box keeps its auto-grown height (`flex: 1` in a column is a zero basis and clips it)");
+  assert.doesNotMatch(textareaStyle[0], /\bflex:/,
+    "no inline flex on the prompt: it buys its width from the row (`1 1 auto`) or takes the whole line (`0 0 100%`), and an inline value would beat both rules");
   assert.match(textareaStyle[0], /minWidth: 0/, "and it can shrink, which is what a long word must not survive");
   // The row is the card's own layout, not a JSX fork of the card: ChatInput marks the
   // editor and the stylesheet folds the action row's children into the card's flex row.
   // One JSX tree is what keeps Send in the corner in every tier.
   const inline = cssRule(css, ".chat-composer-editor[data-inline]");
   assert.ok(inline, "the row layout lives in the stylesheet");
-  assert.match(inline, /align-items: flex-end;/, "the card aligns its row the same way the JSX does");
+  assert.match(inline, /display: flex;[\s\S]*flex-direction: row;/, "the card's row is declared, not inherited from a JSX style");
+  assert.match(inline, /align-items: flex-end;/, "the one-row card's controls sit at the bottom edge of the growing text");
+  assert.match(inline, /gap: 0;/, "the row's spacing is the text's own margins, not a gap that widens with the cards");
   const folded = cssRule(css, ".chat-composer-editor[data-inline] > .chat-composer-actions");
   assert.ok(folded, "the action row is folded into the card's row");
   assert.match(folded, /display: contents;/, "its children become the row's, on one line with the prompt");
@@ -243,6 +250,14 @@ test("the resting row is 80% of what it was, and every control pays for it", () 
   // phone's controls never go under 44px.
   assert.match(css, /@media \(pointer: coarse\) \{\s*\.chat-composer \{\s*--composer-send-size: 44px;/,
     "the coarse tier overrides the ratio with the touch size");
+  // On that tier the row is 44px tall and its two discs ride the bottom edge, so a one-line
+  // prompt (a 24px line box at the phone's 16px font) rode the same edge and the empty
+  // placeholder sat under the discs. The text is centred in the band the discs define.
+  const coarse = css.slice(css.indexOf("@media (pointer: coarse) {\n  .chat-composer {"));
+  assert.match(
+    coarse.slice(0, 1200),
+    /\.chat-composer-editor\[data-inline\] > \.chat-input-textarea \{\s*align-self: center;/,
+    "the phone's prompt is centred in the row, so `Message…` sits on the discs' line");
   // Every control in the row is that box, so the row is one height and the card's arcs
   // meet one centre. The 32px squares (`--control-h-lg`) in a 28.8px row grew the resting
   // card taller than the card the ask is about.
@@ -394,7 +409,7 @@ test("the / @ # hint is the row's own item, clear of the controls", () => {
   assert.match(hint, /text-overflow: ellipsis;/, "and ellipsizes when the row runs out, instead of pushing the controls out of the card");
   assert.match(hint, /height: var\(--composer-first-line-height\);/, "boxed to the row's first line");
   assert.match(hint, /align-items: center;/, "its text centered in that box, so it sits on the placeholder's row at 12px and at 24px chat font alike");
-  assert.match(hint, /margin-right: 6px;/, "the row's gap to the controls that follow it, not a hardcoded inset");
+  assert.match(hint, /margin-right: 14px;/, "the row's gap to the controls that follow it — clear of Send's disc, and not a hardcoded inset");
   assert.doesNotMatch(hint, /padding-right: /, "no padding of its own: the row's gaps are the card's spacing");
   assert.match(hint, /pointer-events: none;/, "it never takes a click meant for the text");
   assert.match(hint, /opacity: 0;/, "and it fades in only on the focused, empty card");
@@ -429,7 +444,8 @@ test("the text area's box: the row's, and the quote box's", () => {
   assert.doesNotMatch(rule, /width: 100%;/, "and no full width to pair with a horizontal margin");
   const inline = cssRule(css, ".chat-composer-editor[data-inline] > .chat-input-textarea");
   assert.doesNotMatch(inline, /padding-right: 13px;/, "the row's text is inset by the row's gaps, not by the quote box's padding");
-  assert.match(chatInput, /alignItems: compact \? "stretch" : "flex-end"/,
+  const column = cssRule(css, ".chat-composer-editor");
+  assert.match(column, /align-items: stretch;/,
     "the column stretches its children, which is where the quote box's width comes from");
 });
 

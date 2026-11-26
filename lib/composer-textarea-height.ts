@@ -5,7 +5,10 @@
 /** The composer text area's ceiling; past it the text scrolls inside the card. */
 export const COMPOSER_TEXTAREA_MAX_HEIGHT = 200;
 
-function prefersReducedMotion(): boolean {
+/** The fork's motion rule, asked of the browser: a reduced-motion reader gets the height
+ *  jumps back (the card's and the text's own transitions are switched off in CSS), and a
+ *  caller that animates a box by hand has to skip its own pin-and-write the same way. */
+export function prefersReducedMotion(): boolean {
   return (
     typeof window !== "undefined" &&
     typeof window.matchMedia === "function" &&
@@ -38,22 +41,33 @@ const FALLBACK_LINE_RATIO = 1.4;
  * How many lines the prompt takes, measured the same way {@link measureComposerTextarea}
  * measures its height.
  *
- * The card is one row while the prompt fits on a line and a taller box once it wraps, and
- * the composer's expand corner appears with the second line (components/ChatInput.tsx).
- * Counting `\n` is not enough — a long sentence *wraps*, and a wrapped sentence must raise
- * the corner just like a typed newline. So the answer comes from the box: the element is
- * released from every height bound it carries — the inline height the autosize wrote, the
- * card's `min-height`/`max-height` in the expanded editor, all of them written back as
- * `!important` inline declarations, the only thing that beats a stylesheet `!important` —
- * `scrollHeight` is read, and the element is restored. Nothing yields to the browser
- * between the write and the restore, so no frame is ever painted released.
+ * The card is one row while the prompt fits on a line, and the text takes its own row (and
+ * the composer's expand corner arrives with the line past three) once it wraps
+ * (components/ChatInput.tsx). Counting `\n` is not enough — a long sentence *wraps*, and a
+ * wrapped sentence must raise the corner just like a typed newline. So the answer comes from
+ * the box: the element is released from every height bound it carries — the inline height
+ * the autosize wrote, the card's `min-height`/`max-height` in the expanded editor, all of
+ * them written back as `!important` inline declarations, the only thing that beats a
+ * stylesheet `!important` — `scrollHeight` is read, and the element is restored. Nothing
+ * yields to the browser between the write and the restore, so no frame is ever painted
+ * released.
+ *
+ * The width is pinned while it is read, to the width the text has in the card's ONE row
+ * (`--composer-text-row-width`, app/native-theme.css). That is what keeps the layout and the
+ * measurement from feeding each other: the stacked card gives the text the card's whole
+ * width, so a count taken at the current width would drop to one line the moment the card
+ * stacked, un-stack it, wrap again, and loop. Read at one fixed width, the answer describes
+ * the prompt, not the card that is showing it.
  */
 export function measureComposerTextLines(textarea: HTMLTextAreaElement): number {
   const style = textarea.style;
   // The CSS property names, not the camelCase ones: `getPropertyValue`/`removeProperty`
   // speak CSS, and a camelCase name reads back empty — which would leave the released box
   // behind, and the expanded editor with no height of its own.
-  const properties = ["height", "min-height", "max-height"] as const;
+  const properties = [
+    "height", "min-height", "max-height",
+    "width", "flex", "margin", "order", "box-sizing",
+  ] as const;
   const saved = properties.map((property) => ({
     property,
     value: style.getPropertyValue(property),
@@ -62,6 +76,14 @@ export function measureComposerTextLines(textarea: HTMLTextAreaElement): number 
   style.setProperty("height", "auto", "important");
   style.setProperty("min-height", "0px", "important");
   style.setProperty("max-height", "none", "important");
+  style.setProperty("width", "var(--composer-text-row-width, 100%)", "important");
+  // `flex: 1 1 auto` would grow the item back to the row's free space, and the stacked row
+  // gives it a whole line and an `order` of its own; the pinned width is only the used width
+  // when the item stops taking space from the row.
+  style.setProperty("flex", "0 0 auto", "important");
+  style.setProperty("margin", "0", "important");
+  style.setProperty("order", "0", "important");
+  style.setProperty("box-sizing", "border-box", "important");
   const content = textarea.scrollHeight;
   const computed =
     typeof window !== "undefined" ? window.getComputedStyle(textarea) : null;

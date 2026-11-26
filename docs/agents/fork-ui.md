@@ -82,12 +82,34 @@ read/conversion results and revokes discarded image preview URLs. Cancel remains
 a separate, non-destructive action that only leaves history-edit mode.
 
 ## Composer: one card, one row — the `+`, the prompt, Send
-The card is **one row on every tier** (`.chat-composer-editor` carries `data-inline`;
-only the quote dialog's box keeps a column): the `+`, the prompt, Send. The row's tail
-`.chat-composer-actions` is `display: contents`, so Send is a child of the row and keeps
-`margin-left: auto` — the card's bottom-right arc. The 2026-12 ask was exact: *all the
+The card is **one row on every tier while the prompt is one line** (`.chat-composer-editor`
+carries `data-inline`; only the quote dialog's box keeps a column): the `+`, the prompt, Send.
+The row's tail `.chat-composer-actions` is `display: contents`, so Send is a child of the row
+and keeps `margin-left: auto` — the card's bottom-right arc. The 2026-12 ask was exact: *all the
 buttons except the `+` and Send* leave the row and live behind the `+`, whose menu is the
 composer's hub (the 2026-12 ask, and the phone's rule for years).
+
+The prompt's **second line** turns the same box into its two-row shape (`data-stacked`,
+`stacked = !compact && (expanded || textLines > 1)`): the text first (`order: -1`) at the
+**card's whole width**, the `+` and Send in the row under it. The 2026-12 ask is the pair of
+screenshots — a one-line card is `+ test` on a line, and past a line *"I should be able to type
+in the red frame area"* and *"I shouldn't be able to type in the space between the `+` button and
+Send button"*: the band between the two controls is the card, not the field, so a click there
+reaches nothing. One wrapping flex row is both shapes (the text's basis is the whole width, so
+the row breaks after it), the DOM order stays the row's, Send keeps `margin-left: auto` and so
+keeps the arc in both shapes, and the tall editor is this shape taken further — not a third
+geometry. The block is inset by **padding** (8px of air over the first line, the caret 13px off
+the edge, the left inset standing the first character on the `+` glyph's edge): a *margin* on an
+item whose basis is the whole width crosses the card's right edge, and padding stays typeable.
+The line count is taken at the **one-row width** (`--composer-text-row-width`, written into the
+released box by `measureComposerTextLines`): the stacked card gives the text more width, so a
+count taken at the live width would drop to one line the moment the card stacked, un-stack it,
+wrap again, and loop. And the shape change is animated — the card's height is its content's
+height, so the effect pins the height the card stands at, puts the text at its final height,
+measures the target with the box open, and writes the pair (`transition: height` on
+`.chat-composer`, `overflow: hidden` for the duration, the box handed back on the card's own
+`transitionend`): *"when the chat composer changes from one line to two lines, it should have a
+smooth transition, now it's 生硬"*.
 
 `components/ComposerPlusMenu.tsx` is that hub, mounted by `components/ChatInput.tsx` in
 every tier. Its rows are **Compacting…** (only while a compaction runs; it stops the run),
@@ -107,29 +129,45 @@ in the composer, the reasoning/tool/automation dropdowns and their `usePopTransi
 pairs. The composer's chat-access rows (the chat-only workspace's block) ride the hub's
 Reasoning page, and keep the parent's confirm flow through `onToggleChatUnlocked`.
 
-The text area is `flex: "none"` in the quote box's column — in a column `flex: 1` is a
-zero basis and clips the auto-grow height to `minHeight`, which is the regression
-`components/MobilePwaLayout.test.mjs` pins — and `flex: "1 1 auto"` in the row.
+The row's shape is the **stylesheet's**, not the JSX's: an inline `display: flex` beats the
+sheet, and a card that stacks in CSS then never stacks. So the editor carries no inline
+`display` / `flex-direction` / `align-items`, and the text area carries no inline `flex` (a `1 1
+auto` written inline beats the stacked rule's `0 0 100%` basis and the text stays on the
+controls' line). The quote box's column is the base rule (`.chat-composer-editor`:
+`flex-direction: column`, `align-items: stretch`, its textarea `flex: none` — in a column
+`flex: 1` is a zero basis and clips the auto-grow height to `minHeight`, which is the regression
+`components/MobilePwaLayout.test.mjs` pins), the row and the stacked shape are
+`[data-inline]` / `[data-stacked]`. Only the height the autosize grew, and the card's cap, stay
+inline on the text area.
 
-The card's upper-left corner carries one affordance: expand (`components/ComposerExpandIcon.tsx`,
+The card's upper-right corner carries one affordance: expand (`components/ComposerExpandIcon.tsx`,
 `.chat-composer-expand`). Two rules fix its position, and they are asserted in
-`components/ChatInput.composer-expand.test.mjs`: the mark sits **on the `+`'s vertical line** (the
-`+` is a disc of `--composer-send-size` inside the card's 14px left inset, so the 26px plate
-centres its glyph from `calc(var(--composer-send-size) / 2 + 1px)`; the phone's card insets 12px
-with a 44px disc, so the 36px plate starts at `size/2 - 6px` = 16px), and it keeps the **same
-distance to the card's top edge as to its left edge** — the one number written twice, so the mark
-reads as a corner of the card rather than a control pinned to the row. Its **expand** mark runs the
-**top-left → bottom-right** diagonal (the 2026-12 ask: the old bottom-left/top-right pair read
-against the card's own left edge, the column where the corner and the `+` stand). The **collapse**
-mark keeps its own inward fold and is NOT mirrored onto that diagonal — the same ask reverted it:
-mirrored, the two states read as one shape. A tap turns the card into a tall editor for a long prompt —
+`components/ChatInput.composer-expand.test.mjs`: the mark sits **on Send's vertical line** (Send is
+a disc of `--composer-send-size` inside the card's 8px inset — the editor carries no right padding,
+so the 26px plate centres its glyph from `calc(var(--composer-send-size) / 2 - 5px)`; with the
+phone's 44px disc the 36px plate ends at `size/2 - 10px` = 12px), and it keeps the **same distance
+to the card's top edge as to its right edge** — the one number written twice, so the mark reads as
+a corner of the card rather than a control pinned to the row. **It is the card's only corner
+mark**: the corner is the editor's glyph on Send's column, the card's bottom-right arc is Send's,
+and a running session's side chat stays a row of the `+`'s hub
+(`components/ChatInput.composer-expand.test.mjs` pins its absence). Its **expand** mark runs the
+**bottom-left → top-right** diagonal (左下斜向右上): the mark lives in the card's upper-right corner,
+and a corner glyph reads along the diagonal that starts at the corner it sits in, so the pair is
+the mirror of the old top-left/bottom-right one. The **collapse** mark is the same inward fold
+mirrored onto that diagonal, so the two states stay one shape turning around its centre. A tap
+turns the card into a tall editor for a long prompt —
 `is-expanded` on the card, and `app/native-theme.css` owns the height, out-inlining the
 textarea's own `min-height: 24px / max-height: 200px` box, which the composer sets inline.
 With the phone's keyboard up the editor is measured against `--app-viewport-height`, so a tall
-prompt is typed in the room above the keyboard and never under it. The same mark turned 180°
+prompt is typed in the room above the keyboard and never under it — and it is **floored at 224px**
+(`clamp(224px, 0.52 * viewport, 0.72 * viewport)`): the collapsed card's text box is 200px, and
+the old `0.4 / 0.62` of a keyboard-shrunk viewport was *shorter* than that, so the card "changed
+back" the moment the keyboard arrived (the phone's report). `clamp` (not a bare `min-height`)
+keeps the floor under the ceiling on a short shell, where CSS would apply min after max and the
+card would stand over the keyboard. The same mark turned 180°
 is the way back, and Escape in the field is the keyboard's way back — only while nothing is
 streaming, so a running agent keeps its Stop. The corner arrives with the line **past three** (`COMPOSER_CORNER_MIN_LINES = 3`, exported from
-`components/ChatInput.tsx`; the 2026-12 ask: the icon should only show for a prompt that needs a
+`components/ChatInput.tsx`; the ask: the icon should only show for a prompt that needs a
 page to write in, not for a sentence of a line, two or three) — typed or wrapped — and leaves with
 it, on the same threshold that opened it (`wasCornerRef` folds a card the corner had opened).
 The count comes from `measureComposerTextLines` with the box released, and it subtracts the
@@ -139,22 +177,42 @@ counted a one-line prompt as two (the corner's own reserved `padding-top` rode o
 so the corner rose over a resting card and stayed after the card was folded (the reports:
 "there's only one line, the expansion icon should disappear"; "when I click the collapse icon,
 the expansion icon should disappear if there's only one line"). Folding the card re-measures on
-the resting box, and `cornerVisible` is `expanded || textLines > 1`, so a one-line prompt leaves
-the corner out.
+the resting box, and `cornerVisible` is `expanded || textLines > COMPOSER_CORNER_MIN_LINES`, so a
+short prompt leaves the corner out.
 The corner is not drawn where there is no room
 to grow: the quote composer's card and a docked side chat get none. The choice is remembered
 per device (`APP_PREF_KEYS.composerExpanded`) because it is a way of writing, not a per-session
 fact, and the room the glyph takes out of the text is a rule: the corner lives in the card's
-upper-left **on the text's first line**, and only that line steps right of it
-(`text-indent: 20px`, 30px for a finger). Two shapes were tried and reported against: a
+upper-right **on the text's first line**, and only that line stops short of it — the field's
+`padding-right` (34px, and 40px in the stacked shape; 40px and 46px for a finger, whose plate is
+36px). `text-indent` cannot express it: the glyph is on the field's right, and an indent only
+ever steps text right. Two shapes were tried and reported against: a
 `padding-left` of 34px (44px under a finger) moved the whole prompt far from the `+` and opened
 a second, ragged left column, and a `padding-top` of 26px pushed the text under the glyph and
 left a band of card that clicked into nothing — *"I should be able to type in the red frame
-area"*. Padding is not typeable, so the box is the editor from its first pixel and the corner
-shares the first line's row. Collapsing runs the composer's autosize again with the
+area"*. A band above the box is not typeable, so the box is the editor from its first pixel and
+the corner shares the first line's row. Collapsing runs the composer's autosize again with the
 box released: measured inside the tall editor `scrollHeight` reports the editor's height, and a
-folded card would keep the 340px it had grown. `e2e/composer-expand.mjs` measures the plate
-(36px for a finger, 30px for a pointer), the gutter, the keyboard's room, a long prompt's
+folded card would keep the 340px it had grown.
+
+**The card's height is the animation.** Both moves — one line to two (`data-stacked`) and the
+corner's tall editor (`is-expanded`) — are a band of card appearing under the text, and the card's
+height is its content's height, so `components/ChatInput.tsx` animates it by hand in one
+`useLayoutEffect` keyed to `[stacked, expanded]`: put the text at the height it is about to take,
+measure the card with the box open, pin the height it **stood at**, flush, write the target, and
+hand the box back on the card's own `height` transition (`overflow: hidden` for the duration, so
+the taller content stays inside the card's surface; `overflow: visible` comes back for the `+`'s
+menu). The starting height cannot be read from `offsetHeight` inside that effect: a layout effect
+runs *after* the DOM carries the new shape, so it returns the target, `from === to`, and the
+animation silently disappears — which is exactly why one line to two landed as a jump. The number
+lives in `cardHeightRef`, refreshed by a `ResizeObserver` on the card (mid-animation frames
+included) and set to the target when the animation is written. The card's own CSS transition for
+`height` is `--dur-fold` / `--ease-fold` (240 ms, the sidebar fold's pair): at `--dur-base` the
+band lands before the eye catches the move, which is the "clunky" report. The text's box
+transitions `height`, `padding-right` and `margin` on the same sheet, and the corner plate grows
+in (`composer-corner-in`) because it is mounted, not moved. Reduced motion gets the jumps back.
+`e2e/composer-expand.mjs` measures the plate
+(36px for a finger, 26px for a pointer), the gutter, the keyboard's room, a long prompt's
 scroll and the fold; `components/ChatInput.composer-expand.test.mjs` pins the markup, the two
 states and the preference.
 
@@ -181,13 +239,24 @@ controls, each named — `chat.removeAttachment` with the file's name, and `chat
 for an image's ×, which was an unlabelled glyph while the clear button stood beside it —
 and history-edit mode is left through its own Cancel.
 
-The `/ commands · @ files · # sessions` hint rides the **placeholder's row**: it is
-`position: absolute` inside the card
-(`top: calc(8px + (var(--composer-line-height) - 1.4em) / 2); right: 0`), so it shares
-the first line of an empty composer instead of growing a second line under the text and
-landing out of the eye's line once typing starts. It never takes a click
+The `/ commands · @ files · # sessions` hint rides the **placeholder's row**: it is the
+row's own flex item between the prompt and Send, boxed to the row's first line
+(`height: var(--composer-first-line-height)`, `align-items: center`) so its text is centred
+on the placeholder's at 12px and at a 24px chat font alike, and it never grows a second line
+under the text. It carries the row's gap to the controls (`margin-right: 14px`) — 6px parked
+its tail against Send's disc and it read as part of the control. It never takes a click
 (`pointer-events: none`), and the gates are unchanged — `!compact && !isNarrow &&
 !isStreaming && value.length === 0`, visible on `:focus-within`.
+
+The composer carries **no queue placeholder**: what Enter does in a run is said by the Send
+disc's label and by the outbox row above the card, and the long sentence ate the phone's one
+row. A streaming composer keeps the prompt's own placeholder; only a run that cannot take a
+message says `Agent is running…` (`chat.agentPlaceholder`).
+
+Under a finger (`pointer: coarse`) the row is 44px tall and its two discs ride the bottom
+edge, so the text takes `align-self: center`: an empty `Message…` sits on the discs' line,
+not ~10px under it. A wrapped prompt is the row's tallest item, so centring is a no-op there
+and the discs keep their bottom edge under the last line.
 
 The `+` is a bare glyph: no plate at rest, and no plate while files are attached
 (`.chat-composer .composer-plus-button[data-active]` changes the glyph's colour only).
@@ -225,7 +294,10 @@ owns `overflow-anchor: none` pins it (`components/ChatWindow.scroll-anchor.test.
 
 The row under the card (`.composer-context-row`) is the composer's second line on every
 tier: the project a new session picks, the branch of it, and the model a routed request
-went to. It never carries a session control — those are the `+`'s menu — and it hides
+went to. Its left padding is `--composer-ink-inset` (`app/native-theme.css`, declared on
+`.chat-input-shell`, the row's and the card's shared parent): the chips stand on the `+`
+glyph's left edge — the ink the prompt's first character is pinned to — not on the card's
+border, and the finger's 44px tier moves the column out with the disc. It never carries a session control — those are the `+`'s menu — and it hides
 while a run or a compaction is on (`pickersIdle`), because there is nothing to pick. Its
 menus open upward from the row and are capped to the space between it and the header (#63).
 The row's old grid (`.chat-composer-controls` as `auto minmax(0, 1fr)`, `order`, the phone's

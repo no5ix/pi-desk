@@ -66,7 +66,7 @@ import { ComposerBranchChip } from "./ComposerBranchMenu";
 import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
 import { ComposerDeviceCopies } from "./ComposerDeviceCopies";
 import { ComposerPlusMenu } from "./ComposerPlusMenu";
-import { growComposerTextarea, measureComposerTextLines } from "@/lib/composer-textarea-height";
+import { growComposerTextarea, measureComposerTextLines, prefersReducedMotion } from "@/lib/composer-textarea-height";
 import { TOOL_PRESET_MAP, type ThinkingLevelChoice } from "@/lib/composer-option-data";
 import { ComposerExpandIcon } from "./ComposerExpandIcon";
 import { AgentRunningIcon } from "./TopbarSubagents";
@@ -238,7 +238,7 @@ export { getTopbarBoundary, getUpwardMenuMaxHeight };
  * The prompt's lines that raise the composer's corner (the way into the tall editor).
  *
  * The rule the user set: **more than three** lines. The corner is an affordance for a
- * prompt that needs a page to write in, and it takes the card's upper-left, so a
+ * prompt that needs a page to write in, and it takes the card's upper-right, so a
  * sentence of a line, two or three is a resting card — the corner arrives past the
  * third line and leaves with it (it stays while the card is open as the editor, because
  * the corner is the only way back).
@@ -594,32 +594,9 @@ function revokeImagePreview(image: AttachedImage): void {
 
 function QueuedMessageRow({ kind, label, text }: { kind: "steer" | "follow-up"; label: string; text: string }) {
   return (
-    <div
-      title={text}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "3px 10px",
-        fontSize: "var(--fs-caption)",
-        color: "var(--text-muted)",
-        minWidth: 0,
-      }}
-    >
-      <span
-        style={{
-          flexShrink: 0,
-          fontSize: "var(--fs-micro)",
-          fontFamily: "var(--font-mono)",
-          padding: "1px 7px",
-          borderRadius: 999,
-          border: `1px solid ${kind === "steer" ? "color-mix(in srgb, var(--accent) 45%, transparent)" : "var(--border)"}`,
-          color: kind === "steer" ? "var(--accent)" : "var(--text-dim)",
-        }}
-      >
-        {label}
-      </span>
-      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
+    <div className="composer-queue-row" title={text}>
+      <span className="composer-queue-kind" data-kind={kind}>{label}</span>
+      <span className="composer-queue-text">{text}</span>
     </div>
   );
 }
@@ -959,15 +936,86 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     void ta.offsetHeight;
     ta.style.height = `${target}px`;
   }, [expanded]);
-  // How many lines the prompt takes, and the corner that follows it. The card is one row
-  // while the text fits on a line; it is the line past COMPOSER_CORNER_MIN_LINES — typed
-  // or wrapped — that raises the corner in the card's upper-left, and the line going away
-  // takes the corner back. The prompt, the tier and the card's own height are what the
-  // answer depends on, and a resize (a window drag, a keyboard, a panel) re-wraps the same
-  // text, so the box is observed too.
+  // How many lines the prompt takes, and the card's two shapes that follow it. While the
+  // text fits on a line the card is one row — the `+`, the prompt, Send (pic: `+ test`). With
+  // the second line the text takes the card's top row at its full width and the `+` and Send
+  // keep a row of their own under it, so the prompt is typed in the block and the band
+  // between the `+` and Send is the card, not the field. The corner that opens the tall
+  // editor arrives with the line past COMPOSER_CORNER_MIN_LINES. The count is the composer's
+  // own measurement, taken at the one-row width (lib/composer-textarea-height.ts) so the
+  // layout never feeds back on it, and a resize (a window drag, a keyboard, a panel)
+  // re-wraps the same text, so the box is observed too.
   const [textLines, setTextLines] = useState(1);
+  const stacked = !compact && (expanded || textLines > 1);
   const cornerVisible = !compact && Boolean(onExpandedChange)
     && (expanded || textLines > COMPOSER_CORNER_MIN_LINES);
+  // The card's height is its content's height, and the row -> stacked switch adds a whole
+  // band under the text (the `+` and Send move to a row of their own), so left alone it is
+  // one frame short and the next frame a band taller: the ask is that opening from one line
+  // to two reads hard. The corner's tall editor is the same move taken further, so it is
+  // animated the same way (`expanded` is in the effect's deps).
+  //
+  // The text's height already animates px -> px, so the card gets the same pair around the
+  // shape change: pin the height it stands at, put the text at the height it is about to
+  // take, measure the card's new height with the box open, write the pair and let the
+  // transition run. `overflow: hidden` for the duration keeps the taller content inside the
+  // card's own surface while the box grows; the box goes back to its content (and to
+  // `overflow: visible`, which the `+`'s menu needs) when the transition ends.
+  //
+  // The height the card STOOD at cannot be read here: a layout effect runs after the DOM
+  // already carries the new shape, so `offsetHeight` in it is the height the card is moving
+  // TO, and pinning that to itself (`from === to`) silently kills the animation — which is
+  // why one line to two landed as a jump. The number is kept in a ref that a ResizeObserver
+  // refreshes on every box change (mid-animation frames included), and the animation starts
+  // from it.
+  const cardHeightRef = useRef(0);
+  useEffect(() => {
+    const card = composerRef.current;
+    if (!card) return;
+    cardHeightRef.current = card.offsetHeight;
+    if (typeof ResizeObserver !== "function") return;
+    const observer = new ResizeObserver(() => {
+      cardHeightRef.current = card.offsetHeight;
+    });
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, []);
+  useLayoutEffect(() => {
+    const card = composerRef.current;
+    const ta = textareaRef.current;
+    if (!card) return;
+    const from = cardHeightRef.current || card.offsetHeight;
+    // The text first, and written now rather than on the next frame: the card's target is
+    // measured over the height the text is about to keep, and the px -> px write is what the
+    // textarea's own transition animates (lib/composer-textarea-height.ts defers only the
+    // write, never the animation).
+    growComposerTextarea(ta, { animate: false });
+    card.style.height = "auto";
+    const to = card.offsetHeight;
+    card.style.height = `${from}px`;
+    void card.offsetHeight;
+    if (prefersReducedMotion() || from === to) {
+      card.style.height = "";
+      return;
+    }
+    const settle = (event: TransitionEvent) => {
+      if (event.target !== card || event.propertyName !== "height") return;
+      card.style.height = "";
+      card.style.overflow = "";
+    };
+    card.style.overflow = "hidden";
+    card.addEventListener("transitionend", settle);
+    card.style.height = `${to}px`;
+    // The observer's next callback lags a frame; the animation's own end is the number a
+    // quick reverse (a fold straight after the open) has to start from.
+    cardHeightRef.current = to;
+    return () => {
+      card.removeEventListener("transitionend", settle);
+      // Unmounted mid-transition: hand the box back, so no inline height is left behind.
+      card.style.height = "";
+      card.style.overflow = "";
+    };
+  }, [stacked, expanded]);
   const measureTextLines = useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) {
@@ -979,7 +1027,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
   useEffect(() => {
     measureTextLines();
-  }, [value, expanded, composerTier, measureTextLines]);
+  }, [value, expanded, stacked, composerTier, measureTextLines]);
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta || typeof ResizeObserver !== "function") return;
@@ -1475,7 +1523,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     growComposerTextarea(textareaRef.current);
   }, []);
 
-  useLayoutEffect(resizeTextarea, [value, fontSize, resizeTextarea]);
+  useLayoutEffect(resizeTextarea, [value, fontSize, stacked, resizeTextarea]);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -2402,27 +2450,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         })()}
         {/* Queued steering / follow-up messages (delivered by pi on upcoming turns) */}
         {((queuedMessages?.steering.length ?? 0) + (queuedMessages?.followUp.length ?? 0)) > 0 && (
-          <div style={{
-            marginBottom: 8,
-            border: "var(--hairline) solid var(--border)",
-            borderRadius: "var(--radius-sm)",
-            background: "var(--bg-panel)",
-            padding: "5px 0",
-          }}>
-            <div style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 8,
-              padding: "2px 8px 4px 10px",
-            }}>
-              <span style={{
-                fontSize: "var(--fs-micro)",
-                fontFamily: "var(--font-mono)",
-                color: "var(--text-dim)",
-                textTransform: "uppercase",
-                letterSpacing: 0.4,
-              }}>
+          <div className="composer-queue-panel">
+            <div className="composer-queue-header">
+              <span className="composer-queue-count">
                 {t("chat.queued", { count: (queuedMessages?.steering.length ?? 0) + (queuedMessages?.followUp.length ?? 0) })}
               </span>
               {onRecallQueue && (
@@ -2430,16 +2460,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   onClick={onRecallQueue}
                   className="composer-queue-recall"
                    title={t("chat.recallTitle")}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "4px 12px",
-                    fontSize: "var(--fs-caption)",
-                    color: "var(--text)",
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                  }}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="9 14 4 9 9 4" />
@@ -3004,12 +3024,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             data-state={compact ? undefined : bashMode ? "bash" : undefined}
           >
           {/* The corner is the way into the tall editor, and the way back. It is not part
-              of the resting card: a one-line prompt is a one-row card and needs no affordance
-              above it. The corner arrives with the second line — typed or wrapped, both are
-              measured (lib/composer-textarea-height.ts) — in the card's upper-LEFT, over the
-              text that now has to stop short of it, and it goes away again when the prompt
-              shrinks back to a line. While the card is open as the editor, the corner is the
-              only way back, so it stays. */}
+              of the resting card: a short prompt is a one-row card and needs no affordance
+              above it. It arrives with the line past three (`COMPOSER_CORNER_MIN_LINES`) —
+              typed or wrapped, both measured (lib/composer-textarea-height.ts) — in the
+              card's upper-RIGHT, on Send's vertical line and at the same distance from the
+              card's top edge as from its right edge, and it leaves with the line. Only the
+              FIRST line steps short of it (`padding-right` on the field), so no line is ever
+              under the glyph. While the card is open as the editor, the corner is the only
+              way back, so it stays. */}
           {cornerVisible && (
             <button
               type="button"
@@ -3025,22 +3047,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           )}
           <div
             className="chat-composer-editor"
-            // The card is one row on every platform — desktop, pad, phone: the `+`, the
-            // prompt, the session controls, Send. `data-inline` is the hook
-            // app/native-theme.css lays that row out on and animates the card's height with,
-            // and every tier carries it; only the quote dialog's box (`compact`) keeps a
-            // column, where the text is a tall area above its own Send.
+            // The card is one row while the prompt is one line, and the text's own row above
+            // the controls once it wraps. `data-inline` is the hook app/native-theme.css lays
+            // the row out on and animates the card's height with, and every non-compact tier
+            // carries it; `data-stacked` arrives with the prompt's second line and is the
+            // second shape of the same box. Only the quote dialog's box (`compact`) keeps a
+            // column, where the text is a tall area above its own Send. The row and its two
+            // shapes are the stylesheet's, not a JSX fork of them: one JSX tree is what keeps
+            // Send in the card's corner in every shape.
             data-inline={compact ? undefined : "true"}
+            data-stacked={stacked ? "true" : undefined}
             style={{
               minWidth: 0,
-              display: "flex",
-              // One row, and the text takes the width the `+` and the controls leave. It
-              // grows downward as the prompt wraps, and the row's controls stay at its
-              // bottom edge (`flex-end`), so a one-line prompt is a short card and a long
-              // one is a tall box with its controls under the last line.
-              flexDirection: compact ? "column" : "row",
-              gap: compact ? 8 : 0,
-              alignItems: compact ? "stretch" : "flex-end",
               background: "var(--bg)",
               borderRadius: compact ? 0 : 14,
               padding: compact ? 0 : isMobile ? "6px 6px 6px 12px" : "10px 10px 10px 14px",
@@ -3048,11 +3066,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               transition: "border-color var(--dur-base) var(--ease-native), background var(--dur-base) var(--ease-native), box-shadow var(--dur-base) var(--ease-native)",
             } as React.CSSProperties}
           >
-          {/* The card is one row on every platform: the `+`, the prompt, Send. The `+`
-              opens the hub — the attach, the model, the reasoning level, the tool preset,
-              the session's switches, the side chat, and a running compaction's Stop — so
-              the row never runs out of width and the prompt starts where reading starts.
-              The row grows downward from one line as the prompt wraps. */}
+          {/* The card's row: the `+`, the prompt, Send — one row while the prompt is one
+              line, and the prompt on its own line above the `+` and Send once it wraps (the
+              shapes are `app/native-theme.css`'s). The `+` opens the hub — the attach, the
+              model, the reasoning level, the tool preset, the session's switches, the side
+              chat, and a running compaction's Stop — so the row never runs out of width and
+              the prompt starts where reading starts. */}
           {!compact && (
             <ComposerPlusMenu
               menuRef={plusMenuRef}
@@ -3168,24 +3187,25 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             onInput={handleInput}
             onPaste={handlePaste}
             placeholder={
-              isStreaming && (onSteer || onFollowUp)
-                ? t("chat.queuePlaceholder")
-                : isStreaming ? t("chat.agentPlaceholder")
+              // No queue placeholder. What Enter does in a run is said twice already — the
+              // Send disc's label is "Send after completion" and the outbox row above the
+              // card names the queued messages — and the long sentence ate the phone's one
+              // row, so the prompt kept its own placeholder while streaming. Only a run
+              // that cannot take a message at all says it is running.
+              isStreaming && !onSteer && !onFollowUp
+                ? t("chat.agentPlaceholder")
                 : isNarrow
                 ? (t("chat.messagePlaceholderShort") || "Message…")
                 : t("chat.messagePlaceholder")
             }
             rows={1}
             style={{
-              // The card is a column: the text area keeps the height its auto-grow logic
-              // computed (`flex: 1` would be a zero basis in a column and clip it), and the
-              // control row sits under it. No inline width: the column stretches it to the
-              // card, so a horizontal margin (the card's own inset) can only inset it, never
-              // push it past the card's right edge — `width: 100%` plus a margin did exactly
-              // that, and a stray margin edit in the stylesheet reproduced it on a phone.
-              // The row gives the text the free width (`1 1 auto`); only the quote box's
-              // column keeps the auto-grown height and the card's whole width.
-              flex: compact ? "none" : "1 1 auto",
+              // Only the box the autosize owns stays inline: the height it grew to the text
+              // and the card's cap. No inline `flex` and no inline width: the row gives the
+              // text the width the `+` and Send leave, the stacked card gives it the whole
+              // line, and a stylesheet owns both (app/native-theme.css) — an inline `flex`
+              // would beat the stacked rule's basis and the text would stay on the
+              // controls' line. The quote box's column keeps the auto-grown height.
               minWidth: 0,
               background: "none",
               border: "none",

@@ -211,17 +211,26 @@ test("the composer's corner: a plate, a gutter, and a tall editor that out-inlin
   assert.ok(plate.some((d) => /^width:\s*36px/.test(d)), "and 36px for a finger");
   assert.ok(plate.some((d) => /^height:\s*36px/.test(d)), "the finger's plate is square");
   assert.ok(plate.some((d) => /^position:\s*absolute/.test(d)), "the corner is anchored, not floated into the text");
-  assert.ok(plate.some((d) => /^left:\s*(4|2)px/.test(d)), "the corner is the card's UPPER-LEFT: the `+` keeps the row's bottom-left");
-  assert.ok(!plate.some((d) => /^right:/.test(d)), "and has no right anchor (the corner is not the card's top-right)");
+  assert.ok(plate.some((d) => /^right:\s*calc\(var\(--composer-send-size\) \/ 2 - 5px\)/.test(d)),
+    "the corner is the card's UPPER-RIGHT, on Send's vertical line: the disc is `--composer-send-size` wide in the card's 8px inset, so the 26px plate centres on it from `size/2 - 5px`");
+  assert.ok(plate.some((d) => /^top:\s*calc\(var\(--composer-send-size\) \/ 2 - 5px\)/.test(d)),
+    "and the same number is the top inset: one inset read twice, a corner of the card");
+  assert.ok(!plate.some((d) => /^left:/.test(d)), "and has no left anchor: the card's left column is the `+`'s (the ask put the corner in the upper-right, on Send's line)");
   assert.ok(declarations(".chat-composer").some((d) => /^position:\s*relative/.test(d)),
     "the card is the anchor, so the glyph lands in the card's own corner");
 
-  // The text stops short of the corner: the first line is never typed under the glyph.
-  const gutter = declared(".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea", "padding-left");
-  assert.ok(gutter.some((d) => d.includes("34px")), "the card reserves 34px for the corner");
-  assert.ok(gutter.some((d) => d.includes("44px")), "and 44px where the plate is a finger's");
-  assert.ok(!declarations(".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea")
-    .some((d) => /^padding-right:\s*(38|44)px/.test(d)), "no gutter on the right: the corner is not there");
+  // The text stops short of the corner, and only the FIRST line does: `padding-right` on the
+  // field (the glyph is on the field's right, and `text-indent` can only step text right). What
+  // stays forbidden is a `padding-top` band above the box (a band outside the field is not
+  // typeable — the ask called it out) and a `padding-left` column.
+  const gutter = declarations(".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea");
+  assert.ok(gutter.some((d) => /^padding-right:\s*34px/.test(d)), "the row's first line stops 34px short of the plate");
+  assert.ok(gutter.some((d) => /^padding-right:\s*40px/.test(d)), "and 40px where the plate is a finger's");
+  assert.ok(declarations(".chat-composer.has-expand .chat-composer-editor[data-stacked] > .chat-input-textarea")
+    .some((d) => /^padding-right:\s*(40|46)px/.test(d)),
+    "the stacked block carries no right margin (its field ends 8px in), so it steps further short of the same plate");
+  assert.ok(!gutter.some((d) => /^padding-top:|^padding-left:/.test(d)),
+    "no band above the text and no left column: the box is the editor from its first pixel, and the typing stays in the block (the stacked card, `.chat-composer-editor[data-stacked]`, is what keeps it there)");
 
   // The composer sizes its textarea with inline styles (`min-height: 24px`,
   // `max-height: 200px`, and a height it grew to the text), so the tall editor has to be

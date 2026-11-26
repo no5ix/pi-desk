@@ -8,18 +8,19 @@ import { chromium, webkit } from "playwright";
  * The composer's corner, measured.
  *
  * The ask: the corner is not part of the resting card. A one-line prompt is a one-row card;
- * the second line — typed or wrapped — raises the corner in the card's UPPER-LEFT, the text
+ * the second line — typed or wrapped — raises the corner in the card's UPPER-RIGHT, the text
  * keeps a gutter for it, and the same mark turned around is the way back. What the
  * screenshots cannot say, and this measures:
  *
  *  - a resting card (empty, and one line of text) has no corner at all;
  *  - the corner is a real target (36px for a finger, 26px for a pointer), in the card's own
- *    upper-LEFT corner, and the text stops short of it — the first line is never typed
+ *    upper-RIGHT corner, and the text stops short of it — the first line is never typed
  *    under it;
  *  - expanding takes the height the collapsed card caps at 200px, the card stays inside the
  *    shell, the row stays a row, and Send keeps the card's bottom-right arc;
- *  - with the phone's keyboard up, the editor is sized by the room above the keyboard, so a
- *    tall prompt is typed where the thumb is, not under the keyboard;
+ *  - with the phone's keyboard up, the editor is sized by the room above the keyboard AND
+ *    never falls back under the collapsed box it grew out of (the phone's report: the card
+ *    "changes back" when the keyboard pops out);
  *  - collapsing gives the collapsed box back. The composer sizes its textarea inline, and
  *    the fold has to out-inline it — the regression this pins is a collapsed card that kept
  *    the 340px editor it had grown.
@@ -77,7 +78,8 @@ for (const needle of [
   "minHeight: compact ? 96 : 24,",
   "maxHeight: 200,",
   'className="chat-composer-expand"',
-  "const cornerVisible = !compact && Boolean(onExpandedChange) && (expanded || textLines > 1);",
+  "const cornerVisible = !compact && Boolean(onExpandedChange)",
+  "(expanded || textLines > COMPOSER_CORNER_MIN_LINES)",
   "{cornerVisible && (",
   "measureComposerTextLines(ta)",
   'data-expanded={expanded ? "true" : "false"}',
@@ -91,21 +93,25 @@ assert.ok(chatWindow.includes('className={isEmptyNew ? "relative shrink-0" : "ch
   "the card floats in the overlay; the fixture must mirror it");
 for (const needle of [
   ".chat-composer > .chat-composer-expand",
-  "top: 4px;",
-  "left: 4px;",
+  "top: calc(var(--composer-send-size) / 2 - 5px);",
+  "right: calc(var(--composer-send-size) / 2 - 5px);",
+  "top: calc(var(--composer-send-size) / 2 - 10px);",
+  "right: calc(var(--composer-send-size) / 2 - 10px);",
   "min-height: min(42dvh, 300px) !important",
   "max-height: min(58dvh, 520px) !important",
   "min-height: min(46dvh, 340px) !important",
-  "calc(var(--app-viewport-height, 100dvh) * 0.4) !important",
-  "padding-left: 34px",
-  "padding-left: 44px",
+  "clamp(224px, calc(var(--app-viewport-height, 100dvh) * 0.52), calc(var(--app-viewport-height, 100dvh) * 0.72))",
+  "max-height: calc(var(--app-viewport-height, 100dvh) * 0.72) !important",
+  "padding-right: 34px",
+  "padding-right: 40px",
+  "padding-right: 46px",
 ]) {
   assert.ok(themeCss.includes(needle), `the stylesheet ships ${needle}; the run measures the shipped rule`);
 }
-// The corner sits in the upper-LEFT: a stylesheet that moves it back to the right, or that
-// reserves the gutter on the wrong side, is what these needles and the run below catch.
-assert.ok(!/\.chat-composer > \.chat-composer-expand \{[^}]*right:/.test(themeCss),
-  "the corner has no right anchor any more: it is the card's upper-left");
+// The corner sits in the upper-RIGHT, on Send's line: a stylesheet that moves it back to the
+// left, or that reserves the gutter on the wrong side, is what these needles catch.
+assert.ok(!/\.chat-composer > \.chat-composer-expand \{[^}]*left:/.test(themeCss),
+  "the corner has no left anchor: it is the card's upper-right, on Send's vertical line");
 
 const measure = () => {
   const rect = (el) => {
@@ -128,6 +134,7 @@ const measure = () => {
     card: rect(card),
     ta: { ...rect(ta), client: ta.clientHeight, scroll: ta.scrollHeight },
     taPadLeft: parseFloat(cs.paddingLeft),
+    taPadRight: parseFloat(cs.paddingRight),
     editorDirection: getComputedStyle(document.querySelector(".chat-composer-editor")).flexDirection,
     send: rect(send),
     shell: rect(shell),
@@ -145,7 +152,9 @@ async function shape({ name, engine, viewport, coarse }) {
   await page.goto(`http://127.0.0.1:${port}/?v=${name}`);
   await page.waitForSelector(".chat-composer");
   const plate = coarse ? 36 : 26;
-  const gutter = coarse ? 44 : 34;
+  // The gutter is the text's `padding-right` in the shape the corner arrives with (stacked):
+  // 40px for a pointer, 46px for a finger.
+  const gutter = coarse ? 46 : 40;
   const results = [];
 
   // The resting card: empty, and one line, carry no corner at all.
@@ -162,7 +171,7 @@ async function shape({ name, engine, viewport, coarse }) {
   results.push(["one line", oneLine]);
   assert.equal(oneLine.corner, null, `${name}: a one-line prompt keeps the corner away`);
 
-  // The second line raises it, in the card's upper-left, with the text clear of it.
+  // The second line raises it, in the card's upper-right, with the text clear of it.
   await page.keyboard.press("Enter");
   await page.keyboard.insertText("the second line");
   await page.waitForSelector(".chat-composer-expand");
@@ -174,13 +183,13 @@ async function shape({ name, engine, viewport, coarse }) {
   assert.ok(Math.abs(rest.corner.w - rest.corner.h) < 0.6, `${name}: the corner's plate is square`);
   assert.ok(Math.abs(rest.corner.w - plate) < 1, `${name}: the corner's plate is ${plate}px for this pointer (${rest.corner.w})`);
   const cardInsetTop = rest.corner.top - rest.card.top;
-  const cardInsetLeft = rest.corner.x - rest.card.x;
+  const cardInsetRight = rest.card.right - rest.corner.right;
   assert.ok(cardInsetTop >= 0 && cardInsetTop <= 10, `${name}: the corner sits in the card's top edge (${Math.round(cardInsetTop)}px in)`);
-  assert.ok(cardInsetLeft >= 0 && cardInsetLeft <= 10, `${name}: the corner sits in the card's LEFT edge (${Math.round(cardInsetLeft)}px in)`);
-  assert.ok(Math.abs(rest.taPadLeft - gutter) < 1, `${name}: the text keeps a ${gutter}px gutter for the corner (${rest.taPadLeft})`);
-  const textInkLeft = rest.ta.x + rest.taPadLeft;
-  assert.ok(textInkLeft >= rest.corner.right - 1,
-    `${name}: the text's box begins past the plate (${Math.round(textInkLeft)} after ${Math.round(rest.corner.right)})`);
+  assert.ok(cardInsetRight >= 0 && cardInsetRight <= 10, `${name}: the corner sits in the card's RIGHT edge (${Math.round(cardInsetRight)}px in)`);
+  assert.ok(Math.abs(rest.taPadRight - gutter) < 1, `${name}: the text keeps a ${gutter}px gutter for the corner (${rest.taPadRight})`);
+  const textInkRight = rest.ta.right - rest.taPadRight;
+  assert.ok(textInkRight <= rest.corner.x + 1,
+    `${name}: the text's box stops short of the plate (${Math.round(textInkRight)} before ${Math.round(rest.corner.x)})`);
   assert.ok(rest.card.h < 260, `${name}: a two-line card is still a card (${Math.round(rest.card.h)}px)`);
   assert.equal(rest.cornerState, "false", `${name}: the collapsed corner says collapsed`);
   assert.ok(/Expand/.test(rest.cornerLabel), `${name}: the collapsed corner is labelled for what it does (${rest.cornerLabel})`);
@@ -208,7 +217,8 @@ async function shape({ name, engine, viewport, coarse }) {
   assert.ok(wide.card.bottom <= wide.shell.bottom + 1, `${name}: the grown card stays inside the shell (${Math.round(wide.card.bottom)} of ${Math.round(wide.shell.bottom)})`);
   assert.ok(wide.send.bottom <= wide.card.bottom + 1 && wide.send.right <= wide.card.right + 1,
     `${name}: Send keeps the card's bottom-right corner while the card grows`);
-  assert.ok(wide.corner.top - wide.card.top <= 10, `${name}: the corner stays in the corner as the card grows`);
+  assert.ok(wide.corner.top - wide.card.top <= 10 && wide.card.right - wide.corner.right <= 10,
+    `${name}: the corner stays in the card's upper-right as the card grows`);
   assert.ok(wide.scrollWidth <= wide.innerWidth, `${name}: nothing runs sideways`);
 
   // A long prompt: the editor scrolls its own text and never outgrows the screen.
@@ -231,10 +241,14 @@ async function shape({ name, engine, viewport, coarse }) {
     await page.waitForTimeout(400);
     const kb = await page.evaluate(measure);
     results.push(["keyboard", kb]);
-    assert.ok(kb.ta.h <= keyboardHeight * 0.62 + 2,
-      `the editor fits the room above the keyboard (${Math.round(kb.ta.h)} of ${Math.round(keyboardHeight * 0.62)})`);
-    assert.ok(kb.ta.h >= keyboardHeight * 0.4 - 2,
+    assert.ok(kb.ta.h <= keyboardHeight * 0.72 + 2,
+      `the editor fits the room above the keyboard (${Math.round(kb.ta.h)} of ${Math.round(keyboardHeight * 0.72)})`);
+    assert.ok(kb.ta.h >= Math.max(224, keyboardHeight * 0.52) - 2,
       `and takes it: a tall prompt is typed where the thumb is (${Math.round(kb.ta.h)})`);
+    // The phone's report: the keyboard must never size the open editor back under the
+    // collapsed card's own 200px box (the 224px floor is what pins it).
+    assert.ok(kb.ta.h > 200,
+      `the keyboard does not collapse the editor back: ${Math.round(kb.ta.h)}px, over the collapsed box's 200px`);
     assert.ok(kb.card.bottom <= kb.shell.bottom + 1, "the card never stands under the keyboard");
     await page.evaluate(() => {
       document.documentElement.removeAttribute("data-keyboard-open");
@@ -259,7 +273,7 @@ async function shape({ name, engine, viewport, coarse }) {
   assert.ok(Math.abs(foldedChrome - restChrome) <= 40,
     `${name}: the folded card is the resting card plus the text (${Math.round(foldedChrome)} of ${Math.round(restChrome)} chrome)`);
 
-  const brief = results.map(([state, m]) => `${state}: card ${Math.round(m.card.h)} · editor ${Math.round(m.ta.h)} · corner ${m.corner ? `${Math.round(m.corner.w)}@${Math.round(m.corner.top - m.card.top)},${Math.round(m.corner.left - m.card.left)}` : "none"} · gutter ${m.taPadLeft}`);
+  const brief = results.map(([state, m]) => `${state}: card ${Math.round(m.card.h)} · editor ${Math.round(m.ta.h)} · corner ${m.corner ? `${Math.round(m.corner.w)}@${Math.round(m.corner.top - m.card.top)},${Math.round(m.card.right - m.corner.right)}` : "none"} · gutter ${m.taPadRight}`);
   assert.deepEqual(errors, [], `${name}: no page errors`);
   await page.screenshot({ path: `${out}/${name}-folded.png` });
   await browser.close();
