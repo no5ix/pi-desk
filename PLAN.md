@@ -1,61 +1,59 @@
-# PLAN — phone chat/composer polish + the Git panel
+# PLAN — Branchshift in the right sidebar + an editable file panel
 
-Branch `fix/flat-chat-blocks`. Twelve items from the user's phone screenshots.
+Branch `feat/branchshift-integration-editor` (from `pi-desk-main` @ 38d99e1a).
 
-## Items
+Two asks, one branch:
 
-All twelve landed and are measured; each item's numbers are in PROGRESS.md.
+1. Port the Branchshift Git workflow (branch tree, commit graph, commit detail,
+   commit/shelf/stash workflow, conflicts, compare, blame) into pi-desk's right
+   sidebar, replacing the VS Code extension host with pi-desk's API routes.
+2. Turn the read-only file viewer into a lightweight editor: edit + save,
+   unsaved-change protection, document-local word completion (Sublime Text 2
+   style, Tab accepts), and the Ayu Monokai theme.
 
-1. Composer on an active session, keyboard open: the side-chat button stays in its
-   place and the button next to `+` (the controls/menu row) stays visible.
-2. Composer on a NEW session, keyboard open: the caret must be in the textarea.
-3. The composer's lift with the keyboard must be smooth — no overshoot-then-settle.
-4. The "go to the bottom" button: no border, a stronger shadow.
-5. Subagent report: the body's font size/weight = the thinking block's; the content
-   area gets a background that differs from the page.
-6. Code blocks: a background that differs from the page.
-7. The image overlay: swipe left/right (touch + trackpad) moves between images,
-   tapping the image closes it.
-8. The thinking row: its icon lines up with the clock icon above; a collapsed
-   multi-line thinking ends its first line with `•••`, not `…`.
-9. The sidebar: more room between the search box and the `Chats` header.
-10. The terminal panel's `+` button does nothing (phone) — fix.
-11. The right panel's header gains a Git button: a branch tree (local + remote,
-    foldable) → a commit list for the branch → a commit diff page, reusing the
-    existing diff renderer and the existing branch tree.
-12. The settings rows: the separators start at the label's first letter, not under
-    the icon (iOS style). Landed.
+## Phases
 
-## Follow-on asks (after the first pass, same branch)
+- [x] **P0 Setup.** Worktree + branch from `pi-desk-main`; deps
+  (`zustand`, `@tanstack/react-virtual`, `monaco-editor`); read the
+  Branchshift source, the 8 reference screenshots and the pi-desk sidebar shot.
+- [x] **P1 Git backend.** `lib/git/**` (ported from `src/git/**`), command
+  table `lib/git/commands.ts`, repository discovery + boundary
+  (`lib/git/workspace.ts`), SSE refresh (`lib/git/events.ts`,
+  `lib/git/watch-stream.ts`), dashboard store, routes
+  `/api/git/execute|repos|events`.
+- [x] **P2 Git backend tests.** The 112 ported Branchshift suites +
+  `lib/git/workspace.test.mjs` (10) + `lib/git/commands.test.mjs` (33) +
+  `app/api/git/execute/route.test.mjs` (9).
+- [ ] **P3 Git panel UI.** `components/git/**`: Log (branch tree · graph +
+  commit list · detail) and Commit (Commit · Shelf · Stash), context menus,
+  push/rollback/conflict dialogs, compare, blame, repo switcher; mounted as a
+  right-panel tab; CSS in `app/native-theme.css`; i18n in all three locales.
+- [ ] **P4 Editor.** Decide CodeMirror 6 vs Monaco (measure both),
+  `components/CodeEditor.tsx`, the `edit` display mode in `FileViewer`,
+  `PUT /api/files/[...path]` with conflict detection + atomic write,
+  Cmd+S, dirty tab indicator + close guards, external-change reload.
+- [ ] **P5 Ayu Monokai.** Vendor `themes/Ayu Monokai-color-theme.json`, generate
+  the editor theme + the CSS token colours from it (no hand-copied palette).
+- [ ] **P6 Word completion.** Document-local word index, prefix match, ranking,
+  Tab accept, Esc dismiss, arrows, no Tab hijack when the list is closed.
+- [ ] **P7 Editor tests.** Editing, saving, reopen, dirty indicator, Cmd+S,
+  external edits, save conflicts, binary protection, completion cases, tabs,
+  highlighting, preview and diff modes.
+- [ ] **P8 Visual verification.** Dev server + Playwright at the reference
+  viewport widths; compare with the screenshots; fix mismatches.
+- [ ] **P9 Finish.** `npm test`, `tsc --noEmit`, `npm run lint`, production
+  build, full-diff review, commits, push, final report.
 
-- The sidebar search's label was cut mid-sentence on a phone: the label is now a
-  label only ("Search titles…"), the Enter gesture stays in the tooltip.
-- The "Branch in new chat" chip under every tool call: hidden under 640px.
-- Tool-call cards: the tint moved from an inline wash to a state class, deeper.
-- The clock beside a reply's model row: 12px, matching the glyphs beside it.
-- A collapsed thinking's `•••` cut a light rectangle into the translucent
-  Process-details plate; the cut surface is a token the context sets.
-- The image overlay travels its container's pictures (swipe, flick, arrows, ring,
-  tap to close).
-- Clicking **Expand / Collapse** sometimes sent the page to its bottom: the tapped
-  row is anchored, and the toggle tells the scroll viewport before it flips state.
+## Standing decisions
 
-## Order
-
-A. Quick CSS/markup fixes: 4, 5, 6, 8, 9, 12.
-B. Composer keyboard: 1, 2, 3 (measure in a real browser at 390px).
-C. Image overlay gestures: 7.
-D. Terminal `+`: 10.
-E. Git panel: 11 (API: branches, commits, commit diff; UI: tree → list → diff).
-   Landed and measured — see PROGRESS.md, "Item 11, frozen".
-
-## Verification
-
-- `node_modules/.bin/tsc --noEmit`, `npm run lint`
-- `node --test` over `app`, `lib`, `components`, `hooks`, `scripts`
-- Live measurement against the dev server on :30141 at 390px (keyboard inset via
-  a Playwright/CDP-driven page where possible)
-- Commit + push `fix/flat-chat-blocks` after each verified pass.
-  Done: `70560841` (phone pass), `681f991e` (Expand/Collapse anchor),
-  `a426e9ae` (the Git view). Suite at the tree: 4893 tests, 4892 pass, 1 skipped.
-
+- No VS Code, no code-server, no extension host, no language servers.
+- Git runs server-side only, through `execFile("git", argv)`; the browser never
+  names a repository, a path outside a checkout, an argv array, or a shell string.
+- One Git state system: the panel reads `lib/git/**`; the file tree keeps its
+  cwd-scoped projection (`lib/git-changes.ts`) and the live refresh that feeds
+  both is the SSE stream.
+- pi-desk's scope note (CONTRIBUTING.md) declines Git-client and file-editing
+  features for upstream pi-web. This fork wants them; the user asked explicitly,
+  so they are built here and recorded in DECISIONS.md.
+- Fork CSS goes in `app/native-theme.css` only; `globals.css`/`settings.css`
+  stay byte-identical to upstream.

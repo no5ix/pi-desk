@@ -1,4 +1,48 @@
 # DECISIONS
+
+## The Branchshift Git panel and the editable file panel (this branch)
+
+- **The Git panel is a port, not a rewrite.** `src/git/**` in Branchshift has no
+  `vscode` imports, so `lib/git/**` is a copy (via `scripts/port-branchshift.mjs`)
+  and its mocha suites came with it (`scripts/port-branchshift-tests.mjs`). A
+  rewrite of 5.2k lines of git handling would have thrown away the parsing, the
+  index transaction behind partial commits, the worktree path handling and the
+  tests that cover them.
+- **The command surface stays Branchshift's, behind one route.** The webview
+  posted `{command, params, repoId}` to the extension host; the panel posts the
+  same envelope to `POST /api/git/execute`. `lib/git/commands.ts` is a closed
+  table — no command takes a shell string, an argv array, or a repository path —
+  so the panel keeps its 70 commands without becoming a remote shell.
+- **The repository is derived from an authorized cwd, never from the browser.**
+  `lib/git/workspace.ts` discovers the checkout that owns the cwd, its sibling
+  worktrees, and the checkouts nested inside it; a `repoId` is honoured only when
+  discovery reached it. Worktrees matter here: pi-desk's projects *are* worktrees,
+  and a worktree has its own index, HEAD and `gitDir` — an operation must run
+  against the selected checkout, so each worktree is its own repository entry.
+- **Two panels, one live signal.** The file tree keeps its cwd-scoped status
+  projection (`lib/git-changes.ts`, which the explorer's dots and the
+  changed-files group need) and the Git panel reads the full repository state
+  from `lib/git`; both refresh from the same SSE stream, so a terminal commit
+  moves both. Keeping one implementation for both would have made the explorer's
+  tolerant, cwd-filtered view strict and repository-wide.
+- **Branchshift's CSS variables are mapped, not copied.** The ported components
+  read `--vscode-*` variables. `.git-panel` in `app/native-theme.css` defines
+  those from pi-desk's own tokens, so the panel themes with the app, the fork
+  keeps its "fork CSS lives only in native-theme.css" rule, and no second colour
+  palette is invented.
+- **The three-way merge editor is the one declined piece.** The sidebar has no
+  width for three columns; Accept Yours / Theirs, the conflict list,
+  base/ours/theirs contents, and merge/rebase continue-skip-abort are all there,
+  and the file panel's editor is where a hunk gets resolved by hand.
+- **CONTRIBUTING.md's out-of-scope list declines Git clients and file editing for
+  upstream pi-web.** This fork wants both — the request is explicit — so they are
+  built here, kept inside pi-desk's existing security posture (allowed roots, the
+  desktop token, the web password), and recorded as a deliberate fork divergence.
+- **The editor engine is chosen by measurement, not preference.** Both CodeMirror 6
+  and Monaco standalone were installed and driven in the app (bundle size, theme
+  fidelity, completion work). The one that wins is the one that gets the Ayu
+  Monokai theme with the least duplicated palette and gives Tab-accept word
+  completion without a completion framework.
 - **A plain-text surface strips ANSI; it never renders it.** The running-tool status line
   ("Running bash… <progress>") and a tool card's result pane run a command's streamed
   output through `stripAnsi` (`lib/ansi.ts`) — the fork's existing rule for extension
