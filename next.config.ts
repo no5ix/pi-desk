@@ -68,6 +68,14 @@ const nextConfig: NextConfig = {
     ...(isDesktopBuild
       ? { webpackBuildWorker: true, webpackMemoryOptimizations: true }
       : {}),
+    // `next dev` runs Turbopack in this process, and a dev server lives for
+    // hours. Turbopack's own garbage collection is off by default, so the
+    // compile graph only grows; with it on, work that became unreachable is
+    // dropped from memory and from the persistent cache. It needs the Turbopack
+    // filesystem cache, which `next dev` enables by default, and never with
+    // `turbopackMemoryEviction: false` — that setting is deliberately not set
+    // here, because `false` turns the collection off.
+    turbopackGc: true,
     // proxy.ts matches /api/:path*, and Next buffers the request body whenever
     // a proxy is present, capped at 10 MB by default. The upload route accepts
     // up to 100 MB per request, so raise the buffer above that or large uploads

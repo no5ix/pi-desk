@@ -36,7 +36,7 @@
     "package.json"
   ],
   "scripts": {
-    "dev": "next dev -H 127.0.0.1 -p 30141",
+    "dev": "node scripts/dev-server.mjs",
     "web": "node scripts/web-dev.mjs",
     "dev:lan": "node scripts/lan-server.mjs dev",
     "build": "next build --webpack",

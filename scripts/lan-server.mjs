@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 const { checkNetworkExposure } = require("../bin/network-exposure-warning.js");
 const { keepAliveArgs } = require("../bin/keep-alive.js");
 const { wireChildProcessLifecycle } = require("../bin/process-lifecycle.js");
+const { applyDevEnvDefaults, applyServerMemoryEnv } = require("../bin/server-flags.js");
 
 const HOSTNAME = "0.0.0.0";
 const mode = process.argv[2];
@@ -29,9 +30,14 @@ const nextBin = path.join(root, "node_modules", "next", "dist", "bin", "next");
 // refused, and the service worker answers that with a fallback page (e2e/offline-navigation.mjs).
 // The server's window has to outlast the browser's reuse window. See bin/keep-alive.js.
 const keepAlive = mode === "start" ? keepAliveArgs(process.env) : [];
+// One heap ceiling for every way of starting the server, dev included:
+// `next dev` on its own gives the server child half of physical RAM.
+const env = { ...process.env, PI_WEB_HOSTNAME: HOSTNAME };
+applyServerMemoryEnv(env, mode);
+if (mode === "dev") applyDevEnvDefaults(env);
 const child = spawn(process.execPath, [nextBin, mode, "-H", HOSTNAME, "-p", "30141", ...keepAlive], {
   cwd: root,
   stdio: "inherit",
-  env: { ...process.env, PI_WEB_HOSTNAME: HOSTNAME },
+  env,
 });
 wireChildProcessLifecycle(child);
