@@ -10,16 +10,7 @@ import {
   findUnauthenticatedProvidersForPattern,
   type ModelScopeWarning,
 } from "./model-scope-warnings";
-
-const THINKING_LEVEL_SUFFIXES = new Set<ThinkingLevel>([
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-]);
+import { isThinkingLevel } from "./thinking-levels";
 
 /**
  * Model scoping shared by the UI selector and AgentSession startup.
@@ -111,7 +102,7 @@ function isSuppressibleUnmatchedGlob(pattern: string): boolean {
   if (!hasGlob(pattern)) return false;
   const colonIndex = pattern.lastIndexOf(":");
   return colonIndex < 0
-    || THINKING_LEVEL_SUFFIXES.has(pattern.slice(colonIndex + 1) as ThinkingLevel);
+    || isThinkingLevel(pattern.slice(colonIndex + 1));
 }
 
 /**

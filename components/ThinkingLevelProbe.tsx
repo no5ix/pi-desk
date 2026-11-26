@@ -9,6 +9,7 @@ import type {
   ThinkingLevelMap,
   ThinkingProbeSummary,
 } from "@/lib/thinking-level-probe";
+import { THINKING_LEVELS } from "@/lib/thinking-levels";
 
 type ProbeState =
   | { phase: "idle" }
@@ -182,12 +183,11 @@ function ProbeResultRow({ result, label }: { result: LevelProbeResult; label: st
   );
 }
 
-const MAP_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 function diffMaps(current: ThinkingLevelMap | undefined, suggested: ThinkingLevelMap | undefined): MapChange[] {
   const before = current ?? {};
   const after = suggested ?? {};
-  return MAP_LEVELS
+  return THINKING_LEVELS
     .filter((level) => (level in before) !== (level in after) || before[level] !== after[level])
     .map((level) => ({
       level,

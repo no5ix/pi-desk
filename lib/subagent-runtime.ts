@@ -48,6 +48,7 @@ import { SubagentQueue } from "./subagent-queue";
 import { addWorktree, removeWorktree } from "./worktree";
 import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
+import { isThinkingLevel } from "./thinking-levels";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -118,9 +119,7 @@ declare global {
 }
 const SUBAGENT_CONTEXT_LIMIT = 50_000;
 const PARENT_IDLE_POLL_MS = 200;
-/** The custom type a background report reaches its parent as, and the card the chat renders for it. */
 const PARENT_NOTIFICATION_TYPE = "pi-web:subagent-notification";
-const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 const TURN_LIMIT_INSTRUCTION = "You have reached your turn limit. Wrap up immediately and provide your final answer now.";
 
@@ -515,8 +514,8 @@ export function parseSubagentModel(runtime: ModelRuntime, value: string | undefi
   const exact = findSubagentModel(runtime, requested);
   if (exact) return { model: exact };
   const colon = requested.lastIndexOf(":");
-  const level = requested.slice(colon + 1) as ThinkingLevel;
-  if (colon > 0 && THINKING_LEVELS.has(level)) {
+  const level = requested.slice(colon + 1);
+  if (colon > 0 && isThinkingLevel(level)) {
     const model = findSubagentModel(runtime, requested.slice(0, colon));
     if (model) return { model, thinkingLevel: level };
   }
@@ -780,7 +779,7 @@ export function createSubagentController(
         ?? profile.thinking
         ?? profileModel?.thinkingLevel
         ?? parent.inner.agent.state?.thinkingLevel;
-      if (thinking && !THINKING_LEVELS.has(thinking as ThinkingLevel)) {
+      if (thinking && !isThinkingLevel(thinking)) {
         throw new Error(`Invalid subagent thinking level: ${thinking}`);
       }
       const parentModel = parent.inner.model as ReturnType<ModelRuntime["getModel"]>;

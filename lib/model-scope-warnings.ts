@@ -1,3 +1,5 @@
+import { isThinkingLevel } from "./thinking-levels";
+
 /**
  * Structured `enabledModels` scope warnings, shared by the server-side
  * resolver (`lib/model-scope.ts`) and the client-side banner.
@@ -32,12 +34,11 @@ export interface ModelScopeWarning {
 }
 
 /** Same list pi's resolver uses to strip `:level` suffixes (case-sensitive). */
-const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 /** Strip a trailing `:thinkingLevel` suffix the same way pi's resolver does. */
 export function stripThinkingLevelSuffix(pattern: string): string {
   const colonIdx = pattern.lastIndexOf(":");
-  if (colonIdx !== -1 && THINKING_LEVELS.has(pattern.slice(colonIdx + 1))) {
+  if (colonIdx !== -1 && isThinkingLevel(pattern.slice(colonIdx + 1))) {
     return pattern.slice(0, colonIdx);
   }
   return pattern;

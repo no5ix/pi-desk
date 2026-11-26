@@ -6,6 +6,7 @@ import { AppCombobox } from "../AppCombobox";
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { apiErrorText, scheduledApi, type CronPreview, type TaskInput } from "@/lib/scheduled-tasks/client";
+import { THINKING_LEVELS } from "@/lib/thinking-levels";
 import {
   DEFAULT_PRESET,
   cronFromPreset,
@@ -55,7 +56,6 @@ interface FormState {
   acknowledged: boolean;
 }
 
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const TOOL_PRESETS: ToolPreset[] = ["read-only", "none", "default", "full"];
 const SCHEDULE_KINDS: ScheduleKind[] = ["daily", "weekdays", "weekly", "hourly", "once", "custom", "manual"];
 
