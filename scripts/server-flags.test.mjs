@@ -115,3 +115,13 @@ test("every way of starting the server sets the ceiling", async () => {
   assert.match(sidecar, /setFlagsFromString\(`--max-old-space-size=\$\{/);
   assert.match(sidecar, /hasMaxOldSpaceOption/);
 });
+
+test("dev's pressure budget sits above dev's heap ceiling", () => {
+  // A healthy `npm run dev` is 1.5-2 GB of Turbopack module graph. A budget
+  // inside that range has the valve fire every minute and find nothing to
+  // release, which is noise that trains the operator to ignore the one line
+  // that means RSS has grown past the heap.
+  assert.equal(DEV_ENV_DEFAULTS.PI_WEB_MEMORY_BUDGET_MB, "2560");
+  assert.ok(Number(DEV_ENV_DEFAULTS.PI_WEB_MEMORY_BUDGET_MB) > DEFAULT_DEV_MAX_OLD_SPACE_MB);
+  assert.ok(Number(DEV_ENV_DEFAULTS.PI_WEB_MEMORY_BUDGET_MB) <= DEFAULT_DEV_MAX_OLD_SPACE_MB * 2);
+});

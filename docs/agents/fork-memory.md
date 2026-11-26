@@ -56,8 +56,10 @@ directly — no import cycle, no app-module side effects — and bounds its walk
   a running server over the largest sessions on disk and samples the process the
   whole run: peak, retained, **given back**.
 
-`PI_WEB_MEMORY_BUDGET_MB` (default 1024, clamped 256–32768, `0` off) is the RSS
-the valve works against.
+`PI_WEB_MEMORY_BUDGET_MB` is the RSS the valve works against: default **1024** in
+production, **2560** in dev (a healthy dev server is 1.5–2 GB of Turbopack module
+graph, so a budget inside that range fires every minute and finds nothing to
+release; over the heap ceiling is the signal). Clamped 256–32768, `0` off.
 
 ## What releases, and when
 

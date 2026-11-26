@@ -96,6 +96,12 @@ function applyServerMemoryEnv(env = process.env, mode = "start") {
 const DEV_ENV_DEFAULTS = {
   PI_WEB_IDLE_TIMEOUT_MS: "120000",
   PI_WEB_MCP_IDLE_MS: "120000",
+  // Above the dev heap ceiling on purpose. A dev server's RSS is mostly
+  // Turbopack's module graph — a normal `npm run dev` day sits at 1.5-2 GB — so
+  // the production budget (1024) would have the release valve fire every minute
+  // on a healthy process and find nothing to release. Over the ceiling is the
+  // signal that matters in dev: RSS past the heap is growth outside the heap.
+  PI_WEB_MEMORY_BUDGET_MB: "2560",
 };
 
 function applyDevEnvDefaults(env = process.env) {
