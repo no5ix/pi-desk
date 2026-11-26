@@ -111,14 +111,21 @@ The text area is `flex: "none"` in the quote box's column — in a column `flex:
 zero basis and clips the auto-grow height to `minHeight`, which is the regression
 `components/MobilePwaLayout.test.mjs` pins — and `flex: "1 1 auto"` in the row.
 
-The card's top-right corner carries one affordance: expand (`components/ComposerExpandIcon.tsx`,
-`.chat-composer-expand`). A tap turns the card into a tall editor for a long prompt —
+The card's upper-left corner carries one affordance: expand (`components/ComposerExpandIcon.tsx`,
+`.chat-composer-expand`). Its mark runs the **top-left → bottom-right** diagonal (the 2026-12 ask:
+the old bottom-left/top-right pair read against the card's own left edge, the column where the
+corner and the `+` stand). A tap turns the card into a tall editor for a long prompt —
 `is-expanded` on the card, and `app/native-theme.css` owns the height, out-inlining the
 textarea's own `min-height: 24px / max-height: 200px` box, which the composer sets inline.
 With the phone's keyboard up the editor is measured against `--app-viewport-height`, so a tall
 prompt is typed in the room above the keyboard and never under it. The same mark turned 180°
 is the way back, and Escape in the field is the keyboard's way back — only while nothing is
-streaming, so a running agent keeps its Stop. The corner is not drawn where there is no room
+streaming, so a running agent keeps its Stop. The corner arrives with the **second** line — typed or wrapped — and leaves with it.
+The count comes from `measureComposerTextLines` with the box released, and it takes the
+element's own vertical padding (a line's 40%, floored at 6px) off the measured content
+before rounding: a raw round counted a one-line prompt as two, so the corner rose over a
+resting card (the report: "there's only one line, the expansion icon should disappear").
+The corner is not drawn where there is no room
 to grow: the quote composer's card and a docked side chat get none. The choice is remembered
 per device (`APP_PREF_KEYS.composerExpanded`) because it is a way of writing, not a per-session
 fact, and the room the glyph takes out of the text is a rule: the corner lives in the card's

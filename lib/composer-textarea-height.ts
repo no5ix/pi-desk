@@ -72,9 +72,14 @@ export function measureComposerTextLines(textarea: HTMLTextAreaElement): number 
     else style.removeProperty(property);
   }
   const line = lineHeight > 0 ? lineHeight : fontSize * FALLBACK_LINE_RATIO;
-  // A text area's own box is the text: one line is one line-height, and rounding keeps a
-  // pixel of padding or a subpixel line box from reading as a second line.
-  return Math.max(1, Math.round(content / line));
+  // A text area's own box is the text: one line is one line-height. The element's own
+  // vertical padding rides on `scrollHeight` as well, and a subpixel line box adds to
+  // it, so a raw round counted a one-line prompt as two and raised the corner over a
+  // resting card — the report was "there's only one line, the expansion icon should
+  // disappear". A line is counted only when the content is a whole line taller than the
+  // box, so the answer follows the text and not the padding, at every font size.
+  const slack = Math.max(6, line * 0.4);
+  return Math.max(1, Math.round((content - slack) / line));
 }
 
 /**

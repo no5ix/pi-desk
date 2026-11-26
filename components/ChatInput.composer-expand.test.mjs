@@ -81,8 +81,8 @@ test("the corner is measured out of the box, released and restored", () => {
     "the height is read between the release and the restore: nothing yields to the browser there, so no frame is painted released (a released box that paints is the flash the smooth growth was asked to replace)");
   assert.ok(/if \(value\) style\.setProperty\(property, value, priority\);\s*\n\s*else style\.removeProperty\(property\);/.test(body),
     "every property is put back, an empty one removed rather than written as \"\"");
-  assert.ok(/return Math\.max\(1, Math\.round\(content \/ line\)\);/.test(body),
-    "one line is one line-height, and rounding keeps a pixel of padding from reading as a second line");
+  assert.ok(/const slack = Math\.max\(6, line \* 0\.4\);\s*\n\s*return Math\.max\(1, Math\.round\(\(content - slack\) \/ line\)\);/.test(body),
+    "one line is one line-height, and the box's own vertical padding (plus a subpixel line box) is taken off before the rounding: a raw round counted a one-line prompt as two, and the corner rose over a resting card");
   const call = /const measureTextLines = useCallback\(\(\) => \{[\s\S]*?\n  \}, \[\]\);/.exec(chatInput);
   assert.ok(call, "the composer wraps the measurement in a callback");
   assert.ok(/measureComposerTextLines\(ta\)/.test(call[0]), "it is the module's function doing the counting");
@@ -122,17 +122,24 @@ test("the corner sits in the card's upper-LEFT, and the text stops short of it",
   assert.ok(coarse, "a finger's tier is its own block");
   assert.match(coarse, /width: 36px;[\s\S]*height: 36px;[\s\S]*top: 2px;[\s\S]*left: 2px;[\s\S]*border-radius: 12px;/,
     "the glyph is 18px, so the plate it lives on is the touch target");
-  // The corner sits over the text's first line, so the line stops short of it: the caret is
-  // never hidden by the glyph. Gutter on the LEFT, matching the corner.
+  // The corner sits over the card's upper-left, so the text DROPS BELOW the glyph: no line
+  // is typed under it and the caret is never hidden. It is not a left gutter — the 2026-12
+  // ask reported exactly that: 34px (44px under a finger) of `padding-left` opened a second,
+  // ragged left column and put the prompt far from the `+`, while the one-line card's gap
+  // between the disc and the text is the prompt's own.
   const gutter = cssRule(css, ".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea");
-  assert.ok(gutter, "the card reserves the gutter only when the corner is drawn");
-  assert.match(gutter, /padding-left: 34px;/, "the text's ink starts past the glyph");
+  assert.ok(gutter, "the card reserves the drop only when the corner is drawn");
+  assert.match(gutter, /padding-top: 26px;/, "the first line starts under the 26px plate at 4px from the card's top");
+  assert.doesNotMatch(gutter, /padding-left:/,
+    "no left gutter: the text keeps the resting card's own gap to the `+` disc");
   assert.doesNotMatch(gutter, /padding-right:/,
     "the right side needs nothing: the row's own gaps and Send's disc are already accounted for there");
   const coarseGutter = cssRule(css, ".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea", 1);
-  assert.match(coarseGutter ?? "", /padding-left: 44px;/, "and the gutter follows the bigger plate");
+  assert.match(coarseGutter ?? "", /padding-top: 36px;/, "and the drop follows the bigger plate (36px at 2px)");
   assert.doesNotMatch(css, /\.chat-composer\.has-expand[^\n]*\{[^}]*padding-right: (38px|44px)/,
     "no right gutter anywhere: it was carved for a corner in the top-right, and it left a band of dead text width");
+  assert.doesNotMatch(css, /\.chat-composer\.has-expand[^\n]*\{[^}]*padding-left: (34px|44px)/,
+    "no left gutter anywhere: the editor and the resting card start the text at the same x");
 });
 
 test("the expanded card stays the row the resting card is", () => {
@@ -191,8 +198,14 @@ test("Escape in the field folds the card, and a running agent keeps its abort", 
 
 test("the corner's mark is the same shape turned around", () => {
   assert.ok(/expanded \? \(/.test(icon), "one component, two states");
-  for (const path of ['d="M14 4h6v6"', 'd="M10 20H4v-6"', 'd="M4 10h6V4"', 'd="M20 14h-6v6"']) {
+  for (const path of ['d="M10 4H4v6"', 'd="M14 20h6v-6"', 'd="M20 10h-6V4"', 'd="M4 14h6v6"']) {
     assert.ok(icon.includes(path), `the glyph carries ${path}`);
+  }
+  // The diagonal is the ask: 左上斜向右下 (top-left to bottom-right), not the old
+  // bottom-left/top-right pair, which read against the card's left edge — the column
+  // where the corner and the `+` stand.
+  for (const gone of ['d="M14 4h6v6"', 'd="M10 20H4v-6"', 'd="M4 10h6V4"', 'd="M20 14h-6v6"']) {
+    assert.ok(!icon.includes(gone), `the glyph no longer carries ${gone}`);
   }
   assert.ok(icon.includes('aria-hidden="true"'), "the button's label carries the meaning, not the drawing");
   for (const locale of ["en", "zh-CN", "zh-TW"]) {
