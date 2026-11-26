@@ -1031,8 +1031,12 @@ test("only the chat composer offers saving a default model or reasoning level", 
   const chatInputSource = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
   const agentsConfigSource = readFileSync(new URL("./AgentsConfig.tsx", import.meta.url), "utf8");
   assert.match(chatInputSource, /<ModelSelector[\s\S]*?defaultValue=\{defaultModel\}[\s\S]*?onSetDefault=\{onSetDefaultModel\}/);
-  // "auto" means "use the default", so it never gets a star of its own.
-  assert.match(chatInputSource, /star=\{onSetDefaultThinkingLevel && lvl !== "auto"/);
+  // "auto" means "use the default", so it never gets a star of its own. The rows are one
+  // component now (components/ComposerReasoningRows.tsx), shared by the desktop's reasoning
+  // menu and the phone's `+` menu, so the star lives there and ChatInput only wires it up.
+  const reasoningRowsSource = readFileSync(new URL("./ComposerReasoningRows.tsx", import.meta.url), "utf8");
+  assert.match(reasoningRowsSource, /star=\{onSetDefault && lvl !== "auto"/);
+  assert.match(chatInputSource, /<ComposerReasoningRows[\s\S]*?onSetDefault=\{onSetDefaultThinkingLevel\}/);
   // A subagent profile's model is not the default for new chats.
   assert.doesNotMatch(agentsConfigSource, /onSetDefault/);
 });

@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type InputHTMLAttributes } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type InputHTMLAttributes } from "react";
 import { createPortal } from "react-dom";
 import { isImeComposing } from "@/lib/ime";
 import { scrollMovesAnchor } from "@/lib/menu-placement";
+import { usePopTransition } from "@/hooks/usePopTransition";
 
 type AppComboboxProps = Omit<InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "list" | "role"> & {
   value: string;
@@ -22,6 +23,12 @@ export function AppCombobox({ value, onValueChange, options, onKeyDown, onFocus,
   const [active, setActive] = useState(-1);
   const matches = [...new Set(options)].filter((option) => option.toLocaleLowerCase().includes(value.toLocaleLowerCase()));
   const visible = open && matches.length > 0 && Boolean(anchor);
+  // The suggestion list leaves the way it came (the shared `app-pop-out`). Typing can
+  // empty `matches` in the same click that closes the list, so the exiting box keeps the
+  // last list it showed: a closing panel that has lost its rows reads as a flash.
+  const pop = usePopTransition(visible);
+  const shownMatches = useRef(matches);
+  if (matches.length > 0) shownMatches.current = matches;
 
   useEffect(() => {
     if (!open) return;
@@ -73,12 +80,19 @@ export function AppCombobox({ value, onValueChange, options, onKeyDown, onFocus,
           } else if (event.key === "Tab") setOpen(false);
           if (!event.defaultPrevented) onKeyDown?.(event);
         }} />
-      {visible && anchor && createPortal(
-        <div ref={panelRef} id={id} role="listbox" aria-label={props["aria-label"]} className="native-popover app-menu app-combobox-menu"
-          style={{ width, left: Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8)),
-            ...(above ? { bottom: window.innerHeight - anchor.top + 6 } : { top: anchor.bottom + 6 }),
-            maxHeight: Math.max(48, Math.min(240, (above ? anchor.top : window.innerHeight - anchor.bottom) - 14)) }}>
-          {matches.map((option, index) => <button key={option} id={`${id}-${index}`} type="button" role="option" tabIndex={-1}
+      {pop.mounted && anchor && createPortal(
+        <div ref={panelRef} id={id} role="listbox" aria-label={props["aria-label"]} className={`native-popover app-menu app-combobox-menu${pop.className}`}
+          style={{
+            width,
+            left: Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8)),
+            // One side or the other, named, so the object keeps a single type. The custom
+            // property is the edge the shared pop animation grows from.
+            top: above ? undefined : anchor.bottom + 6,
+            bottom: above ? window.innerHeight - anchor.top + 6 : undefined,
+            maxHeight: Math.max(48, Math.min(240, (above ? anchor.top : window.innerHeight - anchor.bottom) - 14)),
+            ["--pop-origin"]: above ? "bottom center" : "top center",
+          } as CSSProperties}>
+          {shownMatches.current.map((option, index) => <button key={option} id={`${id}-${index}`} type="button" role="option" tabIndex={-1}
             aria-selected={active === index} className="app-menu-option" onPointerDown={(event) => event.preventDefault()}
             onMouseEnter={() => setActive(index)} onClick={() => select(option)}>{option}</button>)}
         </div>, document.body,

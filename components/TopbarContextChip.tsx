@@ -40,7 +40,7 @@ interface TopbarContextChipProps {
  */
 export function TopbarContextChip({ contextUsage, sessionStats }: TopbarContextChipProps) {
   const { t } = useI18n();
-  const { tipId, open, pos, tipRef, triggerProps } = useTopbarTip<HTMLButtonElement>();
+  const { tipId, pop, pos, tipRef, triggerProps } = useTopbarTip<HTMLButtonElement>();
   const summary = contextUsageSummary(contextUsage, sessionStats);
   if (!contextUsage || summary === null) return null;
   const percent = contextUsage.percent;
@@ -78,8 +78,8 @@ export function TopbarContextChip({ contextUsage, sessionStats }: TopbarContextC
           />
         </svg>
       </button>
-      {open ? (
-        <TopbarTip tipId={tipId} pos={pos} tipRef={tipRef}>
+      {pop.mounted ? (
+        <TopbarTip tipId={tipId} pos={pos} tipRef={tipRef} closing={pop.closing}>
           <TopbarTipRow label={t("chat.ctxUsage")} value={summary} />
           {inWindow !== null && inWindow !== undefined && contextUsage.contextWindow > 0 ? (
             <TopbarTipRow

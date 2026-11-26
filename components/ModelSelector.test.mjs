@@ -39,7 +39,8 @@ test("the composer's picker hangs from its own button, never at a fixed viewport
   const jiti = createJiti(import.meta.url, { jsx: { runtime: "automatic" }, tsconfigPaths: true });
   const { COMPOSER_MODEL_MENU_WIDTH } = await jiti.import("../lib/composer-panel-placement.ts");
   const composer = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-  const panel = source.slice(source.indexOf("{open && anchorRect"));
+  // The panel renders from the pop transition's mounted flag, kept for the exit.
+  const panel = source.slice(source.indexOf("{pop.mounted && anchorRect"));
 
   // The composer's model control opts in, and the panel it gets is absolute: the
   // placement engine hands back coordinates in the anchor's own space, so whichever

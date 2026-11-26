@@ -41,12 +41,16 @@ test("the header renders the chip last, on a conversation only", () => {
 });
 
 test("the chip is a control whose tip carries the sentence, not a native tooltip", () => {
-  assert.match(chip, /const \{ tipId, open, pos, tipRef, triggerProps \} = useTopbarTip<HTMLButtonElement>\(\);/);
+  // `pop` is the shared pop transition: the tip is mounted while it says so, so a tip the
+  // pointer left has time to fade (hooks/usePopTransition.ts).
+  assert.match(chip, /const \{ tipId, pop, pos, tipRef, triggerProps \} = useTopbarTip<HTMLButtonElement>\(\);/);
   assert.match(chip, /className="app-topbar-context-hit"/);
   assert.match(chip, /aria-label=\{t\("chat\.contextTipTitle", \{ summary \}\)\}/,
     "the accessible name is the same sentence the tip shows");
   assert.doesNotMatch(chip, /\btitle=\{/, "no native tooltip: it never opens on a phone");
-  assert.match(chip, /\{open \? \(\s*<TopbarTip/, "the tip is out of the a11y tree while closed");
+  // Out of the a11y tree once it is gone; while it animates away it is `pop.mounted` with
+  // `is-closing`, so the tip fades instead of vanishing between two renders.
+  assert.match(chip, /\{pop\.mounted \? \(\s*<TopbarTip/, "the tip is out of the a11y tree while closed");
   assert.match(chip, /<TopbarTipRow label=\{t\("chat\.ctxUsage"\)} value=\{summary\} \/>/);
   // The tip is the numbers and nothing else. A control inside a readout turns a label
   // into a target the pointer has to aim at, and the panel has its own way in: the

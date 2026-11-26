@@ -45,6 +45,12 @@ export const COMPOSER_AUTOMATION_MENU_WIDTH = 300;
  */
 export const COMPOSER_MODEL_MENU_WIDTH = 420;
 
+/** The phone composer's `+` menu: the card's own width, so the rows read as the
+ * composer's sheet (the composer's mobile gutter is 12px a side), and never wider than
+ * the screen. */
+export const COMPOSER_PLUS_MENU_WIDTH = (windowWidth: number) =>
+  Math.min(windowWidth - 24, 420);
+
 /** A horizontal box in viewport CSS pixels. */
 export interface HorizontalBox {
   left: number;

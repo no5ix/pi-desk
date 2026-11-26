@@ -10,7 +10,9 @@ const css = await readFile(new URL("../app/native-theme.css", import.meta.url), 
 // paint over the inline menu, so every real pointer click hit the panel instead
 // of the menu. An "inline menu + panel open" click was unclickable.
 test("the More menu is portaled to the body so the open file panel cannot cover it", () => {
-  assert.match(source, /topMoreOpen && topMorePos && createPortal\(/);
+  // The menu is mounted while the *transition* says so, not while the click flag is set:
+  // the closing menu has to stay on screen for the exit to be seen (hooks/usePopTransition).
+  assert.match(source, /topMorePop\.mounted && topMorePos && createPortal\(/);
   assert.match(source, /document\.body/);
   // Fixed positioning is computed from the trigger rect, not the old absolute
   // "calc(100% + 7px) / right: -2px" that only worked inside the topbar.

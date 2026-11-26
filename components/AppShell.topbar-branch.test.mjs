@@ -71,7 +71,9 @@ test("the project label opens the same tip with the folder it points at", () => 
   assert.match(projectChip, /<TopbarTipRow label=\{t\("chat\.projectTipPathLabel"\)\} value=\{path\} \/>/);
   assert.match(projectChip, /className="app-topbar-project-hit"/);
   assert.match(projectChip, /aria-label=\{t\("chat\.projectTipTitle", \{ projectRoot: path \}\)\}/, "and says it to a screen reader");
-  assert.match(projectChip, /\{open && path \? \(/, "no path, no tip");
+  // No path, no tip; and the tip leaves through the shared exit, so the gate is the
+  // transition's mounted flag rather than the hover flag.
+  assert.match(projectChip, /\{pop\.mounted && path \? \(/, "no path, no tip");
   assert.match(projectChip, /\{isWorktree \? <WorktreeIcon size=\{13\} \/> : <ProjectFolderIcon size=\{13\} \/>\}/,
     "the project label is the chip that says which folder this is: the checkout glyph in a linked worktree, the project folder everywhere else");
   assert.ok(!projectChip.includes("branchOwnsWorktreeFolder"),

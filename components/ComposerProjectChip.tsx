@@ -17,7 +17,7 @@
 //   drawn above the chat column, and the projects at the top of the list — the filter box
 //   and the current project — were covered and unreachable.
 
-import { useLayoutEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import {
   composerPanelAnchoring,
@@ -27,9 +27,13 @@ import {
 import { canUseNativeMenu, menuPointBelow, showNativeMenu } from "@/lib/desktop-menu";
 import { getProjectDisplayName } from "@/lib/project-display";
 import { useI18n } from "@/hooks/useI18n";
+import { usePopTransition } from "@/hooks/usePopTransition";
 import { WorktreeIcon } from "./GitIcons";
 
 /** The list wants room for a project name and its glyph; the helper clamps it to the column. */
+/** The edge the shared pop animation grows the panel from (app/native-theme.css). */
+const POP_ORIGIN_STYLE = { "--pop-origin": "bottom center" } as CSSProperties;
+
 const PROJECT_MENU_WIDTH = 260;
 /** The width the panel keeps when nothing could be measured (a detached anchor). */
 const PROJECT_MENU_MIN_WIDTH = 220;
@@ -56,7 +60,8 @@ interface ComposerProjectChipProps {
   label: string;
   projectPath?: string | null;
   /** The composer's folder is a linked worktree checkout: the checkout glyph, not the
-   *  folder. Asked of the folder alone — components/TopbarProjectChip.tsx says why. */
+   *  folder. Asked the same way as the header's project chip
+   *  (components/TopbarProjectChip.tsx) says why. */
   isWorktree?: boolean;
   maxWidth: number;
   /** Active project roots a new-session composer can switch between. */
@@ -70,6 +75,11 @@ export function ComposerProjectChip({
   menuRef, open, onOpenChange, label, projectPath, isWorktree = false, maxWidth, projectOptions, onProjectChange, onSelectProject,
 }: ComposerProjectChipProps) {
   const { t } = useI18n();
+  // The chip's project list is mounted by the click that opens it and unmounted by the one
+  // that closes it. Held for the shared exit animation (hooks/usePopTransition.ts), it
+  // leaves the way it came. On the desktop the chip's list is a native popup, and that path
+  // never mounts this panel at all.
+  const pop = usePopTransition(open);
   const isMobile = useIsMobile();
   const panelRef = useRef<HTMLDivElement>(null);
   const [maxHeight, setMaxHeight] = useState<number | null>(null);
@@ -158,7 +168,7 @@ export function ComposerProjectChip({
         )}
         <span>{label}</span>
       </button>
-      {open && projectOptions.length > 0 && onProjectChange && (() => {
+      {pop.mounted && projectOptions.length > 0 && onProjectChange && (() => {
         // A number for the width and a box that stops at the sidebar, like the composer's
         // other menus; a phone hangs the panel from the chip's left edge.
         const anchoring = composerPanelAnchoring(menuRef.current, PROJECT_MENU_WIDTH, { alignLeft: isMobile });
@@ -166,7 +176,7 @@ export function ComposerProjectChip({
         return (
         <div
           ref={panelRef}
-          className="native-popover app-menu composer-project-menu"
+          className={`native-popover app-menu composer-project-menu${pop.className}`}
           role="menu"
           style={{
             position: "absolute",
@@ -179,6 +189,9 @@ export function ComposerProjectChip({
             // The list's own cap, and the measured space above the chip: the shorter of
             // the two, so the panel stops at the header instead of running behind it.
             maxHeight: cap === null ? "min(60vh, 420px)" : `min(60vh, 420px, ${cap}px)`,
+            // The panel grows up out of the chip it hangs from. React's CSSProperties has
+            // no slot for a custom property, so it joins in as its own typed object.
+            ...POP_ORIGIN_STYLE,
           }}
         >
           <div className="app-menu-list">

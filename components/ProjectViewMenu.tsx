@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
 import { useMenuPlacement } from "@/hooks/useMenuPlacement";
+import { popClass } from "@/hooks/usePopTransition";
 import type { MenuAnchor } from "@/lib/menu-placement";
 
 export type ProjectViewMode = "grouped" | "timeline";
@@ -23,6 +24,9 @@ interface ProjectViewMenuProps {
   onCollapseAll: () => void;
   onExpandAll: () => void;
   onClose?: () => void;
+  /** The owner keeps the menu mounted for the length of the shared exit animation, and
+   *  says so here: `is-closing` is what plays it (app/native-theme.css). */
+  closing?: boolean;
 }
 
 /**
@@ -34,6 +38,7 @@ export function ProjectViewMenu({
   menuRef,
   pos,
   anchor,
+  closing = false,
   mode,
   canCollapseAll,
   canExpandAll,
@@ -67,7 +72,7 @@ export function ProjectViewMenu({
   return createPortal(
     <div
       ref={menuRef}
-      className="project-view-menu native-popover app-menu"
+      className={`project-view-menu native-popover app-menu${popClass(closing)}`}
       role="menu"
       aria-label={t("sidebar.projectViewMenu")}
       style={{ top: position.top, left: position.left }}

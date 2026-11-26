@@ -64,7 +64,9 @@ test("archived projects sit in a folded Archive group and need a restore before 
   // The archived row has no "+" and opens the restore menu, from "…" or a right-click.
   assert.match(source, /\{!archived && \(\s*<button[\s\S]*?handleNewSession\(group\.projectRoot\)/);
   assert.match(source, /onContextMenu=\{\(e\) => openProjectMenu\(e, group\.projectRoot, archived\)\}/);
-  assert.match(source, /onRestore=\{\(\) => restoreProject\(projectMenu\.root\)\}/);
+  // The menu keeps the project it opened for across the exit (useShownWhileClosing), so
+  // the closing panel still names the project whose rows it acted on.
+  assert.match(source, /onRestore=\{\(\) => restoreProject\(shownProjectMenu\.root\)\}/);
   // The group sits after the project list and unfolds for a search.
   assert.match(source, /activeProjects\.map\(\(group\) => renderProjectGroup\(group\)\)\)\}\s*\{!projectsSectionFolded && archivedProjects\.length > 0 && \(\s*<ArchivedProjectsSection/);
   assert.match(source, /const archiveShown = archiveExpanded \|\| Boolean\(trimmedSessionQuery\)/);
@@ -479,7 +481,7 @@ test("projects can be pinned above the others from both project menus (S2)", asy
   assert.match(source, /const activeProjects = pinnedFirst\(\s*allProjects\.filter\(\(group\) => !archivedProjectRoots\.has\(group\.projectRoot\)\),\s*\(group\) => pinnedProjects\.has\(group\.projectRoot\),\s*\);/);
   const nativeMenu = source.slice(source.indexOf("const showNativeProjectMenu = useCallback"));
   assert.match(nativeMenu.slice(0, 4000), /sidebar\.unpinProject" : "sidebar\.pinProject"/);
-  assert.match(source, /pinned=\{pinnedProjects\.has\(projectMenu\.root\)\}/);
+  assert.match(source, /pinned=\{pinnedProjects\.has\(shownProjectMenu\.root\)\}/);
   const menu = (await readFile(new URL("./ProjectContextMenu.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
   assert.match(menu, /t\(pinned \? "sidebar\.unpinProject" : "sidebar\.pinProject"\)/);
 });
@@ -497,7 +499,7 @@ test("a project's sessions can all be deleted, keeping the running ones (S6)", a
   assert.match(source, /t\("sidebar\.deleteProjectSessionsRunning", \{ count: projectSessionsDelete\.kept \}\)/);
   const nativeMenu = source.slice(source.indexOf("const showNativeProjectMenu = useCallback"));
   assert.match(nativeMenu.slice(0, 4000), /onSelect: \(\) => requestProjectSessionsDelete\(projectRoot\)/);
-  assert.match(source, /deleteSessionsCount=\{projectSessionsToDelete\(projectMenu\.root\)\.ids\.length\}/);
+  assert.match(source, /deleteSessionsCount=\{projectSessionsToDelete\(shownProjectMenu\.root\)\.ids\.length\}/);
 });
 
 test("a project session's row menus offer Fork, which opens the copy (S4)", () => {

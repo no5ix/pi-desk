@@ -33,7 +33,7 @@ export function TopbarProjectChip({ name, path, isWorktree = false }: {
   isWorktree?: boolean;
 }) {
   const { t } = useI18n();
-  const { tipId, open, pos, tipRef, triggerProps } = useTopbarTip<HTMLButtonElement>();
+  const { tipId, pop, pos, tipRef, triggerProps } = useTopbarTip<HTMLButtonElement>();
   return (
     <small className="app-topbar-project app-topbar-project--chip">
       <button
@@ -47,8 +47,8 @@ export function TopbarProjectChip({ name, path, isWorktree = false }: {
         {isWorktree ? <WorktreeIcon size={13} /> : <ProjectFolderIcon size={13} />}
         <span>{name}</span>
       </button>
-      {open && path ? (
-        <TopbarTip tipId={tipId} pos={pos} tipRef={tipRef}>
+      {pop.mounted && path ? (
+        <TopbarTip tipId={tipId} pos={pos} tipRef={tipRef} closing={pop.closing}>
           <TopbarTipRow label={t("chat.projectTipPathLabel")} value={path} />
         </TopbarTip>
       ) : null}

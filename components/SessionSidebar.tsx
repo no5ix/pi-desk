@@ -70,6 +70,7 @@ import {
   useArchivedProjects,
 } from "@/lib/archived-projects";
 import { useMenuPlacement } from "@/hooks/useMenuPlacement";
+import { usePopTransition, useShownWhileClosing } from "@/hooks/usePopTransition";
 import { SideChatPlusIcon } from "./SideChatIcon";
 import { scrollMovesAnchor, type MenuAnchor } from "@/lib/menu-placement";
 
@@ -329,6 +330,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [projectsShowingArchived, setProjectsShowingArchived] = useState<Set<string>>(() => new Set());
   const [chatsMenuOpen, setChatsMenuOpen] = useState(false);
   const [chatsMenuPos, setChatsMenuPos] = useState<{ top: number; left: number } | null>(null);
+  // The sidebar's menus are mounted on the click that opens them. Held for the shared exit
+  // animation (hooks/usePopTransition.ts), they leave the way they came; the spot a menu
+  // opened at is kept for the length of the exit, so the closing menu sits where the open
+  // one was. Every outside-click handler below stays keyed on the open state.
+  const chatsMenuPop = usePopTransition(chatsMenuOpen);
+  const shownChatsMenuPos = useShownWhileClosing(chatsMenuPos, chatsMenuPop.closing);
   const chatsMenuRef = useRef<HTMLDivElement>(null);
   const chatsMenuButtonRef = useRef<HTMLButtonElement>(null);
   // Tracked in a ref only: the version is compared against the polled value to
@@ -430,6 +437,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [projectViewMenuOpen, setProjectViewMenuOpen] = useState(false);
   const [projectViewMenuPos, setProjectViewMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [projectViewMenuAnchor, setProjectViewMenuAnchor] = useState<MenuAnchor | null>(null);
+  // Held for the shared exit animation (hooks/usePopTransition.ts), with the spot the menu
+  // opened at kept for the length of the exit.
+  const projectViewMenuPop = usePopTransition(projectViewMenuOpen);
+  const shownProjectViewMenuPos = useShownWhileClosing(projectViewMenuPos, projectViewMenuPop.closing);
   const projectViewMenuRef = useRef<HTMLDivElement>(null);
   const projectViewMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [projectMenu, setProjectMenu] = useState<{ root: string; archived?: boolean } | null>(null);
@@ -466,6 +477,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     };
   }, [hideProjectPathHint]);
   const [projectMenuAnchor, setProjectMenuAnchor] = useState<MenuAnchor | null>(null);
+  // The project "…" menu is mounted on the click that opens it and unmounted on the one
+  // that closes it. It is held for the shared exit animation, and for its length the panel,
+  // the spot and the anchor it opened at are kept: a closing menu that has lost its project
+  // animates an empty box, not a menu. On the desktop shell the menu is a native popup, for
+  // which `projectMenuPos` stays null, so nothing is mounted and nothing animates.
+  const projectMenuPop = usePopTransition(Boolean(projectMenu) && Boolean(projectMenuPos));
+  const shownProjectMenu = useShownWhileClosing(projectMenu, projectMenuPop.closing);
+  const shownProjectMenuPos = useShownWhileClosing(projectMenuPos, projectMenuPop.closing);
+  const shownProjectMenuAnchor = useShownWhileClosing(projectMenuAnchor, projectMenuPop.closing);
   // "Open in file manager" on a project row. Only the server can raise a
   // file-manager window, and only when the browser runs on that same machine,
   // so the browser asks once and the menu shows the entry only where it works;
@@ -2203,10 +2223,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         )}
       </div>
       </SessionSearch>
-      {chatsMenuOpen && chatsMenuPos && (
+      {chatsMenuPop.mounted && shownChatsMenuPos && (
         <ChatsSectionMenu
           menuRef={chatsMenuRef}
-          pos={chatsMenuPos}
+          pos={shownChatsMenuPos}
+          closing={chatsMenuPop.closing}
           onClose={closeChatsMenu}
           canCollapse={!chatsCollapsed}
           canExpand={chatsCollapsed}
@@ -2220,11 +2241,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           }}
         />
       )}
-      {projectViewMenuOpen && projectViewMenuPos && (
+      {projectViewMenuPop.mounted && shownProjectViewMenuPos && (
         <ProjectViewMenu
           menuRef={projectViewMenuRef}
-          pos={projectViewMenuPos}
+          pos={shownProjectViewMenuPos}
           anchor={projectViewMenuAnchor}
+          closing={projectViewMenuPop.closing}
           mode={projectViewMode}
           canCollapseAll={canCollapseAllProjects}
           canExpandAll={canExpandAllProjects}
@@ -2266,35 +2288,36 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         />,
         document.body,
       )}
-      {projectMenu && projectMenuPos && (
+      {projectMenuPop.mounted && shownProjectMenu && shownProjectMenuPos && (
         <ProjectContextMenu
           menuRef={projectMenuRef}
-          projectRoot={projectMenu.root}
-          pos={projectMenuPos}
-          anchor={projectMenuAnchor}
+          projectRoot={shownProjectMenu.root}
+          pos={shownProjectMenuPos}
+          anchor={shownProjectMenuAnchor}
+          closing={projectMenuPop.closing}
           canReveal={isTauriDesktop() || fileManagerAvailability?.supported === true}
           revealLabel={revealProjectLabel}
           projectRevealError={projectRevealError}
           t={t}
           onClose={closeProjectMenu}
           onOpenTerminal={onOpenTerminal ? () => {
-            const cwd = projectMenu.root;
+            const cwd = shownProjectMenu.root;
             closeProjectMenu();
             onOpenTerminal(cwd);
           } : undefined}
-          onReveal={() => void revealProjectInFileManager(projectMenu.root)}
-          archived={projectMenu.archived === true}
-          onArchive={() => archiveProject(projectMenu.root)}
-          onRestore={() => restoreProject(projectMenu.root)}
-          pinned={pinnedProjects.has(projectMenu.root)}
+          onReveal={() => void revealProjectInFileManager(shownProjectMenu.root)}
+          archived={shownProjectMenu.archived === true}
+          onArchive={() => archiveProject(shownProjectMenu.root)}
+          onRestore={() => restoreProject(shownProjectMenu.root)}
+          pinned={pinnedProjects.has(shownProjectMenu.root)}
           onTogglePin={() => {
-            const root = projectMenu.root;
+            const root = shownProjectMenu.root;
             closeProjectMenu();
             void pins.toggleProjectPin(root);
           }}
-          deleteSessionsCount={projectSessionsToDelete(projectMenu.root).ids.length}
+          deleteSessionsCount={projectSessionsToDelete(shownProjectMenu.root).ids.length}
           onDeleteSessions={() => {
-            const root = projectMenu.root;
+            const root = shownProjectMenu.root;
             closeProjectMenu();
             requestProjectSessionsDelete(root);
           }}
@@ -2672,6 +2695,10 @@ function SessionItem({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  // The row's "…" menu is held for the shared exit animation (hooks/usePopTransition.ts),
+  // at the spot it opened at, so it leaves the way it came.
+  const menuPop = usePopTransition(menuOpen);
+  const shownMenuPos = useShownWhileClosing(menuPos, menuPop.closing);
   const [menuAnchor, setMenuAnchor] = useState<MenuAnchor | null>(null);
   const [treeFocused, setTreeFocused] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -3127,16 +3154,16 @@ function SessionItem({
             </div>
           )}
 
-          {menuOpen && menuPos && createPortal(
+          {menuPop.mounted && shownMenuPos && createPortal(
             <div
               ref={menuRef}
-              className="native-popover app-menu session-item-menu"
+              className={`native-popover app-menu session-item-menu${menuPop.className}`}
               role="menu"
               onClick={(e) => e.stopPropagation()}
               style={{
                 position: "fixed",
-                top: (placedMenuPos ?? menuPos).top,
-                left: (placedMenuPos ?? menuPos).left,
+                top: (placedMenuPos ?? shownMenuPos).top,
+                left: (placedMenuPos ?? shownMenuPos).left,
                 width: MENU_WIDTH, zIndex: 800, padding: 5,
                 display: "flex", flexDirection: "column", gap: 1,
               }}

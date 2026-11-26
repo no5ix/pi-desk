@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect, type CSSProperties } from "react";
 import type { BranchPreview, LeafChangeOptions, SessionEntry, SessionTreeNode } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
+import { usePopTransition } from "@/hooks/usePopTransition";
 
 interface Props {
   tree: SessionTreeNode[];
@@ -334,6 +335,9 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
   const { t } = useI18n();
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp !== undefined ? openProp : openInternal;
+  // The branch tree is mounted on the click that opens it; held for the shared exit
+  // animation (hooks/usePopTransition.ts), it leaves the way it came.
+  const pop = usePopTransition(open);
   const btnRef = useRef<HTMLButtonElement>(null);
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
@@ -437,8 +441,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           {branchIcon}
            {!compact && <span>{t("i18n.branches")}</span>}
         </button>
-        {open && dropdownPos && (
-          <div className="native-popover app-menu branch-menu" style={{
+        {pop.mounted && dropdownPos && (
+          <div className={`native-popover app-menu branch-menu${pop.className}`} style={{
             position: "fixed",
             top: dropdownPos.top,
             left: dropdownPos.left,
@@ -446,7 +450,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
             background: "var(--bg-panel)",
             borderBottom: "var(--hairline) solid var(--border)",
             zIndex: 500,
-          }}>
+            ["--pop-origin"]: "top center",
+          } as CSSProperties}>
             {hasContent ? (
               <div style={{ padding: "4px 12px 8px 12px", maxHeight: 260, overflowY: "auto" }}>
                 {lockedNotice}
@@ -499,8 +504,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
       </button>
 
       {/* Tree panel - overlay */}
-      {open && (
-        <div className="native-popover app-menu branch-menu" style={{
+      {pop.mounted && (
+        <div className={`native-popover app-menu branch-menu${pop.className}`} style={{
           position: "absolute",
           top: "100%",
           left: 0,
@@ -509,7 +514,8 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           borderBottom: "var(--hairline) solid var(--border)",
           boxShadow: "var(--shadow-popover)",
           zIndex: 100,
-        }}>
+          ["--pop-origin"]: "top center",
+        } as CSSProperties}>
           {hasContent ? (
             <div style={{ padding: "4px 12px 8px 12px", maxHeight: 260, overflowY: "auto" }}>
               {lockedNotice}

@@ -5395,7 +5395,7 @@ html.dark {
 }
 .markdown-code-header {
   padding: 5px 10px;
-  background: var(--bg-panel);
+  background: #6D5C5C;
   border-bottom: var(--hairline) solid var(--separator);
   color: var(--text-dim);
   font-size: var(--fs-caption);
@@ -5405,7 +5405,7 @@ html.dark {
   gap: 8px;
 }
 .markdown-code-lang {
-  color: var(--text-muted);
+  color: #DEB9B9;
   font-family: var(--font-mono);
   font-weight: 650;
 }

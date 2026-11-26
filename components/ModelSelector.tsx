@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { usePopTransition } from "@/hooks/usePopTransition";
 import { isImeComposing } from "@/lib/ime";
 import { COMPOSER_MODEL_MENU_WIDTH, composerPanelAnchoring } from "@/lib/composer-panel-placement";
 import { SelectorRow } from "./SelectorRow";
@@ -71,6 +72,174 @@ export function filterModelOptions(options: ModelSelectorOption[], query: string
   ));
 }
 
+/** The options in the order the list shows them, grouped by provider. */
+function groupModelOptionsByProvider(options: ModelSelectorOption[]) {
+  const groups: { provider: string; label: string; options: ModelSelectorOption[] }[] = [];
+  for (const option of options) {
+    const group = groups.find((item) => item.provider === option.provider);
+    if (group) group.options.push(option);
+    else groups.push({ provider: option.provider, label: option.providerName || option.provider, options: [option] });
+  }
+  return groups;
+}
+
+/**
+ * The model list itself: the filter box, the provider groups, the rows, the default star.
+ * `ModelSelector` draws it inside the panel that hangs from its chip; `ModelSelectorList`
+ * draws it for a host that owns its own panel. One list, so a level, a name, a filter word
+ * and a star cannot disagree between the two places the model is picked.
+ */
+function ModelListBody({
+  options,
+  value,
+  filter,
+  setFilter,
+  showFilter,
+  onPick,
+  onClearSelection,
+  onClear,
+  emptyLabel,
+  defaultValue,
+  onSetDefault,
+}: {
+  options: ModelSelectorOption[];
+  value?: { provider: string; modelId: string } | null;
+  filter: string;
+  setFilter: (next: string) => void;
+  showFilter: boolean;
+  onPick: (option: ModelSelectorOption) => void;
+  /** The "Default" row: pick it and close, the way the list's own host closes. */
+  onClearSelection: () => void;
+  onClear?: () => void;
+  emptyLabel?: string;
+  defaultValue?: { provider: string; modelId: string } | null;
+  onSetDefault?: (provider: string, modelId: string) => void;
+}) {
+  const { t } = useI18n();
+  const isMobile = useIsMobile();
+  const filteredOptions = filterModelOptions(options, filter);
+  const modelsByProvider = groupModelOptionsByProvider(filteredOptions);
+  return (
+    <>
+      {showFilter && (
+        <div style={{ flexShrink: 0, padding: "6px 8px", borderBottom: "var(--hairline) solid var(--border)" }}>
+          <input
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            placeholder={t("chat.filterModels")}
+            aria-label={t("chat.filterModels")}
+            // On phones, focusing the filter opens the on-screen keyboard,
+            // which shrinks the viewport and pushes the list off-screen
+            // before the user has decided to filter. Tap to filter instead.
+            autoFocus={!isMobile}
+            autoComplete="off"
+            spellCheck={false}
+            style={{
+              boxSizing: "border-box",
+              width: "100%",
+              minWidth: isMobile ? 0 : 220,
+              padding: "5px 8px",
+              border: "var(--hairline) solid var(--border)",
+              borderRadius: "var(--radius-sm)",
+              outline: "none",
+              background: "var(--bg)",
+              color: "var(--text)",
+              fontFamily: "var(--font-mono)",
+              fontSize: "var(--fs-micro)",
+            }}
+          />
+        </div>
+      )}
+      <div className="app-menu-list">
+        {onClear && !filter.trim() && (
+          <SelectorRow active={!value} gutter={Boolean(onSetDefault)} onSelect={() => onClearSelection()}>
+            <OptionLabel label={emptyLabel ?? "Default"} />
+          </SelectorRow>
+        )}
+        {modelsByProvider.length === 0 ? (
+          <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--fs-caption)", whiteSpace: "nowrap" }}>
+            {filter.trim() ? t("chat.noMatchingModels") : "No available models"}
+          </div>
+        ) : modelsByProvider.map((group, index) => (
+          <div key={group.provider}>
+            {modelsByProvider.length > 1 && (
+              <div style={{ padding: "6px 12px 4px", borderTop: index > 0 || onClear ? "1px solid var(--border)" : "none", color: "var(--text-dim)", fontSize: "var(--fs-micro)", fontWeight: "var(--fw-semibold)", letterSpacing: 0 }}>
+                {group.label}
+              </div>
+            )}
+            {group.options.map((option) => {
+              return (
+                <SelectorRow
+                  key={`${option.provider}:${option.modelId}`}
+                  active={option.modelId === value?.modelId && option.provider === value?.provider}
+                  onSelect={() => onPick(option)}
+                  star={onSetDefault ? {
+                    isDefault: option.modelId === defaultValue?.modelId && option.provider === defaultValue?.provider,
+                    saveLabel: t("chat.saveDefaultModel"),
+                    defaultLabel: t("chat.defaultModel"),
+                    onSave: () => onSetDefault(option.provider, option.modelId),
+                  } : undefined}
+                >
+                  <OptionLabel label={option.name} />
+                </SelectorRow>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/**
+ * The model list with no chip and no positioning of its own, for a host that owns the panel
+ * around it — today the phone's composer "+" menu (components/ComposerPlusMenu.tsx), which
+ * collects the composer's controls behind one button and shows this list as a page. The
+ * host places the panel (lib/composer-panel-placement) and decides what a pick does; the
+ * list, its filter box and its default star stay here.
+ */
+export function ModelSelectorList({
+  options,
+  value,
+  onPick,
+  emptyLabel,
+  onClear,
+  defaultValue,
+  onSetDefault,
+}: {
+  options: ModelSelectorOption[];
+  value?: { provider: string; modelId: string } | null;
+  onPick: (provider: string, modelId: string) => void;
+  emptyLabel?: string;
+  onClear?: () => void;
+  defaultValue?: { provider: string; modelId: string } | null;
+  onSetDefault?: (provider: string, modelId: string) => void;
+}) {
+  const [filter, setFilter] = useState("");
+  const sortedOptions = useMemo(() => [...options].sort(compareModelOptions), [options]);
+  return (
+    <ModelListBody
+      options={sortedOptions}
+      value={value}
+      filter={filter}
+      setFilter={setFilter}
+      showFilter={sortedOptions.length > MODEL_FILTER_THRESHOLD}
+      onPick={(option) => {
+        setFilter("");
+        onPick(option.provider, option.modelId);
+      }}
+      onClearSelection={() => {
+        setFilter("");
+        onClear?.();
+      }}
+      onClear={onClear}
+      emptyLabel={emptyLabel}
+      defaultValue={defaultValue}
+      onSetDefault={onSetDefault}
+    />
+  );
+}
+
 export function ModelSelector({
   options,
   value,
@@ -94,19 +263,14 @@ export function ModelSelector({
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  // Held for the shared exit animation (hooks/usePopTransition.ts): the list of models
+  // is still on screen while the panel falls back into the chip that opened it.
+  const pop = usePopTransition(open);
   const [anchorRect, setAnchorRect] = useState<{ top: number; right: number; bottom: number; left: number; width: number } | null>(null);
   const [filter, setFilter] = useState("");
   const locked = disabled || busy;
   const sortedOptions = useMemo(() => [...options].sort(compareModelOptions), [options]);
-  const filteredOptions = filterModelOptions(sortedOptions, filter);
   const showFilter = sortedOptions.length > MODEL_FILTER_THRESHOLD;
-  const modelsByProvider: { provider: string; label: string; options: ModelSelectorOption[] }[] = [];
-
-  for (const option of filteredOptions) {
-    const group = modelsByProvider.find((item) => item.provider === option.provider);
-    if (group) group.options.push(option);
-    else modelsByProvider.push({ provider: option.provider, label: option.providerName || option.provider, options: [option] });
-  }
 
   const currentName = selectedLabel ?? (value
     ? sortedOptions.find((option) => option.modelId === value.modelId && option.provider === value.provider)?.name ?? value.modelId
@@ -195,10 +359,6 @@ export function ModelSelector({
     if (!active || isAutoSelection) onChange(option.provider, option.modelId);
   };
 
-  const saveDefault = (option: ModelSelectorOption) => {
-    onSetDefault?.(option.provider, option.modelId);
-  };
-
   return (
     <div
       ref={rootRef}
@@ -270,7 +430,7 @@ export function ModelSelector({
         )}
       </button>
 
-      {open && anchorRect && (() => {
+      {pop.mounted && anchorRect && (() => {
         const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
         const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
         const spaceAbove = anchorRect.top - 8;
@@ -307,11 +467,13 @@ export function ModelSelector({
         return (
           <div
             ref={panelRef}
-            className="native-popover app-menu"
+            className={`native-popover app-menu${pop.className}`}
             role="listbox"
             aria-label={ariaLabel}
             style={{
               ...position,
+              // The panel grows out of the chip it hangs from, whichever side that is.
+              ["--pop-origin"]: openAbove ? "bottom center" : "top center",
               zIndex: 500,
               display: "flex",
               flexDirection: "column",
@@ -321,78 +483,25 @@ export function ModelSelector({
               borderRadius: "var(--radius-md)",
               background: "var(--bg)",
               boxShadow: "var(--shadow-popover)",
-            }}
+            } as CSSProperties}
           >
-            {showFilter && (
-              <div style={{ flexShrink: 0, padding: "6px 8px", borderBottom: "var(--hairline) solid var(--border)" }}>
-                <input
-                  value={filter}
-                  onChange={(event) => setFilter(event.target.value)}
-                  placeholder={t("chat.filterModels")}
-                  aria-label={t("chat.filterModels")}
-                  // On phones, focusing the filter opens the on-screen keyboard,
-                  // which shrinks the viewport and pushes the list off-screen
-                  // before the user has decided to filter. Tap to filter instead.
-                  autoFocus={!isMobile}
-                  autoComplete="off"
-                  spellCheck={false}
-                  style={{
-                    boxSizing: "border-box",
-                    width: "100%",
-                    minWidth: isMobile ? 0 : 220,
-                    padding: "5px 8px",
-                    border: "var(--hairline) solid var(--border)",
-                    borderRadius: "var(--radius-sm)",
-                    outline: "none",
-                    background: "var(--bg)",
-                    color: "var(--text)",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "var(--fs-micro)",
-                  }}
-                />
-              </div>
-            )}
-            <div className="app-menu-list">
-              {onClear && !filter.trim() && (
-                <SelectorRow active={!value} gutter={Boolean(onSetDefault)} onSelect={() => {
-                  setOpen(false);
-                  setFilter("");
-                  onClear();
-                }}>
-                  <OptionLabel label={emptyLabel ?? "Default"} />
-                </SelectorRow>
-              )}
-              {modelsByProvider.length === 0 ? (
-                <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--fs-caption)", whiteSpace: "nowrap" }}>
-                  {filter.trim() ? t("chat.noMatchingModels") : "No available models"}
-                </div>
-              ) : modelsByProvider.map((group, index) => (
-                <div key={group.provider}>
-                  {modelsByProvider.length > 1 && (
-                    <div style={{ padding: "6px 12px 4px", borderTop: index > 0 || onClear ? "1px solid var(--border)" : "none", color: "var(--text-dim)", fontSize: "var(--fs-micro)", fontWeight: "var(--fw-semibold)", letterSpacing: 0 }}>
-                      {group.label}
-                    </div>
-                  )}
-                  {group.options.map((option) => {
-                    return (
-                      <SelectorRow
-                        key={`${option.provider}:${option.modelId}`}
-                        active={option.modelId === value?.modelId && option.provider === value?.provider}
-                        onSelect={() => choose(option)}
-                        star={onSetDefault ? {
-                          isDefault: option.modelId === defaultValue?.modelId && option.provider === defaultValue?.provider,
-                          saveLabel: t("chat.saveDefaultModel"),
-                          defaultLabel: t("chat.defaultModel"),
-                          onSave: () => saveDefault(option),
-                        } : undefined}
-                      >
-                        <OptionLabel label={option.name} />
-                      </SelectorRow>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+            <ModelListBody
+              options={sortedOptions}
+              value={value}
+              filter={filter}
+              setFilter={setFilter}
+              showFilter={showFilter}
+              onPick={choose}
+              onClearSelection={() => {
+                setOpen(false);
+                setFilter("");
+                onClear?.();
+              }}
+              onClear={onClear}
+              emptyLabel={emptyLabel}
+              defaultValue={defaultValue}
+              onSetDefault={onSetDefault ? (provider, modelId) => onSetDefault(provider, modelId) : undefined}
+            />
           </div>
         );
       })()}

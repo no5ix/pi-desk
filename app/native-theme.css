@@ -6219,6 +6219,40 @@ html.dark {
   margin: 8px 0 18px calc(var(--composer-send-size) / 2 - 10px);
 }
 
+  /* The phone's card is one row, the way a phone chat app composes: the `+`, the prompt,
+   * Send. ChatInput sets `data-inline` only in the narrow tier, so the wider tiers keep
+   * the column above — the text typed across the card, the control row under it.
+   *
+   * `display: contents` folds the action row's children (the `+`, the side-chat button,
+   * Send) into that one row; Send keeps `margin-left: auto` from the rule above and so
+   * keeps the card's corner.
+   *
+   * The same attribute carries the growth. The text's height is written in px by
+   * lib/composer-textarea-height.ts, and a px -> px change is the only intrinsic-height
+   * animation Safari/WKWebView and Firefox do at all (`interpolate-size`/`calc-size()` and
+   * `field-sizing: content` are Chrome/Edge-only, and a transition from `auto` is dismissed
+   * by the spec); the card follows its child, so one transition opens the composer to a
+   * taller box as the prompt wraps and closes it back to the one line when the text goes
+   * away. e2e/composer-geometry.mjs settles on the height *finishing*, and reduced motion
+   * gets the jump back. */
+  .chat-composer-editor[data-inline] {
+    align-items: flex-end;
+  }
+  .chat-composer-editor[data-inline] > .chat-input-textarea {
+    flex: 1 1 auto;
+    margin: 0 6px;
+    transition: height var(--dur-base) var(--ease-native);
+  }
+  .chat-composer-editor[data-inline] > .chat-composer-actions {
+    display: contents;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .chat-composer-editor[data-inline] > .chat-input-textarea {
+      transition: none;
+    }
+  }
+
+
 /* Focus only lifts the hairline a step; the caret already says where typing
    goes, and the accent border read as a bright form-field ring in dark mode. */
 .chat-composer:focus-within {
@@ -6277,60 +6311,32 @@ html.dark {
   font-weight: var(--fw-medium);
 }
 
-/* The phone's controls strip appears and disappears; it does not blink into the row.
-   The strip stays mounted and React flips its `display` (ChatInput's `controlsMenuOpen`),
-   and CSS animates that toggle: `display` is a discrete property, so the exit needs
-   `transition-behavior: allow-discrete` — without it the strip is gone before the first
-   frame of the fade — and the entry needs `@starting-style`, because a browser skips the
-   transition on the first style update after `display: none`. Both are given their own
-   declaration: `allow-discrete` inside the `transition` shorthand would make an older
-   engine drop the whole transition. Firefox parses allow-discrete without transitioning
-   `display` (bug 1882408), so there the strip fades in and closes at once — the guide's
-   graceful degradation, not a jump. The strip is anchored at the More button's own edge
-   (`left: 0`, `bottom: 0`), so it grows out of the glyph that opened it and sinks back
-   into it. `data-strip-open` is rendered only in the narrow tier, so the desktop's inline
-   row never animates. */
-.composer-controls-strip[data-strip-open] {
-  transform-origin: left bottom;
-  opacity: 1;
-  translate: 0 0;
-  scale: 1;
-  transition:
-    display var(--dur-base) linear,
-    opacity var(--dur-base) var(--ease-native),
-    translate var(--dur-base) var(--ease-native),
-    scale var(--dur-base) var(--ease-native);
-  transition-behavior: allow-discrete;
-}
-.composer-controls-strip[data-strip-open="false"] {
-  opacity: 0;
-  translate: 0 6px;
-  scale: 0.96;
-  /* The fading strip keeps its box for the exit's duration, so it must not eat the taps
-     aimed at the row underneath it. */
-  pointer-events: none;
-}
-@starting-style {
-  .composer-controls-strip[data-strip-open="true"] {
-    opacity: 0;
-    translate: 0 6px;
-    scale: 0.96;
+
+
+  /* The row under the phone's card: the project a new session picks, and the branch of
+     it. Not a card — no border, no background, the composer's own width (the padded
+     column already carries --chat-content-max-width, so nothing re-declares it). Their
+     menus open upward from this row, capped to the space between the row and the header
+     (#63), so the header is never covered and the list stays scrollable. */
+  .chat-composer-wrap .composer-context-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    flex-wrap: nowrap;
+    padding: 6px 2px 0;
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .composer-controls-strip[data-strip-open],
-  .composer-controls-strip[data-strip-open="false"] {
-    translate: none;
-    scale: none;
-    transition-duration: var(--dur-fast);
+  .composer-context-row .chat-project-context {
+    height: 26px;
+    font-size: var(--fs-xs);
   }
-  @starting-style {
-    .composer-controls-strip[data-strip-open="true"] {
-      translate: none;
-      scale: none;
-    }
+  /* #63 clips the composer's own strips to the wrap on a phone. The chips' row is one of
+     them, and its menus open upward past the wrap; the row cannot exceed the column (each
+     chip caps its own width), so this is not the leak #63 fixed, and
+     e2e/composer-geometry.mjs measures the composer against the sidebar. */
+  .chat-composer-wrap:has(> .composer-context-row) {
+    overflow: visible;
   }
-}
 
 .chat-project-context {
   display: inline-flex;
@@ -6625,7 +6631,7 @@ html.dark {
 .message-assistant-model-time {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 8px;
   color: var(--text-dim);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -7165,7 +7171,7 @@ html.dark {
   padding: 5px 10px;
   /* A solid step off the block body. --bg-panel is the recessed sidebar tone
      (darker than the chat canvas in dark mode), so derive from --bg instead. */
-  background: color-mix(in srgb, var(--bg) 94%, var(--text));
+  background: #6D5C5C;
   /* Upstream draws the header's underside; the header and the fence body read as
      one flat block now. The zero is named, not dropped, for exactly that reason. */
   border-bottom: 0;
@@ -7177,7 +7183,7 @@ html.dark {
   gap: 8px;
 }
 .markdown-code-lang {
-  color: var(--text-muted);
+  color: #DEB9B9;
   font-family: var(--font-mono);
   font-weight: var(--fw-semibold);
 }
@@ -10664,20 +10670,154 @@ html.native-desktop :is(
   background: color-mix(in srgb, var(--danger) 16%, transparent);
 }
 
-.composer-controls-close {
-  color: var(--text);
-  background: var(--bg-hover);
+
+/* The phone composer's `+` — the control that carries everything the row has no room for
+ * (components/ComposerPlusMenu). A disc like Send, so the prompt reads as the composer's
+ * subject between two round controls. */
+.chat-composer-actions > .composer-plus-button {
+  flex: 0 0 auto;
+}
+.composer-plus-button .composer-plus-glyph {
+  position: absolute;
+  inset: -3px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+/* The session is compacting and the phone's row has no other control to say so, so the
+ * `+` breathes red: the glyph fades against a ring that swells behind it. Nothing about
+ * the box moves — the row does not twitch while the composer is being typed in. */
+.composer-plus-button[data-compacting="true"] {
+  color: var(--danger);
+  animation: composer-plus-breathe 1.6s var(--ease-standard) infinite;
+}
+.composer-plus-button[data-compacting="true"] .composer-plus-glyph {
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 45%, transparent);
+  animation: composer-plus-ring 1.6s var(--ease-standard) infinite;
+}
+@keyframes composer-plus-breathe {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+@keyframes composer-plus-ring {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 45%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 12%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-plus-button[data-compacting="true"],
+  .composer-plus-button[data-compacting="true"] .composer-plus-glyph {
+    animation: none;
+  }
+  .composer-plus-button[data-compacting="true"] .composer-plus-glyph {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
+  }
+}
+
+/* The `+` menu: the composer's controls as one sheet. The panel itself is the shared
+ * `.app-menu` surface and the rows are the desktop menus' rows (ComposerReasoningRows,
+ * ComposerToolPresetRows, the model list, SessionAutomationRows) — this is the list
+ * chrome around them. */
+.composer-plus-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+.composer-plus-menu .composer-plus-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.composer-plus-page-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 44px;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+.composer-plus-page-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-plus-back {
+  position: absolute;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 30px;
+  padding: 0 6px;
   border: 0;
-  border-left: var(--hairline) solid color-mix(in srgb, var(--border) 72%, transparent);
-  /* The strip is one row of fixed glyphs; the control that closes it keeps its own
-     36px box (it was squeezed to 15px, a 14px glyph with no touch margin, when the
-     model chip grew the row past the strip's max-content). */
-  flex-shrink: 0;
-  transition: background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
 }
-.composer-controls-close:hover {
-  background: var(--bg-selected);
+.composer-plus-back:hover {
+  background: var(--bg-hover);
 }
+.composer-plus-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.composer-plus-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.composer-plus-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.composer-plus-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.composer-plus-row-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+.composer-plus-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.composer-plus-row-value {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+}
+.composer-plus-row[data-compacting="true"],
+.composer-plus-row[data-compacting="true"] .composer-plus-row-icon {
+  color: var(--danger);
+}
+
 
 
 /* Small controls in the sidebar and topbar whose hover used to be set from JS. */
@@ -11257,7 +11397,7 @@ html.native-desktop :is(
    sets the span's weight inline. A nested row under a pinned parent wears it
    with the ink, so a pinned family is one block of text. */
 .session-item-title.is-pinned {
-  font-weight: var(--fw-medium) !important;
+  font-weight: 430 !important;
 }
 
 /* The rows nested under a session — the subagent runs it delegated and the side
@@ -13889,9 +14029,7 @@ a:focus-visible {
      So the calm state is a translucent plate — shallower, and the page reads
      through it — and a hover answers by closing the transparency, no hue change. */
   background: color-mix(in srgb, var(--surface) 52%, transparent);
-  box-shadow:
-    0 3px 10px rgba(0, 0, 0, 0.45),
-    0 1px 2px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-composer);
 }
 
 /* The step is kept, one stop further: over the resting disc a hover mostly
@@ -14552,6 +14690,7 @@ a:focus-visible {
     display: none !important;
   }
 }
+
 /* ─── The composer's corner: a tall editor, and the way back ────────────────────────
    A long prompt is written in an editor, not in a box that stops at 200px and scrolls
    (components/ChatInput.tsx grows the textarea to `min(scrollHeight, 200px)`). The

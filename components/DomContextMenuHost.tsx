@@ -6,6 +6,7 @@ import type { NativeMenuEntry } from "@/lib/desktop-menu-model";
 import { closeDomMenu, getDomMenu, subscribeDomMenu, type DomMenuState } from "@/lib/dom-menu-store";
 import { isImeComposing } from "@/lib/ime";
 import { scrollMovesAnchor } from "@/lib/menu-placement";
+import { popClass, usePopTransition, useShownWhileClosing } from "@/hooks/usePopTransition";
 
 /**
  * The in-app context menu: the DOM counterpart of `showNativeMenu`, drawn from
@@ -47,11 +48,14 @@ function MenuPanel({
   openIndex,
   autoFocus,
   onKeyboardClose,
+  closing = false,
 }: {
   entries: NativeMenuEntry[];
   place: Place;
   panelRef: React.RefObject<HTMLDivElement | null>;
   label?: string;
+  /** The menu animates away: `is-closing` plays the shared exit. */
+  closing?: boolean;
   onItem: (item: Item) => void;
   onSubmenu?: (index: number, rect: DOMRect | null, byKeyboard?: boolean) => void;
   openIndex?: number | null;
@@ -103,7 +107,7 @@ function MenuPanel({
   return (
     <div
       ref={panelRef}
-      className="dom-context-menu native-popover app-menu"
+      className={`dom-context-menu native-popover app-menu${popClass(closing)}`}
       role="menu"
       aria-label={label}
       tabIndex={-1}
@@ -157,17 +161,21 @@ function MenuPanel({
   );
 }
 
-function MenuView({ menu }: { menu: DomMenuState }) {
+function MenuView({ menu, closing = false }: { menu: DomMenuState; closing?: boolean }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const subRef = useRef<HTMLDivElement>(null);
   const [sub, setSub] = useState<OpenSubmenu | null>(null);
+  // The rect a submenu was placed at, kept for the length of its exit: closing must not
+  // send it to the corner of the window.
+  const subRectRef = useRef<DOMRect | null>(null);
+  if (sub?.rect) subRectRef.current = sub.rect;
 
   const placeRoot = useCallback<Place>(({ width, height }) => ({
     left: clamp(menu.at.x, window.innerWidth - width - VIEWPORT_MARGIN),
     top: clamp(menu.at.y, window.innerHeight - height - VIEWPORT_MARGIN),
   }), [menu.at.x, menu.at.y]);
 
-  const subRect = sub?.rect;
+  const subRect = sub?.rect ?? subRectRef.current;
   const placeSub = useCallback<Place>(({ width, height }) => {
     if (!subRect) return { left: 0, top: 0 };
     const right = subRect.right - SUBMENU_OVERLAP;
@@ -225,6 +233,11 @@ function MenuView({ menu }: { menu: DomMenuState }) {
 
   const openEntry = sub ? (menu.entries[sub.index] as Submenu | undefined) : undefined;
   const openSubmenu = openEntry?.kind === "submenu" ? openEntry : undefined;
+  // A submenu opens under the pointer, and one that blinks out when the pointer crosses
+  // the seam reads as a broken menu: it is held for the shared exit animation, showing the
+  // entries it had.
+  const submenuPop = usePopTransition(openSubmenu !== undefined);
+  const shownSubmenu = useShownWhileClosing<Submenu | null>(openSubmenu ?? null, submenuPop.closing);
 
   return (
     <>
@@ -236,16 +249,18 @@ function MenuView({ menu }: { menu: DomMenuState }) {
         onSubmenu={onSubmenu}
         openIndex={sub?.index ?? null}
         autoFocus={!sub?.focus}
+        closing={closing}
       />
-      {openSubmenu && (
+      {submenuPop.mounted && shownSubmenu && (
         <MenuPanel
-          key={sub?.index}
-          entries={openSubmenu.items}
+          key={sub?.index ?? shownSubmenu.label}
+          entries={shownSubmenu.items}
           place={placeSub}
           panelRef={subRef}
-          label={openSubmenu.label}
+          label={shownSubmenu.label}
           onItem={onItem}
           autoFocus={sub?.focus}
+          closing={submenuPop.closing}
           onKeyboardClose={() => {
             setSub(null);
             rootRef.current?.focus({ preventScroll: true });
@@ -258,6 +273,11 @@ function MenuView({ menu }: { menu: DomMenuState }) {
 
 export function DomContextMenuHost() {
   const menu = useSyncExternalStore(subscribeDomMenu, getDomMenu, () => null);
-  if (!menu) return null;
-  return createPortal(<MenuView key={menu.id} menu={menu} />, document.body);
+  // The store drops the menu the moment it closes, so the host keeps the last one for the
+  // length of the shared exit animation (hooks/usePopTransition.ts) and shows it with
+  // `is-closing`: a right-click menu that leaves has to leave.
+  const pop = usePopTransition(menu !== null);
+  const shownMenu = useShownWhileClosing(menu, pop.closing);
+  if (!pop.mounted || !shownMenu) return null;
+  return createPortal(<MenuView key={shownMenu.id} menu={shownMenu} closing={pop.closing} />, document.body);
 }

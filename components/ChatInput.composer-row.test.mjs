@@ -10,44 +10,79 @@ import test from "node:test";
 // desktop the model chip's fixed 220px box overflowed its own shrunken root onto the
 // ring. The ring has since left this row for the conversation header
 // (components/TopbarContextChip.tsx); the width rules that fixed it stay.
-// 2026-11-25 (a phone ask): the strip leads the row. The model chip collapsed into the
-// group the phone opens as "More" and the More button moved behind the attach `+`, so the
-// phone's grid is `auto minmax(0, 1fr)` with the controls in the first track. The old
-// order is safe only because no unshrinkable model name sits in the chips' cell any more.
+// 2026-11-25 (a phone ask): the strip leads the row, and the model chip collapsed into the
+// group the phone opens behind a control.
+// 2026-11-26 (the same person, looking at a phone screenshot): that row is not needed at
+// all. An empty phone composer is ONE row — `+`, the prompt, Send — and every session
+// control lives behind the `+`, in one menu; the project and branch chips move to a strip
+// under the card; and the card grows smoothly as the prompt wraps. So the controls cell
+// this file used to lay out in two tiers is now the wider tiers' row, and the phone's
+// geometry is `data-inline` (app/native-theme.css). The width rules below still guard the
+// desktop row, which is where the squeezed-window case lives.
 const chatInput = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const modelSource = await readFile(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
 const css = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
 
 const rowStart = chatInput.indexOf('className="chat-composer-controls"');
 const row = chatInput.slice(rowStart, chatInput.indexOf("\n", rowStart) + 1200);
-const leftCell = chatInput.match(/<div style=\{\{ flex: isNarrow \?[^]*?(?=\s*\{\/\* spacer \*\/\})/);
-const moreButton = chatInput.match(/\{isNarrow && \(\s*<button[\s\S]*?<\/button>\s*\)\}/);
+const leftCell = chatInput.match(/<div style=\{\{ flex: "0 1 auto"[\s\S]*?(?=\{\/\* THE CLUSTER:)/);
+const plusMenu = chatInput.match(/<ComposerPlusMenu[\s\S]*?\n            \/>/);
+const plusSource = await readFile(new URL("./ComposerPlusMenu.tsx", import.meta.url), "utf8");
+const heightSource = await readFile(new URL("../lib/composer-textarea-height.ts", import.meta.url), "utf8");
+const plusSource = await readFile(new URL("./ComposerPlusMenu.tsx", import.meta.url), "utf8");
+const heightSource = await readFile(new URL("../lib/composer-textarea-height.ts", import.meta.url), "utf8");
+const editorCard = chatInput.match(/className="chat-composer-editor"[\s\S]*?alignItems: isNarrow && !compact \? "flex-end" : "stretch",/);
 
-test("the narrow composer row gives the controls block its own track", () => {
+test("the control row is the wider tiers', and the phone's card is one row", () => {
   assert.ok(rowStart > 0, "the composer controls row renders");
-  assert.match(row, /display: isNarrow \? "grid" : "flex"/);
-  assert.match(row, /gridTemplateColumns: isNarrow \? "auto minmax\(0, 1fr\)" : undefined/,
-    "the controls keep an auto track, and the chips' cell takes the free width and shrinks");
-  // The phone's strip is the grid's FIRST track, so the More button is the row's first
-  // control, standing right behind `+`; the chips follow in the 1fr track.
-  assert.match(chatInput, /\.\.\.\(isNarrow \? \{ order: 1 \} : null\),\n\s*\}\}>/, "the controls block is track one");
-  assert.match(chatInput, /gap: 2, \.\.\.\(isNarrow \? \{ order: 2 \} : null\) \}\}>/, "the chips' cell is track two");
+  assert.match(row, /display: "flex"/);
+  assert.match(row, /flex: "1 1 auto"/, "the row takes the width the chips leave");
+  assert.match(row, /minWidth: 0/, "and it can shrink, which is what keeps a squeezed window honest");
+  assert.match(chatInput, /\{!compact && !isNarrow && <div className="chat-composer-controls"/,
+    "a phone renders no controls cell: its row is the `+`, the prompt and Send");
+  // The phone's one row is the card's own layout, not a JSX fork of the card: ChatInput
+  // marks the editor and the stylesheet folds the action row's children into the card's
+  // flex row. Keeping one JSX tree is what keeps Send in the corner in every tier.
+  assert.match(chatInput, /data-inline=\{isNarrow && !compact \? "true" : undefined\}/,
+    "the inline tier is marked, and only there");
+  const inline = cssRule(css, ".chat-composer-editor[data-inline] > .chat-composer-actions");
+  assert.ok(inline, "the action row is folded into the card's row");
+  assert.match(inline, /display: contents;/);
+  const text = cssRule(css, ".chat-composer-editor[data-inline] > .chat-input-textarea");
+  assert.match(text, /flex: 1 1 auto;/, "the text takes the width the `+` and Send leave");
+  assert.doesNotMatch(text, /width: 100%;/, "and buys it from the row, never from a full width + margin");
 });
 
 test("the left cell can shrink, and no context control is left in the row", () => {
   assert.ok(leftCell, "the left cell is one styled div");
-  assert.match(leftCell[0], /flex: isNarrow \? "1 1 auto" : "0 1 auto"/, "it shrinks in both tiers, so the chips truncate instead of pushing the controls out");
+  assert.match(leftCell[0], /flex: "0 1 auto"/, "it shrinks, so the chips truncate instead of pushing the controls out");
   assert.match(leftCell[0], /minWidth: 0/, "min-width:auto would stop it at the model name's content size");
+  // 2026-11-26: on a phone the chips are not in the row at all — the row is the prompt —
+  // so they get a strip under the card, and it is rendered from the same chip components.
+  assert.match(chatInput, /className="composer-context-row"/, "the phone has a chips strip under the card");
+  assert.ok(chatInput.indexOf('className="chat-composer-editor"') < chatInput.indexOf('className="composer-context-row"'),
+    "the strip is below the card, not inside it");
+  const strip = cssRule(css, ".chat-composer-wrap .composer-context-row");
+  assert.ok(strip, "the strip is a flex row of chips");
+  assert.match(strip, /min-width: 0;/, "and it shrinks: the chips cap their own width");
+  assert.doesNotMatch(strip, /--chat-content-max-width/,
+    "the composer's padded column already carries the width; a second copy would drift");
   // The context moved to the header, so nothing may grow back into the strip the
   // phone's More button has to share.
   assert.doesNotMatch(chatInput, /ContextUsageRing/, "the composer renders no context ring");
   assert.doesNotMatch(chatInput, /contextUsage|sessionStats/, "and it is not given the numbers any more");
 });
 
-test("the More controls button keeps its 32px box", () => {
-  assert.ok(moreButton, "the phone renders the More controls button");
-  assert.match(moreButton[0], /width: "var\(--control-h-lg\)"/);
-  assert.match(moreButton[0], /flexShrink: 0/, "a squeezed track must shrink the track, not the button");
+test("the phone's `+` is a disc, and it names what it opens", () => {
+  assert.ok(plusMenu, "the phone composer renders the `+` menu");
+  assert.match(plusMenu[0], /className="native-toolbar-button composer-attach-button composer-plus-button"/,
+    "it is the attach button's disc: one touch target, one rule, in the row beside Send");
+  assert.match(plusMenu[0], /aria-haspopup="menu"/, "it opens a menu, and says so");
+  assert.match(plusMenu[0], /aria-expanded=\{open\}/, "and reports whether it is open");
+  assert.match(cssRule(css, ".composer-attach-button") ?? "", /width: var\(--composer-send-size\);/,
+    "the disc keeps the touch size the row is built around");
+  assert.match(chatInput, /\{!compact && \(isNarrow \?\s*<ComposerPlusMenu/,
+    "the compact composer (the side chat) keeps no `+`");
 });
 
 test("the model chip never outgrows the cell that holds it", () => {
@@ -90,8 +125,11 @@ test("the card keeps one control row: attach, the session controls, then Send", 
   assert.ok(controlsAt > attachAt, "the session controls follow the attach button");
   assert.ok(sendAt > controlsAt, "Send is the row's last control, in the card's corner");
   assert.ok(textareaAt < rowAt, "the text area is above the row, not beside a control");
-  assert.match(chatInput, /flexDirection: "column",\n              gap: compact \? 8 : 0,\n              alignItems: "stretch"/,
-    "the editor is a column: the text, then the row");
+  assert.ok(editorCard, "the editor's box is one style object");
+  assert.match(editorCard[0], /flexDirection: isNarrow && !compact \? "row" : "column",/,
+    "a phone lays the card out as one row; the wider tiers are a column: the text, then the row");
+  assert.match(editorCard[0], /alignItems: isNarrow && !compact \? "flex-end" : "stretch",/,
+    "the row bottom-aligns its glyphs; the column stretches the text across the card");
   // Icon-only controls: the words (the level, the preset) live in title/aria-label.
   const reasoning = chatInput.slice(chatInput.indexOf('aria-expanded={thinkingDropdownOpen}'), chatInput.indexOf("chat.thinkingHeading"));
   assert.match(reasoning, /padding: 0,\n                    width: "var\(--control-h-lg\)"/, "the reasoning button is a square icon button");
@@ -218,12 +256,12 @@ test("the row's ink lines up with the text, not only its boxes", () => {
   assert.match(hint, /right: 0;/, "the box stays at the text's right edge: the ink is moved, not the box");
 });
 
-test("the row's glyphs are one cluster, and a phone's strip sits behind the attach button", () => {
-  // The ask (2026-11-25): the model chip collapses into the controls group in every tier,
-  // and the phone's "More" button — the one control that opens that group — sits behind
-  // the attach `+`, not at the card's right edge. So the strip is one unbroken run of
-  // glyphs (model, reasoning, tools, automation) placed by nothing but the tier's own
-  // open/closed state, and the chips' cell is the only thing that shares the row.
+test("the row's glyphs are one cluster, and the `+` menu lists them in the same order", () => {
+  // The ask (2026-11-25): the model chip collapses into the controls group in every tier.
+  // The ask (2026-11-26): on a phone that group lives behind the `+`, and the user opens a
+  // menu that lists it — so the order the row prints (model, reasoning, tools, automation)
+  // is the order the menu lists, from the same rows, and the phone has no second copy of
+  // any of it. The chips' cell is the only thing that shares the desktop's row.
   const attachAt = chatInput.indexOf('className="native-toolbar-button composer-attach-button"');
   const controlsAt = chatInput.indexOf('className="chat-composer-controls"');
   const moreAt = chatInput.indexOf('aria-label={t("chat.moreControls")}');

@@ -81,7 +81,8 @@ test("the branch chip opens on the side the loaded list fits on", async () => {
   assert.match(menu, /const BRANCH_SKELETON_ROWS = 8;/);
   assert.match(menu, /\{!loaded && showLoadingShape && \(\s*<div className="sidebar-project-context-menu-branch-skeletons"/);
   assert.match(menu, /const hiddenPanel = loadingShape && !showLoadingShape;/);
-  assert.match(menu, /data-loading=\{hiddenPanel \? "true" : undefined\}/);
+  // A closing menu never shows the skeleton: it animates the rows it was showing.
+  assert.match(menu, /data-loading=\{hiddenPanel && !closing \? "true" : undefined\}/);
   assert.ok(placement.includes("export const MENU_MAX_HEIGHT_PX = 420;"), "one constant");
 });
 

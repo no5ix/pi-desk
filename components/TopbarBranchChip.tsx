@@ -26,7 +26,7 @@ export function TopbarBranchChip({
   isWorktree: boolean;
 }) {
   const { t } = useI18n();
-  const { tipId, open, pos, tipRef, triggerProps } = useTopbarTip<HTMLButtonElement>();
+  const { tipId, pop, pos, tipRef, triggerProps } = useTopbarTip<HTMLButtonElement>();
   return (
     <span className="app-topbar-branch app-topbar-branch--chip">
       <button
@@ -49,8 +49,8 @@ export function TopbarBranchChip({
         <BranchIcon />
         <span>{branch}</span>
       </button>
-      {open ? (
-        <TopbarTip tipId={tipId} pos={pos} tipRef={tipRef}>
+      {pop.mounted ? (
+        <TopbarTip tipId={tipId} pos={pos} tipRef={tipRef} closing={pop.closing}>
           <TopbarTipRow
             label={t(isWorktree ? "chat.branchTipWorktreeLabel" : "chat.branchTipBranchLabel")}
             value={branch}

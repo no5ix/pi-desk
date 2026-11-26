@@ -11,6 +11,7 @@ import {
   composerPanelAnchoring,
 } from "@/lib/composer-panel-placement";
 import { useI18n } from "@/hooks/useI18n";
+import { usePopTransition } from "@/hooks/usePopTransition";
 
 interface SessionAutomationMenuProps {
   menuRef: RefObject<HTMLDivElement | null>;
@@ -25,10 +26,126 @@ interface SessionAutomationMenuProps {
   onCompact?: () => void;
 }
 
+/**
+ * The session menu's rows: the manual compaction, and pi 0.86's per-session switches. The
+ * panel above owns the placement; this owns the rows, so the phone's composer "+" menu
+ * (components/ComposerPlusMenu.tsx), which collects the composer's controls behind one
+ * button, shows the same switches as a page. One implementation: a switch, its label and
+ * its segmented modes exist here once.
+ */
+export function SessionAutomationRows({
+  automation,
+  onSetAutomation,
+  onCompact,
+  onClose,
+}: Pick<SessionAutomationMenuProps, "automation" | "onSetAutomation" | "onCompact"> & {
+  /** Close the panel around the rows — the compact row takes the menu away with the run. */
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <>
+      {onCompact && (
+        <div>
+          <button
+            type="button"
+            className="composer-menu-row"
+            title={t("chat.compactContext")}
+            onClick={() => {
+              onClose();
+              onCompact();
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" />
+              <line x1="10" y1="14" x2="3" y2="21" /><line x1="21" y1="3" x2="14" y2="10" />
+            </svg>
+            <span style={{ flex: 1 }}>{t("chat.compactContext")}</span>
+          </button>
+        </div>
+      )}
+      {onCompact && automation && (
+        <div style={{ height: 0, margin: "5px 0", borderTop: "var(--hairline) solid var(--separator)" }} />
+      )}
+      {onSetAutomation && automation && (<>
+      {automation.autoCompactionEnabled !== null && (
+        <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: "var(--fs-caption)", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={automation.autoCompactionEnabled}
+            onChange={(e) => onSetAutomation({ autoCompaction: e.target.checked })}
+          />
+          {t("chat.autoCompaction")}
+        </label>
+      )}
+      {automation.autoRetryEnabled !== null && (
+        <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: "var(--fs-caption)", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={automation.autoRetryEnabled}
+            onChange={(e) => onSetAutomation({ autoRetry: e.target.checked })}
+          />
+          {t("chat.autoRetry")}
+        </label>
+      )}
+      {automation.steeringMode !== null && (
+        <div style={{ padding: "6px 12px", borderTop: "var(--hairline) solid var(--border)", marginTop: 4, paddingTop: 10 }}>
+          <div style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginBottom: 4 }}>{t("chat.steeringMode")}</div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {(["all", "one-at-a-time"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => onSetAutomation({ steeringMode: mode })}
+                style={{
+                  flex: 1, height: 26, fontSize: "var(--fs-micro)",
+                  border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)",
+                  background: automation.steeringMode === mode ? "var(--accent)" : "var(--bg)",
+                  color: automation.steeringMode === mode ? "var(--accent-contrast)" : "var(--text-muted)",
+                  cursor: "pointer",
+                }}
+              >
+                {t(`chat.queueMode.${mode}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {automation.followUpMode !== null && (
+        <div style={{ padding: "6px 12px 4px", marginBottom: 2 }}>
+          <div style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginBottom: 4 }}>{t("chat.followUpMode")}</div>
+          <div style={{ display: "flex", gap: 4 }}>
+            {(["all", "one-at-a-time"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => onSetAutomation({ followUpMode: mode })}
+                style={{
+                  flex: 1, height: 26, fontSize: "var(--fs-micro)",
+                  border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)",
+                  background: automation.followUpMode === mode ? "var(--accent)" : "var(--bg)",
+                  color: automation.followUpMode === mode ? "var(--accent-contrast)" : "var(--text-muted)",
+                  cursor: "pointer",
+                }}
+              >
+                {t(`chat.queueMode.${mode}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      </>)}
+    </>
+  );
+}
+
 export function SessionAutomationMenu({
   menuRef, open, onOpenChange, alignLeft, automation, onSetAutomation, onCompact,
 }: SessionAutomationMenuProps) {
   const { t } = useI18n();
+  // The menu leaves the way it came: the node is held for the shared exit animation
+  // (app/native-theme.css `app-pop-out`) and carries `is-closing` while it plays.
+  const pop = usePopTransition(open);
   return (
     <div ref={menuRef} style={{ position: "relative" }}>
       <button
@@ -53,7 +170,7 @@ export function SessionAutomationMenu({
           <path d="M13 2 4.5 13.5H12L11 22l8.5-11.5H12L13 2Z" />
         </svg>
       </button>
-      {open && (() => {
+      {pop.mounted && (() => {
         // The same rule as the composer's other two menus: an explicit width (a box
         // with only minWidth collapses to the 36px button and clips its own rows), and
         // a box that ends at the sidebar's edge — the sidebar clips what reaches its
@@ -61,7 +178,7 @@ export function SessionAutomationMenu({
         // buttons were the first thing cut.
         const anchoring = composerPanelAnchoring(menuRef.current, COMPOSER_AUTOMATION_MENU_WIDTH, { alignLeft });
         return (
-        <div className="native-popover app-menu" style={{
+        <div className={`native-popover app-menu${pop.className}`} style={{
           position: "absolute",
           bottom: "calc(100% + 6px)",
           ...(anchoring ? { left: anchoring.left, width: anchoring.width } : alignLeft ? { left: 0 } : { right: 0 }),
@@ -69,96 +186,12 @@ export function SessionAutomationMenu({
           borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-popover)",
           padding: "6px 0", minWidth: 230,
         }}>
-          {onCompact && (
-            <div>
-              <button
-                type="button"
-                className="composer-menu-row"
-                title={t("chat.compactContext")}
-                onClick={() => {
-                  onOpenChange(() => false);
-                  onCompact();
-                }}
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" />
-                  <line x1="10" y1="14" x2="3" y2="21" /><line x1="21" y1="3" x2="14" y2="10" />
-                </svg>
-                <span style={{ flex: 1 }}>{t("chat.compactContext")}</span>
-              </button>
-            </div>
-          )}
-          {onCompact && automation && (
-            <div style={{ height: 0, margin: "5px 0", borderTop: "var(--hairline) solid var(--separator)" }} />
-          )}
-          {onSetAutomation && automation && (<>
-          {automation.autoCompactionEnabled !== null && (
-            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: "var(--fs-caption)", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={automation.autoCompactionEnabled}
-                onChange={(e) => onSetAutomation({ autoCompaction: e.target.checked })}
-              />
-              {t("chat.autoCompaction")}
-            </label>
-          )}
-          {automation.autoRetryEnabled !== null && (
-            <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", fontSize: "var(--fs-caption)", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={automation.autoRetryEnabled}
-                onChange={(e) => onSetAutomation({ autoRetry: e.target.checked })}
-              />
-              {t("chat.autoRetry")}
-            </label>
-          )}
-          {automation.steeringMode !== null && (
-            <div style={{ padding: "6px 12px", borderTop: "var(--hairline) solid var(--border)", marginTop: 4, paddingTop: 10 }}>
-              <div style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginBottom: 4 }}>{t("chat.steeringMode")}</div>
-              <div style={{ display: "flex", gap: 4 }}>
-                {(["all", "one-at-a-time"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => onSetAutomation({ steeringMode: mode })}
-                    style={{
-                      flex: 1, height: 26, fontSize: "var(--fs-micro)",
-                      border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)",
-                      background: automation.steeringMode === mode ? "var(--accent)" : "var(--bg)",
-                      color: automation.steeringMode === mode ? "var(--accent-contrast)" : "var(--text-muted)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {t(`chat.queueMode.${mode}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {automation.followUpMode !== null && (
-            <div style={{ padding: "6px 12px 4px", marginBottom: 2 }}>
-              <div style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginBottom: 4 }}>{t("chat.followUpMode")}</div>
-              <div style={{ display: "flex", gap: 4 }}>
-                {(["all", "one-at-a-time"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => onSetAutomation({ followUpMode: mode })}
-                    style={{
-                      flex: 1, height: 26, fontSize: "var(--fs-micro)",
-                      border: "var(--hairline) solid var(--border)", borderRadius: "var(--radius-sm)",
-                      background: automation.followUpMode === mode ? "var(--accent)" : "var(--bg)",
-                      color: automation.followUpMode === mode ? "var(--accent-contrast)" : "var(--text-muted)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {t(`chat.queueMode.${mode}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          </>)}
+          <SessionAutomationRows
+            automation={automation}
+            onSetAutomation={onSetAutomation}
+            onCompact={onCompact}
+            onClose={() => onOpenChange(() => false)}
+          />
         </div>
         );
       })()}

@@ -28,6 +28,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useProjectBranch } from "@/hooks/useProjectBranch";
 import { useProjectWorktreeActions } from "@/hooks/useProjectWorktreeActions";
+import { usePopTransition } from "@/hooks/usePopTransition";
 import { canUseNativeMenu, menuPointBelow, type NativeMenuPoint } from "@/lib/desktop-menu";
 import {
   MENU_GAP,
@@ -88,6 +89,10 @@ export function ComposerBranchChip({
    *  (a branch name to type, a removal to confirm, git's answer) lands here. */
   const nativeAtRef = useRef<NativeMenuPoint | null>(null);
   const [open, setOpen] = useState(false);
+  // The branch panel is the project menu's own page, mounted on the click that opens it.
+  // Held for the shared exit animation (hooks/usePopTransition.ts), it leaves the way it
+  // came; `pos` and `anchor` are never cleared, so the closing panel sits where it was.
+  const pop = usePopTransition(open);
   const [view, setView] = useState<ProjectMenuView>(BRANCHES_VIEW);
   const [menu, setMenu] = useState<ProjectBranchMenuState | null>(null);
   const [loading, setLoading] = useState(false);
@@ -286,12 +291,13 @@ export function ComposerBranchChip({
         <BranchIcon />
         <span>{branch}</span>
       </button>
-      {open && (
+      {pop.mounted && (
         <ProjectContextMenu
           menuRef={menuRef}
           projectRoot={cwd}
           pos={pos}
           anchor={anchor}
+          closing={pop.closing}
           view={view}
           branchMenu={menu}
           branchLoading={loading}

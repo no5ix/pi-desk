@@ -1575,7 +1575,7 @@ pre, code {
 }
 .markdown-code-header {
   padding: 5px 10px;
-  background: var(--bg-panel);
+  background: #6D5C5C;
   border-bottom: 1px solid var(--border);
   color: var(--text-dim);
   font-size: 11px;
@@ -1585,7 +1585,7 @@ pre, code {
   gap: 8px;
 }
 .markdown-code-lang {
-  color: var(--text-muted);
+  color: #DEB9B9;
   font-family: var(--font-mono);
   font-weight: 650;
 }

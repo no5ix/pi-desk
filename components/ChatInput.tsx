@@ -72,6 +72,11 @@ import { ComposerProjectChip, getProjectLabel } from "./ComposerProjectChip";
 import { ComposerBranchChip } from "./ComposerBranchMenu";
 import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
 import { ComposerDeviceCopies } from "./ComposerDeviceCopies";
+import { ComposerPlusMenu } from "./ComposerPlusMenu";
+import { ComposerReasoningRows } from "./ComposerReasoningRows";
+import { ComposerToolPresetRows } from "./ComposerToolPresetRows";
+import { growComposerTextarea } from "@/lib/composer-textarea-height";
+import { TOOL_PRESET_MAP, type ThinkingLevelChoice } from "@/lib/composer-option-data";
 import { SideChatPlusIcon } from "./SideChatIcon";
 import { ComposerExpandIcon } from "./ComposerExpandIcon";
 import { AgentRunningIcon } from "./TopbarSubagents";
@@ -231,16 +236,6 @@ export interface ChatInputHandle {
   restoreSubmission: (text: string, images?: ChatDraftImage[], targetDraftKey?: string) => void;
 }
 
-// "configured" sends no override, so the session follows settings.json defaultTools.
-const TOOL_PRESETS = ["configured", "chat-only", "read-only", "default", "full"] as const;
-type ToolPresetLabel = typeof TOOL_PRESETS[number];
-const TOOL_PRESET_MAP: Record<ToolPresetLabel, ToolPreset> = {
-  configured: "configured",
-  "chat-only": "none",
-  "read-only": "read-only",
-  default: "default",
-  full: "full",
-};
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 const TEXT_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 // The vertical half of the composer menu placement — the topbar boundary (#63), the
@@ -349,11 +344,6 @@ function subscribeUpwardMenuMaxHeight(
   };
 }
 
-const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
-const THINKING_LEVEL_DESC_KEYS: Record<typeof THINKING_LEVELS[number], string> = {
-  auto: "chat.thinkingUseDefault", off: "chat.thinkingOff", minimal: "chat.thinkingMinimal", low: "chat.thinkingLow",
-  medium: "chat.thinkingMedium", high: "chat.thinkingHigh", xhigh: "chat.thinkingXhigh", max: "chat.thinkingMax",
-};
 
 function formatTokenCount(tokens: number): string {
   if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
@@ -903,8 +893,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // closing menu never listens to the click that opened the next one.
   const toolDropdownPop = usePopTransition(toolDropdownOpen);
   const thinkingDropdownPop = usePopTransition(thinkingDropdownOpen);
-  const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
+  // The phone's `+` carries every control the row has no room for. The open state stays
+  // here so the one outside-click handler below closes it with the other composer menus.
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
@@ -970,10 +962,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ta.style.height = `${target}px`;
   }, [expanded]);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
+  const plusMenuRef = useRef<HTMLDivElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
   const automationDropdownRef = useRef<HTMLDivElement>(null);
-  const controlsMenuRef = useRef<HTMLDivElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const lastCompositionEndAtRef = useRef(0);
@@ -1022,8 +1014,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       requestAnimationFrame(() => {
         if (!ta) return;
         ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        growComposerTextarea(ta);
       });
     },
     replaceMessage(message: UserMessage) {
@@ -1050,8 +1041,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       requestAnimationFrame(() => {
         if (!ta) return;
         ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        growComposerTextarea(ta);
       });
       return true;
     },
@@ -1070,8 +1060,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         if (!ta) return;
         ta.focus();
         ta.setSelectionRange(combined.length, combined.length);
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        growComposerTextarea(ta);
       });
     },
     rekeyDraft(previousKey: string, nextKey: string) {
@@ -1176,8 +1165,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         if (!ta) return;
         ta.focus();
         ta.setSelectionRange(ta.value.length, ta.value.length);
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        growComposerTextarea(ta);
       });
     },
     insertText(text: string) {
@@ -1201,8 +1189,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         const pos = start + sep.length + text.length;
         ta.setSelectionRange(pos, pos);
         ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        growComposerTextarea(ta);
       });
     },
     insertQuote(text: string) {
@@ -1225,8 +1212,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         const pos = start + inserted.length;
         ta.setSelectionRange(pos, pos);
         ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        growComposerTextarea(ta);
       });
     },
     addImages(files: File[]) {
@@ -1346,9 +1332,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDeviceCopy(draftKeyRef.current);
     clearImages();
     clearAttachedFiles();
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-    }
+    growComposerTextarea(textareaRef.current);
   }, [clearAttachedFiles, clearImages, draftKey, setHashQuery]);
 
   useEffect(() => {
@@ -1448,16 +1432,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (!ta) return;
       ta.focus();
       ta.setSelectionRange(merged.value.length, merged.value.length);
-      ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      growComposerTextarea(ta);
     });
   }, [setHashQuery]);
 
   const resizeTextarea = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = "auto";
-    if (ta.value) ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    growComposerTextarea(textareaRef.current);
   }, []);
 
   useLayoutEffect(resizeTextarea, [value, fontSize, resizeTextarea]);
@@ -1743,8 +1723,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (!el) return;
       el.focus();
       el.setSelectionRange(newPos, newPos);
-      el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+      growComposerTextarea(el);
     });
   }, [atQuery, value, setHashQuery]);
 
@@ -1805,8 +1784,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (!area) return;
       area.focus();
       area.setSelectionRange(restoredText.length, restoredText.length);
-      area.style.height = "auto";
-      area.style.height = `${Math.min(area.scrollHeight, 200)}px`;
+      growComposerTextarea(area);
     });
   }, [setHashQuery, value]);
 
@@ -1820,8 +1798,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (!ta) return;
       ta.focus();
       ta.setSelectionRange(nextValue.length, nextValue.length);
-      ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      growComposerTextarea(ta);
     });
   }, []);
 
@@ -2052,6 +2029,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
 
+      // Esc stops the agent when no slash/@/history menu or IME composition is active.
       // The corner's tall editor takes Escape as its own way back — the card folds,
       // the run is left alone. The two cannot collide: the fold asks for `!isStreaming`,
       // so a running agent keeps the abort below it.
@@ -2061,7 +2039,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
 
-      // Esc stops the agent when no slash/@/history menu or IME composition is active.
       if (e.key === "Escape" && !isComposing && isStreaming && onAbort) {
         e.preventDefault();
         onAbort();
@@ -2083,8 +2060,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const handleInput = useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    growComposerTextarea(ta);
   }, []);
 
   const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -2317,6 +2293,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   useMenuNavigation(toolDropdownOpen, toolDropdownRef, () => setToolDropdownOpen(false));
   useMenuNavigation(thinkingDropdownOpen, thinkingDropdownRef, () => setThinkingDropdownOpen(false));
   useMenuNavigation(projectDropdownOpen, projectDropdownRef, () => setProjectDropdownOpen(false));
+  useMenuNavigation(plusMenuOpen, plusMenuRef, () => setPlusMenuOpen(false));
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (toolDropdownRef.current && !toolDropdownRef.current.contains(e.target as Node)) setToolDropdownOpen(false);
@@ -2326,8 +2303,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (automationDropdownRef.current && !automationDropdownRef.current.contains(e.target as Node)) {
         setAutomationDropdownOpen(false);
       }
-      if (controlsMenuRef.current && !controlsMenuRef.current.contains(e.target as Node)) {
-        setControlsMenuOpen(false);
+      if (plusMenuRef.current && !plusMenuRef.current.contains(e.target as Node)) {
+        setPlusMenuOpen(false);
       }
       if (projectDropdownRef.current && !projectDropdownRef.current.contains(e.target as Node)) {
         setProjectDropdownOpen(false);
@@ -2340,10 +2317,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  useEffect(() => {
-    if (!isMobile) setControlsMenuOpen(false);
-  }, [isMobile]);
-
   // The row's glyphs are one cluster in every tier: model, reasoning, tool preset,
   // session automation, in that order, behind the attach `+`. A phone folds the whole
   // cluster behind its "More" button, which sits right behind `+`; the chip is the
@@ -2354,12 +2327,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ? modelOptions.find((option) => option.provider === model.provider && option.modelId === model.modelId)?.name
       ?? model.modelId
     : null;
-  // The phone's closed row prints no model name (the chip lives inside "More"), so the
-  // button's title carries it: the control that opens the group says what it changes.
-  const moreControlsTitle = [
-    t("chat.moreControls"),
-    modelDisplayName ? `${t("chat.changeModel")}: ${modelDisplayName}` : null,
-  ].filter(Boolean).join(" · ");
   const modelControl = (modelOptions.length > 0 || model || modelError) && onModelChange ? (
     <ModelSelector
       options={modelOptions}
@@ -3056,12 +3023,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           )}
           <div
             className="chat-composer-editor"
+            // The phone's card is one row: the `+`, the prompt, Send. `data-inline` is the
+            // hook app/native-theme.css lays that row out on and animates the card's height
+            // with; the wider tiers keep the column, where the text is typed across the
+            // card above the control row.
+            data-inline={isNarrow && !compact ? "true" : undefined}
             style={{
               minWidth: 0,
               display: "flex",
               // The text area owns the card's whole width and the controls share one row
               // under it: a long prompt is typed across the card, not beside a button.
-              flexDirection: "column",
+              // In the inline tier the text is *in* that row, between the `+` and Send.
+              flexDirection: isNarrow && !compact ? "row" : "column",
               gap: compact ? 8 : 0,
               alignItems: "stretch",
               background: "var(--bg)",
@@ -3123,7 +3096,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               // card, so a horizontal margin (the card's own inset) can only inset it, never
               // push it past the card's right edge — `width: 100%` plus a margin did exactly
               // that, and a stray margin edit in the stylesheet reproduced it on a phone.
-              flex: "none",
+              // The column tiers take the height the auto-grow computed and stretch the
+              // text across the card; the inline tier puts the text in the row, where it
+              // takes the width the `+` and Send leave.
+              flex: isNarrow && !compact ? "1 1 auto" : "none",
               minWidth: 0,
               background: "none",
               border: "none",
@@ -3147,12 +3123,71 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </span>
           )}
 
-          {/* One row: attach, the session controls, then Send. The text area
-              above it owns the card's whole width. */}
+          {/* One row. The wider tiers: attach, the session controls, then Send, under the
+              text. The phone: the `+`, the prompt, Send — one line, where the `+` is the
+              control that carries everything the row has no room for. */}
           <div className="chat-composer-actions">
           {/* Attaching is a content action, so it lives in the card with the text it
               goes with — in the same row as Send, ahead of the session controls. */}
-          {!compact && (
+          {!compact && (isNarrow ? (
+            <ComposerPlusMenu
+              menuRef={plusMenuRef}
+              open={plusMenuOpen}
+              onOpenChange={setPlusMenuOpen}
+              onAttach={() => fileInputRef.current?.click()}
+              attachLabel={t(!onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
+              attachActive={attachedImages.length > 0 || attachedFiles.length > 0}
+              isCompacting={Boolean(isCompacting)}
+              summarizationRetry={summarizationRetry}
+              onAbortCompaction={onAbortCompaction}
+              onCompact={canCompactNow ? onCompact : undefined}
+              model={modelOptions.length > 0 && onModelChange ? {
+                options: modelOptions,
+                value: model,
+                onPick: (provider, modelId) => onModelChange(provider, modelId),
+                label: modelDisplayName ?? "",
+                defaultValue: defaultModel,
+                onSetDefault: onSetDefaultModel,
+              } : null}
+              reasoning={onThinkingLevelChange ? {
+                availableLevels: availableThinkingLevels,
+                resolvedLevel: resolvedThinkingLevel,
+                isAuto: isAutoThinkingSelection,
+                levelMap: thinkingLevelMap,
+                savedDefault: savedDefaultThinkingLevel,
+                onSetDefault: onSetDefaultThinkingLevel,
+                label: thinkingDisplayLabel,
+                onPick: (level: ThinkingLevelChoice) => {
+                  if (level === "auto") {
+                    if (!isAutoThinkingSelection) onThinkingLevelChange("auto");
+                    return;
+                  }
+                  const active = !isAutoThinkingSelection && resolvedThinkingLevel === level;
+                  if (!active || isAutoThinkingSelection) onThinkingLevelChange(level);
+                },
+                footer: chatOnly ? (
+                  <>
+                    <div className="composer-menu-heading" data-separated>
+                      {t("chat.toolsHeading")}
+                    </div>
+                    <ChatAccessRows
+                      access={chatAccess}
+                      onToggleUnlocked={(next) => setPlusMenuOpen(false)}
+                    />
+                  </>
+                ) : undefined,
+              } : null}
+              tools={onToolPresetChange ? {
+                current: toolPreset ?? "configured",
+                label: toolPresetLabel,
+                onPick: (preset) => onToolPresetChange(preset),
+              } : null}
+              session={automationKnown || canCompactNow ? {
+                automation: automationKnown ? automation : undefined,
+                onSetAutomation,
+              } : null}
+            />
+          ) : (
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -3166,34 +3201,24 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </button>
-          )}
+          ))}
         {/* Bottom bar: left | center (context) | right */}
-        {!compact && <div className="chat-composer-controls" style={{
+        {/* Bottom bar: left | center (context) | right. A phone has no controls cell: its
+            row is the `+`, the prompt and Send, and the chips sit under the card. */}
+        {!compact && !isNarrow && <div className="chat-composer-controls" style={{
           marginTop: 0,
           flex: "1 1 auto",
           minWidth: 0,
-          display: isNarrow ? "grid" : "flex",
-          // A phone renders exactly two children here (the wide spacer below is
-          // skipped), so the controls block needs its own `auto` track. The
-          // controls take the first track and the chips the `minmax(0, 1fr)` one,
-          // because the phone's More button is the row's first control, standing
-          // right behind the attach `+` (the `order` on the two cells puts them in
-          // that visual order). The chip is no longer in the chips' cell, so no
-          // untruncated model name sizes an `auto` track, and the 1fr track keeps
-          // the cell shrinkable — a cell that cannot shrink is what pushed the
-          // trailing cell out of the row and squeezed the More button to 16px on
-          // an iPhone.
-          gridTemplateColumns: isNarrow ? "auto minmax(0, 1fr)" : undefined,
+          display: "flex",
           alignItems: "center",
           gap: 6,
         }}>
 
           {/* LEFT: project context + model selector (idle) or steer/followup toggle (streaming) */}
 
-          {/* The chips' cell. On a phone it takes the grid's second track (`order: 2`)
-              so the More button leads the row; `order` moves the box, not the tab order,
-              which is why this stays the strip's first JSX child. */}
-          <div style={{ flex: isNarrow ? "1 1 auto" : "0 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2, ...(isNarrow ? { order: 2 } : null) }}>
+          {/* The chips' cell shrinks (`min-width: 0`), so the chips ellipsize instead of
+              pushing the controls out of the row. */}
+          <div style={{ flex: "0 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 2 }}>
             {/* Only a new session picks its project from the composer. Once a
                 session exists, its project is fixed and the header names it, so the
                 composer row drops the chip rather than showing a second, inert one. */}
@@ -3202,11 +3227,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 menuRef={projectDropdownRef}
                 open={projectDropdownOpen}
                 onOpenChange={setProjectDropdownOpen}
-                // On a phone the owner prefix ate the whole chip ("you…"); the folder name is what identifies it.
-                label={isNarrow ? projectLabel.split("/").pop() || projectLabel : projectLabel}
+                label={projectLabel}
                 projectPath={projectPath}
                 isWorktree={projectIsWorktree}
-                maxWidth={isNarrow ? 112 : isCompact ? 120 : 170}
+                maxWidth={isCompact ? 120 : 170}
                 projectOptions={projectOptions}
                 onProjectChange={onProjectChange}
                 onSelectProject={onSelectProject}
@@ -3219,92 +3243,38 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {branchChipCwd && (
               <ComposerBranchChip
                 cwd={branchChipCwd}
-                maxWidth={isNarrow ? 96 : isCompact ? 110 : 150}
+                maxWidth={isCompact ? 110 : 150}
                 onBranchSwitched={onBranchSwitched}
                 onWorktreeCreated={onComposerWorktreeCreated}
                 onWorktreeSelected={onComposerWorktreeSelected}
                 onWorktreeRemoved={onComposerWorktreeRemoved}
               />
             )}
-            {/* A virtual model routes each request; the phone shows where the
-                latest reply went, since its model chip is inside "More". */}
-            {isNarrow && routedModelHint}
           </div>
 
           {/* THE CLUSTER: model + reasoning + tools preset + automation (a running
               compaction takes its own cell in the run), then the spacer, so the glyphs
               sit together at the row's left and Send keeps the card's corner. */}
-          <div ref={controlsMenuRef} style={{
+          {/* THE CLUSTER: model + reasoning + tools preset + automation (a running
+              compaction takes its own cell in the run), then the spacer, so the glyphs
+              sit together at the row's left and Send keeps the card's corner. A phone has
+              no cluster here: its `+` (components/ComposerPlusMenu) carries the same
+              controls, in the same order, as pages of one menu. */}
+          <div style={{
             flex: "0 0 auto",
             display: "flex",
             alignItems: "center",
             justifyContent: "flex-end",
             position: "relative",
             marginLeft: 0,
-            ...(isNarrow ? { order: 1 } : null),
           }}>
-            {isNarrow && (
-              <button
-                type="button"
-                title={controlsMenuOpen ? undefined : moreControlsTitle}
-                aria-label={t("chat.moreControls")}
-                aria-expanded={controlsMenuOpen}
-                aria-hidden={controlsMenuOpen || undefined}
-                tabIndex={controlsMenuOpen ? -1 : undefined}
-                className="native-toolbar-button"
-                onClick={() => {
-                  setControlsMenuOpen(true);
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "var(--control-h-lg)",
-                  height: "var(--control-h-lg)",
-                  flexShrink: 0,
-                  padding: 0,
-                  borderRadius: "var(--radius-md)",
-                  cursor: controlsMenuOpen ? "default" : "pointer",
-                  visibility: controlsMenuOpen ? "hidden" : "visible",
-                  pointerEvents: controlsMenuOpen ? "none" : "auto",
-                }}
-              >
-                {/* An icon like its neighbours; the label stays in title/aria-label. */}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
-                  <circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" />
-                </svg>
-              </button>
-            )}
-            {/* `data-strip-open` is rendered only in the narrow tier, so the strip's
-                appearance/disappearance animation (app/native-theme.css) is scoped to the
-                phone by the attribute and never fires on the desktop's inline row. */}
             <div
               className="composer-controls-strip"
-              data-strip-open={isNarrow ? (controlsMenuOpen ? "true" : "false") : undefined}
               style={{
-              display: isNarrow ? (controlsMenuOpen ? "flex" : "none") : "flex",
-              alignItems: "center",
-              gap: isNarrow ? 1 : 2,
-              ...(isNarrow ? {
-                // The strip opens from the More button's own edge, which on a phone
-                // is the row's left end, right behind `+`.
-                position: "absolute",
-                left: 0,
-                bottom: 0,
-                zIndex: 60,
-                padding: 1,
-                width: "max-content",
-                maxWidth: "calc(100vw - 32px)",
-                flexWrap: "nowrap",
-                justifyContent: "flex-end",
-                border: "var(--hairline) solid color-mix(in srgb, var(--border) 72%, transparent)",
-                borderRadius: "var(--radius-lg)",
-                background: "color-mix(in srgb, var(--bg-panel) 92%, var(--bg))",
-                boxShadow: "var(--shadow-popover)",
-                backdropFilter: "blur(10px)",
-              } : null),
-            }}>
+                display: "flex",
+                alignItems: "center",
+                gap: 2,
+              }}>
             {/* The model is the cluster's first cell in every tier: the glyphs run
                 model, reasoning, tools, automation, and on a phone that whole run is
                 the strip the More button opens. */}
@@ -3360,53 +3330,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   }}>
                     <div className="app-menu-list">
                     {onThinkingLevelChange && (
-                      <>
-                      <div className="composer-menu-heading">{t("chat.reasoningHeading")}</div>
-                      {THINKING_LEVELS.filter((lvl) => {
-                        if (!availableThinkingLevels) return true;
-                        if (lvl === "auto") return true;
-                        return availableThinkingLevels.includes(lvl);
-                      }).map((lvl) => {
-                        const isActive = lvl === "auto"
-                          ? isAutoThinkingSelection
-                          : !isAutoThinkingSelection && resolvedThinkingLevel === lvl;
-                        const desc = t(THINKING_LEVEL_DESC_KEYS[lvl]);
-                        const mappedVal = (lvl !== "auto" && thinkingLevelMap) ? thinkingLevelMap[lvl] : undefined;
-                        const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
-                        const showOriginal = mappedVal != null && mappedVal !== lvl;
-                        return (
-                          <SelectorRow
-                            key={lvl}
-                            active={isActive}
-                            onSelect={() => {
-                              setThinkingDropdownOpen(false);
-                              if (lvl === "auto") {
-                                if (!isAutoThinkingSelection) onThinkingLevelChange("auto");
-                                return;
-                              }
-                              if (!isActive || isAutoThinkingSelection) onThinkingLevelChange(lvl);
-                            }}
-                            gutter={Boolean(onSetDefaultThinkingLevel)}
-                            star={onSetDefaultThinkingLevel && lvl !== "auto"
-                              ? {
-                                  isDefault: savedDefaultThinkingLevel === lvl,
-                                  saveLabel: t("chat.saveDefaultThinking"),
-                                  defaultLabel: t("chat.defaultThinking"),
-                                  onSave: () => {
-                                    onSetDefaultThinkingLevel(lvl);
-                                  },
-                                }
-                              : undefined}
-                          >
-                            <span style={{ flex: 1 }}>
-                              {displayLabel}
-                              {showOriginal && <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginLeft: 5 }}>({lvl})</span>}
-                            </span>
-                            <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
-                          </SelectorRow>
-                        );
-                      })}
-                      </>
+                      <ComposerReasoningRows
+                        availableLevels={availableThinkingLevels}
+                        resolvedLevel={resolvedThinkingLevel}
+                        isAuto={isAutoThinkingSelection}
+                        levelMap={thinkingLevelMap}
+                        savedDefault={savedDefaultThinkingLevel}
+                        onSetDefault={onSetDefaultThinkingLevel}
+                        onPick={(level) => {
+                          setThinkingDropdownOpen(false);
+                          if (level === "auto") {
+                            if (!isAutoThinkingSelection) onThinkingLevelChange("auto");
+                            return;
+                          }
+                          const active = !isAutoThinkingSelection && resolvedThinkingLevel === level;
+                          if (!active || isAutoThinkingSelection) onThinkingLevelChange(level);
+                        }}
+                      />
                     )}
 
                     {chatOnly && (
@@ -3508,28 +3448,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     maxHeight: maxH, display: "flex", flexDirection: "column",
                   }}>
                     <div className="app-menu-list">
-                    {TOOL_PRESETS.map((lvl) => {
-                      const preset = TOOL_PRESET_MAP[lvl];
-                      const isActive = (toolPreset ?? "configured") === preset;
-                      let desc: string;
-                      if (lvl === "configured") desc = t("chat.configuredTools");
-                      else if (lvl === "chat-only") desc = t("chat.chatOnly");
-                      else if (lvl === "read-only") desc = t("chat.readOnlyTools", { count: 4 });
-                      else if (lvl === "default") desc = t("chat.builtInTools", { count: 4 });
-                      else desc = t("chat.allBuiltInTools");
-                      return (
-                        <SelectorRow
-                          key={lvl}
-                          active={isActive}
-                          onSelect={() => { setToolDropdownOpen(false); if (!isActive) onToolPresetChange(preset); }}
-                        >
-                          <span className="app-menu-copy">
-                            <span>{t(`chat.toolPresetName.${lvl}`)}</span>
-                            <small>{desc}</small>
-                          </span>
-                        </SelectorRow>
-                      );
-                    })}
+                    <ComposerToolPresetRows
+                      current={toolPreset ?? "configured"}
+                      onPick={(preset) => {
+                        setToolDropdownOpen(false);
+                        if (preset !== (toolPreset ?? "configured")) onToolPresetChange(preset);
+                      }}
+                    />
                     </div>
                   </div>
                   );
@@ -3549,35 +3474,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               />
             )}
 
-            {isNarrow && controlsMenuOpen && (
-              <button
-                type="button"
-                 title={t("chat.collapseControls")}
-                 aria-label={t("chat.collapseControls")}
-                aria-expanded={true}
-                onClick={() => {
-                  setThinkingDropdownOpen(false);
-                  setControlsMenuOpen(false);
-                }}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 36,
-                  height: "var(--control-h-lg)",
-                  padding: 0,
-                  marginLeft: 0,
-                  borderRadius: "0 var(--radius-md) var(--radius-md) 0",
-                  cursor: "pointer",
-                }}
-                className="composer-controls-close"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            )}
             </div>
             {!isNarrow && routedModelHint}
           </div>
@@ -3630,6 +3526,41 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </button>
           </div>
           </div>
+          {/* The phone's row is the prompt, the `+` and Send, so the chips a new session
+              picks before its first message — the project, and the branch of it — sit in
+              the strip under the card. Their menus open upward from here, capped to the
+              space between the strip and the header (#63). */}
+          {isNarrow && !compact && (showProjectChip || branchChipCwd || routedModelHint) && (
+            <div className="composer-context-row">
+              {showProjectChip && projectLabel && (
+                <ComposerProjectChip
+                  menuRef={projectDropdownRef}
+                  open={projectDropdownOpen}
+                  onOpenChange={setProjectDropdownOpen}
+                  // The strip is the card's width; the folder name is what identifies a
+                  // project (the owner prefix ate the whole chip on a phone).
+                  label={projectLabel.split("/").pop() || projectLabel}
+                  projectPath={projectPath}
+                  isWorktree={projectIsWorktree}
+                  maxWidth={168}
+                  projectOptions={projectOptions}
+                  onProjectChange={onProjectChange}
+                  onSelectProject={onSelectProject}
+                />
+              )}
+              {branchChipCwd && (
+                <ComposerBranchChip
+                  cwd={branchChipCwd}
+                  maxWidth={150}
+                  onBranchSwitched={onBranchSwitched}
+                  onWorktreeCreated={onComposerWorktreeCreated}
+                  onWorktreeSelected={onComposerWorktreeSelected}
+                  onWorktreeRemoved={onComposerWorktreeRemoved}
+                />
+              )}
+              {isNarrow && routedModelHint}
+            </div>
+          )}
           {/* Session controls sit below the input card, not inside it. */}
           </div>
 

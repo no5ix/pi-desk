@@ -10,6 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { popClass, usePopTransition } from "@/hooks/usePopTransition";
 
 export const TIP_GAP = 6;
 /** The tip never touches the window's edge. */
@@ -41,6 +42,10 @@ export function useTopbarTip<T extends HTMLElement = HTMLButtonElement>() {
   const [pinned, setPinned] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const open = pinned || hovered || focused;
+  // The tip is mounted on hover, focus or a tap and unmounted when all three let go. Held
+  // for the shared exit animation (hooks/usePopTransition.ts), it fades the way it came in
+  // instead of blinking out when the pointer leaves the chip.
+  const pop = usePopTransition(open);
 
   const place = useCallback(() => {
     const anchor = anchorRef.current;
@@ -55,12 +60,12 @@ export function useTopbarTip<T extends HTMLElement = HTMLButtonElement>() {
   }, []);
 
   useLayoutEffect(() => {
-    if (!open) {
+    if (!pop.mounted) {
       setPos(null);
       return;
     }
     place();
-  }, [open, place]);
+  }, [open, place, pop.mounted]);
 
   useEffect(() => {
     if (!open) return;
@@ -110,19 +115,25 @@ export function useTopbarTip<T extends HTMLElement = HTMLButtonElement>() {
     onClick: () => setPinned((current) => !current),
   };
 
-  return { anchorRef, tipRef, tipId, open, pos, triggerProps };
+  return { anchorRef, tipRef, tipId, open, pop, pos, triggerProps };
 }
 
-/** The tip's surface. Render it only while `open`, so it is not in the a11y tree when closed. */
+/**
+ * The tip's surface. Render it while `useTopbarTip().pop.mounted`, not while `open`: the
+ * closing tip is unmounted only when its exit has played. Not in the a11y tree when closed.
+ */
 export function TopbarTip({
   tipId,
   pos,
   tipRef,
+  closing = false,
   children,
 }: {
   tipId: string;
   pos: { top: number; left: number } | null;
   tipRef: RefObject<HTMLSpanElement | null>;
+  /** The tip animates away: `is-closing` plays the shared exit (app/native-theme.css). */
+  closing?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -130,7 +141,7 @@ export function TopbarTip({
       ref={tipRef}
       id={tipId}
       role="tooltip"
-      className="app-topbar-tip"
+      className={`app-topbar-tip${popClass(closing)}`}
       style={{
         top: pos?.top ?? -9999,
         left: pos?.left ?? -9999,

@@ -368,6 +368,10 @@ interface ProjectContextMenuProps {
   onNewBranchChange?: (value: string) => void;
   onCreateWorktree?: () => void;
   onClose?: () => void;
+  /** The owner keeps the menu mounted for the length of the shared exit animation
+   *  (hooks/usePopTransition.ts). `is-closing` plays it, and a closing menu never shows
+   *  the loading skeleton: it animates the rows it was showing, not an empty panel. */
+  closing?: boolean;
 }
 
 /** The menu itself; ProjectContextMenu portals it to the document body. */
@@ -380,6 +384,7 @@ export function ProjectContextMenuPanel({
   onSwitchBranch = () => {}, onFetch = () => {}, onSelectWorktree = () => {}, onRequestRemove = () => {}, onConfirmRemove = () => {}, onCancelRemove = () => {},
   onNewBranchChange = () => {}, onCreateWorktree = () => {}, onCreateWorktreeFromBranch, worktreeBaseBranch = null,
   onClose = () => {},
+  closing = false,
 }: ProjectContextMenuProps) {
   useMenuNavigation(view !== "new-worktree" && !confirmRemove, menuRef, onClose);
   const data = branchMenu?.root === projectRoot ? branchMenu : null;
@@ -888,8 +893,8 @@ export function ProjectContextMenuPanel({
   return (
     <div
       ref={menuRef}
-      className={`sidebar-project-context-menu native-popover app-menu${view === "actions" ? "" : " sidebar-project-context-menu--wide"}`}
-      data-loading={hiddenPanel ? "true" : undefined}
+      className={`sidebar-project-context-menu native-popover app-menu${closing ? " is-closing" : ""}${view === "actions" ? "" : " sidebar-project-context-menu--wide"}`}
+      data-loading={hiddenPanel && !closing ? "true" : undefined}
       style={{ top: position.top, left: position.left, maxHeight: MENU_MAX_HEIGHT_CSS, overflowY: "auto" }}
       role="menu"
     >
