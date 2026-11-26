@@ -374,6 +374,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     defaultModel,
     savedDefaultThinkingLevel,
     agentPhase,
+    runStall,
     addNotice,
     isNew,
     editEntryId,
@@ -1994,8 +1995,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
             )}
 
             {agentRunning && !hasStreamingContent && (agentPhase || isCompacting) && (
-              <div className="break-words py-2 text-[13px] text-text-muted">
-                <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase, t, isCompacting)}</span>
+              <div className={`break-words py-2 text-[13px] text-text-muted${runStall ? " chat-phase-stalled" : ""}`}>
+                <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase, t, isCompacting, 0, runStall)}</span>
               </div>
             )}
 

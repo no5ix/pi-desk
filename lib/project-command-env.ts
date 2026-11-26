@@ -7,6 +7,12 @@ import {
   type LoadExtensionsResult,
 } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
+import {
+  COMMAND_TIMEOUT_MS,
+  commandTimeoutDescriptionSuffix,
+  commandTimeoutParametersSchema,
+  resolveEffectiveTimeoutSeconds,
+} from "./command-timeout";
 
 const HOST_EXTENSION_NAME = "pi-web-project-command-environment";
 const HOST_EXTENSION_PATH = `<inline:${HOST_EXTENSION_NAME}>`;
@@ -26,6 +32,11 @@ type ProjectCommandBashOperationsOptions = {
   localOperations?: BashOperations;
   platform?: NodeJS.Platform;
   shellPath?: string;
+  /**
+   * Timeout for a command that asked for none, in ms (lib/command-timeout.ts).
+   * `0` runs it with no default, pi's own behaviour.
+   */
+  defaultTimeoutMs?: number;
 };
 
 type BashExecResult = Awaited<ReturnType<BashOperations["exec"]>>;
@@ -77,6 +88,7 @@ export function createProjectCommandBashOperations(
     baseEnvironment = process.env,
     localOperations = createLocalBashOperations({ shellPath: options.shellPath }),
     platform = process.platform,
+    defaultTimeoutMs = COMMAND_TIMEOUT_MS,
   } = options;
 
   return {
@@ -87,9 +99,15 @@ export function createProjectCommandBashOperations(
         platform,
       );
       const { onData, signal, timeout } = executionOptions;
+      // pi's shell tool has no default timeout, so a command that never returns holds
+      // the whole run (lib/command-timeout.ts). The default goes *into* the spawn: pi
+      // then kills the process tree at the deadline, which a promise-side timer alone
+      // cannot do — it would abandon a live child and orphan it.
+      const effectiveTimeoutSeconds = resolveEffectiveTimeoutSeconds(timeout, defaultTimeoutMs);
       let released = false;
       const execution = localOperations.exec(command, cwd, {
         ...executionOptions,
+        timeout: effectiveTimeoutSeconds,
         env: environment,
         // Callers finalize their output once the command is released; a
         // survivor must not append to it afterwards.
@@ -98,9 +116,9 @@ export function createProjectCommandBashOperations(
         },
       });
       // Pi rejects any other timeout before it starts the command.
-      const timeoutMs = typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0
-        ? timeout * 1000
-        : undefined;
+      const timeoutMs = effectiveTimeoutSeconds === undefined
+        ? undefined
+        : effectiveTimeoutSeconds * 1000;
       if (!signal && timeoutMs === undefined) return execution;
 
       // On Stop or a timeout, pi kills the shell's process tree but then keeps
@@ -118,14 +136,20 @@ export function createProjectCommandBashOperations(
           signal?.removeEventListener("abort", onAbort);
         };
         const releaseAfter = (delayMs: number, error: Error) => {
-          timers.push(setTimeout(() => {
+          const timer = setTimeout(() => {
             release();
             reject(error);
-          }, Math.min(delayMs, MAX_TIMER_DELAY_MS)));
+          }, Math.min(delayMs, MAX_TIMER_DELAY_MS));
+          // A command whose spawn never settles must not keep a quitting process alive:
+          // the bound is a safety net for a live server, not a reason to stay up.
+          timer.unref?.();
+          timers.push(timer);
         };
         const onAbort = () => releaseAfter(abortSettleGraceMs, new Error("aborted"));
-        if (timeoutMs !== undefined) {
-          releaseAfter(timeoutMs + abortSettleGraceMs, new Error(`timeout:${timeout}`));
+        if (timeoutMs !== undefined && effectiveTimeoutSeconds !== undefined) {
+          // The seconds pi's own message names: the model's number when it gave one,
+          // the default otherwise, so "Command timed out after N seconds" is the truth.
+          releaseAfter(timeoutMs + abortSettleGraceMs, new Error(`timeout:${effectiveTimeoutSeconds}`));
         }
         execution.then((result) => {
           release();
@@ -144,14 +168,22 @@ export function createProjectCommandBashOperations(
 export function createProjectCommandBashExtension(options: {
   cwd: string;
   settings: ProjectShellSettings;
+  /** Timeout for a command that asked for none, in ms; `0` leaves pi's no-default behaviour. */
+  defaultTimeoutMs?: number;
 }): InlineExtension {
   return {
     name: HOST_EXTENSION_NAME,
     hidden: true,
     factory: (pi) => {
       const displayDefinition = createBashToolDefinition(options.cwd);
+      const defaultTimeoutMs = options.defaultTimeoutMs ?? COMMAND_TIMEOUT_MS;
       pi.registerTool({
         ...displayDefinition,
+        // pi's schema says "no default timeout", and the operations below impose one. The
+        // parameter description is the model's whole contract about timeouts, so it is
+        // restated here: a model that reads a default asks for more time for a long build.
+        description: `${displayDefinition.description.split("Optionally provide a timeout in seconds.")[0].trimEnd()}${commandTimeoutDescriptionSuffix(defaultTimeoutMs)}`.trim(),
+        parameters: commandTimeoutParametersSchema(defaultTimeoutMs),
         // This stands in for pi's built-in bash, so like it, it is active only when named:
         // by `defaultTools` (pi's default list names it), a preset or `set_tools`. Otherwise
         // pi turns it on at every start and reload, as it does any extension tool, whatever
@@ -162,6 +194,7 @@ export function createProjectCommandBashExtension(options: {
             commandPrefix: options.settings.getShellCommandPrefix(),
             operations: createProjectCommandBashOperations({
               shellPath: options.settings.getShellPath(),
+              defaultTimeoutMs,
             }),
           });
           return executionDefinition.execute(toolCallId, params, signal, onUpdate, context);

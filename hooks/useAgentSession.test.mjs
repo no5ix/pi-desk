@@ -402,7 +402,14 @@ test("delegates event stream readiness and hides an empty agent phase", () => {
   assert.match(chatWindowSource, /agentRunning && !hasStreamingContent && \(agentPhase \|\| isCompacting\)/);
   // Compaction is what the user needs to know while a turn is being compacted, so it is
   // forwarded to the label instead of letting the stream phase read as a hang.
-  assert.match(chatWindowSource, /phaseLabel\(agentPhase, t, isCompacting\)/);
+  assert.match(chatWindowSource, /phaseLabel\(agentPhase, t, isCompacting, 0, runStall\)/);
+  // A run the server says is silent is shown as one: the stall rides the same label, and the
+  // line wears the stalled class so the running pulse stops.
+  assert.match(chatWindowSource, /runStall \? " chat-phase-stalled" : ""/);
+  assert.match(phaseLabelSource, /if \(stall\) \{/);
+  assert.match(phaseLabelSource, /chat\.stalledModel/);
+  assert.match(source, /staleAfterMs: EVENT_STREAM_STALE_AFTER_MS/);
+  assert.match(source, /EVENT_STREAM_STALE_AFTER_MS = AGENT_EVENT_HEARTBEAT_MS \* 3/);
   assert.match(phaseLabelSource, /return null;/);
 });
 
@@ -574,7 +581,7 @@ test("keeps calls a tool made itself out of the running tools", () => {
     assert.notEqual(guard, -1, `${from} must skip nested tool events`);
     assert.ok(guard < caseSource.indexOf("const id = event.toolCallId"), `${from} must skip them before using the id`);
   }
-  assert.match(source, /import \{ isNestedToolExecutionEvent, isSystemMessageEvent \} from "@\/lib\/agent-event-wire";/);
+  assert.match(source, /import \{ AGENT_EVENT_HEARTBEAT_MS, isNestedToolExecutionEvent, isSystemMessageEvent \} from "@\/lib\/agent-event-wire";/);
 });
 
 test("plays the enabled sound once when an extension dialog appears over an empty slot", () => {
@@ -889,4 +896,32 @@ test("the model list is requested after the session's opening read, with a bound
   assert.match(modelsSource, /const openLoad = sessionOpenLoadRef\.current;/);
   assert.match(modelsSource, /Promise\.race\(\[openLoad\.catch\(\(\) => \{\}\), delay\(MODELS_AFTER_SESSION_MAX_WAIT_MS\)\]\)/);
   assert.ok(modelsSource.indexOf("Promise.race") < modelsSource.indexOf("await loadModels(controller.signal)"));
+});
+
+test("shows a run the server says has stopped, and clears it at every run boundary", () => {
+  // The server owns the liveness clock (lib/agent-run-liveness.ts); the client mirrors it.
+  const eventSource = source.slice(
+    source.indexOf("const handleAgentEvent = useCallback"),
+    source.indexOf("const handleSend = useCallback"),
+  );
+  assert.match(source, /const \[runStall, setRunStall\] = useState<AgentRunStall \| null>\(null\)/);
+  assert.match(eventSource, /case "agent_stalled":/, "the event must have a case, or the wire forwards it into silence");
+  assert.match(eventSource, /chat\.stalledNotice/, "the notice is what makes a user press Stop");
+
+  // Every boundary that ends a run drops the stall, so a finished session never reads as stuck.
+  const settledSource = source.slice(source.indexOf('case "agent_start"'), source.indexOf('case "prompt_error"'));
+  assert.match(settledSource, /case "agent_start":[\s\S]*?setRunStall\(null\)/);
+  assert.match(settledSource, /case "agent_end":[\s\S]*?setRunStall\(null\)/);
+  assert.match(settledSource, /case "agent_settled":[\s\S]*?setRunStall\(null\)/);
+  assert.match(settledSource, /case "prompt_done":[\s\S]*?setRunStall\(null\)/);
+
+  // A page that reloads mid-run, and the periodic reconciliation of a missed event, learn
+  // the stall from `get_state` — not only from an event that already went by.
+  const reconcileSource = source.slice(
+    source.indexOf("const reconcileAgentState = useCallback"),
+    source.indexOf("// Recovery net for missed SSE events"),
+  );
+  assert.match(reconcileSource, /syncRunStall\(state\)/, "reconnect and the 15s poll must see a stalled run");
+  assert.match(source, /const syncRunStall = useCallback/, "one place decides what a state read says about silence");
+  assert.match(source, /runLiveness\?: AgentRunLiveness \| null;/);
 });

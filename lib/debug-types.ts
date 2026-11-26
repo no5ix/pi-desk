@@ -7,6 +7,8 @@
 
 // ── Server: GET /api/agent/debug?session=<id> ────────────────────────────────
 
+import type { AgentRunLiveness } from "./agent-run-liveness";
+
 export interface DebugWrapperRun {
   /** `isRunning()`: a prompt, a queued one, a `!` command or a compaction. */
   running: boolean;
@@ -64,6 +66,8 @@ export interface DebugWrapperSnapshot {
   /** Last SDK event and last command the wrapper saw (status reads, `get_state`, left out): their type only. */
   lastEvent: { type: string; at: number } | null;
   lastCommand: { type: string; at: number } | null;
+  /** What the run is busy with, and the silence since its last progress event. */
+  liveness: AgentRunLiveness;
 }
 
 /** Process-wide history of one session id (survives the wrapper; bounded). */

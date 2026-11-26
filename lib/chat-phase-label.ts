@@ -1,4 +1,6 @@
 import type { AgentPhase } from "@/hooks/useAgentSession";
+import type { AgentRunPhase } from "@/lib/agent-run-liveness";
+import { formatTurnDurationCompact } from "@/lib/turn-duration";
 
 /**
  * The phase a state read (`GET /api/sessions/[id]/state`, `GET /api/agent/[id]`)
@@ -23,9 +25,29 @@ export type Translate = (key: string, params?: Record<string, string | number>) 
  * while before the next token arrives, and reporting the underlying "waiting for model"
  * phase in the meantime reads as a hang. Compaction is what the user needs to know.
  * While compacting, messages queued for after it count beside it (`chat.compactingQueued`).
+ *
+ * `stall` is the server's word that the run has produced no event at all in one of the
+ * phases where only a request the app cannot see inside is outstanding (lib/agent-run-liveness.ts).
+ * It replaces the bare "Waiting for model…", which is the sentence that makes a stuck run
+ * indistinguishable from a slow one: the same phase, said with the silence attached. The
+ * phase still chooses the words, so a user reads *what* is silent, and a run that is
+ * streaming, running a tool, compacting or waiting on a person is never described this way.
  */
-export function phaseLabel(phase: AgentPhase, t: Translate, isCompacting?: boolean, queuedCount = 0): string | null {
+export function phaseLabel(
+  phase: AgentPhase,
+  t: Translate,
+  isCompacting?: boolean,
+  queuedCount = 0,
+  stall?: { phase: AgentRunPhase; noProgressMs: number } | null,
+): string | null {
   if (isCompacting) return queuedCount > 0 ? t("chat.compactingQueued", { count: queuedCount }) : t("chat.compacting");
+  if (stall) {
+    const duration = formatTurnDurationCompact(stall.noProgressMs, { withSeconds: true });
+    if (stall.phase === "mcp_wait") return t("chat.stalledMcp", { duration });
+    if (stall.phase === "prompt_admission") return t("chat.stalledAdmission", { duration });
+    if (stall.phase === "waiting_model") return t("chat.stalledModel", { duration });
+    return t("chat.stalled", { duration });
+  }
   if (phase?.kind === "running_tools") {
     const latest = phase.tools[phase.tools.length - 1];
     if (latest?.progress) {

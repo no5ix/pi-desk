@@ -15122,3 +15122,19 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
     transform: none;
   }
 }
+
+/* ==========================================================================
+   A run that has stopped saying anything (lib/agent-run-liveness.ts)
+   ========================================================================== */
+
+/* The composer's status line for a stalled run: the same phase as "Waiting for model…",
+   said with the silence attached, in the palette's warning ink so it reads as news and not
+   as the running pulse the line wears while work is arriving. */
+.chat-phase-stalled {
+  color: var(--warning);
+}
+
+/* A stalled run must not breathe: the pulse is the app's promise that work is arriving. */
+.chat-phase-stalled > span {
+  animation: none;
+}

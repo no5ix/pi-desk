@@ -48,6 +48,9 @@ function harness({ response, stats, pending } = {}) {
     setContextUsage(value) { state.contextUsage = value; },
     setSessionStatsOverride(value) { state.stats = value; },
     setIsCompacting() {},
+    // The reconcile mirrors the server's liveness read; this harness is about usage, and
+    // the collaborator must exist for the handler to run at all.
+    syncRunStall() {},
     setQueuedMessages() {},
     normalizeQueuedMessages: (value) => value,
     seedStreamingSnapshot() {},

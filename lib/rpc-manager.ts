@@ -19,6 +19,16 @@ import {
   createProjectCommandBashOperations,
   preferUserBashExtension,
 } from "./project-command-env";
+import {
+  agentRunPhase,
+  decideAgentRunStall,
+  isAgentProgressEvent,
+  RUN_LIVENESS_TICK_MS,
+  RUN_STALL_ABORT_MS,
+  RUN_STALL_NOTICE_MS,
+  type AgentRunFlags,
+  type AgentRunLiveness,
+} from "./agent-run-liveness";
 import { cacheSessionPath, getLatestModelChange, getLatestResponseModel, getSessionListVersion, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { computeLiveSessionTotalActiveMs } from "./session-timing";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
@@ -276,6 +286,12 @@ type AgentSessionWrapperOptions = {
   /** Chat only: the extension-provided model the session wanted, named when a prompt finds no model. */
   chatOnlyExtensionModel?: { provider: string; id: string };
   sideChat?: boolean;
+  /**
+   * Liveness thresholds for this session, overriding the installation's (lib/agent-run-liveness.ts).
+   * Tests drive a stalled run on a fake clock with these; production passes nothing and gets
+   * `PI_WEB_RUN_STALL_NOTICE_MS` / `PI_WEB_RUN_STALL_ABORT_MS`.
+   */
+  liveness?: { noticeMs?: number; abortMs?: number };
 };
 
 /**
@@ -525,6 +541,16 @@ export class AgentSessionWrapper {
   private lastEventAt: number | null = null;
   private lastCommandType: string | null = null;
   private lastCommandAt: number | null = null;
+  // Run liveness (lib/agent-run-liveness.ts): the last SDK event that proved the run
+  // moved, and what the watchdog has already done about the silence since.
+  private lastProgressAt: number | null = null;
+  private livenessTimer: ReturnType<typeof setInterval> | null = null;
+  private readonly livenessNoticeMs: number;
+  private readonly livenessAbortMs: number;
+  // The silence the `agent_stalled` notice of this run reported, 0 for none sent.
+  private stallNotifiedMs = 0;
+  // The watchdog already stopped this run; a second abort is never sent.
+  private stallAborted = false;
 
   constructor(
     public readonly inner: AgentSessionLike,
@@ -556,6 +582,8 @@ export class AgentSessionWrapper {
     });
     this.chatOnlyExtensionModel = options.chatOnlyExtensionModel;
     this.sideChat = options.sideChat === true;
+    this.livenessNoticeMs = options.liveness?.noticeMs ?? RUN_STALL_NOTICE_MS;
+    this.livenessAbortMs = options.liveness?.abortMs ?? RUN_STALL_ABORT_MS;
   }
 
   get sessionId(): string {
@@ -615,6 +643,118 @@ export class AgentSessionWrapper {
       if (isBlockingExtensionUiRequest(request as unknown as ExtensionUiRequest)) return true;
     }
     return false;
+  }
+
+  /**
+   * The flags liveness is decided from. Read live, never cached: a phase is a moment,
+   * and the phases are the difference between a run that is working and one that is stuck.
+   */
+  private runProgressFlags(): AgentRunFlags {
+    return {
+      running: this.isRunning(),
+      streaming: this.inner.isStreaming === true,
+      promptRunning: this.pendingPromptCount > 0,
+      bashRunning: this.inner.isBashRunning === true,
+      compacting: this.inner.isCompacting === true,
+      retrying: this.retrying,
+      runningTools: this.activeToolEvents.size,
+      awaitingInput: this.isAwaitingInput(),
+      waitingForMcp: this.mcpPromptWait !== null,
+    };
+  }
+
+  /** What the run is busy with, and how long it has said nothing about it. */
+  getRunLiveness(): AgentRunLiveness {
+    const flags = this.runProgressFlags();
+    const now = Date.now();
+    return {
+      phase: agentRunPhase(flags),
+      lastProgressAt: this.lastProgressAt,
+      noProgressMs: flags.running && this.lastProgressAt !== null
+        ? Math.max(0, now - this.lastProgressAt)
+        : 0,
+      stalledMs: this.stallNotifiedMs,
+      noticeMs: this.livenessNoticeMs,
+      abortMs: this.livenessAbortMs,
+    };
+  }
+
+  /** A run begins: its silence clock starts, and any earlier stall is history. */
+  private beginRunLiveness(): void {
+    this.lastProgressAt = Date.now();
+    this.stallNotifiedMs = 0;
+    this.stallAborted = false;
+  }
+
+  /** A run ended: drop its clock, so an idle session reports no silence at all. */
+  private endRunLiveness(): void {
+    this.lastProgressAt = null;
+    this.stallNotifiedMs = 0;
+    this.stallAborted = false;
+  }
+
+  /**
+   * One look at a running session (lib/agent-run-liveness.ts).
+   *
+   * Deliberately narrow. A run in the phases where the wait belongs to something the app
+   * cannot see inside — a model request, an MCP server still connecting, an extension's
+   * preflight — gets noticed after RUN_STALL_NOTICE_MS of no SDK event, and only stopped
+   * after RUN_STALL_ABORT_MS when that is configured (it is not, by default). A command,
+   * a compaction, a retry backoff, an unanswered dialog, a subagent's report: untouched,
+   * however long they last, because their length is not evidence of a hang — and a
+   * command already has its own bounded timeout (lib/command-timeout.ts).
+   *
+   * The notice is an `agent_stalled` event on the session's SSE stream plus a
+   * `console.warn` in the server log; it changes no state the chat depends on. The stop
+   * goes through the session's own `abort` command — the browser's Stop — so the composer
+   * outbox, the parked prompts, the extension UI and the idle timer are settled the same
+   * way they are for a Stop the person pressed, and the SDK's own `agent_end` /
+   * `agent_settled` close the run. Nothing here emits a lifecycle event of its own.
+   */
+  private checkRunLiveness(): void {
+    if (!this._alive || this.closing) return;
+    if (!this.isRunning()) {
+      this.endRunLiveness();
+      return;
+    }
+    const verdict = decideAgentRunStall(this.runProgressFlags(), {
+      now: Date.now(),
+      lastProgressAt: this.lastProgressAt,
+      thresholds: { noticeMs: this.livenessNoticeMs, abortMs: this.livenessAbortMs },
+      notifiedMs: this.stallNotifiedMs,
+      aborted: this.stallAborted,
+    });
+    if (verdict.kind === "none") return;
+    const flags = this.runProgressFlags();
+    const seconds = Math.round(verdict.noProgressMs / 1000);
+    if (verdict.kind === "notice") {
+      this.stallNotifiedMs = verdict.noProgressMs;
+      console.warn(
+        `[pi-web] session ${this.sessionId}: no SDK progress for ${seconds}s while ${verdict.phase}`
+        + ` (phase ${verdict.phase}, abort ${this.livenessAbortMs > 0 ? `at ${Math.round(this.livenessAbortMs / 1000)}s` : "disabled"})`,
+      );
+      this.emit({
+        type: "agent_stalled",
+        phase: verdict.phase,
+        noProgressMs: verdict.noProgressMs,
+        at: Date.now(),
+        waitingForMcp: flags.waitingForMcp,
+        noticeMs: this.livenessNoticeMs,
+        abortMs: this.livenessAbortMs,
+      });
+      return;
+    }
+    this.stallAborted = true;
+    console.error(
+      `[pi-web] session ${this.sessionId}: stopping a run with no progress for ${seconds}s while ${verdict.phase}`
+      + ` (PI_WEB_RUN_STALL_ABORT_MS=${this.livenessAbortMs})`,
+    );
+    void this.send({ type: "abort" }).catch((error: unknown) => {
+      console.error(
+        `[pi-web] the stalled-run abort for ${this.sessionId} failed:`,
+        error instanceof Error ? error.message : error,
+      );
+    });
   }
 
   /**
@@ -738,6 +878,7 @@ export class AgentSessionWrapper {
       lastCommand: this.lastCommandType !== null && this.lastCommandAt !== null
         ? { type: this.lastCommandType, at: this.lastCommandAt }
         : null,
+      liveness: this.getRunLiveness(),
     };
   }
 
@@ -748,14 +889,28 @@ export class AgentSessionWrapper {
 
   start(): void {
     this.startedAt = Date.now();
+    // One timer per wrapper, for the life of the wrapper: it checks the clock only while
+    // the session runs, so arming it on every boundary (prompt admission, agent_start,
+    // a steer that joins a run, a subagent report) cannot miss one. `unref`ed, so a
+    // quitting process never waits for it.
+    if (this.livenessNoticeMs > 0 || this.livenessAbortMs > 0) {
+      this.livenessTimer = setInterval(() => this.checkRunLiveness(), RUN_LIVENESS_TICK_MS);
+      this.livenessTimer.unref?.();
+    }
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.lastEventType = typeof event.type === "string" ? event.type : null;
       this.lastEventAt = Date.now();
+      // SSE heartbeats are this app's own timer and never reach here; only SDK events
+      // do, and only the ones that say work advanced count as progress.
+      if (isAgentProgressEvent(event)) this.lastProgressAt = Date.now();
       if (event.type === "agent_start") {
         this.agentRunNeedsCompletion = true;
         this.agentRunSettled = false;
         this.runStartedAt ??= Date.now();
         this.lastRunAborted = false;
+        // A run starts its own silence clock and forgets the last run's stall, so a
+        // recovered session can be noticed, and stopped, all over again.
+        this.beginRunLiveness();
         // Cross-window liveness: idle → running must reach other windows'
         // sidebars through the running-events stream, not just this one's SSE.
         notifyRunningChange();
@@ -806,6 +961,9 @@ export class AgentSessionWrapper {
         if (event.aborted === true) this.lastRunOutcome = { status: "aborted" };
         this.composerQueue.wake();
         this.notifyAgentRunComplete();
+        // The run is over: its silence clock is, too. A watchdog that fired for it has
+        // said all it gets to say.
+        this.endRunLiveness();
       }
     });
     this.resetIdleTimer();
@@ -1599,6 +1757,10 @@ export class AgentSessionWrapper {
           };
 
           this.pendingPromptCount += 1;
+          // The admission is the phase a hung extension preflight or an MCP server that
+          // never connects shows up in, so its silence clock starts here, not at
+          // `agent_start` — which such a prompt never reaches.
+          this.beginRunLiveness();
           // A submitted prompt belongs in the list before MCP/preflight or the
           // SDK's first message. Composer warm-up never enters this path.
           this.pendingPromptPreview ??= {
@@ -1758,6 +1920,9 @@ export class AgentSessionWrapper {
           isPromptRunning: this.pendingPromptCount > 0,
           isBashRunning: this.inner.isBashRunning,
           isCompacting: this.inner.isCompacting,
+          // What the run is doing and how long it has said nothing: the client shows a
+          // stalled run as one, and reconciles from here when it missed the event.
+          runLiveness: this.getRunLiveness(),
           autoCompactionEnabled: this.inner.autoCompactionEnabled,
           autoRetryEnabled: this.inner.autoRetryEnabled,
           steeringMode: this.inner.steeringMode,
@@ -2185,6 +2350,12 @@ export class AgentSessionWrapper {
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
+    // The liveness timer is unref'ed, so it cannot hold the process; it must still stop,
+    // because a destroyed wrapper answers nothing and a late abort on one is noise.
+    if (this.livenessTimer) {
+      clearInterval(this.livenessTimer);
+      this.livenessTimer = null;
+    }
     this.composerQueue.dispose();
     this.closingAt ??= Date.now();
     this.disposeMcpHost();
@@ -3598,6 +3769,14 @@ function staleWrapperSnapshot(sessionId: string, wrapper: MaybeStaleWrapper): De
     eventListeners: 0,
     lastEvent: null,
     lastCommand: null,
+    liveness: {
+      phase: "idle",
+      lastProgressAt: null,
+      noProgressMs: 0,
+      stalledMs: 0,
+      noticeMs: RUN_STALL_NOTICE_MS,
+      abortMs: RUN_STALL_ABORT_MS,
+    },
   };
 }
 

@@ -32,7 +32,9 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import { mergeSessionStats, type SessionFileStats } from "@/lib/session-stats";
 import { userMessageKey } from "@/lib/prompt-recovery";
 import { AgentEventConnection } from "@/lib/agent-event-connection";
-import { isNestedToolExecutionEvent, isSystemMessageEvent } from "@/lib/agent-event-wire";
+import { AGENT_EVENT_HEARTBEAT_MS, isNestedToolExecutionEvent, isSystemMessageEvent } from "@/lib/agent-event-wire";
+import type { AgentRunLiveness, AgentRunPhase } from "@/lib/agent-run-liveness";
+import { formatTurnDurationCompact } from "@/lib/turn-duration";
 import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
 import { CODEMODE_TOOL_NAME, getCodemodeProgress } from "@/lib/codemode-view";
 import { updateExtensionWidgets } from "@/lib/extension-widgets";
@@ -114,6 +116,8 @@ type AgentStateResponse = {
   isPromptRunning?: boolean;
   isBashRunning?: boolean;
   isCompacting?: boolean;
+  /** The server's phase and silence for the run; a stalled run reconciles from here. */
+  runLiveness?: AgentRunLiveness | null;
   /** In-memory partial assistant message, present while a run is streaming. */
   streamingMessage?: AgentMessage;
   extensionStatuses?: ExtensionStatusItem[];
@@ -168,6 +172,17 @@ export type AgentPhase =
   | { kind: "running_command" }
   | { kind: "running_tools"; tools: { id: string; name: string; progress?: string }[] }
   | null;
+
+/**
+ * A run the server says is busy, that has produced no event of its own for a while, in a
+ * phase where only a request the app cannot see inside is outstanding (lib/agent-run-liveness.ts).
+ * It is the difference between "Waiting for model…" forever and a number the user can act on.
+ */
+export interface AgentRunStall {
+  phase: AgentRunPhase;
+  noProgressMs: number;
+  at: number;
+}
 
 export interface CompactResultInfo {
   reason: "manual" | "threshold" | "overflow" | "auto" | string;
@@ -257,6 +272,14 @@ const AGENT_STATE_RECONCILE_MS = 15_000;
 const BASH_STATE_RECONCILE_MS = 1_000;
 const EVENT_STREAM_READY_TIMEOUT_MS = 60_000;
 const EVENT_STREAM_RECONNECT_DELAY_MS = 1_000;
+/**
+ * A ready stream that delivered nothing at all — heartbeats included — for three of them
+ * is dead: a half-open TCP connection, a proxy that dropped it, a phone whose tab the
+ * browser froze. `EventSource` does not notice those (its socket stays OPEN and no `error`
+ * fires), so without this the chat sits on a stream that will never deliver again, and the
+ * only recovery left is the 15-second state poll, which reports the run as running.
+ */
+const EVENT_STREAM_STALE_AFTER_MS = AGENT_EVENT_HEARTBEAT_MS * 3;
 const SESSION_LEASE_RENEW_INTERVAL_MS = 30_000;
 // Retry temporary model-list failures without requiring a page refresh.
 const MODELS_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
@@ -425,6 +448,31 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [modelSwitching, setModelSwitching] = useState(false);
   const [isCompacting, setIsCompacting] = useState(false);
+  /**
+   * A run the server reports busy with nothing arriving (lib/agent-run-liveness.ts). The
+   * server owns the clock — it sees the SDK's events — and this is only its mirror: set by
+   * the `agent_stalled` event and by any state read that reports silence, cleared when a
+   * read says the run is moving again, when a run boundary passes, and on a session switch.
+   */
+  const [runStall, setRunStall] = useState<AgentRunStall | null>(null);
+  /**
+   * Mirror the server's liveness read. A state response with no silence, or one whose run
+   * moved on, clears the notice: a run that resumes must not stay marked stuck, and a
+   * client that reconnects mid-run learns the stall from `get_state` alone.
+   */
+  const syncRunStall = useCallback((state?: AgentStateResponse | null) => {
+    const liveness = state?.runLiveness;
+    if (!liveness || liveness.phase === "idle" || liveness.stalledMs <= 0) {
+      setRunStall((previous) => (previous === null ? previous : null));
+      return;
+    }
+    const next: AgentRunStall = { phase: liveness.phase, noProgressMs: liveness.stalledMs, at: Date.now() };
+    setRunStall((previous) => (
+      previous && previous.phase === next.phase && previous.noProgressMs === next.noProgressMs
+        ? previous
+        : next
+    ));
+  }, []);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
   const { compactNotice, setCompactNotice, reportCompactFailure } = useCompactNotice({ compactError, setCompactError, setCompactResult });
@@ -538,6 +586,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       ),
       readinessTimeoutMs: EVENT_STREAM_READY_TIMEOUT_MS,
       reconnectDelayMs: EVENT_STREAM_RECONNECT_DELAY_MS,
+      // The connection reconnects a silent stream; `connected` then re-snapshots the run,
+      // and the reconcile below catches anything the outage swallowed.
+      staleAfterMs: EVENT_STREAM_STALE_AFTER_MS,
       onUnexpectedError: (error) => {
         console.error("Failed to maintain the agent event stream:", error);
       },
@@ -641,6 +692,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setRetryInfo(null);
     setSummarizationRetry(null);
     setAgentPhase(null);
+    setRunStall(null);
     setContextUsage(null);
     setSystemPrompt(null);
     setExtensionStatuses([]);
@@ -1566,6 +1618,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // would otherwise leave the "Stop compaction" UI stuck. No state
       // (wrapper destroyed) means nothing is compacting.
       setIsCompacting(state?.isCompacting ?? false);
+      syncRunStall(state);
       setQueuedMessages(previous => mergeQueuedMessages(previous, state?.queuedMessages));
       const busy = data.running && state
         && (state.isStreaming || state.isPromptRunning || state.isCompacting);
@@ -1585,7 +1638,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch {
       // Network still down — the next poll / visibility / online tick retries.
     }
-  }, [finishPromptWithoutStream, seedStreamingSnapshot, syncLiveModel]);
+  }, [finishPromptWithoutStream, seedStreamingSnapshot, syncLiveModel, syncRunStall]);
 
   // Recovery net for missed SSE events: while the agent is running, verify
   // against the server periodically and whenever the tab returns to the
@@ -1641,18 +1694,38 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "agent_start":
         cancelEventStreamGrace();
         beginRunTiming();
+        // A run begins: the last run's silence is over, whatever it was.
+        setRunStall(null);
         sdkAgentActiveRef.current = true;
         agentRunningRef.current = true;
         setAgentRunning(true);
         setAgentPhase({ kind: "waiting_model" });
         dispatch({ type: "start" });
         break;
+      case "agent_stalled": {
+        // The server saw no SDK event for a run that is waiting on a request it cannot
+        // see inside. Nothing here changes the run's state: it says so, out loud, in the
+        // status line and as a notice, and leaves Stop to the user.
+        // A stall of a run this view has already finished is stale (a buffered frame after
+        // a reconnect, an event that straddled a switch): the same guard the streaming
+        // cases use keeps a late event from dressing up a settled session as working.
+        if (!agentRunningRef.current) break;
+        const noProgressMs = typeof event.noProgressMs === "number" && event.noProgressMs > 0 ? event.noProgressMs : 0;
+        const phase = (typeof event.phase === "string" ? event.phase : "waiting_model") as AgentRunPhase;
+        setRunStall({ phase, noProgressMs, at: Date.now() });
+        addNotice({
+          type: "warning",
+          message: t("chat.stalledNotice", { duration: formatTurnDurationCompact(noProgressMs, { withSeconds: true }) }),
+        });
+        break;
+      }
       case "agent_end":
         // One logical prompt can emit multiple agent_end events before retrying,
         // compacting, or continuing messages queued by extension handlers.
         // Keep the stream open until prompt_done/agent_settled and the idle grace.
         if (!agentRunningRef.current) break;
         setAgentPhase(null);
+        setRunStall(null);
         setRetryInfo(null);
         dispatch({ type: "end" });
         {
@@ -1687,6 +1760,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "agent_settled": {
         const agentWasActive = sdkAgentActiveRef.current;
         sdkAgentActiveRef.current = false;
+        setRunStall(null);
         if (!agentWasActive || rpcPromptPendingRef.current) break;
 
         const sid = sessionIdRef.current;
@@ -1704,6 +1778,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           const runId = promptRunIdRef.current;
           const promptWasPending = rpcPromptPendingRef.current;
           rpcPromptPendingRef.current = false;
+          setRunStall(null);
           optimisticUserMessageKeyRef.current = null;
           const firstNotification = notifyPromptStage(runId, event.aborted === true);
           if (!promptWasPending && !firstNotification) break;
@@ -1919,7 +1994,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleForkAgentEvent(event);
         break;
     }
-  }, [addNotice, beginRunTiming, cancelEventStreamGrace, endRunTiming, handleExtensionUiRequest, handleForkAgentEvent, loadSession, notifyPromptStage, onAgentEnd, reportCompactFailure, scheduleEventStreamClose, scrollToBottom, setCompactNotice, settleUiStage, syncLiveModel]);
+  }, [addNotice, beginRunTiming, cancelEventStreamGrace, endRunTiming, handleExtensionUiRequest, handleForkAgentEvent, loadSession, notifyPromptStage, onAgentEnd, reportCompactFailure, scheduleEventStreamClose, scrollToBottom, setCompactNotice, settleUiStage, syncLiveModel, t]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -3186,6 +3261,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     defaultModel: newSessionDefaultModel,
     savedDefaultThinkingLevel,
     agentPhase,
+    runStall,
     isNew,
     editEntryId,
     promptAnchorActive,

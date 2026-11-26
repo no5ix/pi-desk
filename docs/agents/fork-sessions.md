@@ -301,3 +301,66 @@ Every assistant reply also carries its own time next to its model name
 line by line; the footer's sparser `showTimestamp` rule is unchanged.
 Pinned by `lib/turn-duration.test.mjs`, `components/MessageView.turn-duration.test.mjs`
 and `components/MessageView.subagent-report.test.mjs`.
+
+## Run liveness: a stuck run says so, and a long one does not (`lib/agent-run-liveness.ts`)
+
+A session can report itself busy forever, correctly. The SDK keeps `isStreaming` true and the
+wrapper's prompt promise outstanding while the provider request that was to answer never does
+(a socket the provider stopped feeding, a stdio MCP server hung in `before_agent_start`, an
+extension awaiting a promise nobody resolves). SSE heartbeats keep flowing — they are this
+app's own 30 s timer, not the model's — so the browser reconnects happily, reconciles against
+`get_state`, is told "busy", and prints `Waiting for model…` for hours. Nothing in the flags
+separates that from a slow request; **the run's own events do**, and only they are counted.
+
+- **Progress** is an SDK event in `AGENT_PROGRESS_EVENT_TYPES` (message, tool, bash, compaction,
+  retry, turn). `agent_start` / `agent_end` / `agent_settled` / `prompt_done` are boundaries, not
+  progress, and a heartbeat is a transport keep-alive that counts nowhere.
+- **Phase** (`agentRunPhase`) is read from the wrapper's live flags: `awaiting_input` (a blocking
+  extension dialog), `bash`, `tool`, `compaction`, `retry_backoff`, `mcp_wait`, `waiting_model`,
+  `prompt_admission`. A tool outranks the streaming turn it lives in; a dialog outranks everything.
+- Only `waiting_model`, `mcp_wait` and `prompt_admission` are **stall-eligible**: the wait belongs
+  to a request the app cannot see inside. A command, a compaction, a retry backoff, an unanswered
+  dialog and a subagent's report are untouched however long they last — their length is not
+  evidence of a hang, and a command is bounded by its own timeout (next section).
+- After `PI_WEB_RUN_STALL_NOTICE_MS` (default 5 min) of silence the wrapper emits
+  **`agent_stalled`** `{ phase, noProgressMs, at }` once per run and logs a `console.warn`. The wire
+  forwards it (whitelist-by-omission), `useAgentSession` mirrors it into `runStall`, and the
+  composer's status line names the phase with the silence attached (`chat.stalledModel` …) in the
+  palette's warning ink with the running pulse stopped (`.chat-phase-stalled`). It is cleared at
+  `agent_start`, `agent_end`, `agent_settled`, `prompt_done` and on a session switch, and a state
+  read that reports movement clears it — so a reconnecting page learns the stall from
+  `get_state.runLiveness` alone. It changes no run state and emits no lifecycle event.
+- `PI_WEB_RUN_STALL_ABORT_MS` (default **0** — off) additionally stops the run through the session's
+  own `abort` command, i.e. the browser's Stop: the composer outbox pauses, parked prompts return,
+  extension UI unwinds, the SDK's own `agent_end`/`agent_settled` close the run, and exactly one
+  completion notification goes out. Never a second abort for the same run; the clock resets at the
+  next `agent_start`, so a recovered session answers the next prompt.
+- `get_state.runLiveness` and `getDebugSnapshot().liveness` carry `{ phase, lastProgressAt,
+  noProgressMs, stalledMs, noticeMs, abortMs }`; the Debug panel is where a stall is read after the fact.
+
+A silent half-open event stream is the client's half of the same failure. `AgentEventConnection`
+has always had `staleAfterMs`, and `useAgentSession` now passes `AGENT_EVENT_HEARTBEAT_MS * 3`:
+a ready stream that delivered nothing at all for three heartbeats is dead (half-open TCP, a proxy
+that dropped it, a phone whose tab the browser froze — `EventSource` reports none of those), so it
+reconnects and re-snapshots. The 15 s reconciliation stays the net for missed terminal events.
+
+Pinned by `lib/agent-run-liveness.test.mjs` (phases, progress, thresholds, one-escalation) and
+`lib/rpc-manager-run-liveness.test.mjs` (normal run, hung request, six hours of streaming, an
+hour-long tool, a parked dialog, the opt-in stop and the run after it, a lost `agent_end`, a lost
+`agent_settled`, late events, Stop mid-request, a compaction).
+
+## Commands are bounded (`lib/command-timeout.ts`, `lib/project-command-env.ts`)
+
+pi's shell tool has **no default timeout**: a command that never returns (a test runner waiting
+on a server it started, a browser it never closed, a `watch` mode) holds the agent run, the
+composer and the window. Measured in a real session: one hung `node e2e/…` occupied a run for
+**7849 seconds**. So the fork's shell tool names a default in the `timeout` parameter description
+the model reads (pi's own text promises the opposite, and a model that believes it never passes
+one) and applies it when the model left `timeout` out — `PI_WEB_COMMAND_TIMEOUT_MS`, default 30
+minutes, `0` restores pi's behaviour. The default goes *into* the spawn, so pi kills the process
+tree at the deadline; the operations' existing grace (`#647`) then bounds a descendant the kill
+missed, and its grace timer is `unref`ed so it can never hold a quitting process. The model's own
+timeout always wins, longer or shorter: a long build is not a hang. Both entry points are covered
+— the tool (`createProjectCommandBashExtension`) and the composer's `!command`
+(`createProjectCommandBashOperations`). Pinned by `lib/command-timeout.test.mjs` and the added
+cases in `lib/project-command-env.test.mjs`.
