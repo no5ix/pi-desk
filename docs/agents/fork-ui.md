@@ -123,10 +123,15 @@ With the phone's keyboard up the editor is measured against `--app-viewport-heig
 prompt is typed in the room above the keyboard and never under it. The same mark turned 180°
 is the way back, and Escape in the field is the keyboard's way back — only while nothing is
 streaming, so a running agent keeps its Stop. The corner arrives with the **second** line — typed or wrapped — and leaves with it.
-The count comes from `measureComposerTextLines` with the box released, and it takes the
-element's own vertical padding (a line's 40%, floored at 6px) off the measured content
-before rounding: a raw round counted a one-line prompt as two, so the corner rose over a
-resting card (the report: "there's only one line, the expansion icon should disappear").
+The count comes from `measureComposerTextLines` with the box released, and it subtracts the
+element's own computed vertical padding from the measured `scrollHeight` before dividing by the
+line box — exactly, not by an allowance, so no padding rule can raise the corner. A raw round
+counted a one-line prompt as two (the corner's own reserved `padding-top` rode on the height),
+so the corner rose over a resting card and stayed after the card was folded (the reports:
+"there's only one line, the expansion icon should disappear"; "when I click the collapse icon,
+the expansion icon should disappear if there's only one line"). Folding the card re-measures on
+the resting box, and `cornerVisible` is `expanded || textLines > 1`, so a one-line prompt leaves
+the corner out.
 The corner is not drawn where there is no room
 to grow: the quote composer's card and a docked side chat get none. The choice is remembered
 per device (`APP_PREF_KEYS.composerExpanded`) because it is a way of writing, not a per-session

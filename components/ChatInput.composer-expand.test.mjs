@@ -81,8 +81,11 @@ test("the corner is measured out of the box, released and restored", () => {
     "the height is read between the release and the restore: nothing yields to the browser there, so no frame is painted released (a released box that paints is the flash the smooth growth was asked to replace)");
   assert.ok(/if \(value\) style\.setProperty\(property, value, priority\);\s*\n\s*else style\.removeProperty\(property\);/.test(body),
     "every property is put back, an empty one removed rather than written as \"\"");
-  assert.ok(/const slack = Math\.max\(6, line \* 0\.4\);\s*\n\s*return Math\.max\(1, Math\.round\(\(content - slack\) \/ line\)\);/.test(body),
-    "one line is one line-height, and the box's own vertical padding (plus a subpixel line box) is taken off before the rounding: a raw round counted a one-line prompt as two, and the corner rose over a resting card");
+  assert.ok(/const text = Math\.max\(0, content - paddingTop - paddingBottom\);\s*\n\s*return Math\.max\(1, Math\.round\(text \/ line\)\);/.test(body),
+    "one line is one line-height, and the box's own vertical padding is subtracted exactly (the element's computed padding, not a guessed allowance): a padding rule must never raise the corner, because a one-line prompt counted as two kept the corner over a resting card and kept it there after the fold");
+  for (const read of ["paddingTop", "paddingBottom", "lineHeight", "fontSize"]) {
+    assert.ok(body.includes(`computed?.${read}`), `the count reads the box's own ${read}, so any font size and any padding shape is answered by the element`);
+  }
   const call = /const measureTextLines = useCallback\(\(\) => \{[\s\S]*?\n  \}, \[\]\);/.exec(chatInput);
   assert.ok(call, "the composer wraps the measurement in a callback");
   assert.ok(/measureComposerTextLines\(ta\)/.test(call[0]), "it is the module's function doing the counting");
