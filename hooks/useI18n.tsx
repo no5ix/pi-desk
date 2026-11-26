@@ -4,14 +4,14 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { APP_PREF_KEYS, getPref, setPref } from "@/lib/app-prefs";
 import { getLocalePlugin, getSupportedLocales } from "@/lib/i18n/registry";
 import { translateMessage } from "@/lib/i18n/format";
-import type { Locale, LocalePlugin, TranslationParams } from "@/lib/i18n/types";
+import type { Locale, LocalePlugin, Translate, TranslationParams } from "@/lib/i18n/types";
 
 const defaultLocale: Locale = "en";
 
 interface I18nContextValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;
-  t: (key: string, params?: TranslationParams) => string;
+  t: Translate;
   supportedLocales: LocalePlugin[];
 }
 

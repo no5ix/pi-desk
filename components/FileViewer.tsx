@@ -126,9 +126,9 @@ interface SelectedLineRange {
   endLine: number;
 }
 
-function MentionIcon() {
+function MentionIcon({ size = 14 }: { size?: number }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="4" />
       <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
     </svg>
@@ -1651,7 +1651,7 @@ function TextFileViewer({
                 disabled={!onAtMention && !onMentionLines}
                 className="file-viewer-icon-button"
               >
-                <MentionIcon />
+                <MentionIcon size={14} />
               </button>
             )}
             {effectiveDisplayMode === "source" && !isBinary && (

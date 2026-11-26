@@ -48,11 +48,10 @@ import {
 import { isImeComposing } from "@/lib/ime";
 import { itemsToSwitch, projectTrustReloadKey } from "./settings-ui-helpers";
 import { MarkdownBody } from "./MarkdownBody";
+import type { Translate } from "@/lib/i18n/types";
 import { readJsonOrThrow } from "@/lib/fetch-json";
 
 type SkillScope = "global" | "project" | "path";
-type Translate = ReturnType<typeof useI18n>["t"];
-
 /**
  * A skill's state in the project that is open, for the "This project" row.
  *

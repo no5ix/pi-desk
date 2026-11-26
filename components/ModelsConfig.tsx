@@ -233,10 +233,6 @@ const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messag
 
 // ── Form field helpers ────────────────────────────────────────────────────────
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <ConfigField label={label}>{children}</ConfigField>;
-}
-
 const inputStyle = {
   padding: "6px 9px",
   background: "var(--bg-panel)",
@@ -470,7 +466,7 @@ function ProviderDetail({ name, editingName, fallbackLabel, provider, onChange, 
         <EnabledModelsProviderSwitchNote providerId={name} controller={enabledModels} id={switchNoteId} />
       </div>
 
-       <Field label={t("i18n.providerId")}>
+       <ConfigField label={t("i18n.providerId")}>
         <TextInput value={editingName} onChange={onEditingNameChange} placeholder="provider-id" mono />
         {editingName !== name && editingName.trim() && (
           <button onClick={() => onRename(editingName.trim())}
@@ -478,36 +474,36 @@ function ProviderDetail({ name, editingName, fallbackLabel, provider, onChange, 
              {t("i18n.rename")}
           </button>
         )}
-      </Field>
+      </ConfigField>
 
       {/* models.json `name`: the label the sidebar and the selector show (#1567). */}
-      <Field label={t("models.providerDisplayName")}>
+      <ConfigField label={t("models.providerDisplayName")}>
         <TextInput value={provider.name ?? ""} onChange={(v) => onChange(setProviderDisplayName(provider, v))}
           placeholder={fallbackLabel} />
-      </Field>
+      </ConfigField>
 
-      <Field label="Base URL">
+      <ConfigField label="Base URL">
         <TextInput value={provider.baseUrl ?? ""} onChange={(v) => set("baseUrl", v || undefined)}
           placeholder="https://api.example.com/v1" inputMode="url" mono />
         <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginTop: 2 }}>
           Leave empty for a built-in provider to use the endpoint pi ships
         </span>
         <BuiltinProviderNotice baseUrl={provider.baseUrl} openableIds={builtinProviderIds} onOpen={onOpenBuiltinProvider} />
-      </Field>
+      </ConfigField>
 
-      <Field label="API Key">
+      <ConfigField label="API Key">
         <SecretTextInput value={provider.apiKey ?? ""} onChange={(v) => set("apiKey", v || undefined)}
           placeholder="ENV_VAR_NAME, !shell-command, or literal key" mono />
         <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginTop: 2 }}>
           Prefix with <code style={{ fontFamily: "var(--font-mono)" }}>!</code> to run a shell command, or use an env var name
         </span>
-      </Field>
+      </ConfigField>
 
-      <Field label="API">
+      <ConfigField label="API">
         <Select label="API" value={provider.api ?? "openai-completions"} onChange={(v) => set("api", v)} options={API_OPTIONS} required />
-      </Field>
+      </ConfigField>
 
-      <Field label="Headers">
+      <ConfigField label="Headers">
         <HeaderListEditor
           headers={provider.headers}
           onChange={(headers) => set("headers", headers)}
@@ -515,7 +511,7 @@ function ProviderDetail({ name, editingName, fallbackLabel, provider, onChange, 
         <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginTop: 2 }}>
           Added to every request from this provider (e.g. User-Agent). Useful for gateways with bot detection.
         </span>
-      </Field>
+      </ConfigField>
 
       {modelOverrides.length > 0 && (
         <section className="models-override-section">
@@ -961,7 +957,7 @@ function ModelDetail({
       hintText = t(unsaved ? "models.specUnsaved" : "models.specSaved");
     }
     return (
-      <Field label={label}>
+      <ConfigField label={label}>
         <NumInput value={draftValue !== undefined ? String(draftValue) : ""}
           onChange={(v) => set(field, v ? parseInt(v) : undefined)}
           placeholder={overrideValue !== undefined ? overrideValue.toLocaleString() : t("models.specNotSet")} />
@@ -969,7 +965,7 @@ function ModelDetail({
           {hintText}
           {unsaved && hint.kind !== "own" && <span className="models-spec-unsaved">{t("models.specUnsavedTag")}</span>}
         </span>
-      </Field>
+      </ConfigField>
     );
   };
   const setCost = (key: ModelCostKey, value: string) => {
@@ -1225,8 +1221,8 @@ function ModelDetail({
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <Field label="ID *"><TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono /></Field>
-        <Field label={t("config.name")}><TextInput value={model.name ?? ""} onChange={(v) => set("name", v || undefined)} placeholder={t("models.displayNamePlaceholder")} /></Field>
+        <ConfigField label="ID *"><TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono /></ConfigField>
+        <ConfigField label={t("config.name")}><TextInput value={model.name ?? ""} onChange={(v) => set("name", v || undefined)} placeholder={t("models.displayNamePlaceholder")} /></ConfigField>
       </div>
 
       <div style={{ padding: "2px 0" }}>
@@ -1320,9 +1316,9 @@ function ModelDetail({
           {costEditing ? (
             <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
               {costFields.map(({ key, label }) => (
-                <Field key={key} label={label}>
+                <ConfigField key={key} label={label}>
                   <NumInput value={costDraft[key]} onChange={(v) => setCost(key, v)} placeholder="0" />
-                </Field>
+                </ConfigField>
               ))}
               {hasModelCostDraftValue(costDraft) && !parseCompleteModelCost(costDraft) && (
                 <div aria-live="polite" style={{ gridColumn: "1 / -1", color: "var(--warning)", fontSize: "var(--fs-micro)" }}>
@@ -1384,19 +1380,19 @@ function ModelDetail({
 
         {advancedOpen && (
           <div id="model-advanced-settings" style={{ display: "flex", flexDirection: "column", gap: 14, padding: "4px 0 16px" }}>
-            <Field label={t("models.baseUrlOverride")}>
+            <ConfigField label={t("models.baseUrlOverride")}>
               <TextInput value={model.baseUrl ?? ""} onChange={(v) => set("baseUrl", v.trim() || undefined)}
                 placeholder={provider.baseUrl ?? t("models.providerDefaults")} inputMode="url" mono />
               <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginTop: 2 }}>
                 {t("models.baseUrlHelp")}
               </span>
-            </Field>
+            </ConfigField>
 
-            <Field label={t("models.apiOverride")}>
+            <ConfigField label={t("models.apiOverride")}>
               <Select label={t("models.apiOverride")} value={model.api ?? ""} onChange={(v) => set("api", v || undefined)} options={API_OPTIONS} />
-            </Field>
+            </ConfigField>
 
-            <Field label={t("models.headers")}>
+            <ConfigField label={t("models.headers")}>
               <HeaderListEditor
                 headers={model.headers}
                 onChange={(headers) => set("headers", headers)}
@@ -1404,7 +1400,7 @@ function ModelDetail({
               <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginTop: 2 }}>
                 {t("models.headersHelp")}
               </span>
-            </Field>
+            </ConfigField>
 
             {model.reasoning && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1806,10 +1802,10 @@ function ApiKeyDetail({ provider, onRefresh, enabledModels, contextSettings }: {
       </ConfigDetailHeader>
 
       {llama && (
-        <Field label={t("models.llamaRouterUrl")}>
+        <ConfigField label={t("models.llamaRouterUrl")}>
           <input type="url" style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} value={serverUrl} placeholder={DEFAULT_LLAMA_ROUTER_URL}
             onChange={(event) => setServerUrl(event.target.value)} spellCheck={false} />
-        </Field>
+        </ConfigField>
       )}
       {!llama && !provider.configured && (
         <p style={{ margin: 0, fontSize: "var(--fs-caption)", color: "var(--text-muted)", lineHeight: 1.5 }}>

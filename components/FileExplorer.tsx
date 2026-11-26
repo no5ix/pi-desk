@@ -18,9 +18,9 @@ import { droppedItems } from "@/hooks/useDragDrop";
 import { buildSearchTree, type SearchTreeNode } from "@/lib/search-tree";
 import type { FileTreeHiddenReason } from "@/lib/file-tree-visibility";
 import { useI18n } from "@/hooks/useI18n";
+import type { Translate } from "@/lib/i18n/types";
 import { APP_PREF_KEYS, getPref, setPref } from "@/lib/app-prefs";
 import { isImeComposing } from "@/lib/ime";
-type Translate = ReturnType<typeof useI18n>["t"];
 
 /** Why a listed entry is normally left out; only listings with `hidden=1` report it. */
 type HiddenReason = Exclude<FileTreeHiddenReason, "always">;
