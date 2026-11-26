@@ -5,7 +5,7 @@ import {
   tailscaleBinaries,
   type TailscaleStatus,
 } from "./tailscale-status";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "./errors.ts";
 
 /**
  * Tailscale Serve at server startup.

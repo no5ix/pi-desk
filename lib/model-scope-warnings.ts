@@ -1,4 +1,4 @@
-import { isThinkingLevel } from "./thinking-levels";
+import { isThinkingLevel } from "./thinking-levels.ts";
 
 /**
  * Structured `enabledModels` scope warnings, shared by the server-side

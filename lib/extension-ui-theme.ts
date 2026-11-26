@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getPackageDir, Theme } from "@earendil-works/pi-coding-agent";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "./errors.ts";
 
 // Extension components, widgets and statuses take a pi Theme; the page renders
 // their lines through `AnsiText`. pi-web answers as a terminal that reports no

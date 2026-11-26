@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PREVIEW_RUNTIME_PATH, type PreviewRuntime } from "./html-preview";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "./errors.ts";
 
 // Loads public/preview-runtime/ once per page. The page fetches it (same
 // origin) because the sandboxed preview frames cannot: Chromium blocks their

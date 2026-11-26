@@ -18,7 +18,7 @@
  * (macOS TCC denies Desktop, Documents and Downloads) and grants file access. Nothing is
  * adopted on the dialog's own authority.
  */
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 export type ProjectDirectoryChoice =
   | { status: "picked"; cwd: string }

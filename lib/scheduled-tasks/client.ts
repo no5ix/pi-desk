@@ -1,5 +1,5 @@
 import type { ScheduledRun, ScheduledTaskView } from "./types";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "../errors.ts";
 
 /** Browser-side wrappers for /api/scheduled-tasks. Import nothing server-only here. */
 

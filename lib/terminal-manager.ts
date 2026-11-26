@@ -4,7 +4,7 @@ import type { IPty } from "node-pty";
 import { samePath } from "./paths";
 import { resolveTerminalShell } from "./terminal-settings";
 import type { DebugServerGlobal } from "./debug-types";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "./errors.ts";
 
 export type TerminalEvent =
   | { type: "output"; data: string; offset: number; reset?: boolean }

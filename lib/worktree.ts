@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve } from "path";
 import { promisify } from "util";
 import { allowFileRoot } from "./allowed-roots";
 import { samePath, toNativePath } from "./paths";
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 const execFileAsync = promisify(execFile);
 

@@ -1,4 +1,4 @@
-import { isRecord } from "./is-record";
+import { isRecord } from "./is-record.ts";
 // Tool results carry an opaque `details` payload next to their content. Pi-web
 // renders only a handful of its fields, but extensions are free to store
 // anything there — browser-automation tools persist a full DOM outline per

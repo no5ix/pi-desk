@@ -11,7 +11,7 @@ import {
   type ResponseHead,
 } from "./frames.ts";
 import { HandshakeState, base64UrlDecode, type KeyPair, type Transport } from "./noise.ts";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "../errors.ts";
 
 /**
  * The phone end of the relay (docs/remote-relay.md): pairing with a QR ticket,

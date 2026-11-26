@@ -10,8 +10,8 @@ import { findWebPasswordField } from "./mcp-transport";
 import { loadPiSdkInternals, type PiSdkInternals } from "./pi-sdk-internals";
 import { getProjectTrustStatus } from "./project-trust";
 import { hasJsonContentType, isApiRequestAllowed } from "./request-security";
-import { errorMessage } from "./errors";
-import { isRecord } from "./is-record";
+import { errorMessage } from "./errors.ts";
+import { isRecord } from "./is-record.ts";
 
 // The checks a route makes before it connects one `mcp.json` entry outside any
 // session: Settings › MCP's Test (`POST /api/mcp/test`) and its sign-in

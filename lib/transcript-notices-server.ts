@@ -3,7 +3,7 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentUsage, SessionEntry } from "./types";
 import { withTranscriptNotices, type TranscriptNotice } from "./transcript-notices";
-import { isRecord } from "./is-record";
+import { isRecord } from "./is-record.ts";
 
 // The notices pi's TUI shows when `showCacheMissNotices` is on (#1265), derived
 // from session entries so a reload, a reconnect or an older page shows the same

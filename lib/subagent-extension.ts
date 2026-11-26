@@ -13,7 +13,7 @@ import {
 } from "./subagents";
 import { MAX_SUBAGENT_INPUT_BYTES, MAX_SUBAGENT_INPUT_FILES } from "./subagent-input";
 import { worktreeHasUncommittedFiles } from "./worktree";
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 export const HOST_SUBAGENT_EXTENSION_NAME = "pi-web-subagents";
 const HOST_SUBAGENT_EXTENSION_PATH = `<inline:${HOST_SUBAGENT_EXTENSION_NAME}>`;

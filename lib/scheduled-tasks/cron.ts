@@ -1,6 +1,6 @@
 import { Cron } from "croner";
 import { MIN_INTERVAL_MINUTES, ScheduledTaskValidationError } from "./types";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "../errors.ts";
 
 /** How many upcoming runs are compared to find the shortest gap. */
 const INTERVAL_SAMPLE = 100;

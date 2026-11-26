@@ -24,7 +24,7 @@ import { realPathOrResolved } from "./paths";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { announceAttention, announceRunEnd } from "./task-completion-server";
 import type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "./errors.ts";
 export type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 import { isVerboseLogging } from "../bin/pi-web-options.js";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
@@ -122,7 +122,7 @@ import {
 } from "./chat-workspace-policy";
 import { ComposerQueue } from "./composer-queue";
 import type { PendingComposerMessage } from "./composer-queue-types";
-import { isThinkingLevel } from "./thinking-levels";
+import { isThinkingLevel } from "./thinking-levels.ts";
 
 // ============================================================================
 // Types
@@ -3170,6 +3170,16 @@ function trackStartingSession(cwd: string): () => void {
 
 export function getRpcSession(sessionId: string): AgentSessionWrapper | undefined {
   return getRegistry().get(sessionId);
+}
+
+/**
+ * The session's wrapper while it is alive, for reads that should come from its in-memory
+ * `SessionManager` rather than the file. A closing wrapper is left out: its replacement may
+ * already be reading the file.
+ */
+export function getLiveRpcSession(sessionId: string): AgentSessionWrapper | undefined {
+  const rpc = getRpcSession(sessionId);
+  return rpc?.isAlive() ? rpc : undefined;
 }
 
 /**

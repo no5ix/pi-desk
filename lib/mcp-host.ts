@@ -31,8 +31,8 @@ import { hasParentDirectorySegment, isPathWithinRoots, resolveRealRoots } from "
 import type { McpTransport, PiSdkInternals } from "./pi-sdk-internals";
 import { mayReadProjectConfigNow } from "./project-trust";
 import { cancellableDelay } from "./cancellable-delay";
-import { errorMessage } from "./errors";
-import { isRecord } from "./is-record";
+import { errorMessage } from "./errors.ts";
+import { isRecord } from "./is-record.ts";
 
 export { canonicalJson };
 

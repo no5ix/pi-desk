@@ -12,7 +12,7 @@ import type { PluginScope, PluginUpdateResult } from "@/lib/api-types";
 import { nodeCliInvocation } from "./node-cli";
 import { parseNpmSource } from "./npm-source";
 import { getProjectTrustStatus } from "./project-trust";
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 const execFileAsync = promisify(execFile);
 

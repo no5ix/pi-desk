@@ -13,8 +13,8 @@ import {
   type SessionUiState,
   type SessionUiStateRequest,
 } from "./session-ui-state-shared";
-import { errorCode } from "./errors";
-import { errorMessage } from "./errors";
+import { errorCode } from "./errors.ts";
+import { errorMessage } from "./errors.ts";
 
 // The sidebar's pins, archive, project order and project names
 // (`lib/session-ui-state-shared.ts` has the rules) in `pi-web-session-state.json`

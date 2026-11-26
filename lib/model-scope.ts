@@ -10,7 +10,7 @@ import {
   findUnauthenticatedProvidersForPattern,
   type ModelScopeWarning,
 } from "./model-scope-warnings";
-import { isThinkingLevel } from "./thinking-levels";
+import { isThinkingLevel } from "./thinking-levels.ts";
 
 /**
  * Model scoping shared by the UI selector and AgentSession startup.

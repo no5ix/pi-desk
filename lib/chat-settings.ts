@@ -1,4 +1,4 @@
-import { isRecord } from "./is-record";
+import { isRecord } from "./is-record.ts";
 import { getPiWebSettingsPath, readStored, updatePiWebSettings } from "./artifact-settings";
 import {
   CHAT_ALLOWED_TOOLS_MAX,

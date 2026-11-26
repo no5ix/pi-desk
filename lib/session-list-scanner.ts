@@ -12,7 +12,7 @@ import { createInterface } from "node:readline";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { attachmentAwareTitle } from "./chat-attachments";
-import { isRecord } from "./is-record";
+import { isRecord } from "./is-record.ts";
 import { userImageDisplayText, userMessageImageCount } from "./user-image-display";
 
 export interface ScannedSessionInfo {

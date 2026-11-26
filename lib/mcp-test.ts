@@ -24,7 +24,7 @@ import type {
   StdioTransport,
 } from "./pi-sdk-internals";
 import { cancellableDelay } from "./cancellable-delay";
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 // Settings › MCP's Test (ADR 0006): connect one `mcp.json` entry once, outside
 // any session, list what it offers, and close it again. It connects the way a

@@ -5,7 +5,7 @@ import {
   type AgentEventLike,
 } from "./agent-event-wire";
 import type { DebugEventStream } from "./debug-types";
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 export interface AgentEventStreamSession {
   readonly isStreaming: boolean;

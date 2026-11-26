@@ -32,8 +32,8 @@ import type {
   McpSignInOptions,
   PiSdkInternals,
 } from "./pi-sdk-internals";
-import { errorMessage } from "./errors";
-import { isRecord } from "./is-record";
+import { errorMessage } from "./errors.ts";
+import { isRecord } from "./is-record.ts";
 
 // The URL rule, the sign-out counts and the guarded store live in
 // `lib/mcp-sign-out.ts`, which Tests use too; re-exported for the routes.

@@ -48,8 +48,8 @@ import { SubagentQueue } from "./subagent-queue";
 import { addWorktree, removeWorktree } from "./worktree";
 import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
-import { isThinkingLevel } from "./thinking-levels";
-import { errorMessage } from "@/lib/errors";
+import { isThinkingLevel } from "./thinking-levels.ts";
+import { errorMessage } from "./errors.ts";
 
 interface HostSession {
   readonly inner: AgentSessionLike;

@@ -1,5 +1,5 @@
-import { errorMessage } from "./errors";
-import { isRecord } from "./is-record";
+import { errorMessage } from "./errors.ts";
+import { isRecord } from "./is-record.ts";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
   createMcpExtension,

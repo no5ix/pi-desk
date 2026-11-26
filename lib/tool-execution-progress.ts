@@ -1,5 +1,5 @@
 import { stripAnsi } from "@/lib/ansi";
-import { isRecord } from "./is-record";
+import { isRecord } from "./is-record.ts";
 
 const MAX_PROGRESS_LENGTH = 500;
 

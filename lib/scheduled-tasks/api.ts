@@ -7,7 +7,7 @@ import {
   type ScheduledTask,
   type ScheduledTaskView,
 } from "./types";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "../errors.ts";
 
 export function toTaskView(task: ScheduledTask, now = new Date()): ScheduledTaskView {
   const runs = listRuns(task.id);

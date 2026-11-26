@@ -32,7 +32,7 @@ import {
   type RelayConfig,
   type RelayIdentity,
 } from "./store.ts";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "../errors.ts";
 
 /**
  * The desktop end of the relay (docs/remote-relay.md). Keeps one outbound

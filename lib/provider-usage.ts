@@ -1,6 +1,6 @@
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { ProviderUsageId } from "./provider-usage-ids";
-import { isRecord } from "./is-record";
+import { isRecord } from "./is-record.ts";
 
 export { PROVIDER_USAGE_IDS, isProviderUsageId, type ProviderUsageId } from "./provider-usage-ids";
 

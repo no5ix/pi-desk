@@ -1,5 +1,5 @@
-import { isRecord } from "../is-record";
-import { isThinkingLevel } from "../thinking-levels";
+import { isRecord } from "../is-record.ts";
+import { isThinkingLevel } from "../thinking-levels.ts";
 import { randomUUID } from "crypto";
 import { existsSync, statSync } from "fs";
 import { isAbsolute } from "path";

@@ -10,7 +10,7 @@ import type { FreshFolderTrustBreadth, ProjectTrustStatus } from "./api-types";
 import { serializeByKey } from "./key-serializer";
 import { isPathWithinRoots } from "./path-security";
 import { realPathOrResolved, samePath } from "./paths";
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 function describeDecision(
   cwd: string,

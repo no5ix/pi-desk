@@ -6,7 +6,7 @@
  * plain POST the server answers 409 for when the switch is off. Failures are silent in
  * the completion path — a notification must never break a finished task's handler.
  */
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 export interface NtfySettingsClient {
   enabled: boolean;

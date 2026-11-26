@@ -1,4 +1,4 @@
-import { isThinkingLevel } from "./thinking-levels";
+import { isThinkingLevel } from "./thinking-levels.ts";
 // Fork-owned: forking a session file, and ctx.newSession / ctx.fork /
 // ctx.switchSession from an extension command. The pi CLI replaces its single
 // session in place (AgentSessionRuntime); Pi Web hosts many, so the target gets

@@ -1,7 +1,7 @@
 import type { JsonAgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import { slimToolExecutionResult, slimToolResultMessage } from "./tool-result-details";
 import { withoutContentSignatures, withoutMessageSignatures } from "./message-signatures";
-import { isRecord } from "./is-record";
+import { isRecord } from "./is-record.ts";
 
 export interface AgentEventLike {
   type: string;

@@ -10,7 +10,7 @@ import {
 } from "./mcp-import";
 import { findWebPasswordField, resolvedConfigValues } from "./mcp-transport";
 import type { PiSdkInternals } from "./pi-sdk-internals";
-import { isRecord } from "./is-record";
+import { isRecord } from "./is-record.ts";
 
 // What `POST /api/mcp { action: "add" }` checks before it writes anything
 // (ADR 0006, "Adding is one paste box"). The browser sends the pasted text and

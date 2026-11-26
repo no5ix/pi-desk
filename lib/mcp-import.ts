@@ -57,7 +57,7 @@ import { splitShellWords, type ShellWordsError } from "./shell-words";
 
 export * from "./mcp-import-core";
 export { decodeBase64Utf8 } from "./mcp-import-links";
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 type ReadResult = { entries: EntryOutcome[]; notes: McpImportNote[] } | { error: McpImportNote };
 

@@ -1,6 +1,6 @@
 import type { AgentEventLike } from "./agent-event-wire";
 import type { DebugEventConnectionSnapshot, DebugStreamCloseReason } from "./debug-types";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "./errors.ts";
 
 export interface AgentEventSourceLike {
   readonly readyState: number;

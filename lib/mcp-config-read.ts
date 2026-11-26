@@ -44,8 +44,8 @@ import { realPathOrResolved, samePath } from "./paths";
 import { hasParentDirectorySegment, isPathWithinRoots, resolveRealRoots } from "./path-security";
 import { loadPiSdkInternals, type PiSdkInternals } from "./pi-sdk-internals";
 import { freshFolderTrustBreadth, getProjectTrustStatus, hasTrustRelevantEntries } from "./project-trust";
-import { errorCode, errorMessage } from "./errors";
-import { isRecord } from "./is-record";
+import { errorCode, errorMessage } from "./errors.ts";
+import { isRecord } from "./is-record.ts";
 
 // What Settings › MCP and the trust dialog list (ADR 0006): the entries of the
 // global `mcp.json` and of a project's `.pi/mcp.json`, read from the files

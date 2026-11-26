@@ -13,10 +13,10 @@ import {
   type ValueGrammar,
 } from "./mcp-import-core";
 import { type EntryOutcome, mapServerEntry, mapToolFilters, siblingMcpUrl, sseRefusal } from "./mcp-import-json";
-import { isRecord } from "./is-record";
+import { isRecord } from "./is-record.ts";
 import { parseJsonc } from "./jsonc";
 import { literalWord, shellAssignment, type ShellWord, type ShellWordPart } from "./shell-words";
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 // Command lines: a server's own command (`npx -y @foo/server`, with
 // `NAME=value` prefixes), and `pi | claude | codex | gemini mcp add …`, plus

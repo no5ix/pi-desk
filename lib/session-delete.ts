@@ -31,7 +31,7 @@ import { forgetSessionUiState } from "./session-ui-state";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
 import { readSideRelation } from "./side-session";
 import type { SessionEntry } from "./types";
-import { errorMessage } from "./errors";
+import { errorMessage } from "./errors.ts";
 
 /** Most ids one POST /api/sessions/delete takes; the sidebar sends a bigger project in parts. */
 export const MAX_SESSION_DELETE_IDS = 500;

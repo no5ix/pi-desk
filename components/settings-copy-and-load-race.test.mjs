@@ -18,16 +18,18 @@ test("the project picker's own copy goes through translations", async () => {
   }
 });
 
-for (const [file, loader] of [["./SkillsConfig.tsx", "loadSkills"], ["./PluginsConfig.tsx", "loadPlugins"]]) {
+for (const [file, loader, responseWrite] of [["./SkillsConfig.tsx", "loadSkills", "setSkills"], ["./PluginsConfig.tsx", "loadPlugins", "setData"]]) {
   test(`${file} ignores a ${loader} response that a newer load superseded`, async () => {
     const source = await read(file);
     const start = source.indexOf(`const ${loader} = useCallback(async () => {`);
     assert.ok(start > 0, `${loader} not found`);
     const body = source.slice(start, source.indexOf("}, [cwd]);", start));
     assert.match(body, /const requestId = \+\+loadRequestRef\.current;/);
-    // The guard runs before any state write from the response.
+    // The guard runs before any state write from the response (readJsonOrThrow answers a failed
+    // response, so there is no `res.ok` branch left to compare against).
     const guard = body.indexOf("if (!isCurrent()) return");
-    assert.ok(guard > 0 && guard < body.indexOf("if (!res.ok"), "stale guard must precede the response handling");
+    const write = body.indexOf(`${responseWrite}(`);
+    assert.ok(guard > 0 && write > 0 && guard < write, "stale guard must precede the response handling");
     assert.match(body, /if \(isCurrent\(\)\) setLoading\(false\)/);
   });
 }

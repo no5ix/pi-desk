@@ -13,8 +13,8 @@ import {
   projectMcpConfigCreatePath,
   readResolvedConfigFile,
 } from "./mcp-config-read";
-import { errorCode, errorMessage } from "./errors";
-import { isRecord } from "./is-record";
+import { errorCode, errorMessage } from "./errors.ts";
+import { isRecord } from "./is-record.ts";
 
 // Pi Web's `mcp.json` writer (ADR 0006, "Writes"). The SDK's editors
 // (`dist/extensions/mcp/config.js` add/update/removeMcpServerConfig, which the

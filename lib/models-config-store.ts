@@ -4,8 +4,8 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { stripJsonComments } from "./jsonc";
 import { invalidateModelsCache } from "./models-cache";
-import { isRecord } from "./is-record";
-import { errorMessage } from "./errors";
+import { isRecord } from "./is-record.ts";
+import { errorMessage } from "./errors.ts";
 
 const MODEL_COST_KEYS = ["input", "output", "cacheRead", "cacheWrite"] as const;
 

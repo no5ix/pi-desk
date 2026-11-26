@@ -2,7 +2,7 @@ import { getToolNamesForPreset } from "../tool-presets";
 import { isBlockingExtensionUiRequest } from "../browser-notifications";
 import type { ExtensionUiRequest } from "../types";
 import type { MessageParams, RunErrorCode, RunStatus, RunTrigger, ScheduledTask } from "./types";
-import { errorMessage } from "@/lib/errors";
+import { errorMessage } from "../errors.ts";
 
 /** Custom session entry that marks a session as the output of a scheduled run. */
 export const SCHEDULED_RUN_ENTRY_TYPE = "pi-web:scheduled-run";

@@ -10,8 +10,8 @@ import { isExistingPathWithinRoots } from "./path-security";
 import { disabledBuiltInSubagents } from "./subagent-settings";
 import { PRESET_READ_ONLY } from "./tool-presets";
 import type { SessionEntry, SubagentSessionStatus } from "./types";
-import { isThinkingLevel } from "./thinking-levels";
-import { isRecord } from "./is-record";
+import { isThinkingLevel } from "./thinking-levels.ts";
+import { isRecord } from "./is-record.ts";
 
 export const SUBAGENT_META_TYPE = "pi-web:subagent";
 export const SUBAGENT_STATUS_TYPE = "pi-web:subagent-status";

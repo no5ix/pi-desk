@@ -3,8 +3,8 @@ import { dirname, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import lockfile from "proper-lockfile";
 import { replaceFileAtomicSync } from "./atomic-file";
-import { isRecord } from "./is-record";
-import { errorMessage } from "./errors";
+import { isRecord } from "./is-record.ts";
+import { errorMessage } from "./errors.ts";
 
 // Locked read-modify-write of the global `settings.json` for the keys pi's
 // SettingsManager has no setter for (`defaultTools`). The lock is the one
