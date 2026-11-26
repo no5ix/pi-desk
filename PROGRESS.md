@@ -868,3 +868,33 @@ paints the ellipsis exactly where it cuts.
 - `node e2e/thinking-latest.mjs` fails at its handover assertion (`1:01,2:0` where
   `1:00,2:1` is expected) **identically at `HEAD`** — a pre-existing failure on this
   branch, recorded here so it is not mistaken for the revert.
+
+## 2026-11-26 — the thinking card gets its own wash (`fix/flat-chat-blocks`)
+
+**The ask.** "give the thinking card a background color: #00a8ff21" — the reverted
+thinking block still painted `background: var(--bg)` inline, so it was the page and read
+as prose, exactly the complaint that put the chat's blocks on fills in the first place.
+
+**What changed**
+- `components/MessageView.tsx` — the `ThinkingBlock` card is `className="thinking-card"`
+  and the inline `background: "var(--bg)"` is gone, so the stylesheet owns the fill (the
+  `.tool-call-card` pattern: class on the node, depth in CSS, no `!important` needed).
+  The inline `fontSize`/`lineHeight` stay — the report's type is measured against them.
+- `app/native-theme.css` — `.thinking-card { background: #00a8ff21; }` beside the tool
+  call's band. A literal, not a palette token: the app ships a dozen palettes and the
+  card is meant to read the same in all, and the `21` alpha (13 %) sits on top of what
+  the card stands on — the light page, the dark page, a turn's Process-details plate.
+- `app/native-theme-phone-pass.test.mjs` — a new test pins the fill, the class on the
+  node, and the absence of the inline page colour (which is what lets the rule win).
+
+**Verification**
+- `node --test` over `app/native-theme-phone-pass.test.mjs` + `app/native-theme-chat-flat.test.mjs`
+  + `components/MessageView.compaction-and-thinking.test.mjs` + `components/MessageView.latest-thinking.test.mjs`:
+  22 pass / 1 fail — the one failure is the known pre-existing scroll-to-latest disc
+  assertion, byte-for-byte the failure at `HEAD`.
+- `node_modules/.bin/tsc --noEmit` clean; `npm run lint` 0 errors (15 warnings, pre-existing).
+- Rendered the real component in Chromium (`e2e/thinking-latest.fixture.jsx` in the
+  harness's own bundle-and-serve loop): computed `rgba(0, 168, 255, 0.13)` on the card in
+  both themes (page `rgb(240, 240, 241)` light, `rgb(25, 25, 26)` dark), screenshots read
+  as a blue band in each; the card's box (radius 8px, 6px/10px padding) is unchanged.
+  The throwaway probe script lived in gitignored `test-results/` and is deleted.

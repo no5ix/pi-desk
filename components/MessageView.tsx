@@ -1195,11 +1195,13 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
   }, [expanded, block.deferred, content, sessionId, entryId, blockIndex]);
 
   return (
-    <div style={{
+    <div className="thinking-card" style={{
       display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
       borderRadius: "var(--radius-md)",
       padding: "6px 10px",
-      background: "var(--bg)",
+      // The fill is the stylesheet's (`.thinking-card` in app/native-theme.css), not an
+      // inline colour: the card is a tint over whatever it stands on — the page, or a
+      // turn's Process details plate — and the app ships a dozen palettes.
       fontFamily: "var(--font-mono)",
       fontSize: "calc(11px + var(--chat-font-size-offset, 0px))",
       lineHeight: 1.5,

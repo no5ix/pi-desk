@@ -14632,6 +14632,16 @@ a:focus-visible {
   background: rgba(248, 113, 113, 0.1);
 }
 
+/* A thinking card wore the page's own colour (the component's inline `--bg`), so the
+   reasoning block and the prose around it were one field of text. The asked-for wash is
+   a fixed blue at 13 % opacity: not a palette token, because the app ships a dozen of
+   them and the card should read the same in all — and an alpha, so the fill sits on top
+   of whatever the card stands on: a light page, a dark page, or a turn's Process-details
+   plate. With the inline fill gone from the component, this needs no `!important`. */
+.thinking-card {
+  background: #00a8ff21;
+}
+
 /* "Branch in new chat" under every tool call: on a phone a turn is a column of tool
    calls, and one chip under each is a column of buttons that all do the same thing to
    the same conversation. The words are in the composer's branch chip and the sidebar's

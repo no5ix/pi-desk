@@ -93,6 +93,15 @@ test("a turn's Process details group stands on a translucent plate (pic: the fol
   assert.match(declared(".process-details-content", "background").join("\n"), /background: color-mix\(in srgb, var\(--surface\) 34%, transparent\)/, "the plate is the surface a third over the page");
 });
 
+test("a thinking card is a blue wash, not the page's own colour (pic: the reasoning block)", () => {
+  // The card painted `background: var(--bg)` inline, so it sat on the page as a field of
+  // prose. The asked-for fill is a fixed blue at 13 % alpha, over whatever it stands on.
+  assert.match(declared(".thinking-card", "background").join("\n"), /background: #00a8ff21/, "the card wears the asked-for wash");
+  const thinking = messageView.match(/export function ThinkingBlock\([\s\S]*?\n\}\n/)[0];
+  assert.match(thinking, /className="thinking-card"/, "the card carries the class the stylesheet fills");
+  assert.ok(!/background: "var\(--bg\)"/.test(thinking), "the inline page fill is gone, so the rule reaches it with no !important");
+});
+
 test("the sidebar gives its search field a seam above the Chats header (pic: Chats under the box)", () => {
   const margin = declared(".sidebar-search-wrap", "margin").join("\n");
   const match = margin.match(/margin:\s*0\s+10px\s+(\d+)px/);
