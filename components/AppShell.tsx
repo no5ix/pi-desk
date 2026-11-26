@@ -12,7 +12,6 @@ import { ChatWindow } from "./ChatWindow";
 import { AppNoticeShelf } from "./AppNoticeShelf";
 import { appNotify, updateAppNotice } from "@/lib/notification-store";
 import { useMenuPlacement } from "@/hooks/useMenuPlacement";
-import { usePopTransition, useShownWhileClosing } from "@/hooks/usePopTransition";
 import type { MenuAnchor } from "@/lib/menu-placement";
 import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
@@ -363,9 +362,6 @@ export function AppShell() {
     if (settingsExitRef.current !== null) window.clearTimeout(settingsExitRef.current);
   }, []);
   const [topMoreOpen, setTopMoreOpen] = useState(false);
-  // The More menu is portaled and unmounted on the click that closes it. It is held for
-  // the length of the shared exit animation instead (hooks/usePopTransition.ts).
-  const topMorePop = usePopTransition(topMoreOpen);
   const topMoreRef = useRef<HTMLDivElement>(null);
   const topMoreMenuRef = useRef<HTMLDivElement>(null);
   const [topMorePos, setTopMorePos] = useState<{ top: number; right: number } | null>(null);
@@ -625,12 +621,6 @@ export function AppShell() {
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number; floating?: boolean } | null>(null);
-  // The header's read-only cards (Agents, System prompt, Tools, Session stats) hang off
-  // this one state, so the card has to outlive it by the length of the exit animation.
-  // The card that was showing is remembered, because closing sets the state to null and
-  // there must still be a card on screen to animate away.
-  const topPanelPop = usePopTransition(activeTopPanel !== null);
-  const shownTopPanel = useShownWhileClosing(activeTopPanel, topPanelPop.closing);
 
   // The session's live one-liner: `↑44k · ↓3k · $1.20 · 17.3% ctx`. The More menu's row
   // carries it and the Session stats card's head carries it, so it is built once.
@@ -2859,10 +2849,10 @@ export function AppShell() {
                         <circle cx="19" cy="12" r="1.65" />
                       </svg>
                     </button>
-                    {topMorePop.mounted && topMorePos && createPortal(
+                    {topMoreOpen && topMorePos && createPortal(
                       <div
                         ref={topMoreMenuRef}
-                        className={`native-popover app-menu app-topbar-more-menu${topMorePop.className}`}
+                        className="native-popover app-menu app-topbar-more-menu"
                         role="menu"
                         aria-label={translate("appshell.moreActions")}
                         style={{
@@ -3048,13 +3038,9 @@ export function AppShell() {
           )}
           {!isMobile && renderProjectTrustWarning(false)}
           {!isMobile && showFilePanelToggle && renderMainFileToggle()}
-          {/* Top panel dropdown — shared, only one active at a time. The wrapper carries
-              the shared in/out motion (`.top-panel-card`), and `shownTopPanel` keeps the
-              card itself mounted while it plays. */}
-          {topPanelPop.mounted && topPanelPos && shownTopPanel && (
-            <div
-              className={`top-panel-card${topPanelPop.className}`}
-              style={{
+          {/* Top panel dropdown — shared, only one active at a time */}
+          {activeTopPanel && topPanelPos && (
+            <div style={{
               position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,
@@ -3067,7 +3053,7 @@ export function AppShell() {
               overflowY: topPanelPos.floating ? "visible" : "auto",
               zIndex: 500,
             }}>
-              {shownTopPanel === "agents" && activeSessionFamily && selectedSession && (
+              {activeTopPanel === "agents" && activeSessionFamily && selectedSession && (
                 <AgentSessionPanel
                   rootSession={activeSessionFamily.root}
                   subagents={activeSessionFamily.subagents}
@@ -3080,21 +3066,21 @@ export function AppShell() {
                   onDeleteSideChat={handleDeleteSideChat}
                 />
               )}
-              {shownTopPanel === "system" && (
+              {activeTopPanel === "system" && (
                 <SystemPromptPanel
                   loading={systemInfoLoading}
                   prompt={systemPrompt}
                   translate={translate}
                 />
               )}
-              {shownTopPanel === "tools" && (
+              {activeTopPanel === "tools" && (
                 <ToolDefinitionsPanel
                   loading={systemInfoLoading}
                   tools={systemTools}
                   translate={translate}
                 />
               )}
-              {shownTopPanel === "session" && (
+              {activeTopPanel === "session" && (
                 <div
                   className="session-info-popover app-menu"
                   role="dialog"
