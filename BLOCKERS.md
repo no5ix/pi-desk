@@ -175,3 +175,16 @@ claim rests on WebKit's documented focus rule and the fork's own 59px notch floo
   width). Unrelated to composer copies; the composer geometry that the task touches
   is covered by `e2e/composer-outbox.mjs` and `e2e/composer-device-copies.mjs`, both
   green.
+
+- **The shared dev server compiles the whole tree, so any agent's half-written file
+  blinds every measurement.** Twice during item 11 every page of
+  `http://127.0.0.1:30141` came back blank — first an unfinished expression in
+  `components/TopbarTip.tsx`, then `components/ProjectPicker.tsx:429`
+  (`Expected '</', got '{'`). Both belong to the popup-transition pass, not to the Git
+  view. `node_modules/.bin/tsc --noEmit` is the check that sees it before the browser
+  does; run it before reading a blank page as a bug in something else.
+- **`git checkout -- <file>` is only safe for a file that was clean before you
+  touched it.** `components/ProjectPicker.tsx` was clean at `HEAD`, so it restored
+  exactly; `components/ProjectContextMenu.tsx`, `ProjectViewMenu.tsx` and
+  `ChatsSectionMenu.tsx` carried the phone pass's uncommitted `closing`/`popClass`
+  lines, so those were reverted by hand, line by line, to keep that work.

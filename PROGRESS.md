@@ -667,3 +667,91 @@ Item 7 (the image overlay) and this pass's CSS all touch `app/native-theme.css`,
 agent is editing. `git status` also carries its in-flight work, so nothing of mine is
 committable without taking its unfinished files along. Land in two commits when it
 reports: the phone pass (items 7 + these 4) and item 11.
+
+### Item 11, frozen: the right panel's Git view (branch tree → commits → diff)
+
+Landed, and measured. The Git button is a sibling of the file list's toggle in
+`div.right-panel-tab-strip` (`components/AppShell.tsx`), guarded by
+`visibleProjectCwd && !isChatWorkspaceActive`; both toggles are `order: -1`, so the panel's
+two view toggles lead the row. One state flag (`gitPanelOpen`) opens `components/GitPanel.tsx`
+in the panel's content area; the side-chat tab and the panel's empty state step aside with it
+inside one guarded branch, so `components/side-chat.test.mjs`'s pinned
+`{activeSideTab ? (<div className="session-chat-panel" …` markup is untouched (it was broken
+for a minute by a chained ternary — that shape is why the branch is a fragment, not a chain).
+The project's shells stay mounted, `hidden` and not-active.
+
+Three levels, no second anything: the branch rows are the composer menu's rows
+(`fetchProjectBranchMenu` / `buildBranchRows` / `buildBranchTree` / `flattenBranchTree` /
+`filterBranchRows` / `currentCheckout`, same glyphs, same `remote` tag), the patch is painted
+by the file viewer's exported `DiffView`, one file's section is cut by `patchForFile`
+(`lib/patch.ts`), and a file row opens through the shell's `handleOpenFile`. The commits and
+the commit's patch come from `app/api/git/commits` and `app/api/git/commit-diff`, over the one
+git runner (`runGit`, exported from `lib/git-changes.ts`) by `lib/git-log.ts`. No timer reads
+git; the two reload buttons are the only other entry.
+
+Measured: `node e2e/git-panel.mjs` (fixture, 390 touch and 1280) — button 36×36 at x=51 with
+the file list's toggle 36×36 at x=11 (28×28 at 1280), 8-branch tree with a foldable `chore/`
+group, filter box, 2 commits, a merge's first-parent note, a two-file diff, a file row
+narrowing the patch, `__opened = ["/repo/app/native-theme.css", "native-theme.css"]`, and
+`scrollWidth 390 <= 390` at every level. `node e2e/git-panel-live.mjs` (the shared dev server,
+390 WebKit touch + 1280 Chromium): `.app-shell` 390×844 and `.chat-composer` 342×114 on
+screen, the button fully on screen and hit-testable, 48 real branch rows, current branch
+`fix/flat-chat-blocks`, 40 real commits (`601b5ff4 …`), a 1-file 59-line diff, no sideways
+page scroll at either width.
+
+Reverted on the way to the freeze (they were not this brief): every popup-plumbing edit —
+`components/ProjectPicker.tsx` back to `HEAD` (it was a syntax error at :429 and the shared
+server was serving blank pages), and my `usePopTransition` calls in
+`components/ProjectViewMenu.tsx`, `components/ChatsSectionMenu.tsx` and
+`components/ProjectContextMenu.tsx` removed, keeping the `closing` / `popClass` lines that
+belong to the phone pass. `hooks/usePopTransition.test.mjs` is green with the tree as it
+stands.
+
+## Clicking Expand / Collapse sent the page to its bottom
+
+Reported after the phone pass. Reproduced live (`test-results/scratch/probe-expand-toggle.mjs`,
+390px WebKit, sessions `01a214c7…` / `01a214c8…`): a row that grows does it under the finger.
+The tapped bubble's row kept `scrollTop` while its own height went 284 → 1351, so the control
+at the bubble's bottom travelled from y=275 to y=1342 — off the viewport; a reader who was near
+the tail was then answered by the stream's tail-follow (`useAgentSession`'s
+`isNearBottom` → `scrollToBottom("auto")`), and the conversation snapped to its end. The
+"sometimes" is the tail-follow: it only fires for a reader the scroll listener believes is
+at the tail.
+
+**The fix** (`components/ChatWindow.tsx`, `handleContentToggle`): the tapped row is anchored
+with the mechanism the older-pages prepend already owns (`scrollAnchorRef` +
+`applyScrollAnchor` + the shared 1500 ms window), and every Expand/Collapse announces itself
+before it flips its own state — a long prompt, a slash command, a compaction note, a subagent
+report. An off-screen control is left alone, so the app never moves the page by itself. The
+row is put back at 200 ms and 450 ms because a bubble whose cap is lifted keeps settling.
+
+Measured after: `rowTop 46 → 46 → 46` through open and close on the long prompt, no
+`distanceToTail` ever reaching the tail from mid-scroll, no page jump on the compaction card.
+A collapse near the top of a short scroll can still shift by the amount the clamp allows —
+that is the browser's arithmetic, not the app's.
+
+**A first attempt was rejected, not left in**: fetching the control to the nearest edge
+(`scrollIntoView`) fought the anchor over `scrollTop` (rows measured −1110 px, +835 px) and is
+exactly how a reader ends up at the tail. The test asserts `scrollIntoView` stays out of the
+handler.
+
+Pinned by `components/ChatWindow.content-toggle.test.mjs`. Four `MessageView` pins that read
+the toggles' markup now expect the announcement (same meaning, new shape).
+
+## Commits of this pass (pushed to `fix/flat-chat-blocks`)
+
+- `70560841` fix: the phone pass — the image overlay travels, the chat's blocks read deeper
+- `681f991e` fix: Expand/Collapse keeps the tapped row in place, so the chat stops jumping
+- `a426e9ae` feat: the right panel's Git view — branch tree, commits, one commit's diff
+
+Verification at the tree: `tsc --noEmit` clean; `npm run lint` clean (9 pre-existing
+warnings); `npm test` 4893 tests, 4892 pass, 1 skipped, 0 fail; `e2e/git-panel.mjs`,
+`e2e/git-panel-live.mjs` (the live repo at 390 touch and 1280), `e2e/image-swipe.mjs`,
+`e2e/thinking-preview.mjs`, `e2e/composer-ios.mjs` all green.
+
+**Left in the working tree, not this task**: the composer-menu pop-transition lane
+(`components/AppCombobox.tsx`, the chips, the menu components, `ComposerReasoningRows.tsx`,
+`ComposerToolPresetRows.tsx`, `lib/composer-option-data.ts`, `lib/composer-textarea-height.ts`)
+and `e2e/tmp-labels.mjs`, `e2e/tmp-pop-check.mjs`. `components/AppShell.tsx` carries that
+lane's `usePopTransition` wiring and `hooks/usePopTransition.ts` is committed with it, because
+AppShell imports it — the staged tree was checked to resolve every `@/` import.

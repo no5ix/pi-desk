@@ -425,3 +425,33 @@
   one session. The parallel tasks made it *noticed* (the other three were still
   running, so nothing else had popped either). Announcing at the run's
   `agent_settled` stays the rule (464f9678).
+
+## Item 11: the right panel's Git view
+
+- **`runGit` is exported, not re-implemented.** The commits layer
+  (`lib/git-log.ts`) runs git through the bounded runner that already lives in
+  `lib/git-changes.ts` (renamed from a private `git()`), so the app has one timeout,
+  one buffer cap and one place where a git argument list is audited.
+- **The commit's patch is handed to the file viewer's `DiffView`.** `DiffView` is
+  exported from `components/FileViewer.tsx` and imported by the panel. A second diff
+  renderer was the obvious way to build this and is the thing the panel must not be;
+  the export is the whole cost of sharing. The panel is `dynamic`-imported, so the
+  viewer's markdown/syntax weight stays off the shell's load.
+- **`patchForFile` lives in `lib/patch.ts`**, beside `parseUnifiedPatch`, not in the
+  panel: cutting one file's section out of a multi-file patch is patch knowledge, and
+  the panel and any later caller should read the same rules (`a/x => b/y` renames
+  included).
+- **A merge's diff is against its first parent, and the panel says so.** `git show`
+  prints nothing for a merge; `git diff <sha>^1 <sha>` is the diff the commit *did*,
+  and the row names it (`gitPanel.mergeCommit`, `gitPanel.mergeCommitHint`).
+- **Ref and size limits are named, not implicit.** `isSafeGitRef` +
+  `--end-of-options` on every rev argument; 40 commits per page, capped at 200; a
+  patch over 2 MB answers `supported: false, reason: "too-large"` and the panel says
+  the diff is too large rather than streaming 40 MB into a tab.
+- **No git on a timer.** The view reads when it is shown; the reload buttons are the
+  only other entry. A polling branch list is a git process per open panel.
+- **The popup plumbing was out of scope and is out of the tree.** A Git button does
+  not own exit animations of nine unrelated popups; the popup files are back to their
+  pre-task content (ProjectPicker to `HEAD`, the three menus minus my calls), because
+  the shared dev server compiles the whole app and a half-finished expression in one
+  popup blanks every page of the tree that the other eleven items are measured on.
