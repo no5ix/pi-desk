@@ -1,10 +1,11 @@
 "use client";
 
-// Fork-owned: the phone composer's `+` — the one control that carries everything that is
-// not typing. Attach, the model, the reasoning level, the tool preset and the session's own
-// switches used to sit in the card's row beside the text (and behind a second "More"
-// button); the phone's row has room for the prompt, one control and Send, so they live here,
-// and the row keeps one line while the prompt is one line.
+// Fork-owned: the composer's `+` — the one control that carries everything that is not
+// typing, on every tier (the phone's row and the desktop's). Attach, the model, the
+// reasoning level, the tool preset, the session's own switches and the side chat used to
+// sit in the card's row beside the text (and behind a second "More" button); the row has
+// room for the prompt, one control and Send, so they live here, and the row keeps one
+// line while the prompt is one line.
 //
 // The panel is the composer's hub: its rows name the controls and carry the value each is
 // at, and the lists (the model picker, the levels, the presets, the automation switches) are
@@ -35,6 +36,7 @@ import { ComposerReasoningRows } from "./ComposerReasoningRows";
 import { ComposerToolPresetRows } from "./ComposerToolPresetRows";
 import { ModelSelectorList, type ModelSelectorOption } from "./ModelSelector";
 import { SessionAutomationRows } from "./SessionAutomationMenu";
+import { SideChatPlusIcon } from "./SideChatIcon";
 
 /** The hub page, or the page a row opened. */
 export type ComposerPlusPage = "root" | "model" | "reasoning" | "tools" | "session";
@@ -52,6 +54,9 @@ export interface ComposerPlusMenuProps {
   attachLabel: string;
   /** Attachments are already picked: the row says so. */
   attachActive?: boolean;
+  /** While a run streams, the row that sends the draft to a side chat: the composer's
+   *  own bubble, which used to ride the row beside Send, where there is no room for it. */
+  sideChat?: ComposerPlusSideChat | null;
   isCompacting: boolean;
   summarizationRetry?: { attempt: number; maxAttempts: number } | null;
   onAbortCompaction?: () => void;
@@ -99,11 +104,17 @@ interface ComposerPlusSession {
   automation?: SessionAutomation;
   onSetAutomation?: (change: SessionAutomationChange) => void;
 }
+interface ComposerPlusSideChat {
+  label: string;
+  /** No draft, or attached images: `/side` takes text alone, so the row stays quiet. */
+  disabled: boolean;
+  onSelect: () => void;
+}
 
 const ICON = { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75, strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
 export function ComposerPlusMenu({
-  menuRef, open, onOpenChange, onAttach, attachLabel, attachActive,
+  menuRef, open, onOpenChange, onAttach, attachLabel, attachActive, sideChat,
   isCompacting, summarizationRetry, onAbortCompaction, onCompact,
   model, reasoning, tools, session,
 }: ComposerPlusMenuProps) {
@@ -129,12 +140,15 @@ export function ComposerPlusMenu({
         aria-label={isCompacting ? compactingTitle : t("chat.composerPlus")}
         aria-haspopup="menu"
         aria-expanded={open}
+        data-active={attachActive ? "true" : undefined}
         onClick={() => {
           setPage("root");
           onOpenChange((v) => !v);
         }}
       >
-        <svg {...ICON} width={18} height={18} aria-hidden="true">
+        {/* 16px, the wide tier's glyph: the prompt's first character stands on the glyph's
+            left edge (app/native-theme.css aligns the two from the disc and this size). */}
+        <svg {...ICON} width={16} height={16} aria-hidden="true">
           <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
         </svg>
       </button>
@@ -180,6 +194,14 @@ export function ComposerPlusMenu({
                   label={attachLabel}
                   onSelect={() => { onAttach(); close(); }}
                 />
+                {sideChat && (
+                  <PlusRow
+                    disabled={sideChat.disabled}
+                    icon={<SideChatPlusIcon size={16} strokeWidth={1.75} />}
+                    label={sideChat.label}
+                    onSelect={() => { sideChat.onSelect(); close(); }}
+                  />
+                )}
                 {model && (
                   <PlusRow
                     icon={<svg {...ICON}><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" /><line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" /><line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" /><line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" /></svg>}
@@ -279,6 +301,7 @@ function PlusRow({
   value,
   active,
   danger,
+  disabled,
   onSelect,
 }: {
   icon: ReactNode;
@@ -286,6 +309,7 @@ function PlusRow({
   value?: string;
   active?: boolean;
   danger?: boolean;
+  disabled?: boolean;
   onSelect: () => void;
 }) {
   return (
@@ -295,6 +319,7 @@ function PlusRow({
       className="composer-plus-row"
       data-active={active ? "true" : undefined}
       data-danger={danger ? "true" : undefined}
+      disabled={disabled}
       title={value ? `${label}: ${value}` : label}
       onClick={onSelect}
     >

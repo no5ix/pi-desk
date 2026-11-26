@@ -4738,21 +4738,6 @@ html.dark {
   overflow-wrap: anywhere;
 }
 
-.composer-tool-menu {
-  width: 304px;
-  max-width: calc(100vw - 32px);
-}
-
-.composer-tool-menu .app-option-row > button[role="option"] {
-  min-height: 50px;
-  padding: 8px 10px;
-  align-items: flex-start;
-}
-
-.composer-tool-menu .app-option-row > button[role="option"] > :first-child {
-  margin-top: 4px;
-}
-
 @media (pointer: coarse) {
   :root { --menu-row-height: 44px; }
   .app-select-option { min-height: 44px; }
@@ -6177,10 +6162,11 @@ html.dark {
   box-shadow: none !important;
 }
 
-/* One row inside the card: attach, the session controls, then Send. The text area
-   above it owns the card's whole width, so a long prompt is typed across the card
-   instead of beside a button, and every control sits within reach of the text. The
-   Send disc stays flush with the card's bottom-right, where the arcs meet. */
+/* The row's tail: Send, and nothing else. Everything the row used to carry — the model,
+   the reasoning level, the tool preset, the session's switches, the side chat, a running
+   compaction's Stop — is a row of the `+`'s menu (components/ComposerPlusMenu.tsx), so the
+   card keeps one line at any width and the prompt is what takes the room. The Send disc
+   stays flush with the card's bottom-right, where the arcs meet. */
 .chat-composer-actions {
   display: flex;
   align-items: center;
@@ -6189,22 +6175,11 @@ html.dark {
   /* margin-top: var(--composer-inset); */
 }
 
-.chat-composer-actions > .chat-composer-controls {
-  /* The prompt is the row's filler, not the controls: the cell takes the width its chips
-     and glyphs need and shrinks when the row runs out, so a one-line card is a one-line
-     card at any window width. The inset in front of Send is a row's gap, not a column's. */
-  flex: 0 1 auto;
-  min-width: 0;
-  padding: 0;
-  margin-right: 6px;
-}
-
-/* Send keeps the card's bottom-right corner in every state of the strip. The strip is
-   the row's flex filler, and the row used to lose that filler under the phone's keyboard
-   (the fork hid the strip there, and the user asked for the controls back): with the
-   filler gone the row packed every control to the left — measured on WebKit at 390px, Send
-   sat at x=130 of a card that ends at 366, with 200px of empty card beside it. `auto` pins
-   the corner with the strip there, hidden, or grown, and changes nothing when it is. */
+/* Send keeps the card's bottom-right corner in every state of the row. The prompt is the
+   row's flex filler, and a row that loses that filler (a hidden cell, a narrow card) packs
+   every control to the left — measured on WebKit at 390px, Send sat at x=130 of a card that
+   ends at 366, with 200px of empty card beside it. `auto` pins the corner whatever the row
+   holds. */
 .chat-composer-actions > .composer-send-button {
   margin-left: auto;
 }
@@ -6253,31 +6228,14 @@ html.dark {
   .chat-composer-editor[data-inline] > .chat-composer-actions {
     display: contents;
   }
-  /* Nothing in the row may be taller than the two discs that set its height: the strip's
-     32px floor, a 32px project chip, a 32px side-chat button — each of them alone makes the
-     resting card taller than the card the ask is about. The row's own height is the line of
-     text and the disc, and the controls are cut to fit inside it. */
-  .chat-composer-editor[data-inline] .chat-composer-controls {
-    min-height: 0;
-  }
   .chat-composer-editor[data-inline] .chat-project-context {
     height: 26px;
     font-size: var(--fs-caption);
   }
-  /* The model chip carries its own height inline (32px in the composer's toolbar variant,
-     34 in a form field), and one 32px chip in a 28.8px row makes the resting card taller
-     than the disc the card is built around. The row's controls are cut from one number. */
-  .chat-composer-editor[data-inline] .model-selector button {
-    height: var(--composer-send-size) !important;
-    min-height: var(--composer-send-size) !important;
-  }
-  /* A toolbar button with no size of its own is its glyph plus padding — 32px — and one
-     such box is what made the resting card taller than the disc the card is built around.
-     The row's glyphs are one size, and the coarse tier keeps its 44px finger target. */
-  .chat-composer .composer-controls-strip .native-toolbar-button {
-    width: var(--composer-send-size) !important;
-    height: var(--composer-send-size) !important;
-  }
+  /* The row holds two discs and nothing else — the `+` and Send — and both are sized from
+     the card's own number (`--composer-send-size`, 44px under a finger): a toolbar button
+     with no size of its own is its glyph plus padding, and one such box makes the resting
+     card taller than the disc the card is built around. */
   @media (prefers-reduced-motion: reduce) {
     .chat-composer-editor[data-inline] > .chat-input-textarea {
       transition: none;
@@ -6323,24 +6281,6 @@ html.dark {
     --composer-font-size: max(16px, var(--chat-content-font-size, 14px));
     --composer-line-height: calc(var(--composer-font-size) * 1.5);
   }
-}
-
-.chat-composer-controls {
-  /* Inside the card's row, after the prompt and before Send, so the card holds the text
-     and everything that acts on it. */
-  margin-top: 0;
-  min-height: 0;
-  min-width: 0;
-  max-width: 100%;
-  /* Dropdowns are rendered inside this row and open above it. Clipping the
-     row also clips their scrollable option panels. */
-  overflow: visible;
-  padding: 0;
-}
-
-.chat-composer-controls button {
-  font-size: var(--fs-small) !important;
-  font-weight: var(--fw-medium);
 }
 
 /* The row under the composer's card, on every platform: the project a new session picks,
@@ -6410,10 +6350,6 @@ html.dark {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.chat-composer-controls .native-popover button {
-  border-radius: var(--radius-md);
 }
 
 /* Steer / Follow-up while a run is active. One shape, two theme hues; the
@@ -6509,31 +6445,11 @@ html.dark {
   cursor: not-allowed;
 }
 
-/* Attach is Send's twin at the row's other end: the same disc, the first control, and
+/* The `+` is Send's twin at the row's other end: the same disc, the row's first control,
    beside the last line of the text (the row's controls sit at its bottom edge, so a prompt
-   that wraps keeps its `+` under the text it belongs to). */
-.composer-attach-button {
-  flex: 0 0 auto;
-  align-self: flex-end;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--composer-send-size);
-  height: var(--composer-send-size);
-  padding: 0;
-  border-radius: 999px;
-  background: none;
-  color: var(--text-muted);
-}
-/* The `+` stays centered in its (unchanged, touch-sized) disc: a finger aims at the disc,
-   and the Send disc keeps the same centered arrow. The row's two left ends meet as ink —
-   the prompt's first character on the glyph's left edge — at the textarea's own 8px left
-   margin above, not by pushing the glyph out of its disc. */
-
-.composer-attach-button[data-active] {
-  /* Attached files are the state, and the glyph says so in full colour. No disc: the
-     button sits in a row of quiet controls, and a plate under the `+` read as a
-     toggle that was on. */
+   that wraps keeps its `+` under the text it belongs to). The disc stays quiet — a plate
+   under it read as a toggle that was on — and its menu carries the state. */
+.chat-composer .composer-plus-button[data-active] {
   color: var(--text);
 }
 
@@ -9285,16 +9201,11 @@ span.linenumber {
   transform: scale(0.94);
 }
 
-/* Mobile keyboard: upstream's rule in globals.css hides `.chat-input-controls`
-   under the keyboard, and the fork's composer chrome carries its own class
-   (.chat-composer-controls). It used to be hidden the same way, and that is what
-   the phone's user saw: with the keyboard up, the composer kept only `+` and Send
-   — the More button (the strip with the model, the reasoning, the tools) and the
-   side-chat bubble vanished, and Send slid over the empty band to the corner. The
-   keyboard leaves the card's own row room on a phone, so the row stays whole: the
-   controls keep their place, the side-chat bubble keeps *its* place, and nothing
-   moves when the keyboard opens. The strip's other chrome (the status shelf, the
-   project bar, the composer's padding) still collapses upstream. */
+/* Mobile keyboard: upstream's rule in globals.css hides `.chat-input-controls` while a
+   field is focused. The fork's composer row is `+`, the prompt and Send and carries no
+   element with that class, so the rule finds nothing here and the row stays whole under
+   the keyboard — nothing moves when it opens. The strip's other chrome (the status shelf,
+   a fresh composer's project bar, the composer's padding) still collapses upstream. */
 
 /* ---- Branch navigator: summarized switch -------------------------------------
    Rows of other branches offer "Summarize & switch" next to the plain click. It
@@ -10738,40 +10649,33 @@ html.native-desktop :is(
   background: none;
   color: var(--text-muted);
 }
-.composer-plus-button .composer-plus-glyph {
-  position: absolute;
-  inset: -3px;
-  border-radius: 999px;
-  pointer-events: none;
-}
-/* The session is compacting and the phone's row has no other control to say so, so the
- * `+` breathes: it keeps its own ink (it is the same control, not a red alarm), it is lit
- * the way the pointer lights it, and its BACKGROUND fills with red and drains away. Nothing
- * about the box moves — the row does not twitch while the composer is being typed in. */
+/* The session is compacting and the row has no other control that can stop it, so the `+`
+ * says so. The ask was exact: the glyph keeps its own ink (it is the same control, not a red
+ * alarm), the disc is lit the way the pointer lights it — the hover plate, nothing else —
+ * and its BACKGROUND fills with red and drains away, on a breath, with a halo the eye
+ * catches at the corner of the screen. Nothing about the box moves (no size, no transform,
+ * no border): the row does not twitch while the composer is being typed in, and the same
+ * disc keeps the same diameter in both themes. Hovering it is the hover plate; the breath
+ * runs under the pointer. */
 .composer-plus-button[data-compacting="true"] {
   color: var(--text-muted);
   background: var(--bg-hover);
   animation: composer-plus-breathe 1.6s var(--ease-native) infinite;
 }
-.composer-plus-button[data-compacting="true"] .composer-plus-glyph {
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 45%, transparent);
-  animation: composer-plus-ring 1.6s var(--ease-native) infinite;
-}
 @keyframes composer-plus-breathe {
-  0%, 100% { background: var(--bg-hover); }
-  50% { background: color-mix(in srgb, var(--danger) 34%, var(--bg-hover)); }
-}
-@keyframes composer-plus-ring {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 45%, transparent); }
-  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 12%, transparent); }
+  0%, 100% {
+    background: var(--bg-hover);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 42%, transparent);
+  }
+  50% {
+    background: color-mix(in srgb, var(--danger) 34%, var(--bg-hover));
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--danger) 14%, transparent);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .composer-plus-button[data-compacting="true"] {
     animation: none;
     background: color-mix(in srgb, var(--danger) 18%, var(--bg-hover));
-  }
-  .composer-plus-button[data-compacting="true"] .composer-plus-glyph {
-    animation: none;
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
   }
 }
@@ -10877,9 +10781,16 @@ html.native-desktop :is(
   color: var(--text-muted);
   font-size: var(--fs-caption);
 }
-.composer-plus-row[data-compacting="true"],
-.composer-plus-row[data-compacting="true"] .composer-plus-row-icon {
+.composer-plus-row[data-danger="true"],
+.composer-plus-row[data-danger="true"] .composer-plus-row-icon {
   color: var(--danger);
+}
+.composer-plus-row[data-danger="true"]:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+.composer-plus-row:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 
@@ -12329,28 +12240,8 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
 }
 
 /* The composer's clear/trash button is gone: a textarea is selected and deleted, and the
-   control row was better spent. The side-chat button that shared its class owns the box
-   now — the row's icon control, one 32px square, its words in the title and the label. */
-.composer-side-chat-button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-self: flex-end;
-  align-items: center;
-  justify-content: center;
-  width: var(--composer-send-size);
-  height: var(--composer-send-size);
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  margin-right: 6px;
-}
-.composer-side-chat-button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
-.composer-side-chat-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.composer-side-chat-button:disabled { opacity: 0.45; cursor: not-allowed; }
-.composer-side-chat-button:disabled:hover { background: transparent; color: inherit; }
+   row was better spent. The side chat is a row of the `+`'s menu now
+   (components/ComposerPlusMenu.tsx), so the card's row keeps only Send beside the prompt. */
 
 /* C1: a side chat in a right-panel tab fills the panel like the main chat its column. */
 .session-chat-panel {
@@ -12631,7 +12522,6 @@ html[data-standalone-safe-area]:not([data-keyboard-open]) .terminal-composer {
   height: var(--hairline);
   background: var(--border);
 }
-@media (pointer: coarse) { .composer-side-chat-button { width: 44px; height: 44px; } }
 
 
 /* ==========================================================================
@@ -14933,10 +14823,15 @@ button.custom-message-header {
   outline-offset: 2px;
 }
 
-/* The corner sits over the card's upper-left, so the text stops short of it: the first
-   line is never typed under the glyph, and the caret is never hidden by it. */
+/* The corner sits over the card's upper-left, so the text drops BELOW the glyph instead
+   of stepping right of it. The ask was exact: a left gutter put the prompt 34px (44px
+   under a finger) away from the `+`, which is a second, ragged left column beside the
+   disc. The one-line card's gap between the `+` and the text is the prompt's own gap, so
+   the editor keeps it, and the first line simply starts under the corner: no line is
+   typed under the glyph and the caret is never hidden by it. The textarea is
+   `box-sizing: border-box`, so the drop is inside the editor's bounds. */
 .chat-composer.has-expand .chat-composer-editor > .chat-input-textarea {
-  padding-left: 34px;
+  padding-top: 26px;
 }
 
 /* A phone's finger: the glyph is 18px, so the plate it lives on is the touch target
@@ -14951,7 +14846,10 @@ button.custom-message-header {
   }
 
   .chat-composer.has-expand .chat-composer-editor > .chat-input-textarea {
-    padding-left: 44px;
+    /* The 36px plate at 2px from the card's top ends 38px down; the card's own 6px
+       padding leaves the text 6px in, so 36px of top padding starts the first line
+       under the plate, with the prompt's `+` gap untouched. */
+    padding-top: 36px;
   }
 }
 

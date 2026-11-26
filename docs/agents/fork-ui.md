@@ -81,16 +81,35 @@ history or modify the outbox. A clear-generation guard rejects late attachment
 read/conversion results and revokes discarded image preview URLs. Cancel remains
 a separate, non-destructive action that only leaves history-edit mode.
 
-## Composer: one card, one control row
-The card is a column (`.chat-composer-editor` is `flexDirection: "column"`): the text
-area is a full-width block on top, and one row (`.chat-composer-actions`) below it
-carries the attach button, the session controls
-(`className="chat-composer-controls"`) and Send, in that order. Nothing sits beside the
-typing, so a long prompt is typed across the card, and every control that acts on the
-draft is within reach of it. Send stays the row's last child, so its disc keeps sharing
-the card's bottom-right arc (measured by `e2e/composer-geometry.mjs`). The text area is
-`flex: "none"` — in a column `flex: 1` is a zero basis and clips the auto-grow height to
-`minHeight`, which is the regression `components/MobilePwaLayout.test.mjs` pins.
+## Composer: one card, one row — the `+`, the prompt, Send
+The card is **one row on every tier** (`.chat-composer-editor` carries `data-inline`;
+only the quote dialog's box keeps a column): the `+`, the prompt, Send. The row's tail
+`.chat-composer-actions` is `display: contents`, so Send is a child of the row and keeps
+`margin-left: auto` — the card's bottom-right arc. The 2026-12 ask was exact: *all the
+buttons except the `+` and Send* leave the row and live behind the `+`, whose menu is the
+composer's hub (the 2026-12 ask, and the phone's rule for years).
+
+`components/ComposerPlusMenu.tsx` is that hub, mounted by `components/ChatInput.tsx` in
+every tier. Its rows are **Compacting…** (only while a compaction runs; it stops the run),
+**Add files**, **Side chat** (while a run streams, the row's old bubble), **Model**,
+**Reasoning**, **Tools**, **Session automation**; the last four open pages whose lists are
+the desktop menus' own rows (`ModelSelectorList`, `ComposerReasoningRows`,
+`ComposerToolPresetRows`, `SessionAutomationRows`) — the hub hosts them, it never redraws
+them. ChatInput owns the open state so its one outside-click handler closes the hub with
+the other composer menus, and the panel is placed by `lib/composer-panel-placement.ts`
+(`COMPOSER_PLUS_MENU_WIDTH`, `composerPanelAnchoring`, `getUpwardMenuMaxHeight` +
+`getVisibleTopBoundary`), so it is never under the sidebar and never behind the header.
+The row keeps one line at any window width; nothing in it is cut off at a narrow width.
+
+The old desktop cluster is gone with its markup and CSS: `.chat-composer-controls`,
+`.composer-controls-strip`, `modelControl`, the icon-only `ModelSelector` toolbar variant
+in the composer, the reasoning/tool/automation dropdowns and their `usePopTransition`
+pairs. The composer's chat-access rows (the chat-only workspace's block) ride the hub's
+Reasoning page, and keep the parent's confirm flow through `onToggleChatUnlocked`.
+
+The text area is `flex: "none"` in the quote box's column — in a column `flex: 1` is a
+zero basis and clips the auto-grow height to `minHeight`, which is the regression
+`components/MobilePwaLayout.test.mjs` pins — and `flex: "1 1 auto"` in the row.
 
 The card's top-right corner carries one affordance: expand (`components/ComposerExpandIcon.tsx`,
 `.chat-composer-expand`). A tap turns the card into a tall editor for a long prompt —
@@ -102,38 +121,32 @@ is the way back, and Escape in the field is the keyboard's way back — only whi
 streaming, so a running agent keeps its Stop. The corner is not drawn where there is no room
 to grow: the quote composer's card and a docked side chat get none. The choice is remembered
 per device (`APP_PREF_KEYS.composerExpanded`) because it is a way of writing, not a per-session
-fact, and the gutter the glyph takes out of the text is a rule (`padding-right: 38px`, 44px for
-a finger), so no line is typed under it. Collapsing runs the composer's autosize again with the
+fact, and the room the glyph takes out of the text is a rule: the corner lives in the card's
+upper-left and the text **drops below it** (`padding-top: 26px`, 36px for a finger), so no line
+is typed under it and the caret is never hidden. It is not a left gutter — the 2026-12 ask
+reported exactly that: a `padding-left` of 34px (44px under a finger) opened a second, ragged
+left column between the `+` and the prompt, so the editor keeps the one-line card's own gap
+between the disc and the text. Collapsing runs the composer's autosize again with the
 box released: measured inside the tall editor `scrollHeight` reports the editor's height, and a
 folded card would keep the 340px it had grown. `e2e/composer-expand.mjs` measures the plate
 (36px for a finger, 30px for a pointer), the gutter, the keyboard's room, a long prompt's
 scroll and the fold; `components/ChatInput.composer-expand.test.mjs` pins the markup, the two
 states and the preference.
 
-The controls in that row are icon-only: the reasoning level, the tool preset and the
-model chip print no words, and each is a 32px square (`--control-h-lg`). The words are
-not lost — they live in `title` and `aria-label` (`"Change reasoning level: medium"`,
-`"Change tool preset: Chat only"`, `"<model name> — Change model"`, the compaction stop
-button carries `"Stop compaction · Compacting (2/3)…"`), which is what a screen reader
-and hover read. `ModelSelector` takes `iconOnly` for this; the `field` variant (Settings,
-model dialogs) keeps its label. The project and branch chips keep their text: they name
-which folder and which branch a session is in, which is identity, not a setting.
+The hub's rows print their names and the value each control is at (the model's name,
+the reasoning level, the preset's label), so nothing is a bare glyph any more; the
+`+`'s own `title`/`aria-label` say what it is, and while a compaction runs they name
+the run (`"Stop compaction · Compacting (2/3)…"`) for the accessibility tree. The
+project and branch chips keep their text in the row under the card: they name which
+folder and which branch a session is in, which is identity, not a setting.
 
-The icon controls are **one cluster in every tier**: model, reasoning, tool preset,
-session automation, in that order, starting behind the attach `+`. On a desktop or a pad
-the cluster is in the row; on a phone the row shows one More button behind `+` and the
-cluster is the strip that button opens — the model chip collapsed into it (the 2026-11-25
-ask: the phone's row used to be `+`, the model glyph, the chips, Send, with the other three
-behind More; the ask was for the model to join the group and for More to sit behind `+`).
-The row's spacer sits *after* the group, as a child of `.chat-composer-actions` (not inside
-`.chat-composer-controls`), so the strip is never pushed to the card's right edge, and on a
-phone the strip is absolutely positioned from the More button's **left** edge (`left: 0`;
-anchored right it opens off the card). The chip is built once (`modelControl`) and placed in
-the cluster, never copied and never by tier. Since a closed phone row prints no model name,
-the More button's `title` carries it (`"More controls · Change model: <name>"`; its
-`aria-label` stays the short sentence). `components/ChatInput.composer-row.test.mjs` pins
-the order, the single `<ModelSelector>`, the strip's left anchor, and that the strip has no
-`marginLeft: "auto"`.
+The run of glyphs that used to sit in the row — model, reasoning, tool preset, session
+automation — is now the hub's list, in that order, on every tier. Its history is the road
+here: the 2026-11-25 ask folded the phone's cluster behind a More button (the model joined
+the group, More sat behind `+`), and the 2026-12 ask folded the *desktop's* cluster into
+the `+` too, so there is one control surface and no tier with a row that runs out of
+width. Where the row printed no model name, the value now rides the hub's row, and the
+model line under the card (`routedModelHint`) is shown at every tier.
 
 The card has no "clear the composer" button: a textarea is selected and deleted, so a
 trash icon asked for a click to do what the keyboard already does, in a row that carries
@@ -151,8 +164,14 @@ landing out of the eye's line once typing starts. It never takes a click
 (`pointer-events: none`), and the gates are unchanged — `!compact && !isNarrow &&
 !isStreaming && value.length === 0`, visible on `:focus-within`.
 
-The attach `+` is a bare glyph: no plate at rest, and no plate while files are attached
-(`[data-active]` changes the glyph's colour only). The text area is stretched (`width: auto`),
+The `+` is a bare glyph: no plate at rest, and no plate while files are attached
+(`.chat-composer .composer-plus-button[data-active]` changes the glyph's colour only).
+While a compaction runs it is the row's only signal, and the ask was exact: the glyph
+keeps its own ink (it is the same control, not a red alarm), the disc is lit the way the
+pointer lights it — the hover plate, nothing else — and its **background** fills with red
+and drains away on a breath, with a halo (`composer-plus-breathe`, 1.6s,
+`app/native-theme.css`). No size, transform or border moves, so the row does not twitch
+under a typing finger; reduced motion gets a steady tinted plate. The text area is stretched (`width: auto`),
 never `width: 100%` — a full width and a horizontal margin together push the text 8px past
 the card's right edge — and stretched, its margins are the card's insets: `margin: 8px 0
 18px calc(var(--composer-send-size) / 2 - 10px)` (the 18px is the room above the control
@@ -179,25 +198,14 @@ the user is watching arrived painted over. `.chat-scroll-container`'s `padding-b
 is what lifts it clear; being scroll content, it only exists at the tail. The same test that
 owns `overflow-anchor: none` pins it (`components/ChatWindow.scroll-anchor.test.mjs`).
 
-The row under the card no longer exists; the same controls live inside it. On a phone
-`.chat-composer-controls` is a grid with exactly TWO children (the wide spacer is a
-sibling in `.chat-composer-actions` and is rendered only on the wide, non-compact tier),
-so its template is
-`auto minmax(0, 1fr)`: the controls take the `auto` track and lead the row (the phone's
-More button stands right behind `+`), the chips' cell takes the free width in the 1fr
-track. The chips' cell is the strip's first JSX child and the controls' second, and
-`order` (2 / 1) is what puts them in that visual order — `order` moves the box, not the
-tab order. An `auto` first track is safe only because the model chip left the chips' cell:
-with an untruncated model name in an `auto` first track, that column sizes to the chip's
-max-content, the controls cell collapses to `0px`, and its button (squeezed to 16px in a
-zero-width track) paints on top of the context ring — the reported iPhone 16 Pro Max
-overlap.
-Both tiers keep the left cell shrinkable (`flex: "1 1 auto"` narrow,
-`"0 1 auto"` wide, `minWidth: 0`), so a squeezed desktop window (workspace panel
-open) truncates the row instead of pushing the controls out of it. The phone folds
-the settings into a More popover on an absolutely positioned cell — that is why
-`e2e/composer-geometry.mjs` measures the row's spread over the buttons that are in
-flow, not over the popup's.
+The row under the card (`.composer-context-row`) is the composer's second line on every
+tier: the project a new session picks, the branch of it, and the model a routed request
+went to. It never carries a session control — those are the `+`'s menu — and it hides
+while a run or a compaction is on (`pickersIdle`), because there is nothing to pick. Its
+menus open upward from the row and are capped to the space between it and the header (#63).
+The row's old grid (`.chat-composer-controls` as `auto minmax(0, 1fr)`, `order`, the phone's
+absolutely positioned More popover) left with the cluster; the squeeze it existed for is
+gone, since the card's row now holds two discs and the prompt, which is the filler.
 
 The model trigger's cap must be a shrink, not only a ceiling: the toolbar variant
 uses `max-width: min(220px, 100%)`. A bare `220px` left a 220px box past the

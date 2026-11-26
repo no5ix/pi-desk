@@ -156,13 +156,17 @@ const EXTRACTIONS = [
   {
     name: "ChatInput fork layers",
     origin: "components/ChatInput.tsx",
-    // The composer is upstream's. The fork's `#` session mentions, session (gear)
-    // menu and project chip live in fork-owned files; ChatInput keeps their state
-    // where its shared keyboard and outside-click handlers need it, and mounts them.
+    // The composer is upstream's. The fork's `#` session mentions, the `+` hub (the
+    // model, the reasoning level, the tool preset, the session's switches, a running
+    // compaction's Stop and the side chat) and the project chip live in fork-owned
+    // files; ChatInput keeps their state where its shared keyboard and outside-click
+    // handlers need it, and mounts them. The row itself carries only the `+`, the
+    // prompt and Send, so the hub — not ChatInput — mounts SessionAutomationRows.
     movedTo: [
       "hooks/useSessionMentionPalette.ts",
       "components/SessionMentionMenu.tsx",
       "components/SessionAutomationMenu.tsx",
+      "components/ComposerPlusMenu.tsx",
       "components/ComposerProjectChip.tsx",
     ],
     movedDefinitions: ["getProjectLabel", "applyHashCompletion", "updateHashQuery", "hashMatches"],
@@ -177,7 +181,7 @@ const EXTRACTIONS = [
     requiredInOrigin: [
       "useSessionMentionPalette(",
       "<SessionMentionMenu",
-      "<SessionAutomationMenu",
+      "<ComposerPlusMenu",
       "<ComposerProjectChip",
     ],
   },

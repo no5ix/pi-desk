@@ -17,9 +17,6 @@ import {
 } from "@/lib/draft-store";
 import { clearDeviceCopy, pushDeviceCopy, watchDeviceCopies } from "@/lib/composer-copies";
 import {
-  COMPOSER_RUN_MENU_WIDTH,
-  COMPOSER_TOOL_MENU_WIDTH,
-  composerPanelAnchoring,
   getTopbarBoundary,
   getUpwardMenuMaxHeight,
   getVisibleTopBoundary,
@@ -45,14 +42,11 @@ import { FolderIcon, getFileIcon } from "./FileIcons";
 import { ImagePreview } from "./ImagePreview";
 import { useCoarsePointer, useIsMobile } from "@/hooks/useIsMobile";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
-import { usePopTransition } from "@/hooks/usePopTransition";
 import { useEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useI18n } from "@/hooks/useI18n";
 import type { ReactNode } from "react";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
 import type { ToolPreset } from "@/lib/tool-presets";
-import { SelectorRow } from "./SelectorRow";
-import { ModelSelector } from "./ModelSelector";
 import {
   composeMessageWithAttachedFiles,
   createPastedTextAttachment,
@@ -65,7 +59,6 @@ import {
   type ChatTextAttachment,
 } from "@/lib/chat-attachments";
 import { SessionMentionMenu } from "./SessionMentionMenu";
-import { SessionAutomationMenu } from "./SessionAutomationMenu";
 import { ChatAccessRows } from "./ChatAccessRows";
 import type { ChatAccessControls } from "@/hooks/useChatAccess";
 import { ComposerProjectChip, getProjectLabel } from "./ComposerProjectChip";
@@ -73,11 +66,8 @@ import { ComposerBranchChip } from "./ComposerBranchMenu";
 import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
 import { ComposerDeviceCopies } from "./ComposerDeviceCopies";
 import { ComposerPlusMenu } from "./ComposerPlusMenu";
-import { ComposerReasoningRows } from "./ComposerReasoningRows";
-import { ComposerToolPresetRows } from "./ComposerToolPresetRows";
 import { growComposerTextarea, measureComposerTextLines } from "@/lib/composer-textarea-height";
 import { TOOL_PRESET_MAP, type ThinkingLevelChoice } from "@/lib/composer-option-data";
-import { SideChatPlusIcon } from "./SideChatIcon";
 import { ComposerExpandIcon } from "./ComposerExpandIcon";
 import { AgentRunningIcon } from "./TopbarSubagents";
 import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
@@ -814,7 +804,7 @@ export function ModelScopeWarningBanner({
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAttachFiles, onAbort, subagentsRunning, onAbortSubagents, onSteer, onSideChat, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
+  onSend, onAttachFiles, onAbort, subagentsRunning, onAbortSubagents, onSteer, onSideChat, onFollowUp, isStreaming, model, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange,
   defaultModel, onSetDefaultModel,
   onCompact, onAbortCompaction, isCompacting, compactError, compactNotice, compactResult, summarizationRetry, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
@@ -884,23 +874,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [isMobile, coarsePointer]);
 
   const isNarrow = composerTier === "narrow";
-  const isCompact = composerTier === "compact" || isNarrow;
 
   const enterSendMode = useEnterSendMode();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [automationDropdownOpen, setAutomationDropdownOpen] = useState(false);
-  const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
-  const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
-  // The composer's menus are mounted on the click that opens them and unmounted on the one
-  // that closes them. Held for the shared exit animation, they leave the way they came
-  // (hooks/usePopTransition.ts); every outside handler below stays keyed on `*Open`, so a
-  // closing menu never listens to the click that opened the next one.
-  const toolDropdownPop = usePopTransition(toolDropdownOpen);
-  const thinkingDropdownPop = usePopTransition(thinkingDropdownOpen);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
-  // The phone's `+` carries every control the row has no room for. The open state stays
-  // here so the one outside-click handler below closes it with the other composer menus.
+  // The `+` is the row's one control besides Send, on every tier: it carries the attach,
+  // the model, the reasoning level, the tool preset, the session's switches, the side chat
+  // and a running compaction (components/ComposerPlusMenu). The open state stays here so
+  // the one outside-click handler below closes it with the other composer menus.
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
@@ -1006,9 +988,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [textLines, expanded, onExpandedChange]);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);
-  const toolDropdownRef = useRef<HTMLDivElement>(null);
-  const thinkingDropdownRef = useRef<HTMLDivElement>(null);
-  const automationDropdownRef = useRef<HTMLDivElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
   const isComposingRef = useRef(false);
   const lastCompositionEndAtRef = useRef(0);
@@ -2320,36 +2299,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // nothing to pick, and switching a branch under a running session is not a thing the
   // composer offers. The two pickers go away for the run and come back when it ends.
   const pickersIdle = !isStreaming && !isCompacting;
-  // The row is icon-only, so this title is where the level, the preset and the chat
-  // state are written down (hover, and the accessibility tree).
-  const runSettingsTitle = [
-    onThinkingLevelChange
-      ? (isStreaming
-        ? t("chat.currentReasoning", { level: thinkingDisplayLabel })
-        : t("chat.changeReasoning", { level: thinkingDisplayLabel }))
-      : null,
-    chatOnly
-      ? chatUnlocked
-        ? `${t("chat.chatUnlocked")}: ${t("chat.chatUnlockedDescription")}`
-        : `${t("chat.chatWorkspace")}: ${t(chatAccess && !chatAccess.state.folder ? "chat.chatOnlyDescription" : "chat.chatFolderDescription")}`
-      : null,
-    onToolPresetChange ? t("chat.changeToolPreset") + `: ${toolPresetLabel}` : null,
-  ].filter(Boolean).join(" · ");
 
   // Close dropdowns on outside click
-  useMenuNavigation(toolDropdownOpen, toolDropdownRef, () => setToolDropdownOpen(false));
-  useMenuNavigation(thinkingDropdownOpen, thinkingDropdownRef, () => setThinkingDropdownOpen(false));
   useMenuNavigation(projectDropdownOpen, projectDropdownRef, () => setProjectDropdownOpen(false));
   useMenuNavigation(plusMenuOpen, plusMenuRef, () => setPlusMenuOpen(false));
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (toolDropdownRef.current && !toolDropdownRef.current.contains(e.target as Node)) setToolDropdownOpen(false);
-      if (thinkingDropdownRef.current && !thinkingDropdownRef.current.contains(e.target as Node)) {
-        setThinkingDropdownOpen(false);
-      }
-      if (automationDropdownRef.current && !automationDropdownRef.current.contains(e.target as Node)) {
-        setAutomationDropdownOpen(false);
-      }
       if (plusMenuRef.current && !plusMenuRef.current.contains(e.target as Node)) {
         setPlusMenuOpen(false);
       }
@@ -2364,33 +2319,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // The row's glyphs are one cluster in every tier: model, reasoning, tool preset,
-  // session automation, in that order, behind the attach `+`. A phone folds the whole
-  // cluster behind its "More" button, which sits right behind `+`; the chip is the
-  // group's first cell there too, so the strip the user asked for is one run of glyphs
-  // and the row keeps its width for the project and branch chips. Visible always, busy
-  // while a switch is pending; a switch during a run applies from its next request (C2).
+  // The row's controls are the `+` and Send, and the `+`'s menu hosts the model, the
+  // reasoning level, the tool preset and the session's switches as pages of its own list
+  // (components/ComposerPlusMenu). The names they print in the hub's rows are computed here.
   const modelDisplayName = model
     ? modelOptions.find((option) => option.provider === model.provider && option.modelId === model.modelId)?.name
       ?? model.modelId
     : null;
-  const modelControl = (modelOptions.length > 0 || model || modelError) && onModelChange ? (
-    <ModelSelector
-      options={modelOptions}
-      value={model}
-      onChange={onModelChange}
-      busy={modelSwitching}
-      isAutoSelection={isAutoModelSelection}
-      // The row is icon-only, like the reasoning and tools buttons; the model's
-      // name rides in the button's title and aria-label.
-      iconOnly
-      // The picker is one of the composer's menus: its panel is placed by the shared
-      // engine, so on a phone it takes the screen's width instead of the strip's.
-      composerAnchored
-      defaultValue={defaultModel}
-      onSetDefault={onSetDefaultModel}
-    />
-  ) : null;
   // A virtual model routes each request; show where the latest response went, like pi's footer.
   const routedModelHint = routedModel && routedModelName ? (
     <span
@@ -3100,12 +3035,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               transition: "border-color var(--dur-base) var(--ease-native), background var(--dur-base) var(--ease-native), box-shadow var(--dur-base) var(--ease-native)",
             } as React.CSSProperties}
           >
-          {/* The card is one row on every platform: the `+`, the prompt, the session
-              controls, Send. The `+` opens the file picker (the wider tier) or every
-              control the row has no room for (the phone's menu); it is the row's first
-              control so the prompt starts where reading starts, and the row grows
-              downward from one line as the prompt wraps. */}
-          {!compact && (isNarrow ? (
+          {/* The card is one row on every platform: the `+`, the prompt, Send. The `+`
+              opens the hub — the attach, the model, the reasoning level, the tool preset,
+              the session's switches, the side chat, and a running compaction's Stop — so
+              the row never runs out of width and the prompt starts where reading starts.
+              The row grows downward from one line as the prompt wraps. */}
+          {!compact && (
             <ComposerPlusMenu
               menuRef={plusMenuRef}
               open={plusMenuOpen}
@@ -3113,6 +3048,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               onAttach={() => fileInputRef.current?.click()}
               attachLabel={t(!onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
               attachActive={attachedImages.length > 0 || attachedFiles.length > 0}
+              sideChat={isStreaming && onSideChat ? {
+                label: t("chat.sideChat"),
+                disabled: !value.trim() || attachedImages.length > 0,
+                onSelect: sendToSideChat,
+              } : null}
               isCompacting={Boolean(isCompacting)}
               summarizationRetry={summarizationRetry}
               onAbortCompaction={onAbortCompaction}
@@ -3148,7 +3088,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     </div>
                     <ChatAccessRows
                       access={chatAccess}
-                      onToggleUnlocked={(next) => setPlusMenuOpen(false)}
+                      onToggleUnlocked={(next) => {
+                        setPlusMenuOpen(false);
+                        onToggleChatUnlocked?.(next);
+                      }}
                     />
                   </>
                 ) : undefined,
@@ -3163,29 +3106,26 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 onSetAutomation,
               } : null}
             />
-          ) : (
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              title={t(!onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
-              aria-label={t(!onAttachFiles ? "chat.attachImage" : "chat.attachFiles")}
-              className="native-toolbar-button composer-attach-button"
-              data-active={attachedImages.length > 0 || attachedFiles.length > 0 || undefined}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-            </button>
-          ))}
+          )}
           <textarea
             ref={textareaRef}
             className="chat-input-textarea"
             onPointerDown={(event) => {
-              // A finger's tap is the only reason iOS accepts for raising its keyboard,
-              // and a tap on a field WebKit already counts as focused is no focus event
-              // at all: the keyboard comes up with no caret. Arm it inside the gesture.
-              if (isTouchPointer(event.nativeEvent)) armComposerCaret(textareaRef.current);
+              // iOS raises its keyboard for a tap that MOVES focus onto this field, and a
+              // programmatic focus + setSelectionRange inside the same gesture is what
+              // cancels it: the keyboard slides up for ~0.1s and leaves, on every tap,
+              // which is the phone's "the keyboard just couldn't pop out, so I couldn't
+              // type" (the same rule the phone terminal writes down: one gesture cannot
+              // blur-then-focus). So a field that is not focused yet is left to the
+              // browser's own tap — which also puts the caret under the finger instead of
+              // at the end of the draft. Only a field the page already focused needs
+              // arming: a tap on a field WebKit counts as focused is no focus event at
+              // all, and the selection change is what makes WebKit paint the caret
+              // (lib/composer-caret.ts).
+              if (!isTouchPointer(event.nativeEvent)) return;
+              if (typeof document !== "undefined" && document.activeElement === event.currentTarget) {
+                armComposerCaret(textareaRef.current);
+              }
             }}
             aria-label={compact ? t("chat.quoteQuestion") : undefined}
             value={value}
@@ -3256,276 +3196,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </span>
           )}
 
-          {/* The row's tail: the session controls (the wider tiers), the side chat, Send.
-              The stylesheet folds this box into the card's row (`display: contents`), so its
-              children are the row's, sharing one line with the prompt. */}
+          {/* The row's tail: Send. The stylesheet folds this box into the card's row
+              (`display: contents`), so its children are the row's, sharing one line with
+              the prompt. Everything else the row used to carry — the model, the reasoning
+              level, the tools, the session's switches, the side chat, a running
+              compaction's Stop — is a row of the `+`'s menu, on every tier. */}
           <div className="chat-composer-actions">
-          {/* The row's controls after the prompt: the session controls, the side chat,
-              Send. The `+` that opens a file is the row's first control — above, not
-              here — where the prompt starts. */}
-        {/* Bottom bar: left | center (context) | right */}
-        {/* Bottom bar: left | center (context) | right. A phone has no controls cell: its
-            row is the `+`, the prompt and Send, and the chips sit under the card. */}
-        {!compact && !isNarrow && <div className="chat-composer-controls" style={{
-          marginTop: 0,
-          // The row's filler is the prompt, not the chips: the controls take their own
-          // width and shrink when the row runs out, so a one-line card stays one line.
-          flex: "0 1 auto",
-          minWidth: 0,
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-        }}>
-
-          {/* LEFT: the session controls. The project and its branch are not in the row:
-              a new session picks them from the row under the card, and a session that is
-              running has nothing to pick (see `.composer-context-row` below the card). */}
-
-          {/* THE CLUSTER: model + reasoning + tools preset + automation (a running
-              compaction takes its own cell in the run), then the spacer, so the glyphs
-              sit together at the row's left and Send keeps the card's corner. */}
-          {/* THE CLUSTER: model + reasoning + tools preset + automation (a running
-              compaction takes its own cell in the run), then the spacer, so the glyphs
-              sit together at the row's left and Send keeps the card's corner. A phone has
-              no cluster here: its `+` (components/ComposerPlusMenu) carries the same
-              controls, in the same order, as pages of one menu. */}
-          <div style={{
-            flex: "0 0 auto",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "flex-end",
-            position: "relative",
-            marginLeft: 0,
-          }}>
-            <div
-              className="composer-controls-strip"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-              }}>
-            {/* The model is the cluster's first cell in every tier: the glyphs run
-                model, reasoning, tools, automation, and on a phone that whole run is
-                the strip the More button opens. */}
-            {modelControl}
-            {/* Keep reasoning and Config as separate, consistent option menus. */}
-            {(onThinkingLevelChange || chatOnly) && (
-              <div ref={thinkingDropdownRef} style={{ position: "relative" }}>
-                <button
-                  className="native-toolbar-button"
-                  onClick={() => setThinkingDropdownOpen((v) => !v)}
-                  title={runSettingsTitle}
-                  aria-label={t("chat.changeReasoningLabel")}
-                  aria-haspopup="listbox"
-                  aria-expanded={thinkingDropdownOpen}
-                  style={{
-                    // Icon-only: the level it points at is said by title and aria-label. This
-                    // row carries the attach button, the session controls and Send, and the
-                    // word ("medium", "Think") is what the user asked to drop.
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 0,
-                    padding: 0,
-                    width: "var(--composer-send-size)",
-                    height: "var(--composer-send-size)",
-                    background: thinkingDropdownOpen ? "var(--bg-hover)" : "none",
-                    border: "none",
-                    borderRadius: "var(--radius-md)",
-                    color: "var(--text-muted)",
-                    cursor: "pointer",
-                    fontSize: "var(--fs-caption)",
-                    transition: "background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native)",
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <line x1="4" y1="7" x2="14" y2="7" /><line x1="18" y1="7" x2="20" y2="7" /><circle cx="16" cy="7" r="2" />
-                    <line x1="4" y1="17" x2="6" y2="17" /><line x1="10" y1="17" x2="20" y2="17" /><circle cx="8" cy="17" r="2" />
-                  </svg>
-                </button>
-                {thinkingDropdownPop.mounted && (() => {
-                  const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
-                  const maxH = Math.max(120, vh * 0.6);
-                  // A number for the width, and a box that stops at the sidebar: an
-                  // absolute box with only minWidth collapses to the 36px button and
-                  // clips its own rows, and its left half lands in the sidebar's
-                  // column, which clips it and paints above it. See the helper.
-                  const anchoring = composerPanelAnchoring(thinkingDropdownRef.current, COMPOSER_RUN_MENU_WIDTH, { alignLeft: isMobile });
-                  return (
-                  <div className={`native-popover app-menu composer-run-menu${thinkingDropdownPop.className}`} role="listbox" style={{
-                    position: "absolute",
-                    bottom: "calc(100% + 6px)",
-                    ...(anchoring ? { left: anchoring.left, width: anchoring.width } : isMobile ? { left: 0 } : { right: 0 }),
-                    zIndex: 100,
-                    overflow: "hidden", minWidth: 240,
-                    maxHeight: maxH, display: "flex", flexDirection: "column",
-                  }}>
-                    <div className="app-menu-list">
-                    {onThinkingLevelChange && (
-                      <ComposerReasoningRows
-                        availableLevels={availableThinkingLevels}
-                        resolvedLevel={resolvedThinkingLevel}
-                        isAuto={isAutoThinkingSelection}
-                        levelMap={thinkingLevelMap}
-                        savedDefault={savedDefaultThinkingLevel}
-                        onSetDefault={onSetDefaultThinkingLevel}
-                        onPick={(level) => {
-                          setThinkingDropdownOpen(false);
-                          if (level === "auto") {
-                            if (!isAutoThinkingSelection) onThinkingLevelChange("auto");
-                            return;
-                          }
-                          const active = !isAutoThinkingSelection && resolvedThinkingLevel === level;
-                          if (!active || isAutoThinkingSelection) onThinkingLevelChange(level);
-                        }}
-                      />
-                    )}
-
-                    {chatOnly && (
-                      <>
-                        <div className="composer-menu-heading" data-separated={onThinkingLevelChange ? true : undefined}>
-                          {t("chat.toolsHeading")}
-                        </div>
-                        <ChatAccessRows
-                          access={chatAccess}
-                          onToggleUnlocked={(next) => {
-                            setThinkingDropdownOpen(false);
-                            onToggleChatUnlocked?.(next);
-                          }}
-                        />
-                      </>
-                    )}
-                    </div>
-                  </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {/* Manual compaction lives in the session menu below; an active one
-                (manual or auto, mid-run included) stays in the row so it is
-                visible and can be stopped. */}
-            {onCompact && isCompacting && (
-              <div style={{ position: "relative" }}>
-                <button
-                  className="native-toolbar-button"
-                  onClick={onAbortCompaction}
-                  style={{
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 0,
-                      padding: 0,
-                      width: "var(--composer-send-size)",
-                      height: "var(--composer-send-size)",
-                      background: "color-mix(in srgb, var(--danger) 8%, transparent)",
-                      border: "none",
-                      borderRadius: "var(--radius-md)",
-                      color: "var(--danger)",
-                      cursor: "pointer",
-                      fontSize: "var(--fs-caption)", opacity: 1,
-                      transition: "background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native)",
-                    }}
-                  title={t("chat.stopCompaction") + (summarizationRetry ? ` · ${t("chat.compactingRetry", { attempt: summarizationRetry.attempt, max: summarizationRetry.maxAttempts })}` : "")}
-                  aria-label={t("chat.stopCompaction")}
-                  >
-                    {/* Icon-only, like the rest of the row: the words are in title and aria-label. */}
-                    <svg width="12" height="12" viewBox="0 0 10 10" fill="none"><rect x="2" y="2" width="6" height="6" rx="1" fill="currentColor" /></svg>
-                  </button>
-              </div>
-            )}
-
-            {onToolPresetChange && (
-              <div ref={toolDropdownRef} style={{ position: "relative" }}>
-                <button
-                  className="native-toolbar-button"
-                  onClick={() => !isStreaming && setToolDropdownOpen((v) => !v)}
-                  disabled={isStreaming}
-                  title={t("chat.changeToolPreset") + `: ${toolPresetLabel}`}
-                  aria-label={t("chat.changeToolPreset")}
-                  aria-haspopup="listbox"
-                  aria-expanded={toolDropdownOpen}
-                  style={{
-                    // Icon-only: the preset's name is in title and aria-label, and the row
-                    // carries the attach button, the session controls and Send.
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 0,
-                    padding: 0,
-                    width: "var(--composer-send-size)",
-                    height: "var(--composer-send-size)",
-                    background: toolDropdownOpen ? "var(--bg-hover)" : "none",
-                    border: "none",
-                    borderRadius: "var(--radius-md)",
-                    color: "var(--text-muted)",
-                    cursor: isStreaming ? "not-allowed" : "pointer",
-                    fontSize: "var(--fs-caption)",
-                    opacity: isStreaming ? 0.5 : 1,
-                    transition: "background var(--dur-fast) var(--ease-native), color var(--dur-fast) var(--ease-native)",
-                  }}
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-                  </svg>
-                </button>
-                {toolDropdownPop.mounted && (() => {
-                  const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
-                  const maxH = Math.max(120, vh * 0.6);
-                  // Clamped to the conversation column, not to the viewport: 16px from
-                  // the window's left edge is under the sidebar, and the menu opened
-                  // there was cut to "n defaultTools".
-                  const anchoring = composerPanelAnchoring(toolDropdownRef.current, COMPOSER_TOOL_MENU_WIDTH, { alignLeft: isMobile });
-                  return (
-                  <div className={`native-popover app-menu composer-tool-menu${toolDropdownPop.className}`} role="listbox" aria-label={t("chat.changeToolPreset")} style={{
-                    position: "absolute", bottom: "calc(100% + 6px)",
-                    ...(anchoring ? { left: anchoring.left, width: anchoring.width } : { right: 0 }),
-                    zIndex: 100, background: "var(--bg)", border: "var(--hairline) solid var(--border)",
-                    borderRadius: "var(--radius-md)", boxShadow: "var(--shadow-popover)",
-                    overflow: "hidden", minWidth: 120,
-                    maxHeight: maxH, display: "flex", flexDirection: "column",
-                  }}>
-                    <div className="app-menu-list">
-                    <ComposerToolPresetRows
-                      current={toolPreset ?? "configured"}
-                      onPick={(preset) => {
-                        setToolDropdownOpen(false);
-                        if (preset !== (toolPreset ?? "configured")) onToolPresetChange(preset);
-                      }}
-                    />
-                    </div>
-                  </div>
-                  );
-                })()}
-              </div>
-            )}
-
-            {(automationKnown || canCompactNow) && (
-              <SessionAutomationMenu
-                menuRef={automationDropdownRef}
-                open={automationDropdownOpen}
-                onOpenChange={setAutomationDropdownOpen}
-                alignLeft={isMobile}
-                automation={automationKnown ? automation : undefined}
-                onSetAutomation={onSetAutomation}
-                onCompact={canCompactNow ? onCompact : undefined}
-              />
-            )}
-
-            </div>
-            {!isNarrow && routedModelHint}
-          </div>
-
-          {/* No spacer: the prompt is the row's filler, so the cluster sits against Send
-              and the card's own width is spent on the text. */}
-
-        </div>}
           {/* No "clear the composer" button: the text is a textarea, and selecting it and
               deleting is how a prompt is discarded. The row carries the controls that have
               no keyboard equivalent. */}
-          {isStreaming && onSideChat && (
-            <button
-              type="button"
-              className="composer-side-chat-button"
-              onClick={sendToSideChat}
-              disabled={!value.trim() || attachedImages.length > 0}
-              title={t("chat.sideChatHint")}
-              aria-label={t("chat.sideChat")}
-            >
-              <SideChatPlusIcon size={16} strokeWidth={1.8} />
-            </button>
-          )}
           <button
             type="button"
             className={compact ? "native-primary-button" : "native-primary-button composer-send-button"}
@@ -3593,7 +3272,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   onWorktreeRemoved={onComposerWorktreeRemoved}
                 />
               )}
-              {isNarrow && routedModelHint}
+              {routedModelHint}
             </div>
           )}
 
