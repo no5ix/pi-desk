@@ -383,6 +383,16 @@ export function GitPanel({ cwd, onOpenFile }: Props) {
           <span className="git-panel-title-text" title={selectedCommit?.subject ?? selectedBranch?.name}>
             {panelTitle}
           </span>
+          {/* The folder this panel reads, behind the title. It is a fact about the whole
+              panel — which repository the branches, the commits and the diff below come
+              from — so it belongs to the heading, and it never takes a line from the
+              branch list the way the row above the list used to. The label is the
+              home-relative form; the full path stays in the title. */}
+          {data?.isGit && checkout && (
+            <span className="git-panel-heading-path" title={checkout.path}>
+              {shortenPath(checkout.path)}
+            </span>
+          )}
         </span>
         <span className="git-panel-actions">
           {selectedCommit ? (
@@ -458,9 +468,6 @@ export function GitPanel({ cwd, onOpenFile }: Props) {
             )}
             {data?.isGit && checkout && !checkout.branch && (
               <p className="git-panel-hint" role="status">{t("gitPanel.detached")}</p>
-            )}
-            {data?.isGit && checkout && (
-              <p className="git-panel-note" title={checkout.path}>{shortenPath(checkout.path)}</p>
             )}
             {data?.isGit && topRows.map((row) => (
               <button

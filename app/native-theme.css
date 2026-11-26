@@ -14430,6 +14430,21 @@ button.custom-message-header {
   text-overflow: ellipsis;
 }
 
+/* The checkout's folder, behind the title on the heading's row: the panel reads one
+   repository, and naming it is the heading's job, not a list row's. Muted and small, so
+   the title stays the loudest thing on the row, and it gives way before the title does
+   when the row runs out of room (the panel is 390px on a phone). */
+.git-panel-heading-path {
+  flex: 0 3 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-regular);
+}
+
 .git-panel-actions {
   display: flex;
   flex: 0 0 auto;
