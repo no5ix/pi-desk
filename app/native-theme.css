@@ -6827,6 +6827,16 @@ html.dark {
   row-gap: 4px;
 }
 
+/* pi keeps the end of a long `!command` output and writes all of it to a temp file.
+   When it cannot write that file (pi 1.6.1's `fullOutputError`), the card's own row
+   under the result says so instead of going quiet on a truncated answer. */
+.tool-output-truncation-note {
+  padding: 4px 10px;
+  margin-top: -1px;
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
 .process-details {
   margin: 2px 0 16px !important;
 }

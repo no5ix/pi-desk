@@ -11,7 +11,14 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { CacheWarmingInfo } from "./types";
 import type { UsageCostBreakdownEntry } from "./usage-breakdown";
 
-export type { PiAgentMessage };
+export interface BashResultLike {
+  output: string;
+  exitCode?: number;
+  cancelled?: boolean;
+  truncated?: boolean;
+  fullOutputPath?: string;
+  fullOutputError?: string;
+}
 
 export interface ContextUsage {
   percent: number | null;

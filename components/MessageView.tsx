@@ -2427,6 +2427,7 @@ function getToolPreview(block: ToolCallContent): string {
 }
 
 function BashExecutionView({ message, sessionId }: { message: BashExecutionMessage; sessionId?: string }) {
+  const { t } = useI18n();
   const [fullOutput, setFullOutput] = useState<string | null>(null);
   const [loadingFull, setLoadingFull] = useState(false);
   const [fullError, setFullError] = useState<string | null>(null);
@@ -2517,6 +2518,13 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
             download full output
           </button>
           {fullError && <span style={{ marginLeft: 6, color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>({fullError})</span>}
+        </div>
+      )}
+      {message.truncated && !fullOutputUrl && (
+        <div className="tool-output-truncation-note" role="status">
+          {message.fullOutputError
+            ? t("chat.fullOutputNotSaved", { error: message.fullOutputError })
+            : t("chat.outputTruncated")}
         </div>
       )}
     </div>
