@@ -3,13 +3,19 @@
 /**
  * The composer's corner: expand a long prompt into a tall editor, collapse it back.
  *
- * Two glyphs, one component, because the two states are the same mark turned around:
- * corners that open outward say "there is more room this way", corners that fold
- * inward say "back to the row". The marks run the **top-left to bottom-right** diagonal
- * (the 2026-12 ask: the bottom-left/top-right pair read against the card's own left
- * edge, where the `+` and the corner stand in one column). The button that draws it
- * lives in the composer card's upper-left corner (components/ChatInput.tsx) and the
- * text drops below it, so the glyph never sits over a line.
+ * Two glyphs, one component: corners that open outward say "there is more room this
+ * way", corners that fold inward say "back to the row", and the button turns the mark
+ * through its centre between the two states.
+ *
+ * The expand mark runs the **top-left to bottom-right** diagonal — the 2026-12 ask,
+ * because the old bottom-left/top-right pair read against the card's own left edge, the
+ * column where the corner and the `+` stand. The collapse mark keeps its own inward
+ * fold (the same ask reverted it): folded corners are read as "back to the row", and
+ * mirroring them onto the new diagonal made the two states read as one shape.
+ *
+ * The button that draws this lives in the composer card's upper-left corner
+ * (components/ChatInput.tsx) and the text's first line steps right of it, so the glyph
+ * never sits over a line.
  */
 export function ComposerExpandIcon({ expanded, size = 18 }: { expanded?: boolean; size?: number }) {
   return (
@@ -29,10 +35,10 @@ export function ComposerExpandIcon({ expanded, size = 18 }: { expanded?: boolean
     >
       {expanded ? (
         <>
-          {/* Folded inwards: each corner is drawn at the glyph's far side and points
-              back at the centre, along the top-left / bottom-right diagonal. */}
-          <path d="M20 10h-6V4" />
-          <path d="M4 14h6v6" />
+          {/* Folded inwards, in the pair the eye already knows: each corner is drawn at
+              the glyph's far side and points back at the centre. */}
+          <path d="M4 10h6V4" />
+          <path d="M20 14h-6v6" />
         </>
       ) : (
         <>

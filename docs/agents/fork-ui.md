@@ -112,9 +112,11 @@ zero basis and clips the auto-grow height to `minHeight`, which is the regressio
 `components/MobilePwaLayout.test.mjs` pins — and `flex: "1 1 auto"` in the row.
 
 The card's upper-left corner carries one affordance: expand (`components/ComposerExpandIcon.tsx`,
-`.chat-composer-expand`). Its mark runs the **top-left → bottom-right** diagonal (the 2026-12 ask:
-the old bottom-left/top-right pair read against the card's own left edge, the column where the
-corner and the `+` stand). A tap turns the card into a tall editor for a long prompt —
+`.chat-composer-expand`). Its **expand** mark runs the
+**top-left → bottom-right** diagonal (the 2026-12 ask: the old bottom-left/top-right pair read
+against the card's own left edge, the column where the corner and the `+` stand). The **collapse**
+mark keeps its own inward fold and is NOT mirrored onto that diagonal — the same ask reverted it:
+mirrored, the two states read as one shape. A tap turns the card into a tall editor for a long prompt —
 `is-expanded` on the card, and `app/native-theme.css` owns the height, out-inlining the
 textarea's own `min-height: 24px / max-height: 200px` box, which the composer sets inline.
 With the phone's keyboard up the editor is measured against `--app-viewport-height`, so a tall
@@ -129,11 +131,13 @@ The corner is not drawn where there is no room
 to grow: the quote composer's card and a docked side chat get none. The choice is remembered
 per device (`APP_PREF_KEYS.composerExpanded`) because it is a way of writing, not a per-session
 fact, and the room the glyph takes out of the text is a rule: the corner lives in the card's
-upper-left and the text **drops below it** (`padding-top: 26px`, 36px for a finger), so no line
-is typed under it and the caret is never hidden. It is not a left gutter — the 2026-12 ask
-reported exactly that: a `padding-left` of 34px (44px under a finger) opened a second, ragged
-left column between the `+` and the prompt, so the editor keeps the one-line card's own gap
-between the disc and the text. Collapsing runs the composer's autosize again with the
+upper-left **on the text's first line**, and only that line steps right of it
+(`text-indent: 20px`, 30px for a finger). Two shapes were tried and reported against: a
+`padding-left` of 34px (44px under a finger) moved the whole prompt far from the `+` and opened
+a second, ragged left column, and a `padding-top` of 26px pushed the text under the glyph and
+left a band of card that clicked into nothing — *"I should be able to type in the red frame
+area"*. Padding is not typeable, so the box is the editor from its first pixel and the corner
+shares the first line's row. Collapsing runs the composer's autosize again with the
 box released: measured inside the tall editor `scrollHeight` reports the editor's height, and a
 folded card would keep the 340px it had grown. `e2e/composer-expand.mjs` measures the plate
 (36px for a finger, 30px for a pointer), the gutter, the keyboard's room, a long prompt's

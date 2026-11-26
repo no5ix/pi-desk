@@ -14823,15 +14823,18 @@ button.custom-message-header {
   outline-offset: 2px;
 }
 
-/* The corner sits over the card's upper-left, so the text drops BELOW the glyph instead
-   of stepping right of it. The ask was exact: a left gutter put the prompt 34px (44px
-   under a finger) away from the `+`, which is a second, ragged left column beside the
-   disc. The one-line card's gap between the `+` and the text is the prompt's own gap, so
-   the editor keeps it, and the first line simply starts under the corner: no line is
-   typed under the glyph and the caret is never hidden by it. The textarea is
-   `box-sizing: border-box`, so the drop is inside the editor's bounds. */
+/* The corner sits in the card's upper-left, on the text's first line, so only that FIRST
+   line steps right of the glyph — `text-indent`, not padding, not a gutter. Two earlier
+   shapes both failed: a `padding-left` of 34px (44px under a finger) put the whole prompt
+   far from the `+` and opened a second, ragged left column; a `padding-top` of 26px pushed
+   the text below the glyph and left a band of card the user clicked into and could not type
+   in ("I should be able to type in the red frame area"). The box is the editor from its
+   first pixel: the corner shares the first line's row, every line is typeable, and the
+   caret is never under the glyph. */
 .chat-composer.has-expand .chat-composer-editor > .chat-input-textarea {
-  padding-top: 26px;
+  /* The plate is 26px at 4px from the card's left (its right edge is 30px in) and the
+     text's ink starts ~22px in, so 20px of indent stands the first line past it. */
+  text-indent: 20px;
 }
 
 /* A phone's finger: the glyph is 18px, so the plate it lives on is the touch target
@@ -14846,10 +14849,10 @@ button.custom-message-header {
   }
 
   .chat-composer.has-expand .chat-composer-editor > .chat-input-textarea {
-    /* The 36px plate at 2px from the card's top ends 38px down; the card's own 6px
-       padding leaves the text 6px in, so 36px of top padding starts the first line
-       under the plate, with the prompt's `+` gap untouched. */
-    padding-top: 36px;
+    /* The finger's plate is 36px at 2px in (its right edge is 38px in) and the text's ink
+       starts ~20px in on this tier, so 30px of indent clears it with the same room to
+       spare — and the first line stays on the corner's row, typeable. */
+    text-indent: 30px;
   }
 }
 

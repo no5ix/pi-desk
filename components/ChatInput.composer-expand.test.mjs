@@ -122,24 +122,22 @@ test("the corner sits in the card's upper-LEFT, and the text stops short of it",
   assert.ok(coarse, "a finger's tier is its own block");
   assert.match(coarse, /width: 36px;[\s\S]*height: 36px;[\s\S]*top: 2px;[\s\S]*left: 2px;[\s\S]*border-radius: 12px;/,
     "the glyph is 18px, so the plate it lives on is the touch target");
-  // The corner sits over the card's upper-left, so the text DROPS BELOW the glyph: no line
-  // is typed under it and the caret is never hidden. It is not a left gutter — the 2026-12
-  // ask reported exactly that: 34px (44px under a finger) of `padding-left` opened a second,
-  // ragged left column and put the prompt far from the `+`, while the one-line card's gap
-  // between the disc and the text is the prompt's own.
+  // The corner sits in the card's upper-left, ON the text's first line, so the first line
+  // steps right of the glyph with `text-indent`. Two shapes failed before it: a
+  // `padding-left` of 34px (44px under a finger) moved the whole prompt far from the `+`
+  // and opened a second, ragged left column; a `padding-top` of 26px pushed the text under
+  // the glyph and left a band of card that clicked into nothing — "I should be able to type
+  // in the red frame area".
   const gutter = cssRule(css, ".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea");
-  assert.ok(gutter, "the card reserves the drop only when the corner is drawn");
-  assert.match(gutter, /padding-top: 26px;/, "the first line starts under the 26px plate at 4px from the card's top");
-  assert.doesNotMatch(gutter, /padding-left:/,
-    "no left gutter: the text keeps the resting card's own gap to the `+` disc");
-  assert.doesNotMatch(gutter, /padding-right:/,
-    "the right side needs nothing: the row's own gaps and Send's disc are already accounted for there");
+  assert.ok(gutter, "the card indents only when the corner is drawn");
+  assert.match(gutter, /text-indent: 20px;/, "the 26px plate ends 30px in, the ink starts ~22px in: 20px stands the first line past it");
+  for (const dead of ["padding-top", "padding-left", "padding-right"]) {
+    assert.ok(!gutter.includes(`${dead}:`), `no ${dead}: the box is the editor from its first pixel, so every line is typeable`);
+  }
   const coarseGutter = cssRule(css, ".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea", 1);
-  assert.match(coarseGutter ?? "", /padding-top: 36px;/, "and the drop follows the bigger plate (36px at 2px)");
-  assert.doesNotMatch(css, /\.chat-composer\.has-expand[^\n]*\{[^}]*padding-right: (38px|44px)/,
-    "no right gutter anywhere: it was carved for a corner in the top-right, and it left a band of dead text width");
-  assert.doesNotMatch(css, /\.chat-composer\.has-expand[^\n]*\{[^}]*padding-left: (34px|44px)/,
-    "no left gutter anywhere: the editor and the resting card start the text at the same x");
+  assert.match(coarseGutter ?? "", /text-indent: 30px;/, "and the indent follows the 36px finger plate (its edge is 38px in)");
+  assert.ok(!/\.chat-composer\.has-expand[^\n]*\{[^}]*padding-/.test(css),
+    "no padding shape anywhere on the expanded card: padding is not typeable, and it is what the ask called out");
 });
 
 test("the expanded card stays the row the resting card is", () => {
@@ -198,14 +196,17 @@ test("Escape in the field folds the card, and a running agent keeps its abort", 
 
 test("the corner's mark is the same shape turned around", () => {
   assert.ok(/expanded \? \(/.test(icon), "one component, two states");
-  for (const path of ['d="M10 4H4v6"', 'd="M14 20h6v-6"', 'd="M20 10h-6V4"', 'd="M4 14h6v6"']) {
+  for (const path of ['d="M10 4H4v6"', 'd="M14 20h6v-6"', 'd="M4 10h6V4"', 'd="M20 14h-6v6"']) {
     assert.ok(icon.includes(path), `the glyph carries ${path}`);
   }
-  // The diagonal is the ask: 左上斜向右下 (top-left to bottom-right), not the old
-  // bottom-left/top-right pair, which read against the card's left edge — the column
-  // where the corner and the `+` stand.
-  for (const gone of ['d="M14 4h6v6"', 'd="M10 20H4v-6"', 'd="M4 10h6V4"', 'd="M20 14h-6v6"']) {
-    assert.ok(!icon.includes(gone), `the glyph no longer carries ${gone}`);
+  // The expand mark runs 左上斜向右下 (top-left to bottom-right): the old outward pair sat
+  // on the bottom-left/top-right diagonal, which read against the card's own left edge —
+  // the column where the corner and the `+` stand. The collapse mark is NOT mirrored onto
+  // that diagonal (the same ask reverted it: the inward fold is the shape the eye reads as
+  // "back to the row", and mirroring it made the two states look like one glyph), so the
+  // old outward paths stay out of the file while the inward pair comes back.
+  for (const gone of ['d="M14 4h6v6"', 'd="M10 20H4v-6"']) {
+    assert.ok(!icon.includes(gone), `the expanded state's outward pair no longer ships: ${gone}`);
   }
   assert.ok(icon.includes('aria-hidden="true"'), "the button's label carries the meaning, not the drawing");
   for (const locale of ["en", "zh-CN", "zh-TW"]) {
