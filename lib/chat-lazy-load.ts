@@ -16,6 +16,29 @@ export function getNextVisibleCount(currentVisibleCount: number, pageSize = VISI
 }
 
 /**
+ * The most history one chat page holds. The rendered window follows the loaded
+ * count (a prepend must land inside the window the reader is scrolling in), so
+ * the loaded count is what the tab keeps: rows, their DOM, their highlighted
+ * code. A five-year session is thousands of entries, and the way to one of them
+ * is search, not an endless scroll.
+ */
+export const MAX_LOADED_MESSAGES = 600;
+
+/**
+ * Whether "load earlier" is still offered after a page lands: the server's
+ * answer, cut off at the page's cap. Past the cap the sentinel disappears —
+ * the alternative is a spinner at the top of a list that never moves, loading
+ * rows the window will not show.
+ */
+export function hasEarlierAfterPrepend(
+  loadedCount: number,
+  serverHasMore: boolean,
+  max = MAX_LOADED_MESSAGES,
+): boolean {
+  return serverHasMore && loadedCount < max;
+}
+
+/**
  * How long a prepend keeps re-attaching the viewport to its anchor row. Sized to
  * outlast what grows the content *above* after the page lands: the highlight queue
  * hands a long reply to Prism, an image reports its intrinsic size, a Mermaid block

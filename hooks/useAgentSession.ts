@@ -50,6 +50,7 @@ import {
   CHAT_SCROLL_REATTACH_TOLERANCE,
   CHAT_SCROLL_TAIL_TOLERANCE,
   getLiveFollowAttached,
+  hasEarlierAfterPrepend,
   isScrollAtTail,
   shouldShowScrollToLatest,
 } from "@/lib/chat-lazy-load";
@@ -958,7 +959,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // the bottom before the browser delivers its pending scroll event.
       if (before) isNearBottomRef.current = false;
       setHistoryCursor(d.context.oldestEntryId);
-      setHasEarlierMessages(d.context.hasMore);
+      // The page's own bound on history (lib/chat-lazy-load.ts): the rendered window
+      // follows the loaded count, so a loaded row is a kept row, and rows past the cap
+      // are rows the reader reaches by search, not by scrolling forever. The sentinel
+      // disappears at the cap; a spinner that loads pages the window will not show is
+      // the alternative.
+      setHasEarlierMessages(before
+        ? hasEarlierAfterPrepend(messagesRef.current.length + d.context.messages.length, d.context.hasMore)
+        : d.context.hasMore);
       setData((prev) => {
         if (!prev || prev.sessionId !== sid) return prev;
         const context = before ? {
