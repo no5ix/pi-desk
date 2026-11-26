@@ -755,3 +755,73 @@ warnings); `npm test` 4893 tests, 4892 pass, 1 skipped, 0 fail; `e2e/git-panel.m
 and `e2e/tmp-labels.mjs`, `e2e/tmp-pop-check.mjs`. `components/AppShell.tsx` carries that
 lane's `usePopTransition` wiring and `hooks/usePopTransition.ts` is committed with it, because
 AppShell imports it — the staged tree was checked to resolve every `@/` import.
+
+## WIP: the phone composer becomes one row, with a `+` that carries the controls
+
+**Ask (three items).** (1) An empty composer is ONE row like ChatGPT's phone composer
+(`+`, the text, Send); every other control is collected behind the `+`, whose menu lists
+them, breathes red while the session compacts, and carries a "stop compacting" row.
+(2) On a new session, the project and branch chips move to a strip **below** the composer
+card. (3) Typing past one line grows the card smoothly, and deleting back to one line
+shrinks it smoothly.
+
+**Read before writing** (`modern-web-guidance`): `interpolate-size` / `calc-size` are
+Chrome/Edge-only (Safari and WKWebView jump), so the smooth growth is a px→px height
+transition driven from JS: measure with the `height: auto` step and undo it in the same
+task, write the target on the next frame. `field-sizing: content` is the same story, and
+the grid mirror is the heavy fallback: not needed.
+
+**Groundwork done (uncommitted).**
+- `lib/composer-textarea-height.ts` (new): `measureComposerTextarea` (measures and leaves
+  the previous height painted, so no frame is ever painted at `auto`),
+  `growComposerTextarea` (writes the target on the next frame: px→px, animatable),
+  `COMPOSER_TEXTAREA_MAX_HEIGHT = 200`, and a reduced-motion path that writes at once.
+  All 13 auto-grow sites in `components/ChatInput.tsx` now call it.
+- `lib/composer-option-data.ts` (new): `TOOL_PRESETS`, `TOOL_PRESET_MAP`,
+  `TOOL_PRESET_DESC_KEYS`, `THINKING_LEVELS`, `THINKING_LEVEL_DESC_KEYS`,
+  `visibleThinkingLevels` — moved out of ChatInput, which is to import them.
+- `components/ComposerReasoningRows.tsx`, `components/ComposerToolPresetRows.tsx` (new):
+  the level rows and the preset rows, with the host's `onPick` (the desktop closes, the `+`
+  menu returns to its hub) and a `footer` slot for the chat-only block.
+- `components/SessionAutomationMenu.tsx`: the panel body is now the exported
+  `SessionAutomationRows` (compact row + the automation switches); the panel keeps
+  placement and passes `onClose`.
+- `components/ModelSelector.tsx`: the list body is the local `ModelListBody` and the
+  exported `ModelSelectorList` (filter box, provider groups, default star) for a host that
+  owns its panel. One list, one filter, one star.
+- `components/ComposerPlusMenu.tsx` (new): the `+` trigger, the hub rows (Stop compacting
+  while compacting, Attach, Model, Reasoning, Tools, Session automation — each carrying the
+  value it is at), the pages (the lists above), `composerPanelAnchoring` +
+  `getUpwardMenuMaxHeight`/`getVisibleTopBoundary` for the panel,
+  `data-compacting` for the breathing glyph. `COMPOSER_PLUS_MENU_WIDTH` still has to be
+  added to `lib/composer-panel-placement.ts`.
+- `components/ComposerContextChips.tsx` (new, LIKELY DROPPED): `fork-extractions.test.mjs`
+  requires `<ComposerProjectChip` and `<SessionAutomationMenu` to stay in ChatInput.tsx, so
+  the chips are mounted directly by ChatInput in both places, not through a wrapper.
+
+**The rest, in order.** ChatInput: `data-inline` on the editor (+ the tier-aware
+`flexDirection`/textarea `flex`), the phone's `+` (keeps `composer-attach-button` so the
+existing CSS/fixture needles survive) in place of the attach button, the phone's More button
+/ strip / strip-close / narrow grid gone, the chips mounted in the strip under the card, the
+`+` menu's props built from the state ChatInput already has, `plusMenuOpen`/`plusMenuRef`
+into the one outside-click handler and `useMenuNavigation`. Then
+`COMPOSER_PLUS_MENU_WIDTH`; the CSS (one row, the strip under the card, the breathing
+glyph, the height transition, reduced motion, delete the dead
+`.composer-controls-strip[data-strip-open]`/`.composer-controls-close` rules); i18n
+`chat.composerPlus`, `chat.composerPlusModel` in all three `FORK_MESSAGE_PATCHES` blocks
+(`lib/i18n/registry.test.mjs` demands key parity); then the tests:
+`ChatInput.composer-row.test.mjs` (rewritten: it pins the More button, the strip,
+`textareaAt < rowAt`, the textarea margins — keep a line with `data-keyboard-open` +
+`chat-composer-controls`, which `app/native-theme-phone-pass.test.mjs:107` reads),
+`MobilePwaLayout.test.mjs` (the textarea `flex` needle), `CostRouting.wiring.test.mjs`
+(both routed-hint placements), `composer-ios.mjs` (fixture needles + the fixture),
+`option-controls.mjs` (it clicks 更多控件 on a phone), `e2e/composer-geometry.mjs`
+(tier-aware `textAboveRow`, the `+` selector, and a settle that waits out the height
+transition before the arc and height assertions), plus a new
+`components/ComposerPlusMenu.test.mjs`, `lib/composer-textarea-height.test.mjs` and
+`e2e/composer-plus.mjs`.
+
+**Not touched.** The concurrent agent's uncommitted work (the `usePopTransition` pop path,
+`AppShell`, `ImagePreview`, `path-ui`, `native-theme.css`'s pop/`is-closing` rules, the
+`lib/git-*` files). `hooks/usePopTransition.ts` is untracked, so nothing new imports it:
+`ComposerPlusMenu` mounts its panel on `open` only.
