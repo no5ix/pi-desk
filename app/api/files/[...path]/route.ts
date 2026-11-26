@@ -41,6 +41,7 @@ import { hasParentDirectorySegment } from "@/lib/path-security";
 import { registerFileWatch } from "@/lib/file-watch-registry";
 import { createFileWatchStream, MAX_WATCHED_FILES_PER_STREAM, type FileWatchEntry } from "@/lib/file-watch-stream";
 import { pageStreamLabel, registerPageStream } from "@/lib/page-stream-registry";
+import { MAX_WRITE_SIZE, writeProjectFile } from "@/lib/file-write";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -427,6 +428,89 @@ export async function POST(
       return NextResponse.json({ error: "Import request is too large" }, { status: 413 });
     }
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
+}
+
+const WRITE_STATUS: Record<string, number> = {
+  FORBIDDEN: 403,
+  OUTSIDE_ROOT: 403,
+  READ_ONLY: 403,
+  CONFLICT: 409,
+  TOO_LARGE: 413,
+  BINARY: 413,
+  NOT_A_FILE: 400,
+  NOT_FOUND: 404,
+};
+
+/**
+ * Save a text file. The same allow-list the read path uses, plus what an editor
+ * needs: a size cap, no binary content, no credential file, no `.git`, and the
+ * modification time the editor read — when the file moved on disk in the
+ * meantime, the write is refused instead of overwriting what a formatter, a git
+ * operation, or another window put there.
+ */
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  if (!isApiRequestAllowed(request)) {
+    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+  if (!hasJsonContentType(request)) {
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  }
+  const type = request.nextUrl.searchParams.get("type") ?? "read";
+  if (type !== "read") {
+    return NextResponse.json({ error: "Invalid file write request type" }, { status: 400 });
+  }
+
+  try {
+    const { path: segments } = await params;
+    const filePath = path.resolve(filePathFromApiSegments(segments));
+    // The same refusals the read path makes: an encoded slash can hide `..`, and
+    // a credential store is never served — and never written.
+    if (hasParentDirectorySegment(filePath) || isCredentialPath(filePath)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+    const allowedRoots = await getAllowedFileRoots();
+    if (!isFilePathAllowed(filePath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+    // Links are resolved for the directory the write lands in, so a link that
+    // leaves the roots is refused before anything is written.
+    const authorizationPath = fs.existsSync(filePath) ? filePath : path.dirname(filePath);
+    if (!isExistingFilePathAllowed(authorizationPath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    const body = await request.json().catch(() => null) as {
+      content?: unknown; baseMtime?: unknown; allowOverwrite?: unknown;
+    } | null;
+    if (typeof body?.content !== "string") {
+      return NextResponse.json({ error: "content must be a string" }, { status: 400 });
+    }
+    if (Buffer.byteLength(body.content, "utf8") > MAX_WRITE_SIZE) {
+      return NextResponse.json({ error: `File too large (${MAX_WRITE_SIZE} bytes max)` }, { status: 413 });
+    }
+    const baseMtimeMs = typeof body.baseMtime === "string" ? Date.parse(body.baseMtime) : Number.NaN;
+    const result = await writeProjectFile(filePath, body.content, {
+      baseMtimeMs: Number.isFinite(baseMtimeMs) ? baseMtimeMs : undefined,
+      allowOverwrite: body.allowOverwrite === true,
+    });
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.message, code: result.code },
+        { status: WRITE_STATUS[result.code] ?? 400 },
+      );
+    }
+    return NextResponse.json({
+      ok: true,
+      mtime: new Date(result.mtimeMs).toISOString(),
+      size: result.size,
+      etag: result.etag,
+    });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 

@@ -70,6 +70,24 @@ export class BranchDashboardStateStore {
     return favorite;
   }
 
+  /** Every ref this repository marks favourite, by kind. Defaults apply: a
+   *  repository that never touched the star still shows `main` and `master`. */
+  favoritesFor(repoId: string): Record<GitRefType, string[]> {
+    const overrides = this.read().favoriteOverrides[repoId] ?? {};
+    const out = {} as Record<GitRefType, string[]>;
+    for (const type of ["local", "remote", "tag", "detached"] as GitRefType[]) {
+      const names = new Set(DEFAULT_FAVORITES[type]);
+      for (const [key, value] of Object.entries(overrides)) {
+        if (!key.startsWith(`${type}:`)) continue;
+        const name = key.slice(type.length + 1);
+        if (value) names.add(name);
+        else names.delete(name);
+      }
+      out[type] = [...names];
+    }
+    return out;
+  }
+
   getPreferences(): BranchDashboardPreferences {
     const { showTags, singleClickAction } = this.read();
     return { showTags, singleClickAction };

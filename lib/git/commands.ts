@@ -454,7 +454,7 @@ const COMMANDS: Record<string, CommandHandler> = {
     const store = await getGitDashboardStore();
     return {
       preferences: store.getPreferences(),
-      favorites: store.isFavorite(context.runtime.descriptor.id, "local", ""),
+      favorites: store.favoritesFor(context.runtime.descriptor.id),
     };
   },
   async setBranchDashboardPreferences(params, context) {
