@@ -1137,3 +1137,33 @@ worktree 的分支菜单列的是**仓库的**分支：`fetchProjectBranchMenu(c
 
 输入框加号沿第一行文字居中；SVG、占位文字和实际文字用同一行高计算。加号不是字符，
 不能用字形基线偏移来补偿；多行仍保留右下发送按钮的同心几何。几何回归覆盖全部字号范围。
+
+## 右侧面板的 Git 视图
+
+面板头部那个 git 图标（`.right-panel-tab-strip` 里的 `.git-panel-toggle`）打开三层视图：**分支树 →
+该分支的提交 → 该提交的 diff**（`components/GitPanel.tsx`）。按钮是文件列表开关的兄弟，两条 `order:-1`
+规则让“这个面板的两种视图”并排站在行首；chat 工作区没有仓库（`visibleProjectCwd` 为 null），所以
+`visibleProjectCwd && !isChatWorkspaceActive` 之外不给按钮 —— 没有仓库的面板不该问 git。
+打开视图时面板内容区交给它：侧聊标签和“没有文件打开”那行让路，项目的 shell **保持挂载**只被
+`hidden` 并告知自己不再 active（`components/AppShell.closed-panels-inert.test.mjs` 的语义），
+读历史记录不会重启终端。从视图里点一个文件走的是 shell 唯一的 `handleOpenFile`，面板随之交回文件标签。
+
+它没有第二份任何东西：分支行就是 composer 分支菜单那套（`fetchProjectBranchMenu`、`buildBranchRows`、
+`buildBranchTree`、`flattenBranchTree`、`filterBranchRows`、`currentCheckout`，连三个字形和
+`remote` 标签也是同一批 class）；补丁由 FileViewer 导出的 `DiffView` 绘制（**只有一个 diff 渲染器**），
+单文件的段落由 `lib/patch.ts` 的 `patchForFile` 从同一份 patch 里裁；文件路径用 `joinFilePath` 拼。
+提交与补丁来自两个新路由 `/api/git/commits` 与 `/api/git/commit-diff`，git 只经
+`lib/git-changes.ts` 导出的 `runGit` 运行（`lib/git-log.ts` 是唯一的提交层）：merge 提交按**第一父提交**
+出 diff（`git show` 对 merge 什么都不打印），patch 上限 2MB 并点名 `reason: "too-large"`，
+分页上限 200，ref 过 `isSafeGitRef` 且所有 rev 参数带 `--end-of-options`。
+
+**不定时轮询。** 视图在显示时读一次，两个按钮（重新读取 / 从远端获取）是仅有的其它 git 入口：
+开着的面板每几秒起一个 git 进程是这台机器不该做的事。加载中／空／失败三种状态都用文字命名
+（`gitPanel.*`，三种语言齐全），因为“一个转圈”不说明它在等什么，失败则把 git 说的那行带出来。
+
+手机上的两条实测：`(pointer: coarse)` 下按钮 36×36（390px 下 x=51，文件列表开关 x=11 同为 36），
+三层都不产生横向页面滚动（`scrollWidth 390 <= 390`）——长列表在 `.git-panel-list` 内滚，
+长行在 `.git-panel-diff` 内滚，页面从不横滚。断言在 `components/AppShell.git-panel.test.mjs`（源码）、
+`lib/git-log.test.mjs`、两个路由测试、`lib/patch.test.mjs`，量在 `e2e/git-panel.mjs`（fixture，390 与
+1280）与 `e2e/git-panel-live.mjs`（对着共享 dev server 量真实仓库，需要 dev server 在跑）。
+fork 的 CSS 只追加在 `app/native-theme.css` 末尾一节，全部使用 token。

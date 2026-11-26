@@ -18,8 +18,15 @@ import { resolveExistingPath } from "./paths";
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 10_000;
 const GIT_STATUS_MAX_BUFFER = 8 * 1024 * 1024;
+const GIT_TIMEOUT_MAX_BUFFER = GIT_STATUS_MAX_BUFFER;
 
-async function git(cwd: string, args: string[], maxBuffer = GIT_STATUS_MAX_BUFFER): Promise<string> {
+/**
+ * One bounded `git` run, the app's only one: argv only (never a shell), `LC_ALL=C`
+ * so the parsed output is the same in every user locale, and a timeout, so no panel
+ * ever waits on a repository that is not answering. `lib/git-log.ts` reads commits
+ * through this same runner rather than opening a second git layer.
+ */
+export async function runGit(cwd: string, args: string[], maxBuffer = GIT_TIMEOUT_MAX_BUFFER): Promise<string> {
   const { stdout } = await execFileAsync("git", ["-C", cwd, ...args], {
     timeout: GIT_TIMEOUT_MS,
     maxBuffer,
@@ -28,9 +35,10 @@ async function git(cwd: string, args: string[], maxBuffer = GIT_STATUS_MAX_BUFFE
   return stdout;
 }
 
-async function findRepositoryRoot(cwd: string): Promise<string | null> {
+/** The repository the cwd belongs to, or null for a folder git does not know. */
+export async function findRepositoryRoot(cwd: string): Promise<string | null> {
   try {
-    return (await git(cwd, ["rev-parse", "--show-toplevel"])).trim() || null;
+    return (await runGit(cwd, ["rev-parse", "--show-toplevel"])).trim() || null;
   } catch {
     return null;
   }
@@ -49,7 +57,7 @@ async function readStatusEntries(
   repositoryRoot: string,
   gitConfig: readonly string[] = [],
 ): Promise<GitPorcelainEntry[]> {
-  const output = await git(repositoryRoot, [
+  const output = await runGit(repositoryRoot, [
     ...gitConfig,
     "status",
     "--porcelain=v1",
@@ -66,7 +74,7 @@ async function readTrackedLineStats(
   const relativeCwd = toGitPath(path.relative(repositoryRoot, cwd));
   const pathspec = relativeCwd || ".";
   try {
-    const output = await git(repositoryRoot, [
+    const output = await runGit(repositoryRoot, [
       "diff",
       "--no-color",
       "--no-ext-diff",
@@ -183,7 +191,7 @@ async function createTrackedFilePatch(
     ? [originalPath, relativePath]
     : [relativePath];
   try {
-    return await git(repositoryRoot, [
+    return await runGit(repositoryRoot, [
       ...gitConfig,
       "diff",
       "--no-color",

@@ -12,6 +12,7 @@ import { ChatWindow } from "./ChatWindow";
 import { AppNoticeShelf } from "./AppNoticeShelf";
 import { appNotify, updateAppNotice } from "@/lib/notification-store";
 import { useMenuPlacement } from "@/hooks/useMenuPlacement";
+import { usePopTransition, useShownWhileClosing } from "@/hooks/usePopTransition";
 import type { MenuAnchor } from "@/lib/menu-placement";
 import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
@@ -24,6 +25,9 @@ import { LazyTerminalPanel as TerminalPanel, preloadTerminalPanel } from "./Lazy
 // config modals may never be opened at all; FileViewer drags in markdown +
 // syntax highlighting a second time and only matters once a file tab opens.
 const FileViewer = dynamic(() => import("./FileViewer").then((m) => m.FileViewer), { ssr: false });
+// The panel's Git view (branch tree → commits → diff) is opened by a button, not painted
+// on load: it drags in the file viewer's diff view, so it is loaded on the first tap.
+const GitPanel = dynamic(() => import("./GitPanel").then((m) => m.GitPanel), { ssr: false });
 const FileExplorer = dynamic(() => import("./FileExplorer").then((m) => m.FileExplorer), { ssr: false });
 const TasksView = dynamic(() => import("./tasks/TasksView").then((m) => m.TasksView), { ssr: false });
 const ScheduledView = dynamic(() => import("./scheduled/ScheduledView").then((m) => m.ScheduledView), { ssr: false });
@@ -315,6 +319,10 @@ export function AppShell() {
     setSearchTarget((current) => current === target ? null : current);
   }, []);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
+  // The panel's Git view: one open flag, and the view itself owns its three levels
+  // (components/GitPanel.tsx). Nothing is read while it is closed — the view reads on
+  // open, and its buttons are the only other way a git command runs.
+  const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   // The dialog animates in and out. Closing therefore keeps the panel mounted for
   // SETTINGS_EXIT_MS: unmounting it on the click would drop the sheet mid-fade and
@@ -355,6 +363,9 @@ export function AppShell() {
     if (settingsExitRef.current !== null) window.clearTimeout(settingsExitRef.current);
   }, []);
   const [topMoreOpen, setTopMoreOpen] = useState(false);
+  // The More menu is portaled and unmounted on the click that closes it. It is held for
+  // the length of the shared exit animation instead (hooks/usePopTransition.ts).
+  const topMorePop = usePopTransition(topMoreOpen);
   const topMoreRef = useRef<HTMLDivElement>(null);
   const topMoreMenuRef = useRef<HTMLDivElement>(null);
   const [topMorePos, setTopMorePos] = useState<{ top: number; right: number } | null>(null);
@@ -614,6 +625,12 @@ export function AppShell() {
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number; floating?: boolean } | null>(null);
+  // The header's read-only cards (Agents, System prompt, Tools, Session stats) hang off
+  // this one state, so the card has to outlive it by the length of the exit animation.
+  // The card that was showing is remembered, because closing sets the state to null and
+  // there must still be a card on screen to animate away.
+  const topPanelPop = usePopTransition(activeTopPanel !== null);
+  const shownTopPanel = useShownWhileClosing(activeTopPanel, topPanelPop.closing);
 
   // The session's live one-liner: `↑44k · ↓3k · $1.20 · 17.3% ctx`. The More menu's row
   // carries it and the Session stats card's head carries it, so it is built once.
@@ -2217,6 +2234,19 @@ export function AppShell() {
       if (fileTreeAutoCollapsed) setFileTreeNarrowOverride(true);
     }
   };
+  // The Git view takes the panel's content area, so opening it opens the panel; a chat
+  // has no repository and no button (visibleProjectCwd is null there), so it never sees
+  // this. Opening a file from the view hands the panel back to the file's tab.
+  const handleGitPanelToggle = () => {
+    if (isMobile) setSidebarOpen(false);
+    setTopMoreOpen(false);
+    setGitPanelOpen((open) => !open);
+    setRightPanelOpen(true);
+  };
+  const handleGitPanelOpenFile = useCallback((filePath: string, fileName: string) => {
+    setGitPanelOpen(false);
+    handleOpenFile(filePath, fileName);
+  }, [handleOpenFile]);
   const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
   // Which project the header's folder belongs to. A linked worktree is not a new
   // project: the label names its repository (`tab-to-find`, not the worktree's folder)
@@ -2829,10 +2859,10 @@ export function AppShell() {
                         <circle cx="19" cy="12" r="1.65" />
                       </svg>
                     </button>
-                    {topMoreOpen && topMorePos && createPortal(
+                    {topMorePop.mounted && topMorePos && createPortal(
                       <div
                         ref={topMoreMenuRef}
-                        className="native-popover app-menu app-topbar-more-menu"
+                        className={`native-popover app-menu app-topbar-more-menu${topMorePop.className}`}
                         role="menu"
                         aria-label={translate("appshell.moreActions")}
                         style={{
@@ -3018,9 +3048,13 @@ export function AppShell() {
           )}
           {!isMobile && renderProjectTrustWarning(false)}
           {!isMobile && showFilePanelToggle && renderMainFileToggle()}
-          {/* Top panel dropdown — shared, only one active at a time */}
-          {activeTopPanel && topPanelPos && (
-            <div style={{
+          {/* Top panel dropdown — shared, only one active at a time. The wrapper carries
+              the shared in/out motion (`.top-panel-card`), and `shownTopPanel` keeps the
+              card itself mounted while it plays. */}
+          {topPanelPop.mounted && topPanelPos && shownTopPanel && (
+            <div
+              className={`top-panel-card${topPanelPop.className}`}
+              style={{
               position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,
@@ -3033,7 +3067,7 @@ export function AppShell() {
               overflowY: topPanelPos.floating ? "visible" : "auto",
               zIndex: 500,
             }}>
-              {activeTopPanel === "agents" && activeSessionFamily && selectedSession && (
+              {shownTopPanel === "agents" && activeSessionFamily && selectedSession && (
                 <AgentSessionPanel
                   rootSession={activeSessionFamily.root}
                   subagents={activeSessionFamily.subagents}
@@ -3046,21 +3080,21 @@ export function AppShell() {
                   onDeleteSideChat={handleDeleteSideChat}
                 />
               )}
-              {activeTopPanel === "system" && (
+              {shownTopPanel === "system" && (
                 <SystemPromptPanel
                   loading={systemInfoLoading}
                   prompt={systemPrompt}
                   translate={translate}
                 />
               )}
-              {activeTopPanel === "tools" && (
+              {shownTopPanel === "tools" && (
                 <ToolDefinitionsPanel
                   loading={systemInfoLoading}
                   tools={systemTools}
                   translate={translate}
                 />
               )}
-              {activeTopPanel === "session" && (
+              {shownTopPanel === "session" && (
                 <div
                   className="session-info-popover app-menu"
                   role="dialog"
@@ -3632,6 +3666,27 @@ export function AppShell() {
               </svg>
             </button>
           )}
+          {/* The Git view's way in, beside the file list's: the project's branches, a
+              branch's commits, a commit's diff. A chat has no repository, and
+              `visibleProjectCwd` is null there, so a chat's panel never gets the button. */}
+          {visibleProjectCwd && !isChatWorkspaceActive && (
+            <button
+              type="button"
+              className={`file-workbench-icon-button git-panel-toggle${gitPanelOpen ? " is-active" : ""}`}
+              onClick={handleGitPanelToggle}
+              title={translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")}
+              aria-label={translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")}
+              aria-pressed={gitPanelOpen}
+              aria-controls="git-panel"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="6" y1="4" x2="6" y2="15" />
+                <circle cx="18" cy="6" r="2.6" />
+                <circle cx="6" cy="18" r="2.6" />
+                <path d="M18 9a9 9 0 0 1-9 9" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             className="file-panel-expand-button"
@@ -3669,6 +3724,18 @@ export function AppShell() {
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
         <div ref={panelBodyRef} className="right-panel-body" style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {gitPanelOpen && visibleProjectCwd ? (
+            // The Git view takes the content area: the side-chat tab and the panel's
+            // empty state step aside with it. The project's shells stay mounted below,
+            // hidden and told they are not active, so a shell is never restarted by
+            // reading its history.
+            <GitPanel
+              key={visibleProjectCwd}
+              cwd={visibleProjectCwd}
+              onOpenFile={handleGitPanelOpenFile}
+            />
+          ) : (
+            <>
           {activeSideTab ? (
             <div className="session-chat-panel" key={activeSideTab.sessionId}>
               <SessionChatPanel
@@ -3736,11 +3803,13 @@ export function AppShell() {
               )}
             </div>
           ) : null}
+            </>
+          )}
           {terminalTabs.map((tab) => (
-            <div key={tab.id} hidden={tab.id !== activeFileTabId} style={{ width: "100%", height: "100%" }}>
+            <div key={tab.id} hidden={tab.id !== activeFileTabId || gitPanelOpen} style={{ width: "100%", height: "100%" }}>
               <TerminalPanel
                 tab={tab}
-                active={rightPanelOpen && tab.id === activeFileTabId}
+                active={rightPanelOpen && tab.id === activeFileTabId && !gitPanelOpen}
                 onRestart={() => setTerminalTabs((tabs) => tabs.map((item) => item.id === tab.id ? { ...item, closing: "restart" } : item))}
                 onClosed={() => handleTerminalClosed(tab)}
                 onCloseError={() => setTerminalTabs((tabs) => tabs.map((item) => item.id === tab.id ? { ...item, closing: undefined } : item))}

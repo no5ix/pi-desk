@@ -197,6 +197,33 @@ export function diffGapLabel(count: number, t: (key: string, params?: Translatio
   return count === 1 ? t("diff.unchangedLine") : t("diff.unchangedLines", { count });
 }
 
+/**
+ * One file's section of a multi-file patch.
+ *
+ * A commit's patch is a run of `diff --git a/… b/…` sections; the Git panel lists a
+ * commit's files and paints one at a time with the file viewer's own diff view, so
+ * the section has to be handed over whole. It is copied verbatim — the hunk headers,
+ * the rename lines and the `\ No newline` markers all stay git's, and the renderer
+ * stays the app's one (`components/FileViewer.tsx`).
+ */
+export function patchForFile(patch: string, filePath: string): string {
+  const wanted = cleanPatchPath(filePath);
+  if (!wanted) return "";
+  const sections: Array<{ path: string; text: string[] }> = [];
+  for (const line of patch.split(/\r?\n/)) {
+    const header = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+    if (header) {
+      // A rename's header names both sides; the section is filed under the new one,
+      // the path `--name-status` lists and the row the user clicked.
+      sections.push({ path: cleanPatchPath(header[2] ?? header[1] ?? ""), text: [line] });
+      continue;
+    }
+    if (sections.length > 0) sections[sections.length - 1].text.push(line);
+  }
+  const found = sections.find((section) => section.path === wanted);
+  return found ? found.text.join("\n").replace(/\s+$/, "") : "";
+}
+
 function cleanPatchPath(path: string): string {
-  return path.split("\t")[0].trim();
+  return path.split("\t")[0].trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/^\/+/, "");
 }

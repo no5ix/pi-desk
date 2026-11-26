@@ -484,7 +484,15 @@ function diffLines(patch: string): DiffLine[] {
   }));
 }
 
-function DiffView({ patch }: { patch: string }) {
+/**
+ * The app's one single-column diff view: a unified patch in, painted lines out.
+ *
+ * Exported because a commit's diff is the same thing to read as a file's diff: the
+ * right panel's Git view (components/GitPanel.tsx) hands it a commit's patch, or one
+ * file's section of it, and gets the same collapsed context, gutter and markers.
+ * A second diff renderer is what this prevents.
+ */
+export function DiffView({ patch }: { patch: string }) {
   const { t } = useI18n();
   const diff = diffLines(patch);
 
