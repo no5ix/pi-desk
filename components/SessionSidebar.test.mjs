@@ -232,17 +232,18 @@ test("the Chats header shows its menu and add buttons only on hover, like Projec
 });
 
 test("chats can be pinned and archived, ordered by recency with no date groups", () => {
-  // Pinned first, then the running chats, then recency.
-  assert.match(source, /orderChatFamilies\(allChatFamilies, pinnedChats, runningSessionIds\)/);
+  // Pins first, then the unread results, then the running chats, then recency.
+  assert.match(source, /const chatPreviewState = \{ pinnedIds: pinnedChats, unreadIds: unreadSessionIds, runningIds: runningSessionIds \};/);
+  assert.match(source, /orderChatFamilies\(allChatFamilies, chatPreviewState\)/);
   assert.match(source, /trimmedSessionQuery\s*\? orderedChatFamilies\s*: orderedChatFamilies\.filter\(\(family\) => !archivedChats\.has\(family\.root\.id\)\)/);
   // Rows already show their own relative time, so the list has no Today / This week headings.
   assert.doesNotMatch(source, /sidebar-chats-group-label|chatsToday|CHAT_GROUP_LABEL_KEYS/);
   // The +5 paging still runs over the whole order, and the window never drops a
-  // pinned or running chat.
+  // pinned, unread or running chat.
   assert.match(source, /: chatFamilies\.slice\(0, Math\.max\(MAX_VISIBLE_CHAT_SESSIONS \* \(chatSessionPages \+ 1\), alwaysVisibleChatFamilies\)\)/);
   assert.match(
     source,
-    /const alwaysVisibleChatFamilies = chatFamilies\.filter\(\(family\) => \(\s*pinnedChats\.has\(family\.root\.id\) \|\| familyHasRunningSession\(family, runningSessionIds\)\s*\)\)\.length;/,
+    /const alwaysVisibleChatFamilies = chatFamilies\.filter\(\(family\) => \(\s*previewRowIsAlwaysVisible\(family, chatPreviewPredicates\)\s*\)\)\.length;/,
   );
   // Archived chats stay reachable and recoverable.
   assert.match(source, /sidebar\.showArchivedChats/);
@@ -385,20 +386,28 @@ test("show more reveals five sessions at a time and a project toggle resets it",
   assert.match(source, /Array\.isArray\(stored\)[\s\S]*?\.map\(\(root\) => \[root, 1\]\)/);
 });
 
-test("an open project leads with its pinned rows, then every running one", () => {
-  // The preview window never buries what is live: pins, then the running families,
-  // then recency — and it widens past the five rows so all of them fit.
-  assert.match(source, /const rowIsPinned = \(node: SessionTreeNode\) => pinnedSessions\.has\(node\.session\.id\);/);
-  assert.match(source, /const rowIsRunning = \(node: SessionTreeNode\) => treeHasRunningSession\(node, group\.runningIds\);/);
-  assert.match(source, /const groupTree = pinnedThenRunning\(unarchivedGroupTree, rowIsPinned, rowIsRunning\);/);
-  assert.match(source, /const alwaysVisibleRoots = unarchivedGroupTree\.filter\(\(node\) => rowIsPinned\(node\) \|\| rowIsRunning\(node\)\)\.length;/);
+test("an open project leads with its pins, then every unread result, then every running one", () => {
+  // The preview window never buries what the user cares about: pins, then the finished
+  // rows with unread output, then the live families, then recency — and it widens past
+  // the five rows so all of them fit.
+  assert.match(
+    source,
+    /const previewPredicates: PreviewPredicates<SessionTreeNode> = \{\s*isPinned: \(node\) => pinnedSessions\.has\(node\.session\.id\),\s*isUnread: \(node\) => treeHasUnreadSession\(node, group\.unreadIds\),\s*isRunning: \(node\) => treeHasRunningSession\(node, group\.runningIds\),\s*\};/,
+  );
+  assert.match(source, /const groupTree = previewOrder\(unarchivedGroupTree, previewPredicates\);/);
+  assert.match(
+    source,
+    /const alwaysVisibleRoots = unarchivedGroupTree\s*\.filter\(\(node\) => previewRowIsAlwaysVisible\(node, previewPredicates\)\)\s*\.length;/,
+  );
   assert.match(
     source,
     /const visibleSessionLimit = Math\.max\(MAX_VISIBLE_PROJECT_SESSIONS \* \(extraPages \+ 1\), alwaysVisibleRoots\);/,
   );
-  // A running family is the family's live work: the row's own session, or any run
-  // nested under it (a subagent is only reachable through its parent's row).
+  // A running family is the family's live work, and an unread one is a result waiting to be
+  // read: the row's own session, or any run nested under it (a subagent is only reachable
+  // through its parent's row).
   assert.match(source, /treeHasRunningSession/);
+  assert.match(source, /treeHasUnreadSession/);
   // The header carries the running / unread chips in both fold states.
   assert.match(source, /<span className="sidebar-project-tree-meta">/);
 });
@@ -452,12 +461,17 @@ test("a project's sessions are pinned through the server's state, not this brows
   assert.match(source, /pinned: pinnedSessions\.has\(id\),\s*onTogglePin: \(\) => \{ void pins\.toggleSessionPin\(id\); \},/);
   assert.match(
     source,
-    /const groupTree = pinnedThenRunning\(unarchivedGroupTree, rowIsPinned, rowIsRunning\);/,
+    /const groupTree = previewOrder\(unarchivedGroupTree, previewPredicates\);/,
   );
-  // A running family (its own session, or a run nested under it) leads the list
-  // under the pins, and the preview window keeps all of them visible.
-  assert.match(source, /const rowIsRunning = \(node: SessionTreeNode\) => treeHasRunningSession\(node, group\.runningIds\);/);
-  assert.match(source, /const alwaysVisibleRoots = unarchivedGroupTree\.filter\(\(node\) => rowIsPinned\(node\) \|\| rowIsRunning\(node\)\)\.length;/);
+  // The pin is tier 0 of the preview order, and the preview window keeps every pinned,
+  // unread and running row visible (an unread row that is still running is live work).
+  assert.match(source, /isPinned: \(node\) => pinnedSessions\.has\(node\.session\.id\),/);
+  assert.match(source, /isUnread: \(node\) => treeHasUnreadSession\(node, group\.unreadIds\),/);
+  assert.match(source, /isRunning: \(node\) => treeHasRunningSession\(node, group\.runningIds\),/);
+  assert.match(
+    source,
+    /const alwaysVisibleRoots = unarchivedGroupTree\s*\.filter\(\(node\) => previewRowIsAlwaysVisible\(node, previewPredicates\)\)\s*\.length;/,
+  );
   assert.match(
     source,
     /const visibleSessionLimit = Math\.max\(MAX_VISIBLE_PROJECT_SESSIONS \* \(extraPages \+ 1\), alwaysVisibleRoots\);/,

@@ -28,6 +28,14 @@ export function treeHasRunningSession(node: SessionTreeNode, runningIds: Readonl
   return runningIds.has(node.session.id) || node.children.some((child) => treeHasRunningSession(child, runningIds));
 }
 
+/** A result to read: this row's session, or a run nested under it, is unread.
+ *
+ * An unread row is an answer the user has not opened, so an open project leads with its pins and
+ * then these rows, ahead of the live ones (a running row has nothing to read yet). */
+export function treeHasUnreadSession(node: SessionTreeNode, unreadIds: ReadonlySet<string>): boolean {
+  return unreadIds.has(node.session.id) || node.children.some((child) => treeHasUnreadSession(child, unreadIds));
+}
+
 export function countTreeDescendants(node: SessionTreeNode): number {
   return node.children.reduce((total, child) => total + 1 + countTreeDescendants(child), 0);
 }

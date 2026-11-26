@@ -10,6 +10,7 @@ import {
   sessionRowTitle,
   treeContainsSession,
   treeHasRunningSession,
+  treeHasUnreadSession,
   type SessionTreeNode,
 } from "@/lib/sidebar-session-nodes";
 import {
@@ -52,7 +53,17 @@ import { SessionSearch } from "./SessionSearch";
 import { ProjectViewMenu, type ProjectViewMode } from "./ProjectViewMenu";
 import { applySidebarFold, useProjectFold } from "@/lib/sidebar-fold-motion";
 import { ChatsSectionMenu } from "./ChatsSectionMenu";
-import { orderChatFamilies, toggleId, pinnedFirst, pinnedThenRunning, familyHasRunningSession } from "@/lib/chat-groups";
+import {
+  orderChatFamilies,
+  toggleId,
+  pinnedFirst,
+  previewOrder,
+  previewRowIsAlwaysVisible,
+  chatFamilyPredicates,
+  familyHasRunningSession,
+  familyHasUnreadSession,
+  type PreviewPredicates,
+} from "@/lib/chat-groups";
 import { ArchivedProjectsSection } from "./ArchivedProjectsSection";
 import { ScheduledSidebarRow } from "./scheduled/ScheduledSidebarRow";
 import { ArtifactsSidebarRow } from "./artifacts/ArtifactsSidebarRow";
@@ -1348,8 +1359,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     (session) => session.workspaceKind !== "chat" && !isChatCwd(session.cwd),
   );
   const allChatFamilies = listSessionFamilies(chatSessions);
-  // Pinned first, then by recency. Archived chats leave the list unless a search is looking for them.
-  const orderedChatFamilies = orderChatFamilies(allChatFamilies, pinnedChats, runningSessionIds);
+  // Pins first, then the unread results, then the running chats, then recency. Archived chats
+  // leave the list unless a search is looking for them.
+  const chatPreviewState = { pinnedIds: pinnedChats, unreadIds: unreadSessionIds, runningIds: runningSessionIds };
+  const chatPreviewPredicates = chatFamilyPredicates(chatPreviewState);
+  const orderedChatFamilies = orderChatFamilies(allChatFamilies, chatPreviewState);
   const chatFamilies = trimmedSessionQuery
     ? orderedChatFamilies
     : orderedChatFamilies.filter((family) => !archivedChats.has(family.root.id));
@@ -1394,10 +1408,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const chatsFolded = !trimmedSessionQuery && chatsCollapsed;
   // Search reveals both active and archived matches without overwriting folds.
   const projectsSectionFolded = !trimmedSessionQuery && projectsSectionCollapsed;
-  // Every pinned and running chat stays in the preview window; the usual five rows of
+  // Every pinned, unread and running chat stays in the preview window; the usual five rows of
   // recency fill in below them.
   const alwaysVisibleChatFamilies = chatFamilies.filter((family) => (
-    pinnedChats.has(family.root.id) || familyHasRunningSession(family, runningSessionIds)
+    previewRowIsAlwaysVisible(family, chatPreviewPredicates)
   )).length;
   let visibleChatFamilies = trimmedSessionQuery
     ? chatFamilies
@@ -1416,7 +1430,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     familyHasRunningSession(family, runningSessionIds)
   )).length;
   const chatUnreadCount = chatFamilies.filter((family) => (
-    [family.root, ...family.subagents].some((session) => unreadSessionIds.has(session.id))
+    familyHasUnreadSession(family, unreadSessionIds)
   )).length;
   const setChatsFolded = (folded: boolean) => {
     writeChatsCollapsed(folded);
@@ -1475,15 +1489,22 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const unarchivedGroupTree = archivedGroupTree.length > 0
       ? fullGroupTree.filter((node) => !archivedSessions.has(node.session.id))
       : fullGroupTree;
-    // Pinned sessions first, then the running ones, each part keeping its recency order (S2).
-    const rowIsPinned = (node: SessionTreeNode) => pinnedSessions.has(node.session.id);
-    const rowIsRunning = (node: SessionTreeNode) => treeHasRunningSession(node, group.runningIds);
-    const groupTree = pinnedThenRunning(unarchivedGroupTree, rowIsPinned, rowIsRunning);
+    // Pins first, then the unread results, then every running family, each part keeping its
+    // recency order (S2).
+    const previewPredicates: PreviewPredicates<SessionTreeNode> = {
+      isPinned: (node) => pinnedSessions.has(node.session.id),
+      isUnread: (node) => treeHasUnreadSession(node, group.unreadIds),
+      isRunning: (node) => treeHasRunningSession(node, group.runningIds),
+    };
+    const groupTree = previewOrder(unarchivedGroupTree, previewPredicates);
     const showingArchived = projectsShowingArchived.has(group.projectRoot);
     const extraPages = projectSessionPages[group.projectRoot] ?? 0;
-    // The preview window never buries what is live: every pinned row and every running family
-    // stays visible, and the usual five rows of recency fill in below them.
-    const alwaysVisibleRoots = unarchivedGroupTree.filter((node) => rowIsPinned(node) || rowIsRunning(node)).length;
+    // The preview window never buries what the user cares about: every pinned row, every unread
+    // result and every running family stays visible, and the usual five rows of recency fill in
+    // below them.
+    const alwaysVisibleRoots = unarchivedGroupTree
+      .filter((node) => previewRowIsAlwaysVisible(node, previewPredicates))
+      .length;
     const visibleSessionLimit = Math.max(MAX_VISIBLE_PROJECT_SESSIONS * (extraPages + 1), alwaysVisibleRoots);
     let visibleGroupTree = trimmedSessionQuery
       ? groupTree

@@ -212,14 +212,18 @@ Archived predicate (`isFamilyArchived()`, `lib/session-tree.ts`):
   unconditional, so an open project states what it holds (the running and unread totals are not
   something the visible rows add up to) and a folded one keeps them as its only signal. The Chats
   header is the same, and so is its count. `components/SessionSidebar.test.mjs`.
-- **An open project leads with its pins, then every running family** (`pinnedThenRunning()` in
-  `lib/chat-groups.ts`, `treeHasRunningSession()` in `lib/sidebar-session-nodes.ts`): pinned rows
-  first, then the families that are live — the row's own session running, or a run nested under it,
-  because a subagent is only reachable through its parent's row — then the rest in recency order.
-  The preview window is `max(MAX_VISIBLE_PROJECT_SESSIONS * (pages + 1), pinned + running)`, so
-  "Show 5 more" can never bury a session that is working, and the five-row page size is unchanged.
-  The chats list follows the same order and the same floor
-  (`orderChatFamilies(allChatFamilies, pinnedChats, runningSessionIds)`).
+- **An open project leads with its pins, then every unread result, then every running family**
+  (`previewOrder` / `previewTier` / `previewRowIsAlwaysVisible` in `lib/chat-groups.ts`,
+  `treeHasUnreadSession` / `treeHasRunningSession` in `lib/sidebar-session-nodes.ts`): tier 0 the
+  pins, tier 1 the finished rows with unread output, tier 2 the live families — the row's own
+  session running, or a run nested under it, because a subagent is only reachable through its
+  parent's row — tier 3 the rest in recency order. **A row that is unread and running is tier 2:**
+  it has no result to read yet. The preview window is
+  `max(MAX_VISIBLE_PROJECT_SESSIONS * (pages + 1), rows of tiers 0-2)` and the same tier rule
+  answers both questions, so "Show 5 more" can never bury a pin, an unread answer or live work,
+  and the five-row page size is unchanged. The chats list follows the same order and the same
+  floor: `orderChatFamilies(allChatFamilies, { pinnedIds, unreadIds, runningIds })` with
+  `chatFamilyPredicates` for the window.
 - A **fork** is marked at the row's end, immediately before the subagent count, not
   before the title: the row's leading glyph stays the plain chat bubble (a fork is a
   session, not a special row kind), and the title's tooltip keeps naming the source
