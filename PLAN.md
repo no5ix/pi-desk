@@ -1,61 +1,47 @@
-# PLAN — phone chat/composer polish + the Git panel
+# PLAN — memory release for the pi-desk server and page
 
-Branch `fix/flat-chat-blocks`. Twelve items from the user's phone screenshots.
+Branch `fix/memory-release`, from `pi-desk-main` (`38d99e1a`).
 
-## Items
+The ask, in the user's words: release session memory as soon as sessions end;
+release session A when switching to B; release the memory of collapsed thinking /
+tool call / report blocks while streaming; find the rest. Server RSS had reached
+10.6 GB (peak 18.62 GB).
 
-All twelve landed and are measured; each item's numbers are in PROGRESS.md.
+## Phases
 
-1. Composer on an active session, keyboard open: the side-chat button stays in its
-   place and the button next to `+` (the controls/menu row) stays visible.
-2. Composer on a NEW session, keyboard open: the caret must be in the textarea.
-3. The composer's lift with the keyboard must be smooth — no overshoot-then-settle.
-4. The "go to the bottom" button: no border, a stronger shadow.
-5. Subagent report: the body's font size/weight = the thinking block's; the content
-   area gets a background that differs from the page.
-6. Code blocks: a background that differs from the page.
-7. The image overlay: swipe left/right (touch + trackpad) moves between images,
-   tapping the image closes it.
-8. The thinking row: its icon lines up with the clock icon above; a collapsed
-   multi-line thinking ends its first line with `•••`, not `…`.
-9. The sidebar: more room between the search box and the `Chats` header.
-10. The terminal panel's `+` button does nothing (phone) — fix.
-11. The right panel's header gains a Git button: a branch tree (local + remote,
-    foldable) → a commit list for the branch → a commit diff page, reusing the
-    existing diff renderer and the existing branch tree.
-12. The settings rows: the separators start at the label's first letter, not under
-    the icon (iOS style). Landed.
+1. **Heap ceiling at every entry point** — `bin/server-flags.js`, `scripts/dev-server.mjs`,
+   `scripts/web-dev.mjs`, `scripts/lan-server.mjs`, `bin/pi-web.js`,
+   `desktop/server-launcher.cjs`, `next.config.ts` (`turbopackGc`). Done.
+2. **Metering** — `lib/server-memory.ts` (process + buckets + budget),
+   `lib/client-memory.ts` (page), `GET /api/agent/debug?memory=1`,
+   `scripts/memory-bench.mjs`. Done.
+3. **Idle caps and release on switch** — warm-session budget 256 → 64 MB with
+   `PI_WEB_IDLE_CAP_BYTES`; grace 30 → 15 s; a session the page only *read*
+   releases at `PI_WEB_VIEWER_RELEASE_MS` (10 s); `POST /api/agent/[id]/release`
+   (the page says it left) shortens the countdown to `PI_WEB_RELEASE_GRACE_MS`
+   (5 s); read-only view cache 12/256/64 MB → 8/96/32 MB. Done.
+4. **The pressure valve** — `lib/cache-registry.ts` (a pruner per cache),
+   `applyMemoryPressure()` / `maybeApplyPressure()` in `lib/server-memory.ts`,
+   the sampler firing it over `PI_WEB_MEMORY_BUDGET_MB`, `?memory=1&pressure=1`
+   and `?memory=1&gc=1` on the debug route. Done.
+5. **Slim live append path** — the completed message the streaming run appends to
+   client state keeps full thinking and base64 images (history loads use
+   `deferThinking=1&deferMedia=1`). Not started.
+6. **Collapse = release on the page** — `content-visibility`, a real cap on
+   `visibleCount`, the prefetch cache. Not started.
+7. **Wire deltas** — `tool_execution_update` payloads delta-only, a per-event
+   payload cap. Not started.
+8. **Measure** — `scripts/memory-bench.mjs` on a capped production build, before
+   and after each phase. In progress.
 
-## Follow-on asks (after the first pass, same branch)
+## Guard rails (do not cross)
 
-- The sidebar search's label was cut mid-sentence on a phone: the label is now a
-  label only ("Search titles…"), the Enter gesture stays in the tooltip.
-- The "Branch in new chat" chip under every tool call: hidden under 640px.
-- Tool-call cards: the tint moved from an inline wash to a state class, deeper.
-- The clock beside a reply's model row: 12px, matching the glyphs beside it.
-- A collapsed thinking's `•••` cut a light rectangle into the translucent
-  Process-details plate; the cut surface is a token the context sets.
-- The image overlay travels its container's pictures (swipe, flick, arrows, ring,
-  tap to close).
-- Clicking **Expand / Collapse** sometimes sent the page to its bottom: the tapped
-  row is anchored, and the toggle tells the scroll viewport before it flips state.
-
-## Order
-
-A. Quick CSS/markup fixes: 4, 5, 6, 8, 9, 12.
-B. Composer keyboard: 1, 2, 3 (measure in a real browser at 390px).
-C. Image overlay gestures: 7.
-D. Terminal `+`: 10.
-E. Git panel: 11 (API: branches, commits, commit diff; UI: tree → list → diff).
-   Landed and measured — see PROGRESS.md, "Item 11, frozen".
-
-## Verification
-
-- `node_modules/.bin/tsc --noEmit`, `npm run lint`
-- `node --test` over `app`, `lib`, `components`, `hooks`, `scripts`
-- Live measurement against the dev server on :30141 at 390px (keyboard inset via
-  a Playwright/CDP-driven page where possible)
-- Commit + push `fix/flat-chat-blocks` after each verified pass.
-  Done: `70560841` (phone pass), `681f991e` (Expand/Collapse anchor),
-  `a426e9ae` (the Git view). Suite at the tree: 4893 tests, 4892 pass, 1 skipped.
-
+- Never evict a running wrapper (`lib/rpc-manager.ts` `isRunning()`).
+- Never slim entries of a *persisting* `SessionManager`: pi's `_rewriteFile()`
+  would write the slimmed entries over the real transcript (see DECISIONS.md).
+- Keep assistant `content` arrays dense (`fillContentGaps`).
+- No count cap on warm sessions — 0.8.1 had one, it broke switching, it is gone
+  for good (`lib/idle-session-cap.ts` doc).
+- `proxyClientMaxBodySize` stays > 100 MB.
+- No `next build` while `npm run dev` holds `.next/dev/lock`; the desktop build
+  (`PI_WEB_DESKTOP_BUILD=1`) is the isolated one.

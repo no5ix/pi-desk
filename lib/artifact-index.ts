@@ -40,6 +40,7 @@ import {
   type FileOutputRole,
 } from "./file-output-role.ts";
 import type { SessionInfo, SessionWorkspaceKind } from "./types";
+import { registerCachePruner } from "./cache-registry.ts";
 
 const MARKER = ":::artifact";
 // How the SDK writes a write/edit call and its result. Only lines holding one
@@ -902,3 +903,50 @@ export function flushArtifactIndexForTests(): void {
   if (timer) clearTimeout(timer);
   writePersisted();
 }
+
+// --- memory pressure (lib/server-memory.ts) --------------------------------
+// The index keeps every artifact's full text, every version, for all the
+// sessions on disk, and it is persisted so a restart does not rescan. It is the
+// one cache that grows with the history rather than the work in front of the
+// person, so under pressure the coldest projects go: the Artifacts page rebuilds
+// one on the next read of that project.
+
+/** Characters of artifact text held, every version of every artifact. */
+function indexBytes(index: FileIndex): number {
+  let bytes = 0;
+  for (const artifact of index.artifacts) {
+    for (const version of artifact.versions) bytes += version.content.length;
+  }
+  return bytes;
+}
+
+export function artifactIndexBytes(): number {
+  let bytes = 0;
+  for (const index of cache().values()) bytes += indexBytes(index);
+  return bytes;
+}
+
+/** Drop whole project indexes, oldest read first, down to `targetBytes`. */
+export function shrinkArtifactIndexCache(targetBytes: number): number {
+  const store = cache();
+  const before = artifactIndexBytes();
+  let total = before;
+  let dropped = 0;
+  while (total > Math.max(0, targetBytes) && store.size > 0) {
+    const oldest = store.keys().next().value;
+    if (oldest === undefined) break;
+    const index = store.get(oldest);
+    const freed = index ? indexBytes(index) : 0;
+    store.delete(oldest);
+    dropped += 1;
+    total -= freed;
+  }
+  if (dropped > 0) schedulePersist();
+  return Math.max(0, before - total);
+}
+
+registerCachePruner({
+  name: "artifact index",
+  bytes: artifactIndexBytes,
+  prune: shrinkArtifactIndexCache,
+});

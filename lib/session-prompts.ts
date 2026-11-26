@@ -11,6 +11,7 @@ import { extractTextContent } from "./session-list-scanner";
 import { sessionListFirstMessage } from "./slash-display";
 import { userImageDisplayText, userMessageImageCount } from "./user-image-display";
 import type { SessionPrompt } from "./calendar-types";
+import { registerCachePruner } from "./cache-registry.ts";
 
 const PROMPT_CHARS = 300;
 const REPLY_CHARS = 400;
@@ -156,3 +157,40 @@ export async function collectSessionPrompts(
   for (const path of cache().keys()) if (!known.has(path)) cache().delete(path);
   return result;
 }
+
+// --- memory pressure (lib/server-memory.ts) --------------------------------
+// One entry per session file, and each entry is every prompt in that file plus
+// its reply: browsing the calendar over a year of sessions fills it, and it is
+// a cache in the exact sense — the next read rebuilds it from the JSONL.
+
+/** Characters of prompt and reply text held. */
+export function sessionPromptCacheBytes(): number {
+  let bytes = 0;
+  for (const entry of cache().values()) {
+    for (const prompt of entry.prompts) bytes += prompt.text.length + (prompt.reply?.length ?? 0);
+  }
+  return bytes;
+}
+
+/** Drop whole sessions, oldest read first, down to `targetBytes`. */
+export function shrinkSessionPromptCache(targetBytes: number): number {
+  const store = cache();
+  const before = sessionPromptCacheBytes();
+  let total = before;
+  while (total > Math.max(0, targetBytes) && store.size > 0) {
+    const oldest = store.keys().next().value;
+    if (oldest === undefined) break;
+    const entry = store.get(oldest);
+    let freed = 0;
+    if (entry) for (const prompt of entry.prompts) freed += prompt.text.length + (prompt.reply?.length ?? 0);
+    store.delete(oldest);
+    total -= freed;
+  }
+  return Math.max(0, before - total);
+}
+
+registerCachePruner({
+  name: "calendar prompt cache",
+  bytes: sessionPromptCacheBytes,
+  prune: shrinkSessionPromptCache,
+});

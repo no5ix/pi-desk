@@ -188,3 +188,19 @@ claim rests on WebKit's documented focus rule and the fork's own 59px notch floo
   exactly; `components/ProjectContextMenu.tsx`, `ProjectViewMenu.tsx` and
   `ChatsSectionMenu.tsx` carried the phone pass's uncommitted `closing`/`popClass`
   lines, so those were reverted by hand, line by line, to keep that work.
+
+## Memory release (branch `fix/memory-release`)
+
+- **RSS is not the number to chase on its own.** With a 1 GB ceiling and a
+  1024 MB budget, a measured browsing run took the heap from 71 MB to 268 MB and
+  gave back **0 MB** of RSS after 45 s idle: V8 returns pages only when its heap
+  is tight, so a ceiling far above the live set is a licence to keep them. The
+  lever is the live set (caps, the valve, release on switch) plus a ceiling that
+  is close to it; `--expose-gc` is the dev-only confirmation that the bytes are
+  really unreachable.
+- **`app/globals.css stays byte-identical to pi-web f130910a` fails on clean
+  `pi-desk-main`** (reproduced in a detached worktree at HEAD). Not from this
+  work; the CSS baseline needs `node scripts/upstream-css-baseline.mjs update`.
+- **`hooks/useAgentSession.test.mjs` → "keeps the compaction control reachable
+  while a turn is auto-compacting" fails at HEAD** (ChatInput's source assert,
+  reproduced in a detached worktree). Not from this work.

@@ -11,6 +11,7 @@ import {
 } from "@/lib/file-access";
 import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "@/lib/file-fuzzy";
 import { isHiddenOutsideGit } from "@/lib/file-tree-visibility";
+import { registerCachePruner } from "@/lib/cache-registry";
 
 const execFileAsync = promisify(execFile);
 
@@ -166,3 +167,39 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
+
+// --- memory pressure (lib/server-memory.ts) --------------------------------
+// The @-menu's file listings: up to 200 000 paths per project, kept on
+// `globalThis` so the menu answers instantly between keystrokes, for every
+// project the window has typed into. A workspace of four big repos is a million
+// strings with no owner, and `git ls-files` is the cheap refetch.
+
+/** Characters of path strings held across every project's listing. */
+function fileIndexCacheBytes(): number {
+  let bytes = 0;
+  for (const entry of getIndexCache().values()) {
+    for (const path of entry.listing.files) bytes += path.length;
+  }
+  return bytes;
+}
+
+/** Drop whole listings, oldest project first, down to `targetBytes`. */
+function shrinkFileIndexCache(targetBytes: number): number {
+  const cache = getIndexCache();
+  const before = fileIndexCacheBytes();
+  let total = before;
+  while (total > Math.max(0, targetBytes) && cache.size > 0) {
+    const oldest = cache.keys().next().value;
+    if (oldest === undefined) break;
+    const entry = cache.get(oldest);
+    if (entry) for (const path of entry.listing.files) total -= path.length;
+    cache.delete(oldest);
+  }
+  return Math.max(0, before - total);
+}
+
+registerCachePruner({
+  name: "file listings",
+  bytes: fileIndexCacheBytes,
+  prune: shrinkFileIndexCache,
+});

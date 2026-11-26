@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { PendingComposerMessage } from "./composer-queue-types";
+import { registerCachePruner } from "./cache-registry.ts";
 
 type QueueState = { items: PendingComposerMessage[]; paused: boolean; version: number };
 // Survive wrapper idle eviction and Next hot reload, just like live sessions.
@@ -111,3 +112,54 @@ export class ComposerQueue {
     if (this.timer) clearTimeout(this.timer);
   }
 }
+
+// --- memory pressure (lib/server-memory.ts) --------------------------------
+// A queue holds the prompts waiting behind a run, base64 attachments included:
+// a 10 MB image is 13.3 million characters in the heap. Queues outlive the
+// wrapper — they are kept for sessions that are closed, finished or deleted —
+// and nothing caps them. An empty queue costs a Map entry, so pressure drops
+// those first; a queue with items goes only when the whole sum is over budget,
+// which is the moment a queued prompt is worth less than the server staying up.
+
+/** Characters of prompt text and attachment data queued, across all sessions. */
+export function composerQueueBytes(): number {
+  let bytes = 0;
+  for (const state of registry.__piComposerQueues?.values() ?? []) {
+    for (const item of state.items) {
+      bytes += item.message.length;
+      for (const image of item.images ?? []) bytes += image.data.length;
+    }
+  }
+  return bytes;
+}
+
+/** Drop empty queues first, then whole sessions, oldest first, to `targetBytes`. */
+export function shrinkComposerQueues(targetBytes: number): number {
+  const queues = registry.__piComposerQueues;
+  if (!queues) return 0;
+  const before = composerQueueBytes();
+  let total = before;
+  const freedBy = (state: QueueState) => {
+    let freed = 0;
+    for (const item of state.items) {
+      freed += item.message.length;
+      for (const image of item.images ?? []) freed += image.data.length;
+    }
+    return freed;
+  };
+  for (const [id, state] of [...queues.entries()]) {
+    if (state.items.length === 0) queues.delete(id);
+  }
+  for (const [id, state] of [...queues.entries()]) {
+    if (total <= Math.max(0, targetBytes)) break;
+    total -= freedBy(state);
+    queues.delete(id);
+  }
+  return Math.max(0, before - total);
+}
+
+registerCachePruner({
+  name: "composer queues",
+  bytes: composerQueueBytes,
+  prune: shrinkComposerQueues,
+});

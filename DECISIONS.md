@@ -477,3 +477,61 @@
 - **A card with only statuses is openable.** The More menu's row used to be
   disabled with no stats and no context; `sessionPanelHasContent` adds "has
   statuses", because an extension reports state before the session has usage.
+
+## Memory release (branch `fix/memory-release`)
+
+- **The heap ceiling is a policy module, not a script flag.** `bin/server-flags.js`
+  decides the ceiling (dev 2048 MB, production and the desktop sidecar 1536 MB,
+  `PI_WEB_MAX_OLD_SPACE_SIZE` to change it, `0`/`off` to leave V8 alone) and every
+  entry point asks it: `npm run dev` (through the new `scripts/dev-server.mjs`),
+  the LAN scripts, `bin/pi-web.js`, and `desktop/server-launcher.cjs` (in-process
+  through `v8.setFlagsFromString`, which is the only way that reaches a forked
+  server without re-exec). The cause is measured: `next dev` forks its server child
+  with `--max-old-space-size` = half of physical RAM (`next/dist/cli/next-dev.js`),
+  so on a 128 GB machine V8 was told to grow to 64 GB and did — 18.62 GB peak.
+- **A production build sets the ceiling with `NODE_OPTIONS`, not in-process.**
+  `bin/pi-web.js` re-execs with the flag; the flag has to be on the command line
+  because V8's heap limit is read at startup. The desktop launcher's
+  `v8.setFlagsFromString` is for the sidecar's own worker, not for the heap limit.
+- **No count cap on warm sessions.** `lib/idle-session-cap.ts` documents why
+  0.8.1's count of 4 was removed (switching among a few small sessions
+  cold-started every one). The axis is bytes, so the byte budget went down
+  (256 → 64 MiB) and the grace went down with it (30 → 15 s). The newest session
+  is still always kept.
+- **A session the page only read is released at 10 s; a session that answered a
+  prompt is not.** `AgentSessionWrapper.everPrompted` is the difference. A viewer
+  is rebuilt from the read-only view cache, so the release is nearly free; a
+  session the person ran is the one they expect to come back to, and it keeps the
+  byte cap and the idle timeout.
+- **The page reports leaving; the server does not guess.** A selected page renews
+  the lease every 30 s and every renewal restarts the idle countdown, so
+  "switched away" is invisible to the server. `POST /api/agent/[id]/release`
+  carries that news (with `keepalive` so a closing tab delivers it), and it is
+  refused while an event stream is attached — a second tab is a reason to stay
+  warm. A run in progress is never cut short: the idle timer re-arms while the
+  session runs, and Stop's forced deadline is never shortened.
+- **A cache that cannot name its bytes cannot be released.** Every long-lived
+  `globalThis` store now registers a pruner (`lib/cache-registry.ts`): its bytes
+  and a `prune(target)` that drops the coldest entries. `lib/cache-registry.test.mjs`
+  fails when a store the debug meter names has no pruner, which is how the next
+  cache added to the server gets noticed.
+- **The valve halves, it does not empty.** Running the valve with a target of
+  zero would drop the artifact index and every listing on a single sample, and
+  the next page would rebuild all of it (a rescan of every session file). Each
+  store goes to half of what it holds, once a minute at most, sessions first
+  (cheapest to refetch), caches second, V8 last.
+- **`global.gc()` is a dev knob.** The debug route's `?memory=1&gc=1` and the
+  bench start the server with `--expose-gc`. Production does not: a full GC on a
+  1.5 GB heap is a long pause, and the measured fact is that RSS does not fall
+  while the ceiling is far above the live set — the ceiling is the collection
+  trigger, which is why the ceiling and the budgets were lowered together.
+- **Live sessions are not opened slim.** `lib/session-slim-load.ts` builds a
+  `persist=false` manager on purpose. Opening a *live* wrapper from slimmed
+  entries would let pi's `_rewriteFile()` (called on version migration and on
+  session replacement) write the slimmed entries over the real transcript, losing
+  every payload it dropped. Measured gain (~120 MB of a 129 MB file) is not worth
+  a transcript-destroying path, so the read-only view cache keeps the slimming and
+  the live wrapper keeps the whole file.
+- **The read-only view cache is a heap budget now** (12/256/64 MB → 8/96/32 MB).
+  The old numbers were chosen before anything measured a heap; a measured browsing
+  run pinned 158.9 MB there alone. Re-reading a session from disk is the refetch.

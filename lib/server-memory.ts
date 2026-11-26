@@ -60,12 +60,31 @@ export interface DebugMemoryReport {
   overBudget: boolean;
   /** True when `global.gc()` exists (a dev server started with `--expose-gc`). */
   gcAvailable: boolean;
+  /** Set only by `?memory=1&gc=1`: whether a collection ran for this report. */
+  gcRequested?: boolean;
   lastGcAt: number | null;
   /** The high-water RSS since the process started. */
   peakRss: number;
   samples: number;
   buckets: DebugMemoryBucket[];
   pages: DebugPageMemory[];
+  /** The last pressure valve run, or null when nothing has been released. */
+  pressure: DebugPressureState | null;
+}
+
+export interface DebugPressureAction {
+  name: string;
+  bytesFreed: number;
+}
+
+export interface DebugPressureState {
+  at: number;
+  /** What asked for it: `over-budget`, `requested`. */
+  reason: string;
+  actions: DebugPressureAction[];
+  freedBytes: number;
+  /** True when `global.gc()` ran (the process has `--expose-gc`). */
+  collected: boolean;
 }
 
 /**
@@ -309,6 +328,9 @@ let lastReport: DebugMemoryReport | null = null;
 let peakRss = 0;
 let samples = 0;
 let lastGcAt: number | null = null;
+let lastValve: DebugPressureState | null = null;
+/** The shortest gap between two valve runs — releasing is main-thread work. */
+const VALVE_INTERVAL_MS = 60_000;
 
 /**
  * One sample. Synchronous and cheap: a few `statSync` calls (one per loaded
@@ -338,6 +360,7 @@ export function sampleServerMemory(now: number = Date.now()): DebugMemoryReport 
     samples,
     buckets: collectBuckets(),
     pages: listPageMemory(),
+    pressure: lastValve,
   };
   lastReport = report;
   return report;
@@ -365,7 +388,9 @@ export function startServerMemorySampler(intervalMs: number = SAMPLER_INTERVAL_M
   if (samplerTimer) return;
   samplerTimer = setInterval(() => {
     try {
-      sampleServerMemory();
+      const report = sampleServerMemory();
+      // Over the RSS budget, release what can be released (at most once a minute).
+      if (report.overBudget) void maybeApplyPressure(report.at)?.catch(() => {});
     } catch {
       // Reading the process must never be the reason the server has a problem.
     }
@@ -381,4 +406,108 @@ export function stopServerMemorySampler(): void {
 
 export function noteGarbageCollection(at: number = Date.now()): void {
   lastGcAt = at;
+}
+
+// --- the pressure valve ----------------------------------------------------
+// A release path with no trigger is a code path nobody measures: sessions leave
+// on a ten-minute timer, caches never leave at all, and V8 returns pages only
+// when its heap is tight. So the valve is a trigger with an order:
+//
+//   1. the loaded transcripts — the idle byte cap, run at half its budget with
+//      no grace, which is the largest store and the one the next read refetches;
+//   2. every cache that registered a pruner (lib/cache-registry.ts), halved,
+//      coldest entry first;
+//   3. V8's garbage collector, when the process was started with `--expose-gc`.
+//
+// Order matters as much as the steps: collecting before the stores are released
+// frees nothing, because every byte is still reachable.
+//
+// It fires when the process is over PI_WEB_MEMORY_BUDGET_MB, at most once a
+// minute, and on request (the debug route's `pressure=1`, the bench). It is
+// synchronous work on the main thread — a Map drop and, in dev, a full GC — so
+// the interval is the cost control, and the report keeps the last run's actions
+// so a drop in the numbers is explainable.
+
+const valve = {
+  running: null as Promise<DebugPressureState> | null,
+  lastAt: 0,
+};
+
+function halve(bytes: number): number {
+  return Math.floor(bytes / 2);
+}
+
+async function runValve(reason: string, now: number): Promise<DebugPressureState> {
+  const actions: DebugPressureAction[] = [];
+  let freedBytes = 0;
+
+  // 1. Loaded transcripts the person is not looking at.
+  try {
+    const rpc = await import("./rpc-manager");
+    const cap = rpc.IDLE_SESSION_CAP_BYTES;
+    const before = liveSessionBucket().bytes;
+    const evicted = rpc.enforceIdleSessionCap(now, { maxBytes: halve(cap), graceMs: 0 });
+    const freed = Math.max(0, before - liveSessionBucket().bytes);
+    if (evicted.length > 0 || freed > 0) {
+      actions.push({ name: `sessions (${evicted.length} released)`, bytesFreed: freed });
+      freedBytes += freed;
+    }
+  } catch (error) {
+    console.warn(`[pi-web] memory pressure: the session cap did not run: ${error instanceof Error ? error.message : error}`);
+  }
+
+  // 2. The caches, each to half of what it holds.
+  const { listCachePruners } = await import("./cache-registry");
+  for (const pruner of listCachePruners()) {
+    try {
+      const held = pruner.bytes();
+      if (held <= 0) continue;
+      const freed = pruner.prune(halve(held));
+      if (freed > 0) {
+        actions.push({ name: pruner.name, bytesFreed: freed });
+        freedBytes += freed;
+      }
+    } catch (error) {
+      // A pruner that throws is a bug in that cache, not a reason to stop releasing.
+      console.warn(`[pi-web] memory pressure: pruner "${pruner.name}" failed: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  const collected = collectGarbage();
+  const state: DebugPressureState = { at: now, reason, actions, freedBytes, collected };
+  lastValve = state;
+  valve.lastAt = now;
+  const summary = actions.map((action) => `${action.name} -${Math.round(action.bytesFreed / MB)} MB`).join(", ");
+  console.log(
+    `[pi-web] memory pressure (${reason}): released ${Math.round(freedBytes / MB)} MB` +
+    `${summary ? `: ${summary}` : " — nothing was holding"}` +
+    `${collected ? ", garbage collected" : ""}`,
+  );
+  return state;
+}
+
+/**
+ * Release what can be released. One run at a time; a second call while one is
+ * running joins it.
+ */
+export function applyMemoryPressure(reason = "requested", now: number = Date.now()): Promise<DebugPressureState> {
+  if (valve.running) return valve.running;
+  const run = runValve(reason, now).finally(() => {
+    if (valve.running === run) valve.running = null;
+  });
+  valve.running = run;
+  return run;
+}
+
+/** The sampler's trigger: over the RSS budget, and not more than once a minute. */
+export function maybeApplyPressure(now: number = Date.now()): Promise<DebugPressureState> | null {
+  const report = sampleServerMemory(now);
+  if (!report.overBudget) return null;
+  if (now - valve.lastAt < VALVE_INTERVAL_MS) return null;
+  return applyMemoryPressure("over-budget", now);
+}
+
+/** The last valve run, for a report that explains a drop. */
+export function getLastPressureState(): DebugPressureState | null {
+  return lastValve;
 }
