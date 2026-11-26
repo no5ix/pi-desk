@@ -220,6 +220,23 @@ its end (`scrolledToEnd`). **Expand** removes the cap and the scroll, and tells 
 lives. **Collapse** puts the box back. The toggle stays visible while expanded: the measurement is
 `scrollHeight > cap + 60` on the content, which stays true with no cap.
 
+### An Expand/Collapse anchors the row it grows (`handleContentToggle`, `components/ChatWindow.tsx`)
+A row that grows does it under the finger, and the reader was left in two bad places: the bubble
+opening mid-conversation moved out of the viewport, and a reader near the tail handed the
+viewport to the stream's tail-follow (`useAgentSession`'s `isNearBottom` → `scrollToBottom`),
+which snapped the conversation to its end — "clicking Expand sends the page to the bottom".
+So every Expand/Collapse (a long prompt, a slash command, a compaction note, a subagent report)
+calls `onContentToggle(control, entryId)` **before** it flips its own state, and ChatWindow
+anchors the tapped row with the prepend's own mechanism (`scrollAnchorRef`, `applyScrollAnchor`,
+the shared `CHAT_SCROLL_ANCHOR_WINDOW_MS`), re-applying at 200 ms and 450 ms because a bubble
+whose cap is lifted keeps settling. The prop from ChatWindow is one stable callback and the row's
+`entryId` is bound per row (`notifyContentToggle`) — an inline arrow there re-renders every
+message on every ChatWindow render, which the memo comparator is written to prevent. Two rules:
+never `scrollIntoView` a control from this handler (it fights the anchor over `scrollTop` and
+lands the reader at the tail), and return early when the control is off screen — the finger
+cannot have pressed it, and moving the page from there is the app moving the page. Pinned by
+`components/ChatWindow.content-toggle.test.mjs`.
+
 ## No RegExp lookbehind may reach a bundle (`lib/gfm-autolink-email-loader.cjs`, #753)
 `mdast-util-gfm-autolink-literal` (through `remark-gfm`, from `lib/markdown.ts`) gates
 autolinking with lookbehind, which Safari parses only from 16.4; a regex literal Safari
