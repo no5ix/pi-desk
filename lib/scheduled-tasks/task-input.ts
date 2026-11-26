@@ -1,3 +1,4 @@
+import { isRecord } from "../is-record";
 import { randomUUID } from "crypto";
 import { existsSync, statSync } from "fs";
 import { isAbsolute } from "path";
@@ -19,10 +20,6 @@ const WRITE_PRESETS = new Set<string>(["default", "full"]);
 
 function fail(message: string, key?: string, params?: Record<string, string | number>): never {
   throw new ScheduledTaskValidationError(message, key, params);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseName(value: unknown, otherNames: readonly string[]): string {

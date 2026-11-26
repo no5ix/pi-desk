@@ -12,6 +12,7 @@ import { createInterface } from "node:readline";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { attachmentAwareTitle } from "./chat-attachments";
+import { isRecord } from "./is-record";
 import { userImageDisplayText, userMessageImageCount } from "./user-image-display";
 
 export interface ScannedSessionInfo {
@@ -46,10 +47,6 @@ interface IndexEntry {
 }
 
 type RawEntry = Record<string, unknown>;
-
-function isRecord(value: unknown): value is RawEntry {
-	return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 // 3: derived first-message previews omit SDK image hints. Invalidate old cached
 // metadata, not session files or user-assigned session_info names.

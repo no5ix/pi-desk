@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveModelDiscoveryAuth } from "@/lib/model-discovery-auth";
 import { buildModelsListUrl, collectModelPages, parseDiscoveredModels, type ModelPageFetchResult } from "@/lib/model-discovery";
+import { isRecord } from "@/lib/is-record";
 
 export const dynamic = "force-dynamic";
 
@@ -8,10 +9,6 @@ const DISCOVERY_TIMEOUT_MS = 20_000;
 /** Budget for the whole walk, so 20 slow pages cannot hold the request for minutes. */
 const DISCOVERY_TOTAL_TIMEOUT_MS = 60_000;
 const MAX_DISCOVERY_PAGES = 20;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function hasHeader(headers: Headers, name: string): boolean {
   return headers.has(name);

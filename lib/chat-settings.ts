@@ -1,3 +1,4 @@
+import { isRecord } from "./is-record";
 import { getPiWebSettingsPath, readStored, updatePiWebSettings } from "./artifact-settings";
 import {
   CHAT_ALLOWED_TOOLS_MAX,
@@ -23,10 +24,6 @@ export {
   type ChatSettings,
   type ChatThinkingLevel,
 } from "./chat-settings-shared";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** Tolerant parse of the stored block: anything malformed reads as "not set". */
 export function parseChatSettings(raw: unknown): ChatSettings {

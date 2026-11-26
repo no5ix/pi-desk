@@ -1,10 +1,7 @@
 import { stripAnsi } from "@/lib/ansi";
+import { isRecord } from "./is-record";
 
 const MAX_PROGRESS_LENGTH = 500;
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * The latest line of a running tool's streamed output, as the status line shows it.
@@ -17,13 +14,13 @@ function isObject(value: unknown): value is Record<string, unknown> {
  * frame and an escape-only line loses to the text above it.
  */
 export function getToolExecutionProgress(partialResult: unknown): string | null {
-  if (!isObject(partialResult)) return null;
+  if (!isRecord(partialResult)) return null;
 
   const content = partialResult.content;
   if (!Array.isArray(content)) return null;
 
   const text = content
-    .filter((block) => isObject(block) && block.type === "text" && typeof block.text === "string")
+    .filter((block) => isRecord(block) && block.type === "text" && typeof block.text === "string")
     .map((block) => block.text as string)
     .join("\n");
 

@@ -10,6 +10,7 @@ import { isExistingPathWithinRoots } from "./path-security";
 import { disabledBuiltInSubagents } from "./subagent-settings";
 import { PRESET_READ_ONLY } from "./tool-presets";
 import type { SessionEntry, SubagentSessionStatus } from "./types";
+import { isRecord } from "./is-record";
 
 export const SUBAGENT_META_TYPE = "pi-web:subagent";
 export const SUBAGENT_STATUS_TYPE = "pi-web:subagent-status";
@@ -636,10 +637,6 @@ export function saveProjectSubagentProfile(cwd: string, profile: Omit<SubagentPr
 
 export function deleteProjectSubagentProfile(cwd: string, name: string): void {
   deleteSubagentProfile(cwd, "project", name);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 type ValidSubagentMetadataData = Record<string, unknown> & {

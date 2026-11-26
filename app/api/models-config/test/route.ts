@@ -18,6 +18,8 @@ import {
   type LevelProbeResult,
   type ThinkingLevelMap,
 } from "@/lib/thinking-level-probe";
+import { errorMessage } from "@/lib/errors";
+import { isRecord } from "@/lib/is-record";
 
 export const dynamic = "force-dynamic";
 
@@ -107,14 +109,6 @@ async function probeLevels(
       return { level, value, outcome: "inconclusive", error: errorMessage(error) };
     }
   });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function getAssistantText(message: AssistantMessage): string {
