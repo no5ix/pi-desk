@@ -234,6 +234,17 @@ const TEXT_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity:
 // for the callers and tests that read them off the composer; there is no second path.
 export { getTopbarBoundary, getUpwardMenuMaxHeight };
 
+/**
+ * The prompt's lines that raise the composer's corner (the way into the tall editor).
+ *
+ * The rule the user set: **more than three** lines. The corner is an affordance for a
+ * prompt that needs a page to write in, and it takes the card's upper-left, so a
+ * sentence of a line, two or three is a resting card — the corner arrives past the
+ * third line and leaves with it (it stays while the card is open as the editor, because
+ * the corner is the only way back).
+ */
+export const COMPOSER_CORNER_MIN_LINES = 3;
+
 export function cycleListIndex(index: number, length: number, delta: number): number {
   if (length <= 0) return 0;
   return ((index + delta) % length + length) % length;
@@ -949,12 +960,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ta.style.height = `${target}px`;
   }, [expanded]);
   // How many lines the prompt takes, and the corner that follows it. The card is one row
-  // while the text fits on a line; the second line — typed or wrapped — is what raises the
-  // corner in the card's upper-left, and the line going away takes the corner back. The
-  // prompt, the tier and the card's own height are what the answer depends on, and a resize
-  // (a window drag, a keyboard, a panel) re-wraps the same text, so the box is observed too.
+  // while the text fits on a line; it is the line past COMPOSER_CORNER_MIN_LINES — typed
+  // or wrapped — that raises the corner in the card's upper-left, and the line going away
+  // takes the corner back. The prompt, the tier and the card's own height are what the
+  // answer depends on, and a resize (a window drag, a keyboard, a panel) re-wraps the same
+  // text, so the box is observed too.
   const [textLines, setTextLines] = useState(1);
-  const cornerVisible = !compact && Boolean(onExpandedChange) && (expanded || textLines > 1);
+  const cornerVisible = !compact && Boolean(onExpandedChange)
+    && (expanded || textLines > COMPOSER_CORNER_MIN_LINES);
   const measureTextLines = useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) {
@@ -974,17 +987,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     observer.observe(ta);
     return () => observer.disconnect();
   }, [measureTextLines]);
-  // A prompt that shrinks back to one line is a resting card again: the corner goes, and
-  // with it the tall editor it had opened. The rule only closes a card the corner opened —
-  // opening the editor on an empty box (to write a long prompt in) is kept.
-  const wasMultilineRef = useRef(false);
+  // A prompt that falls back to the threshold is a resting card again: the corner goes,
+  // and with it the tall editor it had opened. The rule only closes a card the corner
+  // opened — opening the editor on an empty box (to write a long prompt in) is kept.
+  const wasCornerRef = useRef(false);
   useEffect(() => {
-    if (textLines > 1) {
-      wasMultilineRef.current = true;
+    if (textLines > COMPOSER_CORNER_MIN_LINES) {
+      wasCornerRef.current = true;
       return;
     }
-    if (wasMultilineRef.current && expanded && onExpandedChange) onExpandedChange(false);
-    wasMultilineRef.current = false;
+    if (wasCornerRef.current && expanded && onExpandedChange) onExpandedChange(false);
+    wasCornerRef.current = false;
   }, [textLines, expanded, onExpandedChange]);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
   const plusMenuRef = useRef<HTMLDivElement>(null);

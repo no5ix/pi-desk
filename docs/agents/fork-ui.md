@@ -122,7 +122,10 @@ textarea's own `min-height: 24px / max-height: 200px` box, which the composer se
 With the phone's keyboard up the editor is measured against `--app-viewport-height`, so a tall
 prompt is typed in the room above the keyboard and never under it. The same mark turned 180°
 is the way back, and Escape in the field is the keyboard's way back — only while nothing is
-streaming, so a running agent keeps its Stop. The corner arrives with the **second** line — typed or wrapped — and leaves with it.
+streaming, so a running agent keeps its Stop. The corner arrives with the line **past three** (`COMPOSER_CORNER_MIN_LINES = 3`, exported from
+`components/ChatInput.tsx`; the 2026-12 ask: the icon should only show for a prompt that needs a
+page to write in, not for a sentence of a line, two or three) — typed or wrapped — and leaves with
+it, on the same threshold that opened it (`wasCornerRef` folds a card the corner had opened).
 The count comes from `measureComposerTextLines` with the box released, and it subtracts the
 element's own computed vertical padding from the measured `scrollHeight` before dividing by the
 line box — exactly, not by an allowance, so no padding rule can raise the corner. A raw round

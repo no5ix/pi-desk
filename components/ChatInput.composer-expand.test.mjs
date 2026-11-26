@@ -43,7 +43,9 @@ test("the corner exists, and it is drawn only when there is a second line", () =
   assert.ok(/<ComposerExpandIcon expanded=\{expanded\} \/>/.test(markup), "one glyph, turned by the state");
   // The resting card is a one-row card: a corner above a one-line prompt is a glyph for a
   // gesture that does nothing, and it pushed the text into a gutter it did not need.
-  assert.ok(/const cornerVisible = !compact && Boolean\(onExpandedChange\) && \(expanded \|\| textLines > 1\);/.test(chatInput),
+  assert.ok(/const COMPOSER_CORNER_MIN_LINES = 3;/.test(chatInput),
+    "the corner's threshold is one exported number: more than three lines, the rule the user set, not a magic value in three places");
+  assert.ok(/const cornerVisible = !compact && Boolean\(onExpandedChange\)\n\s*&& \(expanded \|\| textLines > COMPOSER_CORNER_MIN_LINES\);/.test(chatInput),
     "compact (the quote box) has no corner, no host means no corner, and the corner needs the editor open OR a prompt past one line");
   assert.ok(/const \[textLines, setTextLines\] = useState\(1\);/.test(chatInput),
     "the line count is the composer's own measurement, not a `\\n` count: a long sentence WRAPS, and a wrapped sentence must raise the corner like a typed newline");
@@ -100,14 +102,16 @@ test("the corner is measured out of the box, released and restored", () => {
 test("a prompt that shrinks back to one line folds the card again", () => {
   // The corner that arrived with the second line has to leave with it, and a card left open
   // as the editor after the last line was deleted kept a tall box around one character.
-  const fold = /const wasMultilineRef = useRef\(false\);[\s\S]*?\}, \[textLines, expanded, onExpandedChange\]\);/.exec(chatInput);
+  const fold = /const wasCornerRef = useRef\(false\);[\s\S]*?\}, \[textLines, expanded, onExpandedChange\]\);/.exec(chatInput);
   assert.ok(fold, "an effect keyed to the line count");
   const body = fold[0];
-  assert.ok(/wasMultilineRef\.current = true;/.test(body) && /textLines > 1/.test(body),
-    "the card remembers that it was multiline: the rule only closes a card the corner opened");
-  assert.ok(/if \(wasMultilineRef\.current && expanded && onExpandedChange\) onExpandedChange\(false\);/.test(body),
-    "and a prompt that returns to one line folds the editor, so opening the editor on an empty box (to write a long prompt in) is kept");
-  assert.ok(/wasMultilineRef\.current = false;/.test(body), "and the memory is cleared, so one fold per gesture");
+  assert.ok(/wasCornerRef\.current = true;/.test(body) && /textLines > COMPOSER_CORNER_MIN_LINES/.test(body),
+    "the card remembers that the corner had arrived: the rule only closes a card the corner opened, on the same threshold that opened it");
+  assert.ok(/if \(wasCornerRef\.current && expanded && onExpandedChange\) onExpandedChange\(false\);/.test(body),
+    "and a prompt that falls back to the threshold folds the editor, so opening the editor on an empty box (to write a long prompt in) is kept");
+  assert.ok(/wasCornerRef\.current = false;/.test(body), "and the memory is cleared, so one fold per gesture");
+  assert.ok(!/textLines > 1\b/.test(chatInput),
+    "no one-line threshold left behind: the corner's rule is one number, so a card of two or three lines stays a resting card");
 });
 
 test("the corner sits in the card's upper-LEFT, and the text stops short of it", () => {
