@@ -827,6 +827,8 @@ export const zhTWLocale: LocalePlugin = {
     "chat.findEarlier": "載入較早的訊息",
     "chat.loadEarlier": "向上捲動以載入較早的訊息",
     "chat.scrollToLatest": "回到最新訊息",
+    "chat.expandComposer": "展開輸入框",
+    "chat.collapseComposer": "收起輸入框",
     "chat.extensionRequest": "擴充功能請求",
     "chat.extensionExpiresIn": "{seconds} 秒後過期",
     "chat.extensionPending": "待回答",

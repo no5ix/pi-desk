@@ -6,6 +6,8 @@
  */
 
 export const APP_PREF_KEYS = {
+  /** The composer's corner: "1" opens the card as a tall editor for a long prompt. */
+  composerExpanded: "pi-composer-expanded",
   theme: "pi-theme",
   fonts: "pi-fonts",
   locale: "pi-locale",

@@ -21,6 +21,7 @@ import { MessageView } from "./MessageView";
 import { useReportDesktopReady } from "./desktop";
 import { MarkdownBody } from "./MarkdownBody";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { APP_PREF_KEYS, getPrefBool, setPrefBool } from "@/lib/app-prefs";
 import { NewSessionWelcome } from "./NewSessionWelcome";
 import { ConversationNavigator, type ConversationTurnLocation } from "./ConversationNavigator";
 import { ExtensionWidgets } from "./ExtensionWidgets";
@@ -444,6 +445,15 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   const [quoteSubmitting, setQuoteSubmitting] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const quotePopoverRef = useRef<HTMLDivElement | null>(null);
+  // The composer's corner. A long prompt is written in a tall editor, not in a
+  // two-hundred-pixel box that scrolls, and on a phone the corner is the only way to
+  // reach it. Remembered per device: it is a way of writing, not a per-session fact.
+  const [composerExpanded, setComposerExpanded] = useState(() => getPrefBool(APP_PREF_KEYS.composerExpanded, false));
+  const handleComposerExpanded = useCallback((next: boolean) => {
+    setComposerExpanded(next);
+    setPrefBool(APP_PREF_KEYS.composerExpanded, next);
+  }, []);
+
   const quoteChatInputRef = useRef<ChatInputHandle | null>(null);
   const closeQuotedSelection = useCallback(() => {
     setQuotedSelection(null);
@@ -1456,6 +1466,10 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
+      // The corner is for the conversation's composer. A docked side chat has no room to
+      // grow into — its column is a panel beside the chat — so the button is not drawn.
+      expanded={panel ? false : composerExpanded}
+      onExpandedChange={panel ? undefined : handleComposerExpanded}
       onSend={handleSend}
       onAttachFiles={onAttachFiles}
       onAbort={handleAbort}

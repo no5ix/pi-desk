@@ -92,6 +92,24 @@ the card's bottom-right arc (measured by `e2e/composer-geometry.mjs`). The text 
 `flex: "none"` — in a column `flex: 1` is a zero basis and clips the auto-grow height to
 `minHeight`, which is the regression `components/MobilePwaLayout.test.mjs` pins.
 
+The card's top-right corner carries one affordance: expand (`components/ComposerExpandIcon.tsx`,
+`.chat-composer-expand`). A tap turns the card into a tall editor for a long prompt —
+`is-expanded` on the card, and `app/native-theme.css` owns the height, out-inlining the
+textarea's own `min-height: 24px / max-height: 200px` box, which the composer sets inline.
+With the phone's keyboard up the editor is measured against `--app-viewport-height`, so a tall
+prompt is typed in the room above the keyboard and never under it. The same mark turned 180°
+is the way back, and Escape in the field is the keyboard's way back — only while nothing is
+streaming, so a running agent keeps its Stop. The corner is not drawn where there is no room
+to grow: the quote composer's card and a docked side chat get none. The choice is remembered
+per device (`APP_PREF_KEYS.composerExpanded`) because it is a way of writing, not a per-session
+fact, and the gutter the glyph takes out of the text is a rule (`padding-right: 38px`, 44px for
+a finger), so no line is typed under it. Collapsing runs the composer's autosize again with the
+box released: measured inside the tall editor `scrollHeight` reports the editor's height, and a
+folded card would keep the 340px it had grown. `e2e/composer-expand.mjs` measures the plate
+(36px for a finger, 30px for a pointer), the gutter, the keyboard's room, a long prompt's
+scroll and the fold; `components/ChatInput.composer-expand.test.mjs` pins the markup, the two
+states and the preference.
+
 The controls in that row are icon-only: the reasoning level, the tool preset and the
 model chip print no words, and each is a 32px square (`--control-h-lg`). The words are
 not lost — they live in `title` and `aria-label` (`"Change reasoning level: medium"`,

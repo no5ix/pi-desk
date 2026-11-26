@@ -14552,3 +14552,122 @@ a:focus-visible {
     display: none !important;
   }
 }
+/* ─── The composer's corner: a tall editor, and the way back ────────────────────────
+   A long prompt is written in an editor, not in a box that stops at 200px and scrolls
+   (components/ChatInput.tsx grows the textarea to `min(scrollHeight, 200px)`). The
+   corner button in the card's top-right turns the card into a tall editor, and the same
+   mark turned around is the way back (components/ComposerExpandIcon.tsx). The card's own
+   geometry is untouched by this: Send keeps the bottom-right arc, the text keeps the
+   `+` glyph's left edge, the strip keeps its filler, and the conversation's spacer keeps
+   measuring the card with its ResizeObserver. */
+.chat-composer {
+  /* The corner is anchored to the card. The editor box is `position: relative` for the
+     composer's own overlays, and it is inset by the card's padding, so a glyph pinned to
+     the card's own corner lands in the padding band — the corner the screenshots show. */
+  position: relative;
+}
+
+.chat-composer > .chat-composer-expand {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  /* A corner affordance, not a control: no plate at rest, so the card stays one surface.
+     The pointer gets a plate because it is aiming at a 30px target. */
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition:
+    color var(--dur-base) var(--ease-native),
+    background var(--dur-base) var(--ease-native);
+}
+
+.chat-composer > .chat-composer-expand:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.chat-composer > .chat-composer-expand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The corner sits over the card, so the text stops short of it: the first line is never
+   typed under the glyph, and the caret is never hidden by it. */
+.chat-composer.has-expand .chat-composer-editor > .chat-input-textarea {
+  padding-right: 38px;
+}
+
+/* A phone's finger: the glyph is 18px, so the plate it lives on is the touch target
+   (the fork's 36px rule for coarse pointers). */
+@media (pointer: coarse) {
+  .chat-composer > .chat-composer-expand {
+    width: 36px;
+    height: 36px;
+    top: 2px;
+    right: 2px;
+    border-radius: 12px;
+  }
+
+  .chat-composer.has-expand .chat-composer-editor > .chat-input-textarea {
+    padding-right: 44px;
+  }
+}
+
+/* Expanded: the card becomes the editor. The textarea takes the height the collapsed
+   card caps at 200px, the strip stays at the bottom with Send in the arc, and with the
+   keyboard open the editor is measured against the keyboard's own height
+   (`--app-viewport-height`, which hooks/useViewportHeight.ts keeps equal to the shell). */
+.chat-composer.is-expanded .chat-composer-editor {
+  flex-direction: column;
+}
+
+.chat-composer.is-expanded .chat-composer-editor > .chat-input-textarea {
+  /* The composer sets its own collapsed box inline (`min-height: 24px`,
+     `max-height: 200px`, and a height it grew to the text), so the tall editor has to
+     out-inline it. The bounds are the card's, not the text's: a longer prompt scrolls
+     inside the editor instead of pushing the card past the screen. */
+  height: auto !important;
+  min-height: min(42dvh, 300px) !important;
+  max-height: min(58dvh, 520px) !important;
+  resize: none;
+}
+
+html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .chat-input-textarea {
+  /* Measured against the keyboard's own height: `--app-viewport-height` is the shell's
+     height with the keyboard up (hooks/useViewportHeight.ts), so the editor fills the
+     room above it and never under it. */
+  min-height: calc(var(--app-viewport-height, 100dvh) * 0.4) !important;
+  max-height: calc(var(--app-viewport-height, 100dvh) * 0.62) !important;
+}
+
+@media (max-width: 640px) {
+  .chat-composer.is-expanded .chat-composer-editor > .chat-input-textarea {
+    min-height: min(46dvh, 340px) !important;
+  }
+}
+
+/* The topbar's cards hang below the header, and the composer's corner can grow the card
+   over them: the chrome band stays above the conversation's floating controls. */
+.app-topbar {
+  z-index: 200;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-composer > .chat-composer-expand {
+    transition: none;
+  }
+
+  .chat-composer > .chat-composer-expand svg {
+    transition: none;
+    transform: none;
+  }
+}

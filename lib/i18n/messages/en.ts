@@ -827,6 +827,8 @@ export const enLocale: LocalePlugin = {
     "chat.findEarlier": "Load earlier messages",
     "chat.loadEarlier": "Scroll up to load earlier messages",
     "chat.scrollToLatest": "Scroll to latest",
+    "chat.expandComposer": "Expand the message box",
+    "chat.collapseComposer": "Collapse the message box",
     "chat.extensionRequest": "extension request",
     "chat.extensionExpiresIn": "expires in {seconds}s",
     "chat.extensionPending": "Awaiting response",

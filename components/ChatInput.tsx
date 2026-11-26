@@ -73,6 +73,7 @@ import { ComposerBranchChip } from "./ComposerBranchMenu";
 import { ComposerOutbox, type ComposerQueueAction } from "./ComposerOutbox";
 import { ComposerDeviceCopies } from "./ComposerDeviceCopies";
 import { SideChatPlusIcon } from "./SideChatIcon";
+import { ComposerExpandIcon } from "./ComposerExpandIcon";
 import { AgentRunningIcon } from "./TopbarSubagents";
 import { useSessionMentionPalette } from "@/hooks/useSessionMentionPalette";
 import { useComposerCaret } from "@/hooks/useComposerCaret";
@@ -104,6 +105,12 @@ interface Props {
   isStreaming: boolean;
   /** Text-only composer without the session controls or outer spacing. */
   compact?: boolean;
+  /** The card's corner button: a tall editor, so a long prompt is typed in one
+   *  screen instead of a two-hundred-pixel box (app/native-theme.css owns the height). */
+  expanded?: boolean;
+  /** Absent means no corner button: the quote composer and the compact tiers have no
+   *  room to grow into, so the control is not drawn at all. */
+  onExpandedChange?: (expanded: boolean) => void;
   model?: { provider: string; modelId: string } | null;
   isAutoModelSelection?: boolean;
   modelNames?: Record<string, string>;
@@ -845,6 +852,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onComposerWorktreeRemoved,
   autoFocus = false,
   compact = false,
+  expanded = false,
+  onExpandedChange,
 }: Props, ref) {
   const { t } = useI18n();
   const { fontSize } = useChatAppearance();
@@ -937,6 +946,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // The phone's keyboard lifts the composer by shrinking the app, and WebKit paints
   // the caret where the field stood before the travel: this puts it back.
   useComposerCaret(textareaRef);
+
+  // The corner's fold needs the box's own autosize to run again. The composer sizes the
+  // textarea when its text changes; the tall editor is a class, and a class change that
+  // removes the editor's bounds leaves the inline height behind — the collapsed card kept
+  // the 340px box it had grown for the expanded one.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    if (expanded) {
+      ta.style.height = "auto";
+      return;
+    }
+    // Read the text's height with the box released: measured inside the tall editor the
+    // box's own height is what `scrollHeight` reports, and the collapsed card kept it.
+    // Pinned at the height the reader is looking at, flushed, then sent to the text's —
+    // that is the pair the composer's own height transition animates between.
+    const from = ta.offsetHeight;
+    ta.style.height = "auto";
+    const target = Math.min(ta.scrollHeight, 200);
+    ta.style.height = `${from}px`;
+    void ta.offsetHeight;
+    ta.style.height = `${target}px`;
+  }, [expanded]);
   const projectDropdownRef = useRef<HTMLDivElement>(null);
   const toolDropdownRef = useRef<HTMLDivElement>(null);
   const thinkingDropdownRef = useRef<HTMLDivElement>(null);
@@ -2020,6 +2052,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
 
+      // The corner's tall editor takes Escape as its own way back — the card folds,
+      // the run is left alone. The two cannot collide: the fold asks for `!isStreaming`,
+      // so a running agent keeps the abort below it.
+      if (e.key === "Escape" && !isComposing && expanded && !isStreaming && onExpandedChange) {
+        e.preventDefault();
+        onExpandedChange(false);
+        return;
+      }
+
       // Esc stops the agent when no slash/@/history menu or IME composition is active.
       if (e.key === "Escape" && !isComposing && isStreaming && onAbort) {
         e.preventDefault();
@@ -2986,7 +3027,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <ComposerOutbox items={queuedMessages?.pending ?? []} onAction={onQueuedMessageAction} />
           <div
             ref={composerRef}
-            className="chat-composer"
+            className={`chat-composer${compact ? " is-compact" : ""}${expanded ? " is-expanded" : ""}${!compact && onExpandedChange ? " has-expand" : ""}`}
             onPointerDown={(event) => {
               // The card is the editor's box: a finger's tap anywhere in it that is not a
               // control puts the caret in the text, and the keyboard that comes with the
@@ -3000,6 +3041,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             // run that will take this message as a steer / follow-up.
             data-state={compact ? undefined : bashMode ? "bash" : undefined}
           >
+          {!compact && onExpandedChange && (
+            <button
+              type="button"
+              className="chat-composer-expand"
+              data-expanded={expanded ? "true" : "false"}
+              aria-expanded={expanded}
+              aria-label={t(expanded ? "chat.collapseComposer" : "chat.expandComposer")}
+              title={t(expanded ? "chat.collapseComposer" : "chat.expandComposer")}
+              onClick={() => onExpandedChange(!expanded)}
+            >
+              <ComposerExpandIcon expanded={expanded} />
+            </button>
+          )}
           <div
             className="chat-composer-editor"
             style={{

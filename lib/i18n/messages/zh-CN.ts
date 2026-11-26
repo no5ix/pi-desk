@@ -827,6 +827,8 @@ export const zhCNLocale: LocalePlugin = {
     "chat.findEarlier": "加载更早的消息",
     "chat.loadEarlier": "向上滚动以加载更早的消息",
     "chat.scrollToLatest": "回到最新消息",
+    "chat.expandComposer": "展开输入框",
+    "chat.collapseComposer": "收起输入框",
     "chat.extensionRequest": "扩展请求",
     "chat.extensionExpiresIn": "{seconds} 秒后过期",
     "chat.extensionPending": "待回答",

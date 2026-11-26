@@ -173,3 +173,46 @@ test("a tool call's band stands off the page, its clock is readable, and a phone
   assert.ok(hidden, "on a phone's width the chip is not drawn, and the rule is strong enough to beat the chip's inline display: flex");
   assert.ok(!/\.message-copy-action\s*\{[^}]*display: none/.test(cssNoComments), "Copy is not taken with it");
 });
+
+test("the composer's corner: a plate, a gutter, and a tall editor that out-inlines the box (pic: the corner button)", () => {
+  // The glyph is small; the plate it lives on is the target, and on a finger the plate is
+  // the fork's 36px. `declarations()` flattens the media wrappers, so both tiers of one
+  // selector come back together and the assertion reads the pair.
+  const plate = declarations(".chat-composer > .chat-composer-expand");
+  assert.ok(plate.some((d) => /^width:\s*30px/.test(d)), "the plate is 30px at rest");
+  assert.ok(plate.some((d) => /^width:\s*36px/.test(d)), "and 36px for a finger");
+  assert.ok(plate.some((d) => /^height:\s*36px/.test(d)), "the finger's plate is square");
+  assert.ok(plate.some((d) => /^position:\s*absolute/.test(d)), "the corner is anchored, not floated into the text");
+  assert.ok(declarations(".chat-composer").some((d) => /^position:\s*relative/.test(d)),
+    "the card is the anchor, so the glyph lands in the card's own corner");
+
+  // The text stops short of the corner: the first line is never typed under the glyph.
+  const gutter = declared(".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea", "padding-right");
+  assert.ok(gutter.some((d) => d.includes("38px")), "the card reserves 38px for the corner");
+  assert.ok(gutter.some((d) => d.includes("44px")), "and 44px where the plate is a finger's");
+
+  // The composer sizes its textarea with inline styles (`min-height: 24px`,
+  // `max-height: 200px`, and a height it grew to the text), so the tall editor has to be
+  // declared with `!important` on all three axes it takes over.
+  const tall = ".chat-composer.is-expanded .chat-composer-editor > .chat-input-textarea";
+  for (const property of ["height", "min-height", "max-height"]) {
+    const rules = declared(tall, property);
+    assert.ok(rules.length > 0, `${tall} sets ${property}`);
+    assert.ok(rules.every((d) => d.includes("!important")), `${property} out-inlines the composer's own box (${rules.join(" | ")})`);
+  }
+
+  // With the keyboard up, the editor is measured against the keyboard's own height — the
+  // shell's height, which hooks/useViewportHeight.ts keeps current.
+  const keyboard = declarations("html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .chat-input-textarea");
+  const bounds = keyboard.filter((d) => /^(min-)?max?-height/.test(d));
+  assert.ok(bounds.length > 0, "the keyboard tier sets the editor's bounds");
+  assert.ok(bounds.every((d) => d.includes("--app-viewport-height")),
+    "the tall editor is sized by the room above the keyboard, never under it");
+
+  // The card's own geometry is untouched: Send keeps the arc, so its rule stays.
+  assert.ok(declared(".chat-composer-actions > .composer-send-button", "margin-left").some((d) => /auto/.test(d)),
+    "Send still pins the card's bottom-right corner");
+
+  const reduced = declarations(".chat-composer > .chat-composer-expand");
+  assert.ok(reduced.some((d) => /transition:\s*none/.test(d)), "a reduced-motion reader gets no turn");
+});
