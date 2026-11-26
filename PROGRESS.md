@@ -825,3 +825,46 @@ transition before the arc and height assertions), plus a new
 `AppShell`, `ImagePreview`, `path-ui`, `native-theme.css`'s pop/`is-closing` rules, the
 `lib/git-*` files). `hooks/usePopTransition.ts` is untracked, so nothing new imports it:
 `ComposerPlusMenu` mounts its panel on `open` only.
+
+## 2026-11-26 — the collapsed thinking's cut marks are reverted (`fix/flat-chat-blocks`)
+
+**The ask.** The user's screenshot of a collapsed thinking: the lightbulb, one line of
+reasoning, and the line ending mid-word (`…So tr`) with no mark naming the cut. Today's
+thinking work (e09f3eb7, 70560841) is reverted; the rest of those two commits stays.
+
+**What the day had built, and what went back**
+- `components/MessageView.tsx` — `THINKING_MORE_MARKER = "•••"`, the `useIsTextClipped`
+  ResizeObserver hook, `previewHasMore` / `previewRef` / `previewClipped`, and the
+  `className="thinking-card"` / `className="thinking-preview"` + `data-clipped` markup.
+  Gone. The card is the pre-today node again: a plain `div` with its inline styles and a
+  preview `span` with `overflow: hidden; text-overflow: ellipsis; white-space: nowrap`.
+  `MessageView.tsx` is byte-identical to `e09f3eb7^` in the whole `ThinkingBlock` region;
+  the `RefObject` import that only the hook used is gone.
+- `app/native-theme.css` — the `.message-assistant .thinking-card { padding-left: 0 }`
+  alignment rule, the `--thinking-cut-surface` token (page and Process-details plate),
+  `.thinking-preview { text-overflow: clip }`, the `::after { content: "•••" }` plate over
+  the cut, and `.thinking-preview-dots`. All removed.
+- `app/native-theme-phone-pass.test.mjs` — the "three marks" test is replaced by
+  "a turn's Process details group stands on a translucent plate", which keeps the plate
+  assertion (that rule predates today, from `bece22e5`) and drops the thinking ones.
+- `e2e/thinking-preview.mjs` and `e2e/thinking-preview.fixture.jsx` (both created today)
+  are deleted, and their `test:e2e` entry is out of `package.json`.
+- Untouched: the expansion rule (`expandedByRule`, the newest-block handover, the
+  preference switch), `getThinkingPreview` (240 chars, first line — predates today), the
+  Process-details plate, the tool-call band, the image overlay, `onContentToggle`.
+
+**Why revert rather than tune.** The marks only appear while the box clips the line, and
+the clip is measured against the span's own box; in a real conversation (the screenshot)
+the line ends inside the box, the measured clip is false, and the reader gets a hard cut
+mid-word with nothing after it. The old `text-overflow: ellipsis` never lies: the browser
+paints the ellipsis exactly where it cuts.
+
+**Verification**
+- `node_modules/.bin/tsc --noEmit` clean; `npm run lint` 0 errors.
+- `node --test` over `components/MessageView*.test.mjs` + `app/native-theme-phone-pass.test.mjs`
+  + `app/native-theme-chat-flat.test.mjs`: 76 pass / 1 fail — the one failure is
+  "the scroll-to-latest disc has no edge and a shadow that lifts it", which fails
+  identically at `HEAD` (verified in a detached worktree): pre-existing, not this change.
+- `node e2e/thinking-latest.mjs` fails at its handover assertion (`1:01,2:0` where
+  `1:00,2:1` is expected) **identically at `HEAD`** — a pre-existing failure on this
+  branch, recorded here so it is not mistaken for the revert.

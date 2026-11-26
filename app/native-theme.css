@@ -14039,52 +14039,6 @@ a:focus-visible {
   background: color-mix(in srgb, var(--surface) 88%, transparent);
 }
 
-/* A collapsed thinking: its glyph stands on the same left edge as the clock of
-   the row above (the card's own 10px inset pushed it in), and the first line
-   ends with the three marks that say "this goes on" — the CSS ellipsis paints
-   one `…`, which on a mono line reads as the text's own punctuation. The marks
-   are pinned to the box's right edge over the cut, on the card's own fill. */
-.message-assistant .thinking-card {
-  padding-left: 0 !important;
-}
-
-/* The cut end of a collapsed thought. `text-overflow: clip` stops the line mid-glyph,
-   which reads as a typo, so the three marks stand over the cut; they need the surface
-   behind them, and that surface is not always the page: the turn's Process details group
-   paints a translucent plate (`--surface` at a third over the page), so the marks carry
-   that plate flattened, or they would cut a light rectangle into the card. */
-.thinking-card {
-  --thinking-cut-surface: var(--bg);
-}
-
-.process-details-content .thinking-card {
-  --thinking-cut-surface: color-mix(in srgb, var(--surface) 34%, var(--bg));
-}
-
-.thinking-preview {
-  position: relative;
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: clip;
-}
-
-.thinking-preview[data-clipped="true"]::after {
-  content: "•••";
-  position: absolute;
-  right: 0;
-  padding-left: 8px;
-  background: var(--thinking-cut-surface, var(--bg));
-  color: var(--text-muted);
-  letter-spacing: 1px;
-}
-
-.thinking-preview-dots {
-  padding-left: 4px;
-  letter-spacing: 1px;
-}
-
 /* Settings on a phone: a list of rows, iOS-style. The separator begins under the
    label's first letter, and no row carries a line under its icon; the group's
    last row ends without one. Upstream draws a full-width `border-bottom`

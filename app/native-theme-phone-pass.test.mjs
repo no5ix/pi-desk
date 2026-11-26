@@ -89,25 +89,8 @@ test("a subagent report is a panel with a thinking card's type (pic: the opened 
   assert.match(messageView, /fontSize: "calc\(11px \+ var\(--chat-font-size-offset, 0px\)\)"/, "the thinking card keeps the size this rule is measured against");
 });
 
-test("a collapsed thinking's first line ends with the three marks, and its glyph lines up with the clock (pic: the lightbulb row)", () => {
-  assert.match(declared(".message-assistant .thinking-card", "padding-left").join("\n"), /padding-left: 0 !important/, "the lightbulb stands on the row's left edge, under the clock above it");
-  assert.ok(messageView.includes('className="thinking-card"'), "the thinking card carries the class the rule needs");
-  assert.match(declared(".thinking-preview", "text-overflow").join("\n"), /text-overflow: clip/, "no single ellipsis character: the cut is named by the marks");
-  assert.match(cssNoComments, /\.thinking-preview\[data-clipped="true"\]::after\s*\{[^}]*content: "•••"/, "the marks are painted over the cut");
-  // The marks are painted over the line, so they must carry the surface behind them.
-  // A collapsed thought is usually inside the turn's Process details group, whose plate
-  // is a translucent mix; the page's colour there would cut a light rectangle into it.
-  assert.match(declared(".thinking-preview[data-clipped=\"true\"]::after", "background").join("\n"), /background: var\(--thinking-cut-surface/, "the marks carry the surface they sit on, as a token");
-  assert.match(declared(".thinking-card", "--thinking-cut-surface").join("\n"), /--thinking-cut-surface: var\(--bg\)/, "on the page, that surface is the page");
-  assert.match(
-    declared(".process-details-content .thinking-card", "--thinking-cut-surface").join("\n"),
-    /--thinking-cut-surface: color-mix\(in srgb, var\(--surface\) 34%, var\(--bg\)\)/,
-    "inside the Process details plate, it is that plate flattened against the page",
-  );
-  assert.match(declared(".process-details-content", "background").join("\n"), /background: color-mix\(in srgb, var\(--surface\) 34%, transparent\)/, "…which is the plate's own mix, made opaque");
-  assert.match(messageView, /export const THINKING_MORE_MARKER = "•••"/, "the same three marks in the component, for a line that ends before the box");
-  assert.ok(messageView.includes('className="thinking-preview"') && messageView.includes("data-clipped="), "the preview span carries the class and the clipped state");
-  assert.ok(messageView.includes("useIsTextClipped"), "the clipped state is measured, not guessed");
+test("a turn's Process details group stands on a translucent plate (pic: the folded steps)", () => {
+  assert.match(declared(".process-details-content", "background").join("\n"), /background: color-mix\(in srgb, var\(--surface\) 34%, transparent\)/, "the plate is the surface a third over the page");
 });
 
 test("the sidebar gives its search field a seam above the Chats header (pic: Chats under the box)", () => {
