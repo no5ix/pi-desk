@@ -118,8 +118,14 @@ test("the corner sits in the card's upper-LEFT, and the text stops short of it",
   const corner = cssRule(css, ".chat-composer > .chat-composer-expand");
   assert.ok(corner, "the corner is styled against the card, as its direct child");
   assert.match(corner, /position: absolute;/, "it is laid over the card's padding band, not added to the row");
-  assert.match(corner, /top: 4px;/, "the card's own corner");
-  assert.match(corner, /left: 4px;/, "the LEFT corner");
+  const inset = "calc(var(--composer-send-size) / 2 + 1px)";
+  assert.ok(corner.includes(`top: ${inset};`),
+    "the corner sits on the `+`'s vertical line: the disc is `--composer-send-size` wide inside the card's 14px left inset, so its centre is `14 + size/2`, and the 26px plate centres its 18px glyph there from `size/2 + 1px`");
+  assert.ok(corner.includes(`left: ${inset};`), "and the same number is the LEFT inset");
+  const topInset = /top: ([^;]+);/.exec(corner)?.[1];
+  const leftInset = /left: ([^;]+);/.exec(corner)?.[1];
+  assert.equal(topInset, leftInset,
+    "the **same distance to the card's top edge as to its left edge** — one inset read twice, so the mark reads as a corner of the card and not as a control pinned to the row");
   assert.doesNotMatch(corner, /right:/,
     "no right anchor: the card's right corner is Send's arc, and a corner glyph there sat on the arrow the row is built around");
   assert.match(corner, /width: 26px;[\s\S]*height: 26px;/, "a corner affordance, smaller than the row's discs");
@@ -127,8 +133,12 @@ test("the corner sits in the card's upper-LEFT, and the text stops short of it",
   assert.match(corner, /background: transparent;/, "no plate at rest, so the card stays one surface");
   const coarse = cssRule(css, ".chat-composer > .chat-composer-expand", 1);
   assert.ok(coarse, "a finger's tier is its own block");
-  assert.match(coarse, /width: 36px;[\s\S]*height: 36px;[\s\S]*top: 2px;[\s\S]*left: 2px;[\s\S]*border-radius: 12px;/,
+  const fingerInset = "calc(var(--composer-send-size) / 2 - 6px)";
+  assert.match(coarse, /width: 36px;[\s\S]*height: 36px;/,
     "the glyph is 18px, so the plate it lives on is the touch target");
+  assert.ok(coarse.includes(`top: ${fingerInset};`) && coarse.includes(`left: ${fingerInset};`),
+    "the phone's card insets 12px and its `+` disc is 44px, so the 36px plate centres on the disc from `size/2 - 6px` = 16px — written twice: 16px to the top edge, 16px to the left");
+  assert.match(coarse, /border-radius: 12px;/, "a plate radius, not Send's disc");
   // The corner sits in the card's upper-left, ON the text's first line, so the first line
   // steps right of the glyph with `text-indent`. Two shapes failed before it: a
   // `padding-left` of 34px (44px under a finger) moved the whole prompt far from the `+`
@@ -137,12 +147,12 @@ test("the corner sits in the card's upper-LEFT, and the text stops short of it",
   // in the red frame area".
   const gutter = cssRule(css, ".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea");
   assert.ok(gutter, "the card indents only when the corner is drawn");
-  assert.match(gutter, /text-indent: 20px;/, "the 26px plate ends 30px in, the ink starts ~22px in: 20px stands the first line past it");
+  assert.match(gutter, /text-indent: 26px;/, "the plate ends ~41px in on the `+`'s column, the ink starts ~22px in: 26px stands the first line clear of the glyph");
   for (const dead of ["padding-top", "padding-left", "padding-right"]) {
     assert.ok(!gutter.includes(`${dead}:`), `no ${dead}: the box is the editor from its first pixel, so every line is typeable`);
   }
   const coarseGutter = cssRule(css, ".chat-composer.has-expand .chat-composer-editor > .chat-input-textarea", 1);
-  assert.match(coarseGutter ?? "", /text-indent: 30px;/, "and the indent follows the 36px finger plate (its edge is 38px in)");
+  assert.match(coarseGutter ?? "", /text-indent: 40px;/, "and the indent follows the finger's plate (36px from 16px in: its edge is 52px)");
   assert.ok(!/\.chat-composer\.has-expand[^\n]*\{[^}]*padding-/.test(css),
     "no padding shape anywhere on the expanded card: padding is not typeable, and it is what the ask called out");
 });

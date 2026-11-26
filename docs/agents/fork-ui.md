@@ -112,7 +112,13 @@ zero basis and clips the auto-grow height to `minHeight`, which is the regressio
 `components/MobilePwaLayout.test.mjs` pins — and `flex: "1 1 auto"` in the row.
 
 The card's upper-left corner carries one affordance: expand (`components/ComposerExpandIcon.tsx`,
-`.chat-composer-expand`). Its **expand** mark runs the
+`.chat-composer-expand`). Two rules fix its position, and they are asserted in
+`components/ChatInput.composer-expand.test.mjs`: the mark sits **on the `+`'s vertical line** (the
+`+` is a disc of `--composer-send-size` inside the card's 14px left inset, so the 26px plate
+centres its glyph from `calc(var(--composer-send-size) / 2 + 1px)`; the phone's card insets 12px
+with a 44px disc, so the 36px plate starts at `size/2 - 6px` = 16px), and it keeps the **same
+distance to the card's top edge as to its left edge** — the one number written twice, so the mark
+reads as a corner of the card rather than a control pinned to the row. Its **expand** mark runs the
 **top-left → bottom-right** diagonal (the 2026-12 ask: the old bottom-left/top-right pair read
 against the card's own left edge, the column where the corner and the `+` stand). The **collapse**
 mark keeps its own inward fold and is NOT mirrored onto that diagonal — the same ask reverted it:

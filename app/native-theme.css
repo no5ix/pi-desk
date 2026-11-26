@@ -14792,8 +14792,18 @@ button.custom-message-header {
 
 .chat-composer > .chat-composer-expand {
   position: absolute;
-  top: 4px;
-  left: 4px;
+  /* The ask is two rules, and they fix the position exactly:
+       1. the mark is **on the `+`'s vertical line** — the card's two left marks read as one
+          column, the corner above the `+`;
+       2. it keeps the **same distance to the card's top edge as to its left edge** — a
+          corner mark, one inset read twice.
+     Rule 1 sets the inset: the `+` is a disc of `--composer-send-size` inside the card's 14px
+     left inset, so its centre is `14 + size/2`, and the 26px plate centres its 18px glyph there
+     when it starts at `14 - 13 + size/2` = `size/2 + 1px` = 15.4px. Rule 2 then writes that one
+     number twice. Both tiers do the same arithmetic with their own inset (14px here, 12px for a
+     finger) and their own plate (26px, 36px). */
+  top: calc(var(--composer-send-size) / 2 + 1px);
+  left: calc(var(--composer-send-size) / 2 + 1px);
   z-index: 3;
   display: inline-flex;
   align-items: center;
@@ -14832,9 +14842,9 @@ button.custom-message-header {
    first pixel: the corner shares the first line's row, every line is typeable, and the
    caret is never under the glyph. */
 .chat-composer.has-expand .chat-composer-editor > .chat-input-textarea {
-  /* The plate is 26px at 4px from the card's left (its right edge is 30px in) and the
-     text's ink starts ~22px in, so 20px of indent stands the first line past it. */
-  text-indent: 20px;
+  /* The plate's right edge is ~41px in (15.4px inset, 26px wide) and the text's ink starts
+     ~22px in, so 26px of indent stands the first line clear of the glyph. */
+  text-indent: 26px;
 }
 
 /* A phone's finger: the glyph is 18px, so the plate it lives on is the touch target
@@ -14843,16 +14853,20 @@ button.custom-message-header {
   .chat-composer > .chat-composer-expand {
     width: 36px;
     height: 36px;
-    top: 2px;
-    left: 2px;
+    /* The same two rules on the finger's sizes: the `+`'s disc is 44px inside the phone card's
+       12px inset, so the centre is `12 + size/2` and the 36px plate starts at
+       `12 - 18 + size/2` = `size/2 - 6px` = 16px — and the inset is written twice, 16px to the
+       top edge and 16px to the left. */
+    top: calc(var(--composer-send-size) / 2 - 6px);
+    left: calc(var(--composer-send-size) / 2 - 6px);
     border-radius: 12px;
   }
 
   .chat-composer.has-expand .chat-composer-editor > .chat-input-textarea {
-    /* The finger's plate is 36px at 2px in (its right edge is 38px in) and the text's ink
-       starts ~20px in on this tier, so 30px of indent clears it with the same room to
-       spare — and the first line stays on the corner's row, typeable. */
-    text-indent: 30px;
+    /* The finger's plate is 36px from 16px in, so its right edge is 52px; the text's ink
+       starts ~20px in on this tier, and 40px of indent clears the glyph with room to spare
+       — and the first line stays on the corner's row, typeable. */
+    text-indent: 40px;
   }
 }
 
