@@ -44,6 +44,27 @@ test("the scroll-to-latest disc has no edge and a shadow that lifts it (pic: the
   assert.match(widest, /rgba\(0, 0, 0, 0\.[3-9]/, "a dark, obvious shadow: it has to read over prose and over a code fence");
 });
 
+test("the scroll-to-latest disc rests as a translucent plate, and a hover closes it (pic: the disc at rest, then hovered)", () => {
+  // The fork's palette makes --bg-panel the page's own colour, so upstream's
+  // `background: var(--bg-panel)` drew a chip in the colour of what it floats on,
+  // lifted by nothing but its shadow (the flat dark disc in the screenshot). The one
+  // state that looked like a floating control was the hover's translucent wash.
+  const resting = declared(".chat-scroll-to-bottom.is-visible", "background");
+  assert.ok(resting.length > 0, "the disc has a resting background");
+  for (const declaration of resting) {
+    assert.doesNotMatch(declaration, /background:\s*var\(--bg-panel\)/, `${declaration} is not the page's own colour`);
+  }
+  const fill = resting.find((d) => /color-mix\(in srgb, var\(--surface\)/.test(d));
+  assert.ok(fill, "the resting fill is the plate let through the page (a translucent plate, so prose reads under it)");
+  const restPercent = Number(fill.match(/var\(--surface\)\s+(\d+(?:\.\d+)?)%/)[1]);
+  assert.ok(restPercent >= 40 && restPercent <= 65, `the resting disc is a part of the plate, not the plate (${restPercent}%)`);
+
+  const hover = declared(".chat-scroll-to-bottom.is-visible:hover", "background").find((d) => /color-mix\(in srgb, var\(--surface\)/.test(d));
+  assert.ok(hover, "the hover rule is the fork's, so upstream's opaque wash does not win the cascade");
+  const hoverPercent = Number(hover.match(/var\(--surface\)\s+(\d+(?:\.\d+)?)%/)[1]);
+  assert.ok(hoverPercent > restPercent, `a hover answers by closing the transparency, not by changing hue (${restPercent}% -> ${hoverPercent}%)`);
+});
+
 test("a code fence stands off the page (pic: the json fence in the conversation)", () => {
   assert.match(cssNoComments, /:root\s*\{[^}]*--code-surface:\s*var\(--bg-panel\)\s*;/, "one named surface for a fence body, so the wrapper, the pre and the Mermaid block agree");
   for (const selector of [".markdown-code-block", ".mermaid-block"]) {

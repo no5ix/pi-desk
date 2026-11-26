@@ -13882,10 +13882,23 @@ a:focus-visible {
    no edge, a drop that is obvious over text and over a code fence alike. */
 .chat-scroll-to-bottom.is-visible {
   border: 0;
-  background: var(--bg-panel);
+  /* Resting, the disc is the plate `--surface` let through the page. The palette
+     makes `--bg-panel` the page's own colour, so upstream's fill drew a chip the
+     same colour as what it floats on, lifted only by its shadow; the translucent
+     wash the hover wears was the one state that looked like a floating control.
+     So the calm state is a translucent plate — shallower, and the page reads
+     through it — and a hover answers by closing the transparency, no hue change. */
+  background: color-mix(in srgb, var(--surface) 52%, transparent);
   box-shadow:
     0 3px 10px rgba(0, 0, 0, 0.45),
     0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* The step is kept, one stop further: over the resting disc a hover mostly
+   stops letting the page through, so the control answers without changing hue. */
+.chat-scroll-to-bottom.is-visible:hover,
+.chat-scroll-to-bottom.is-visible:focus-visible {
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
 }
 
 /* A collapsed thinking: its glyph stands on the same left edge as the clock of
