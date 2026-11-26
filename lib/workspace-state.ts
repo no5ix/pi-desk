@@ -1,10 +1,11 @@
 import { getInitialNavigation, type InitialNavigation } from "./initial-navigation.ts";
 
+import type { FileViewerDisplayMode } from "./file-viewer-state.ts";
 export type PersistedFileTab = {
   filePath: string;
   label: string;
   sourceSessionId?: string | null;
-  initialDisplayMode?: "source" | "preview" | "diff";
+  initialDisplayMode?: FileViewerDisplayMode;
 };
 
 export type PersistedWorkspace = {

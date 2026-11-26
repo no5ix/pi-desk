@@ -954,6 +954,21 @@ export function AppShell() {
     } catch { /* storage is optional */ }
   }, [terminalTabs, activeFileTabId, rightPanelOpen, terminalsRestored]);
 
+  // An open file's buffer belongs to its tab: the panel renders one viewer at a
+  // time, so a tab switch unmounts the editor. The draft and the dirty flag ride
+  // on the tab record, and closing a dirty tab asks first.
+  const handleFileDraftChange = useCallback((tabId: string, draft: string | null) => {
+    setFileTabs((prev) => prev.map((tab) => (tab.id === tabId ? { ...tab, draft } : tab)));
+  }, []);
+
+  const handleFileDirtyChange = useCallback((tabId: string, dirty: boolean) => {
+    setFileTabs((prev) => {
+      const current = prev.find((tab) => tab.id === tabId);
+      if (current && Boolean(current.dirty) === dirty) return prev;
+      return prev.map((tab) => (tab.id === tabId ? { ...tab, dirty } : tab));
+    });
+  }, []);
+
   const handleFileViewerStateChange = useCallback((
     tabId: string,
     viewerRevision: number,
@@ -2012,6 +2027,8 @@ export function AppShell() {
       setTerminalTabs((tabs) => tabs.map((tab) => tab.id === tabId && !tab.closing ? { ...tab, closing: "close" } : tab));
       return;
     }
+    const closing = fileTabs.find((tab) => tab.id === tabId);
+    if (closing?.dirty && !window.confirm(translate("files.editorCloseUnsaved"))) return;
     setFileTabs((prev) => {
       const next = prev.filter((t) => t.id !== tabId);
       if (next.length === 0 && terminalTabs.length === 0 && artifactTabs.length === 0 && visibleSideTabs.length === 0) setRightPanelOpen(false);
@@ -3803,6 +3820,9 @@ export function AppShell() {
               initialDisplayMode={activeFileTab.initialDisplayMode}
               initialPage={activeFileTab.page}
               initialState={activeFileTab.viewerState}
+              initialDraft={activeFileTab.draft ?? null}
+              onDraftChange={(draft) => handleFileDraftChange(activeFileTab.id, draft)}
+              onDirtyChange={(dirty) => handleFileDirtyChange(activeFileTab.id, dirty)}
               watchEnabled={rightPanelOpen}
               onStateChange={(viewerState) => handleFileViewerStateChange(
                 activeFileTab.id,

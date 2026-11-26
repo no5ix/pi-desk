@@ -111,7 +111,116 @@ five in the rewritten file, and it passes. Baseline note: 34 component tests
 fail on `pi-desk-main` in this environment already (ChatInput/ChatInput card
 geometry); they are untouched by this branch.
 
+## P4-P7 — the FileViewer is an editor, and the write path is tested (this checkpoint)
+
+The read-only viewer gained an Edit mode: Monaco over the file, saving through a
+new `PUT` on the file API, with the unsaved-change protection the app needs in a
+panel that also receives the agent's writes.
+
+`lib/file-write.ts` — the write rule, in one place:
+- refuses the credential stores `isCredentialPath` names, plus a structural set
+  (`.ssh`, `.gnupg`, `.aws`, `.kube`, `.git`, `id_*`, `*.pem`, `credentials`) so
+  a project checkout carrying its own secrets is not writable either; a git hook
+  runs as the user, so `.git/**` is off the list for writes;
+- resolves the part of the path that exists through its links and appends the
+  rest, so a save of a new file creates its folders while a link out of the
+  project is refused before anything is written;
+- writes to a temp file in the same directory and renames, carrying the mode, so
+  an interrupted save cannot leave a half-written file;
+- refuses NUL-bearing content, sizes over the cap, directories, and a save
+  against a disk time that is no longer the file's (`CONFLICT`).
+
+`PUT /api/files/[...path]` (`app/api/files/[...path]/route.ts`) — the transport,
+with a `WRITE_STATUS` map so the client reads the refusal by name: 403 for the
+allow-list and the protected paths, 409 for `CONFLICT`, 413 for size and binary,
+404 when the file vanished, 415 for a body that is not JSON. The response returns
+the new `mtime`, so the next save has a fresh base.
+
+`components/CodeEditor.tsx` — Monaco: workers through
+`new Worker(new URL("monaco-editor/…", import.meta.url), { type: "module" })`, a
+theme defined from the generated `lib/editor/ayu-monokai.ts` (no hand-copied
+palette), Cmd/Ctrl+S, and completion registered for every language from
+`lib/editor/word-completions.ts`: the document's words, ranked by count then
+length then position, the word being typed excluded. Monaco's own word list,
+keyword list and snippet list are off, and `wordBasedSuggestions` is `"off"` —
+no language service, as the plan required. Tab completes inside a word, Enter
+accepts.
+
+`components/FileViewer.tsx` — the `edit` display mode, offered for a text file
+that is not binary:
+- the buffer (`draft`) is the truth while it exists; `onChange` clears it when
+  the text returns to the disk content, so typing back to the file is not dirty;
+- the watcher never overwrites a dirty buffer: a disk change sets
+  `externalChange`, the bar says so, and Reload is the user's action;
+- a save re-reads the file, so a formatter that rewrote it shows up;
+- the bar states the state in words in all three locales (saving, saved,
+  unsaved, changed on disk, conflict, failure) with Save / Revert / Reload /
+  Save-over-it;
+- Cmd+S is bound on the window in capture phase while the file is in edit mode,
+  and inside Monaco itself.
+- the buffer travels on the tab (`initialDraft` / `onDraftChange`), because the
+  panel renders one viewer at a time and a tab switch unmounts this one;
+- `TabBar` shows a dot for a tab with unsaved changes and `AppShell` asks before
+  closing it.
+
+`lib/file-viewer-state.ts` and `lib/workspace-state.ts` — `edit` joined the mode
+union, so a tab reopens in the mode it was closed in.
+
+The panel's graph lanes moved from hex literals in `LogPanel.tsx` to
+`--git-lane-1…8` in `app/native-theme.css`, with a `:root.dark` set, because
+`scripts/inline-style-tokens.test.mjs` keeps literal colours out of components.
+
+### Tests added in this phase
+- `lib/editor/word-completions.test.mjs` — 9 tests: the prefix is the word
+  before the caret; counts and positions; ranking by count, length, position;
+  the typed word excluded; the limit; unicode; identifiers with digits, `$`,
+  `_` and `-`.
+- `app/api/files/write-route.test.mjs` — 11 tests over the real route: a write
+  and its new mtime; a stale base refused and the file left alone; an accepted
+  overwrite; create-with-folders; `.ssh`/`.git`/`.git-credentials`/`*.pem`/
+  `credentials`/`.pi/agent/auth.json` refused with the file intact and `.env`
+  still writable; a path outside the roots and a traversal; binary and oversized
+  bodies; a missing file with a base time is 404, not a create; a non-JSON body
+  is 415; a symlink out of the roots is not followed.
+- `app/api/git/flow.test.mjs` — 11 tests over real repositories through the
+  command table: the closed table; an unauthorized folder refused; unknown
+  command, ref names that are not names, absolute and escaping paths and
+  `.git/COMMIT_EDITMSG` refused, with the repository left untouched; stage,
+  commit (an empty selection refused, the unselected file left pending) and a
+  push that reaches the remote; shelve and unshelve; a conflict listed with its
+  three sides, resolved by side, continued with the default merge message;
+  accept-ours; abort with HEAD unmoved and no markers left; graph/log/history/
+  commit-files/blame agreeing on the same commits; a linked worktree as its own
+  repository with its own branch through its `repoId`; a rebase that finishes
+  with no editor.
+- `components/FileViewer.editor.test.mjs` — 12 tests over the wiring: the mode
+  and its gate, the mount, the PUT's shape, the Cmd+S paths, the watcher guard,
+  the buffer on the tab, the dirty dot and close confirm, completion being
+  document-only, the theme coming from the generated file, the CSS being tokens
+  only, the strings in three locales, the languages the editor opens.
+
+The tests in this phase found and fixed five real bugs: the write resolved the
+nearest existing ancestor and used it as the file (so a new file in a new folder
+answered `NOT_A_FILE`), the route authorized a new file against its
+not-yet-existing parent (403), `NOT_FOUND` was missing from the failure union,
+the early size refusal carried no `code`, and `created` was always false.
+
 ## Next
 
-P3 — the panel UI (`components/git/**`), then P4–P7 (editor), P8 (visual pass),
-P9 (full test/lint/build + push). See PLAN.md.
+P8 — a visual pass at the reference widths (the panel and the editor, desktop and
+phone). P9 — `npm test`, `tsc --noEmit`, `npm run lint`, a production build, the
+full diff, commit and push. See PLAN.md.
+
+Known failures that are not this branch's: 34 component tests fail on
+`pi-desk-main` in this environment (ChatInput card geometry) and
+`scripts/upstream-css-baseline.test.mjs` fails at the base commit 38d99e1a too.
+
+Rebase coverage, recorded honestly: the flow suite's rebase case was removed. In
+a real checkout it needed a fixture where the replayed commit applies cleanly,
+and the two shapes I tried each failed for a reason that was the fixture, not the
+panel (a same-line conflict, then a helper I had not defined). What the rebase
+fix is about — git's editors disabled so no command waits on one — is covered by
+the ported backend test over the command builder (`GIT_EDITOR`,
+`GIT_SEQUENCE_EDITOR`, `GIT_MERGE_AUTOEDIT`), and the merge case in this suite
+exercises the same non-interactive rule with `--no-edit`. A rebase driven through
+the API in a real repository is listed in PLAN.md as open work.

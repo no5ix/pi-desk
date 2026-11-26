@@ -37,15 +37,18 @@ const ROW_HEIGHT = 28;
 const GRAPH_PADDING = 6;
 const GRAPH_WIDTH = 76;
 const OVERSCAN_ROWS = 8;
+// The graph's lane hues are CSS variables, so the palette lives in
+// app/native-theme.css (with its light and dark sets) and this file draws with
+// tokens, like the rest of the app.
 const LANE_COLORS = [
-  "#3a8ee6",
-  "#c75450",
-  "#59a869",
-  "#e5c07b",
-  "#b07cd8",
-  "#2aa198",
-  "#d19a66",
-  "#56b6c2",
+  "var(--git-lane-1)",
+  "var(--git-lane-2)",
+  "var(--git-lane-3)",
+  "var(--git-lane-4)",
+  "var(--git-lane-5)",
+  "var(--git-lane-6)",
+  "var(--git-lane-7)",
+  "var(--git-lane-8)",
 ];
 
 const laneColor = (index: number) => LANE_COLORS[index % LANE_COLORS.length];

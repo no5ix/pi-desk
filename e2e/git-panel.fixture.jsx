@@ -1,153 +1,262 @@
-import React from "react";
+/* @jsx runtime:automatic */
 import { createRoot } from "react-dom/client";
 import { I18nProvider } from "../hooks/useI18n";
+import { THEME_INIT_SCRIPT } from "../lib/theme";
 import { GitPanel } from "../components/GitPanel";
 
 /**
- * The right panel's Git view, in a real browser with the real component, at a phone's
- * width and a desktop's.
+ * The Git panel's fixture: the panel, with a repository in words.
  *
- * The view is three levels — the branch tree, one branch's commits, one commit's diff —
- * and each level is a git read. So the fixture answers the three routes with a fixed
- * repository: eight branches (over the count at which the list grows its filter box),
- * one of them checked out in a linked folder, two remote-only, three under a `chore/`
- * prefix the tree folds; then commits of one branch; then a two-file commit.
+ * The panel reads git through `POST /api/git/execute` and `GET /api/git/repos`,
+ * so the fixture answers those (and the commit-diff route) with a fixed
+ * repository: eight branches, one checked out in a linked folder, two remote
+ * only, three under a `chore/` prefix the tree folds; three tags; four commits
+ * of which the newest is a merge, touching two files; a working tree with a
+ * staged edit, an unstaged edit and an untracked file.
  *
- * The panel's header strip is AppShell's markup, copied here in the two-button shape
- * the view is measured in: the file list's toggle and the Git view's, side by side. The
- * measurement is that pair's finger size and order, which is CSS's job, not AppShell's.
+ * The point is the shape of the data the panel renders — enough branches to
+ * grow its filter box, a merge to give the graph two lanes, a file list with
+ * every state the Commit tab splits. `?theme=dark` renders the other theme.
  */
+const REMOTE = "origin";
 
-const ROOT = "/repo";
+const BRANCH = (name, extra = {}) => ({
+  name,
+  fullName: name,
+  fullRef: `refs/heads/${name}`,
+  isRemote: false,
+  isCurrent: false,
+  ...extra,
+});
 
-const WORKTREES = [
-  { path: ROOT, branch: "fix/flat-chat-blocks", isMain: true },
-  { path: "/repo-worktrees/panel-git-view", branch: "feat/panel/git-view", isMain: false },
+const MAIN = "fix/flat-chat-blocks";
+
+const LOCAL_BRANCHES = [
+  BRANCH(MAIN, { isCurrent: true, checkedOutWorktreePath: "/repo", ahead: 2, behind: 0, lastCommitDate: "2026-11-20T10:00:00.000Z" }),
+  BRANCH("feat/panel/git-view", { ahead: 0, behind: 1, lastCommitDate: "2026-11-19T10:00:00.000Z" }),
+  BRANCH("chore/panel-notes", { lastCommitDate: "2026-11-18T10:00:00.000Z" }),
+  BRANCH("chore/panel-colours", { lastCommitDate: "2026-11-17T10:00:00.000Z" }),
+  BRANCH("chore/panel-copy", { lastCommitDate: "2026-11-16T10:00:00.000Z" }),
+  BRANCH("docs/panel-notes", { lastCommitDate: "2026-11-15T10:00:00.000Z" }),
+  BRANCH("release/1.2", { lastCommitDate: "2026-11-14T10:00:00.000Z" }),
+  BRANCH("side/worktree", { checkedOutWorktreePath: "/repo/wt-side", lastCommitDate: "2026-11-13T10:00:00.000Z" }),
 ];
 
-const BRANCHES = [
-  "fix/flat-chat-blocks",
-  "feat/panel/git-view",
-  "main",
-  "chore/raise-the-ceiling",
-  "chore/trim-the-strip",
-  "chore/widen-the-list",
-  "docs/panel-notes",
-  "release/2026-01",
+const REMOTE_BRANCHES = [
+  { ...BRANCH(`${REMOTE}/main`, { isRemote: true, fullRef: `refs/remotes/${REMOTE}/main`, name: `${REMOTE}/main` }), lastCommitDate: "2026-11-20T09:00:00.000Z" },
+  { ...BRANCH(`${REMOTE}/preview`, { isRemote: true, fullRef: `refs/remotes/${REMOTE}/preview`, name: `${REMOTE}/preview` }), lastCommitDate: "2026-11-12T09:00:00.000Z" },
 ];
 
-// The raw list the route answers with: the remote ref, its prefix stripped by the menu.
-const REMOTE_BRANCHES = ["origin/preview"];
+const TAGS = [
+  { name: "v1.2.0", fullRef: "refs/tags/v1.2.0", isRemote: false, isCurrent: false },
+  { name: "v1.1.0", fullRef: "refs/tags/v1.1.0", isRemote: false, isCurrent: false },
+];
 
-const COMMIT_PAGE = {
-  commits: [
-    {
-      sha: "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567",
-      shortSha: "0a1b2c3",
-      subject: "the right panel grows a Git view",
-      body: "",
-      authorName: "Lynx",
-      authorEmail: "lynx@example.com",
-      dateMs: Date.parse("2026-01-04T09:12:00.000Z"),
-      parentCount: 1,
-    },
-    {
-      sha: "1111111111111111111111111111111111111111",
-      shortSha: "1111111",
-      subject: "a merge of the release branch, whose diff is against its first parent and has to say so",
-      body: "",
-      authorName: "A very long author name for the phone",
-      authorEmail: "someone@example.com",
-      dateMs: Date.parse("2026-01-03T19:02:00.000Z"),
-      parentCount: 2,
-    },
-  ],
-  hasMore: false,
-  repositoryRoot: ROOT,
-  isGitRepository: true,
+const COMMITS = [
+  {
+    hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    shortHash: "aaaaaaaa",
+    parents: ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccccccccccccccccccccccc"],
+    authorName: "Ada",
+    authorEmail: "ada@example.com",
+    authorDate: "2026-11-20T10:00:00+01:00",
+    commitDate: "2026-11-20T10:00:00+01:00",
+    subject: "merge the panel branch",
+    body: "",
+    refs: [{ type: "HEAD", name: "HEAD" }, { type: "branch", name: MAIN }],
+  },
+  {
+    hash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    shortHash: "bbbbbbbb",
+    parents: ["dddddddddddddddddddddddddddddddddddddddd"],
+    authorName: "Ada",
+    authorEmail: "ada@example.com",
+    authorDate: "2026-11-19T10:00:00+01:00",
+    commitDate: "2026-11-19T10:00:00+01:00",
+    subject: "draw the commit graph",
+    body: "Lanes, nodes and the lines between them.",
+    refs: [],
+  },
+  {
+    hash: "cccccccccccccccccccccccccccccccccccccccc",
+    shortHash: "cccccccc",
+    parents: ["dddddddddddddddddddddddddddddddddddddddd"],
+    authorName: "Grace",
+    authorEmail: "grace@example.com",
+    authorDate: "2026-11-18T10:00:00+01:00",
+    commitDate: "2026-11-18T10:00:00+01:00",
+    subject: "the branch tree",
+    body: "",
+    refs: [{ type: "branch", name: "feat/panel/git-view" }],
+  },
+  {
+    hash: "dddddddddddddddddddddddddddddddddddddddd",
+    shortHash: "dddddddd",
+    parents: [],
+    authorName: "Ada",
+    authorEmail: "ada@example.com",
+    authorDate: "2026-11-17T10:00:00+01:00",
+    commitDate: "2026-11-17T10:00:00+01:00",
+    subject: "initial commit",
+    body: "",
+    refs: [{ type: "tag", name: "v1.1.0" }],
+  },
+];
+
+const LANES = {
+  [COMMITS[0].hash]: {
+    column: 0,
+    color: 0,
+    lines: [
+      { fromColumn: 0, toColumn: 0, toCommit: COMMITS[1].hash, type: "straight" },
+      { fromColumn: 0, toColumn: 1, toCommit: COMMITS[2].hash, type: "merge-right" },
+    ],
+  },
+  [COMMITS[1].hash]: {
+    column: 0,
+    color: 0,
+    lines: [{ fromColumn: 0, toColumn: 0, toCommit: COMMITS[3].hash, type: "straight" }],
+  },
+  [COMMITS[2].hash]: {
+    column: 1,
+    color: 1,
+    lines: [{ fromColumn: 1, toColumn: 0, toCommit: COMMITS[3].hash, type: "merge-left" }],
+  },
+  [COMMITS[3].hash]: { column: 0, color: 0, lines: [] },
 };
 
-const COMMIT_DETAIL = {
-  supported: true,
-  commit: COMMIT_PAGE.commits[0],
-  repositoryRoot: ROOT,
-  files: [
-    { path: "components/GitPanel.tsx", status: "added", additions: 604, deletions: 0 },
-    { path: "app/native-theme.css", status: "modified", additions: 12, deletions: 3, oldPath: null },
-  ],
-  patch: [
-    "diff --git a/components/GitPanel.tsx b/components/GitPanel.tsx",
-    "new file mode 100644",
-    "index 0000000..1111111",
-    "--- /dev/null",
-    "+++ b/components/GitPanel.tsx",
-    "@@ -0,0 +1,4 @@",
-    "+export function GitPanel() {",
-    "+  return null;",
-    "+}",
-    "diff --git a/app/native-theme.css b/app/native-theme.css",
-    "index 2222222..3333333 100644",
-    "--- a/app/native-theme.css",
-    "+++ b/app/native-theme.css",
-    "@@ -10,3 +10,4 @@",
-    " .strip {",
-    "   display: flex;",
-    "-  gap: 2px;",
-    "+  gap: 4px;",
-    "+  order: -1;",
-  ].join("\n"),
+const COMMIT_FILES = [
+  { oldPath: "components/git/log/LogPanel.tsx", newPath: "components/git/log/LogPanel.tsx", status: "modified", isBinary: false, additions: 42, deletions: 6 },
+  { oldPath: "app/native-theme.css", newPath: "app/native-theme.css", status: "modified", isBinary: false, additions: 12, deletions: 0 },
+];
+
+const WORKING_TREE = [
+  { path: "components/GitPanel.tsx", oldPath: "", status: "modified", staged: true, additions: 8, deletions: 2 },
+  { path: "components/git/git-ui.tsx", oldPath: "", status: "modified", staged: false, additions: 3, deletions: 1 },
+  { path: "docs/agents/branchshift-git.md", oldPath: "", status: "untracked", staged: false, additions: 0, deletions: 0 },
+];
+
+const PATCH = [
+  "diff --git a/components/git/log/LogPanel.tsx b/components/git/log/LogPanel.tsx",
+  "--- a/components/git/log/LogPanel.tsx",
+  "+++ b/components/git/log/LogPanel.tsx",
+  "@@ -10,6 +10,8 @@",
+  " const COLUMN_WIDTH = 10;",
+  "+// Ten pixel lanes, as Branchshift drew them.",
+  "+const ROW_HEIGHT = 28;",
+  " ",
+  "diff --git a/app/native-theme.css b/app/native-theme.css",
+  "--- a/app/native-theme.css",
+  "+++ b/app/native-theme.css",
+  "@@ -1,3 +1,5 @@",
+  " .git-panel {",
+  "+  --git-lane-1: var(--ansi-blue);",
+  "+}",
+].join("\n");
+
+const COMMANDS = {
+  getRepos: () => ({
+    repos: [
+      { id: "/repo", name: "pi-desk", rootPath: "/repo", isWorktree: false, branch: MAIN, label: "pi-desk" },
+      { id: "/repo/wt-side", name: "wt-side", rootPath: "/repo/wt-side", isWorktree: true, branch: "side/worktree", label: "wt-side" },
+    ],
+    currentId: "/repo",
+  }),
+  getBranches: () => LOCAL_BRANCHES,
+  getRemoteBranches: () => REMOTE_BRANCHES,
+  getTags: () => TAGS,
+  getBranchDashboardPreferences: () => ({ preferences: { showTags: true, singleClickAction: "filter" }, favorites: {} }),
+  getGraphData: () => ({ graphData: { commits: COMMITS, lanes: LANES }, hasMore: false }),
+  loadMoreLog: () => ({ graphData: { commits: [], lanes: {} }, hasMore: false }),
+  getLog: () => COMMITS,
+  getCommitFiles: () => COMMIT_FILES,
+  getAheadCommits: () => [],
+  getWorkingTreeChanges: () => WORKING_TREE,
+  getStatus: () => WORKING_TREE.map((file) => ({ path: file.path, indexStatus: file.staged ? "M" : " ", workTreeStatus: file.staged ? " " : "M" })),
+  getConflictFiles: () => [],
+  getMergeState: () => ({ isMerging: false }),
+  getRebaseState: () => ({ isRebasing: false }),
+  getCherryPickState: () => ({ isCherryPicking: false }),
+  getShelves: () => [{ id: "stash@{0}", message: "panel work in progress", date: "2026-11-21T09:00:00.000Z", files: ["components/GitPanel.tsx"] }],
+  getIdeaShelves: () => [],
+  getAmendMessage: () => "merge the panel branch",
+  getRecentCommitMessages: () => ["draw the commit graph", "the branch tree"],
+  refreshGitState: () => null,
 };
 
-function answer(url, init) {
-  if (url.startsWith("/api/worktrees/fetch")) {
-    return { branches: BRANCHES, remoteBranches: REMOTE_BRANCHES };
-  }
-  if (url.startsWith("/api/worktrees")) {
-    return { projectRoot: ROOT, isGit: true, branches: BRANCHES, remoteBranches: REMOTE_BRANCHES, worktrees: WORKTREES };
-  }
-  if (url.startsWith("/api/git/commits")) {
-    const params = new URL(url, "http://fixture.local").searchParams;
-    if (params.get("ref") === "origin/preview") return { commits: [], hasMore: false, repositoryRoot: ROOT, isGitRepository: true };
-    return COMMIT_PAGE;
-  }
-  if (url.startsWith("/api/git/commit-diff")) {
-    return COMMIT_DETAIL;
-  }
-  return {};
+// The event stream is not what this harness measures, and a served SSE stream
+// would sit open for the whole run. The panel's own reconnect logic is its
+// suite's business; here the stream is a connection that never reports.
+class StubEventSource {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSED = 2;
+  readyState = 0;
+  close() {}
+  addEventListener() {}
+  removeEventListener() {}
+  dispatchEvent() { return true; }
 }
+globalThis.EventSource = StubEventSource;
 
-const realFetch = window.fetch.bind(window);
-window.fetch = (input, init) => {
-  const url = typeof input === "string" ? input : input.url;
-  const body = JSON.stringify(answer(url, init));
-  if (!url.startsWith("/api/")) return realFetch(input, init);
-  return Promise.resolve(new Response(body, { status: 200, headers: { "Content-Type": "application/json" } }));
+const realFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = async (input, init) => {
+  const url = new URL(String(input?.url ?? input), "http://fixture.local");
+  if (url.pathname === "/api/git/execute") {
+    const body = JSON.parse(String(init?.body ?? "{}"));
+    const handler = COMMANDS[body.command];
+    const payload = handler
+      ? { ok: true, data: handler(body.params ?? {}) }
+      : { ok: false, error: { code: "UNKNOWN", message: `${body.command} is not mocked` } };
+    return new Response(JSON.stringify(payload), { status: handler ? 200 : 400, headers: { "content-type": "application/json" } });
+  }
+  if (url.pathname === "/api/git/repos") {
+    return new Response(JSON.stringify(COMMANDS.getRepos()), { status: 200, headers: { "content-type": "application/json" } });
+  }
+  if (url.pathname === "/api/git/commit-diff") {
+    return new Response(JSON.stringify({ isGitRepository: true, patch: PATCH }), { status: 200, headers: { "content-type": "application/json" } });
+  }
+  // The event stream: answered as an empty stream, so the panel settles into
+  // its polled state rather than retrying.
+  if (url.pathname === "/api/git/events") {
+    return new Response("", { status: 501, headers: { "content-type": "text/event-stream" } });
+  }
+  return realFetch(input, init);
 };
 
-window.__opened = [];
+// The app's own theme switch: the same two flags `THEME_INIT_SCRIPT` sets, with
+// the choice taken from the harness's `?theme=`.
+const theme = new URLSearchParams(location.search).get("theme") === "dark" ? "dark" : "light";
+try { localStorage.setItem("pi-theme", theme); } catch { /* private mode */ }
+document.documentElement.dataset.theme = theme;
+document.documentElement.classList.toggle("dark", theme === "dark");
+void THEME_INIT_SCRIPT;
 
-createRoot(document.getElementById("root")).render(
+const strip = document.createElement("div");
+strip.className = "right-panel-tab-strip";
+strip.innerHTML = `
+  <button type="button" class="file-workbench-icon-button file-tree-toggle" aria-label="Files"></button>
+  <button type="button" class="file-workbench-icon-button git-panel-toggle" aria-label="Git" aria-pressed="true"></button>
+  <div class="file-tab-bar-slot"></div>
+  <div class="right-panel-actions"><button type="button" class="icon-button">Close</button></div>`;
+
+const panel = document.createElement("div");
+panel.id = "git-panel-host";
+// The panel fills the space the shell gives it: the strip is its own row, and
+// the panel takes the rest, exactly as in the app's right panel.
+panel.style.flex = "1";
+panel.style.minHeight = "0";
+panel.style.display = "flex";
+
+const root = document.getElementById("root");
+root.style.display = "flex";
+root.style.flexDirection = "column";
+root.style.height = "100vh";
+root.appendChild(strip);
+root.appendChild(panel);
+
+createRoot(panel).render(
   <I18nProvider>
-    {/* The panel's header row, as AppShell builds it: the strip, and the two view toggles
-        at its leading edge. The Git button's own markup is AppShell's; the classes and the
-        glyph are what is measured, so the shape is copied once, here. */}
-    <div className="right-panel" style={{ display: "flex", flexDirection: "column", height: "100vh", border: "1px solid var(--border)" }}>
-      <div className="right-panel-tab-strip">
-        <div className="file-tab-bar-slot" />
-        <button type="button" className="file-workbench-icon-button file-tree-toggle" title="Show file list" aria-label="Show file list">
-          <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><circle cx="4.25" cy="5.25" r="1.35" /></svg>
-        </button>
-        <button type="button" className="file-workbench-icon-button git-panel-toggle is-active" title="Hide the Git view" aria-label="Hide the Git view" aria-pressed="true" aria-controls="git-panel">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true">
-            <line x1="6" y1="4" x2="6" y2="15" /><circle cx="18" cy="6" r="2.6" /><circle cx="6" cy="18" r="2.6" /><path d="M18 9a9 9 0 0 1-9 9" />
-          </svg>
-        </button>
-      </div>
-      <div className="right-panel-body" style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <GitPanel cwd={ROOT} onOpenFile={(filePath, fileName) => { window.__opened = [filePath, fileName]; }} />
-        </div>
-      </div>
-    </div>
+    <GitPanel cwd="/repo" onOpenFile={() => {}} onSwitchRepository={() => {}} />
   </I18nProvider>,
 );

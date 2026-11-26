@@ -14,19 +14,52 @@ export type FileWriteFailureCode =
   | "BINARY"
   | "CONFLICT"
   | "READ_ONLY"
+  | "NOT_FOUND"
   | "FAILED";
 
 export type FileWriteResult =
-  | { ok: true; mtimeMs: number; size: number; etag: string }
+  | {
+      ok: true;
+      mtimeMs: number;
+      size: number;
+      etag: string;
+      /** The file did not exist before this write. */
+      created: boolean;
+      /** A disk change the caller accepted with `allowOverwrite`. */
+      overwritten: boolean;
+    }
   | { ok: false; code: FileWriteFailureCode; message: string };
 
 /** A file this API never writes, whatever the allow-list says: the credential
  *  stores the read path refuses to serve, and the repository's own object
  *  store, where a stray write corrupts the history. */
+/**
+ * A path the write API never touches, whatever the allow-list says.
+ *
+ * `isCredentialPath` is anchored at the home folders, which is right for the
+ * read side. A project checkout can carry the same secrets — a vendored `.ssh`,
+ * a key file, a repository's own internals — so the rule here is structural:
+ * the secret directory names, the named credential files, and any `.git`
+ * (git's hooks run as the user, so writing one is running code).
+ */
+const PROTECTED_DIRECTORIES = [
+  ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".password-store", ".git",
+];
+const PROTECTED_BASENAMES = [
+  ".netrc", ".git-credentials", ".npmrc", ".pgpass", "id_rsa", "id_ed25519",
+  "id_ecdsa", "id_dsa", "credentials", "htpasswd",
+];
+
 export function isWriteProtectedPath(filePath: string): boolean {
   if (isCredentialPath(filePath)) return true;
-  const normalized = path.resolve(filePath);
-  return normalized.split(path.sep).includes(".git");
+  const segments = path.resolve(filePath).split(path.sep).filter(Boolean).map((part) => part.toLowerCase());
+  if (segments.some((part) => PROTECTED_DIRECTORIES.includes(part))) return true;
+  const base = segments[segments.length - 1] ?? "";
+  if (PROTECTED_BASENAMES.includes(base)) return true;
+  if (base.endsWith(".pem") || base.endsWith(".p12") || base.endsWith(".key")) return true;
+  // The named credentials that live inside a config folder.
+  const tail = segments.slice(-3).join("/");
+  return [".docker/config.json", ".config/gh/hosts.yml", ".pi/agent/auth.json"].some((suffix) => tail.endsWith(suffix));
 }
 
 /** More than a NUL byte check: a save writes text, and a file full of control
@@ -52,17 +85,34 @@ export function fileEtag(mtimeMs: number, size: number): string {
  * nearest existing ancestor. Writing through a symlink that leaves the allowed
  * roots must fail exactly as reading through one does.
  */
-async function realAncestor(absolutePath: string): Promise<string | null> {
+/**
+ * The path the write lands on, with the part that exists read through its links.
+ *
+ * A new file's folder may not exist yet, so the whole path cannot be realpath'd.
+ * The walk goes up to the nearest existing ancestor, resolves that (a symlink
+ * out of the project is visible here), and appends the missing segments — the
+ * new folders the write is allowed to create.
+ */
+async function resolveWriteTarget(absolutePath: string): Promise<string | null> {
+  const missing: string[] = [];
   let current = path.resolve(absolutePath);
   for (let depth = 0; depth < 64; depth++) {
+    let exists = true;
     try {
-      return await fs.realpath(current);
+      await fs.lstat(current);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
-      const parent = path.dirname(current);
-      if (parent === current) return null;
-      current = parent;
+      exists = false;
     }
+    if (exists) {
+      const realBase = await fs.realpath(current).catch(() => null);
+      if (realBase === null) return null;
+      return path.resolve(realBase, ...missing);
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    missing.unshift(path.basename(current));
+    current = parent;
   }
   return null;
 }
@@ -92,7 +142,7 @@ export async function writeProjectFile(
   if (isWriteProtectedPath(target)) {
     return { ok: false, code: "READ_ONLY", message: "Credential stores and repository internals are not writable." };
   }
-  const real = await realAncestor(target);
+  const real = await resolveWriteTarget(target);
   if (real === null) {
     return { ok: false, code: "FORBIDDEN", message: "The path could not be resolved." };
   }
@@ -122,6 +172,11 @@ export async function writeProjectFile(
       return { ok: false, code: "FAILED", message: "The file could not be read." };
     }
   }
+  // The caller read a file that is no longer there. Recreating it would invent
+  // a file the user never asked for, so the save is refused.
+  if (!previous && typeof options.baseMtimeMs === "number") {
+    return { ok: false, code: "NOT_FOUND", message: "The file is no longer on disk." };
+  }
   if (
     previous
     && typeof options.baseMtimeMs === "number"
@@ -141,6 +196,9 @@ export async function writeProjectFile(
   const directory = path.dirname(real);
   const temporary = path.join(directory, `.${path.basename(real)}.pi-write-${process.pid}-${Date.now()}.tmp`);
   try {
+    // A new file in a folder the project has not created yet: the folders come
+    // with it, which is what a save of a new source file means.
+    if (previous === null) await fs.mkdir(directory, { recursive: true });
     await fs.writeFile(temporary, content, "utf8");
     if (previous) await fs.chmod(temporary, previous.mode & 0o777);
     await fs.rename(temporary, real);
@@ -149,7 +207,19 @@ export async function writeProjectFile(
     return { ok: false, code: "FAILED", message: (error as Error).message };
   }
   const written = await fs.stat(real);
-  return { ok: true, mtimeMs: written.mtimeMs, size: written.size, etag: fileEtag(written.mtimeMs, written.size) };
+  return {
+    ok: true,
+    mtimeMs: written.mtimeMs,
+    size: written.size,
+    etag: fileEtag(written.mtimeMs, written.size),
+    created: previous === null,
+    overwritten: Boolean(
+      previous
+      && options.allowOverwrite
+      && typeof options.baseMtimeMs === "number"
+      && Math.round(previous.mtimeMs) !== Math.round(options.baseMtimeMs),
+    ),
+  };
 }
 
 /** The metadata an editor needs to notice a change it did not make. */

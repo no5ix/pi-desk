@@ -477,8 +477,15 @@ export async function PUT(
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
     // Links are resolved for the directory the write lands in, so a link that
-    // leaves the roots is refused before anything is written.
-    const authorizationPath = fs.existsSync(filePath) ? filePath : path.dirname(filePath);
+    // leaves the roots is refused before anything is written. A new file in a
+    // folder that does not exist yet is authorized by the nearest ancestor that
+    // does — the same walk the write itself makes.
+    let authorizationPath = filePath;
+    while (!fs.existsSync(authorizationPath)) {
+      const parent = path.dirname(authorizationPath);
+      if (parent === authorizationPath) break;
+      authorizationPath = parent;
+    }
     if (!isExistingFilePathAllowed(authorizationPath, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
@@ -490,7 +497,10 @@ export async function PUT(
       return NextResponse.json({ error: "content must be a string" }, { status: 400 });
     }
     if (Buffer.byteLength(body.content, "utf8") > MAX_WRITE_SIZE) {
-      return NextResponse.json({ error: `File too large (${MAX_WRITE_SIZE} bytes max)` }, { status: 413 });
+      return NextResponse.json(
+        { error: `File too large (${MAX_WRITE_SIZE} bytes max)`, code: "TOO_LARGE" },
+        { status: 413 },
+      );
     }
     const baseMtimeMs = typeof body.baseMtime === "string" ? Date.parse(body.baseMtime) : Number.NaN;
     const result = await writeProjectFile(filePath, body.content, {
@@ -508,6 +518,8 @@ export async function PUT(
       mtime: new Date(result.mtimeMs).toISOString(),
       size: result.size,
       etag: result.etag,
+      created: result.created,
+      overwritten: result.overwritten,
     });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

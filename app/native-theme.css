@@ -15138,6 +15138,17 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 
 .git-panel {
   --git-graph-node-hole: var(--bg-panel);
+  /* The graph's lane hues, one per concurrent branch. They are drawn from the
+     app's ANSI palette, so a light/dark switch needs no rule here and no second
+     palette enters the panel. */
+  --git-lane-1: var(--ansi-blue);
+  --git-lane-2: var(--ansi-red);
+  --git-lane-3: var(--ansi-green);
+  --git-lane-4: var(--ansi-yellow);
+  --git-lane-5: var(--ansi-magenta);
+  --git-lane-6: var(--ansi-cyan);
+  --git-lane-7: color-mix(in srgb, var(--ansi-red) 50%, var(--ansi-yellow));
+  --git-lane-8: var(--ansi-bright-cyan);
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -16479,15 +16490,29 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
     height: 36px;
   }
 
+  /* The panel's own tabs are the way between its two surfaces: a thumb's plate. */
+  .git-tabs .git-tab {
+    min-height: 36px;
+  }
+
+  .git-search-input {
+    min-height: 36px;
+  }
+
+  /* A row the thumb aims at is a thumb's height: the branch, the change, the
+     file. The commit row is the exception — the graph's rows are a grid the
+     virtual list positions by a constant (28px), so growing the row in CSS
+     would slide the lanes out of step with the rows. Its 32px is the grid's
+     own, and the control inside it is 36. */
   .git-branch-row,
   .git-change-row,
-  .git-file-row,
-  .git-commit-row {
-    min-height: 32px;
+  .git-file-row {
+    min-height: 36px;
   }
 
   .git-commit-row {
     height: 32px;
+    min-height: 32px;
   }
 
   .git-menu {
@@ -16513,5 +16538,91 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 
   .git-conflict-body {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The file editor — Monaco over the Ayu Monokai palette, plus the save bar and
+   the tab's unsaved mark. The editor paints with --vscode-editor-* above. */
+
+.file-editor-host {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Monaco measures the box it is mounted in, so the box has to have a height of
+   its own: the host takes the panel's space and the Monaco div fills the host.
+   Without this the editor measures a few pixels and paints a strip. */
+.code-editor-host {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.code-editor-monaco {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.file-editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-bottom: var(--hairline) solid var(--border);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-panel));
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+}
+
+.file-editor-bar.is-error {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-panel));
+  color: var(--text);
+}
+
+.file-editor-bar-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.file-editor-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.file-viewer-mode-button.is-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.file-viewer-mode-button.is-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.file-tab-dirty {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+@media (max-width: 640px) {
+  .file-editor-bar {
+    padding: 10px 12px;
+  }
+
+  .file-editor-bar-actions .file-viewer-mode-button {
+    min-height: 36px;
   }
 }

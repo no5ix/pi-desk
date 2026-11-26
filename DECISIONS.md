@@ -1,3 +1,40 @@
+## The write API refuses project-local secrets, not only the home-folder ones
+
+`lib/credential-paths.ts` is anchored at the home folders, which is right for the
+read side (`~/.ssh`, `~/.aws`, `.pi/agent/auth.json`). A project checkout can
+carry the same names inside itself — a vendored `.ssh`, a deploy key, a
+repository's own `.git/hooks`. Writes are policed structurally in
+`lib/file-write.ts`: the secret directory names, the named credential files,
+`*.pem`/`*.p12`/`*.key`, and any `.git` segment (a hook runs as the user, so
+writing one is running code). `.env` stays writable: in a project it is
+configuration the user edits, not a credential store.
+
+## A save is refused when the file moved on disk, and the refusal is a name
+
+The panel edits files the agent is also writing. `PUT /api/files/[...path]`
+takes the `mtime` the editor read the file at and refuses with `CONFLICT` when
+the disk time differs; the client shows Reload, and "Save over it" only when the
+user asks for that (the route marks the response `overwritten`). The watcher
+never replaces a dirty buffer, and a file that disappeared is `NOT_FOUND`, not
+silently recreated. Codes, not prose, drive the save bar.
+
+## The editor is Ayu Monokai; the read view keeps the theme-following palette
+
+The generated `lib/editor/ayu-monokai.ts` is the editor's palette, from the
+vendored theme file. The read view (`SyntaxHighlighter` with `calmCodeTheme`)
+keeps painting from `--code-accent`/`--code-warm`/`--code-comment`, because that
+palette follows the app's light/dark switch; pinning it to Monokai's dark canvas
+would put a dark-only palette on a light theme. The editor is a deliberate dark
+surface, so it can carry the generated one.
+
+## The graph's lane colours are CSS variables, not literals in the component
+
+`scripts/inline-style-tokens.test.mjs` keeps literal sizes, weights and hex
+colours out of `components/**`. The Log graph needs eight distinguishable hues,
+which the app's tokens do not provide, so they are `--git-lane-1…8` on
+`.git-panel` in `app/native-theme.css` (with a `:root.dark` set) and the SVG
+strokes reference them. One palette, in the fork's stylesheet, per both themes.
+
 # DECISIONS
 
 ## The Branchshift Git panel and the editable file panel (this branch)

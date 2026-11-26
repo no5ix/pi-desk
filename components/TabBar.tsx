@@ -19,6 +19,10 @@ export interface Tab {
   initialDisplayMode?: FileViewerDisplayMode;
   /** PDF page requested by the link that opened this tab (`#page=N`). */
   page?: number;
+  /** Unsaved edits in the file this tab holds: the tab says so, and closing asks. */
+  dirty?: boolean;
+  /** The buffer, kept by the shell so a tab switch does not lose it. */
+  draft?: string | null;
   viewerState?: FileViewerState;
   viewerRevision?: number;
 }
@@ -169,6 +173,14 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTermin
             <span className="file-tab-label" title={tab.filePath}>
               {tab.label}
             </span>
+            {tab.dirty ? (
+              <span
+                className="file-tab-dirty"
+                role="img"
+                aria-label={t("files.editorDirty")}
+                title={t("files.editorDirty")}
+              />
+            ) : null}
             <button
               className="file-tab-close"
               draggable={false}

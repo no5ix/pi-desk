@@ -17,9 +17,28 @@ import { completeWords, collectDocumentWords, prefixAtCaret } from "@/lib/editor
 import { languageForPath } from "@/lib/editor/language";
 
 /** The one theme name this app registers, built from the vendored theme file. */
+/**
+ * Monaco's theme id. It is a slug, not the palette's display name: Monaco
+ * rejects a theme name with a space, and `Ayu Monokai` is the display name the
+ * generated file carries. The palette itself comes from there; this is only the
+ * id this app registers it under.
+ */
 export const EDITOR_THEME = "ayu-monokai";
 
-type MonacoModule = typeof import("monaco-editor");
+/*
+ * Monaco, loaded in the shape this panel needs:
+ *
+ *  - `editor.api` + `editor.all`: the editor and its contributions (the suggest
+ *    widget, find, folding, the context menu);
+ *  - `basic-languages`: tokenization, so a `.ts`, `.py` or `.json` file is
+ *    coloured without a language service;
+ *  - not the `monaco-editor` root, which pulls in the TypeScript/CSS/HTML/JSON
+ *    language services. The plan is no language server, and the completion the
+ *    panel offers is the document's own words. Leaving the services in also
+ *    registers completion providers that answer nothing, and the list then
+ *    waits for them.
+ */
+type MonacoModule = typeof import("monaco-editor/esm/vs/editor/editor.api");
 
 let monacoPromise: Promise<MonacoModule> | null = null;
 let configured = false;
@@ -33,6 +52,22 @@ let configured = false;
  * editor keeps working in a build where the worker chunks are unavailable, at
  * the cost of a busier main thread.
  */
+/**
+ * A worker that answers nothing. Monaco requires a Worker object; a language
+ * feature that talks to it will simply never get an answer, which is the
+ * intended state here: no language server, no semantic features. Throwing from
+ * `getWorker` is what breaks the editor — Monaco's worker manager lets the error
+ * out of the completion path, and the completion list never opens.
+ */
+let silentWorkerUrl: string | null = null;
+function silentWorker(): Worker {
+  if (silentWorkerUrl === null) {
+    const source = "self.onmessage = () => {};";
+    silentWorkerUrl = URL.createObjectURL(new Blob([source], { type: "text/javascript" }));
+  }
+  return new Worker(silentWorkerUrl);
+}
+
 function loadMonaco(): Promise<MonacoModule> {
   if (monacoPromise) return monacoPromise;
   monacoPromise = (async () => {
@@ -40,31 +75,31 @@ function loadMonaco(): Promise<MonacoModule> {
     if (!globalScope.MonacoEnvironment) {
       globalScope.MonacoEnvironment = {
         getWorker(_workerId: string, label: string) {
-          const worker = (path: string) =>
-            new Worker(new URL(`monaco-editor/esm/vs/${path}`, import.meta.url), { type: "module" });
-          switch (label) {
-            case "editorWorkerService":
-              return worker("editor/editor.worker.js");
-            case "typescript":
-            case "javascript":
-              return worker("language/typescript/ts.worker.js");
-            case "json":
-              return worker("language/json/json.worker.js");
-            case "css":
-            case "scss":
-            case "less":
-              return worker("language/css/css.worker.js");
-            case "html":
-            case "handlebars":
-            case "razor":
-              return worker("language/html/html.worker.js");
-            default:
-              return worker("editor/editor.worker.js");
+          // Only the editor worker is asked for: text operations (folding, the
+          // word inspector, multi-cursor) run there. The language workers are
+          // not — the plan is no language server, and the completion the panel
+          // offers is the document's words — so those labels get the stub.
+          // A bundler emits a worker chunk only for a `new URL` it can read
+          // statically, so every worker path here is a literal. A template
+          // string is invisible to webpack and to esbuild, and the worker then
+          // does not exist at runtime — which silently costs the editor its word
+          // context, and with it the completion list.
+          if (label !== "editorWorkerService") return silentWorker();
+          try {
+            return new Worker(
+              new URL("monaco-editor/esm/vs/editor/editor.worker.js", import.meta.url),
+              { type: "module" },
+            );
+          } catch {
+            // A build that cannot emit the chunk must not take the editor down.
+            return silentWorker();
           }
         },
       };
     }
-    const monaco = await import("monaco-editor");
+    const monaco = await import("monaco-editor/esm/vs/editor/editor.api");
+    await import("monaco-editor/esm/vs/editor/editor.all");
+    await import("monaco-editor/esm/vs/basic-languages/monaco.contribution");
     if (!configured) {
       configured = true;
       monaco.editor.defineTheme(EDITOR_THEME, {
@@ -167,7 +202,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, Props>(function CodeEdito
   minHeight = 240,
 }, ref) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
+  const editorRef = useRef<import("monaco-editor/esm/vs/editor/editor.api").editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<MonacoModule | null>(null);
   const modelFileRef = useRef<string | null>(null);
   const onChangeRef = useRef(onChange);
@@ -222,7 +257,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, Props>(function CodeEdito
         overviewRulerLanes: 0,
         renderWhitespace: "selection",
         renderControlCharacters: false,
-        links: 1,
+        links: true,
         // The document's own words, nothing else.
         wordBasedSuggestions: "off",
         quickSuggestions: { other: true, comments: false, strings: false },
@@ -236,15 +271,17 @@ export const CodeEditor = forwardRef<CodeEditorHandle, Props>(function CodeEdito
           localityBonus: true,
           preview: false,
         },
-        // Tab accepts a visible completion; Tab with no completion indents.
-        tabSuggest: "on",
+        // Sublime's Tab: it completes inside a word and accepts a visible
+        // suggestion; with nothing to complete it indents as usual.
+        tabCompletion: "on",
         acceptSuggestionOnEnter: "on",
+        acceptSuggestionOnCommitCharacter: false,
         multiCursorModifier: "alt",
         accessibilitySupport: "auto",
         ariaLabel: `Editing ${filePath}`,
         unicodeHighlight: { ambiguousCharacters: false, invisibleCharacters: false },
         stickyScroll: { enabled: false },
-      } as never);
+      });
       editorRef.current = editor;
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => onSaveRef.current?.());
       subscription = editor.onDidChangeModelContent(() => {

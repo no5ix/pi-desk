@@ -89,6 +89,11 @@ export function CommitDetail({
     }
   };
 
+  // Hooks first, always: the empty state below returns early, and a memo after
+  // it would change the hook count between "no commit" and "a commit".
+  const groups = useMemo(() => groupFiles(files ?? []), [files]);
+  const repositoryRoot = target.cwd;
+
   if (!commit) {
     return (
       <div className="git-commit-detail is-empty">
@@ -203,9 +208,6 @@ export function CommitDetail({
       onSelect: () => void navigator.clipboard?.writeText(file.newPath.split("/").pop() ?? file.newPath).catch(() => {}),
     },
   ];
-
-  const groups = useMemo(() => groupFiles(files ?? []), [files]);
-  const repositoryRoot = target.cwd;
 
   return (
     <div className="git-commit-detail">
