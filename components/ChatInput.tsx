@@ -45,6 +45,7 @@ import { FolderIcon, getFileIcon } from "./FileIcons";
 import { ImagePreview } from "./ImagePreview";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useMenuNavigation } from "@/hooks/useMenuNavigation";
+import { usePopTransition } from "@/hooks/usePopTransition";
 import { useEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useI18n } from "@/hooks/useI18n";
 import type { ReactNode } from "react";
@@ -887,6 +888,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [automationDropdownOpen, setAutomationDropdownOpen] = useState(false);
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
+  // The composer's menus are mounted on the click that opens them and unmounted on the one
+  // that closes them. Held for the shared exit animation, they leave the way they came
+  // (hooks/usePopTransition.ts); every outside handler below stays keyed on `*Open`, so a
+  // closing menu never listens to the click that opened the next one.
+  const toolDropdownPop = usePopTransition(toolDropdownOpen);
+  const thinkingDropdownPop = usePopTransition(thinkingDropdownOpen);
   const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
@@ -2546,7 +2553,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         )}
         {/* Image previews */}
         {attachedImages.length > 0 && (
-          <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+          <div data-image-gallery style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
             {attachedImages.map((img, i) => (
               <div key={i} style={{ position: "relative", flexShrink: 0 }}>
                 <ImagePreview key={img.previewUrl} src={img.previewUrl}>
@@ -3280,7 +3287,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <line x1="4" y1="17" x2="6" y2="17" /><line x1="10" y1="17" x2="20" y2="17" /><circle cx="8" cy="17" r="2" />
                   </svg>
                 </button>
-                {thinkingDropdownOpen && (() => {
+                {thinkingDropdownPop.mounted && (() => {
                   const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
                   const maxH = Math.max(120, vh * 0.6);
                   // A number for the width, and a box that stops at the sidebar: an
@@ -3289,7 +3296,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   // column, which clips it and paints above it. See the helper.
                   const anchoring = composerPanelAnchoring(thinkingDropdownRef.current, COMPOSER_RUN_MENU_WIDTH, { alignLeft: isMobile });
                   return (
-                  <div className="native-popover app-menu composer-run-menu" role="listbox" style={{
+                  <div className={`native-popover app-menu composer-run-menu${thinkingDropdownPop.className}`} role="listbox" style={{
                     position: "absolute",
                     bottom: "calc(100% + 6px)",
                     ...(anchoring ? { left: anchoring.left, width: anchoring.width } : isMobile ? { left: 0 } : { right: 0 }),
@@ -3430,7 +3437,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
                   </svg>
                 </button>
-                {toolDropdownOpen && (() => {
+                {toolDropdownPop.mounted && (() => {
                   const vh = typeof window !== "undefined" ? window.visualViewport?.height ?? window.innerHeight : 800;
                   const maxH = Math.max(120, vh * 0.6);
                   // Clamped to the conversation column, not to the viewport: 16px from
@@ -3438,7 +3445,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   // there was cut to "n defaultTools".
                   const anchoring = composerPanelAnchoring(toolDropdownRef.current, COMPOSER_TOOL_MENU_WIDTH, { alignLeft: isMobile });
                   return (
-                  <div className="native-popover app-menu composer-tool-menu" role="listbox" aria-label={t("chat.changeToolPreset")} style={{
+                  <div className={`native-popover app-menu composer-tool-menu${toolDropdownPop.className}`} role="listbox" aria-label={t("chat.changeToolPreset")} style={{
                     position: "absolute", bottom: "calc(100% + 6px)",
                     ...(anchoring ? { left: anchoring.left, width: anchoring.width } : { right: 0 }),
                     zIndex: 100, background: "var(--bg)", border: "var(--hairline) solid var(--border)",

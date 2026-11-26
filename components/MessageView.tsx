@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState, useRef, useEffect, useMemo, useContext, type RefObject } from "react";
+import { memo, useState, useRef, useEffect, useMemo, useCallback, useContext, type RefObject } from "react";
 import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
@@ -251,6 +251,9 @@ interface Props {
    *  and the "expand thinking by default" switch reaches this reply's thinking — not every
    *  thinking card in the file, which turned a long conversation into a wall of open text. */
   expandLatestThinking?: boolean;
+  /** Called with the control element when a row's Expand/Collapse is about to grow the
+   *  page, so the scroll viewport can keep the row in place. See ChatWindow. */
+  onContentToggle?: (control: HTMLElement | null, entryId?: string) => void;
 }
 
 // Dates follow the app language, not the OS locale, so an English UI never
@@ -303,9 +306,16 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, cwd, onOpenFile, onOpenFileDiff, onOpenSession, entryId, searchBlock, onBranchInNewChat, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs, expandLatestThinking }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, cwd, onOpenFile, onOpenFileDiff, onOpenSession, entryId, searchBlock, onBranchInNewChat, forking, onEditContent, editDisabled, onCancelEdit, isEditing, showTimestamp, prevTimestamp, sessionId, writtenFiles, onCompact, isCompacting, compactError, onOpenModelSettings, turnDurationMs, expandLatestThinking, onContentToggle }: Props) {
+  // The row's own entry id rides with the control, so the viewport knows which row is
+  // about to grow. The prop from ChatWindow stays a stable reference, which the memo
+  // comparator below relies on.
+  const notifyContentToggle = useCallback(
+    (control: HTMLElement | null) => { onContentToggle?.(control, entryId); },
+    [onContentToggle, entryId],
+  );
   if (message.role === "user") {
-    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onEditContent={onEditContent} editDisabled={editDisabled} onCancelEdit={onCancelEdit} isEditing={isEditing} />;
+    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onEditContent={onEditContent} editDisabled={editDisabled} onCancelEdit={onCancelEdit} isEditing={isEditing} onContentToggle={notifyContentToggle} />;
   }
   if (message.role === "assistant") {
     return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} cwd={cwd} onOpenFile={onOpenFile} onOpenFileDiff={onOpenFileDiff} onOpenSession={onOpenSession} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} searchBlock={searchBlock} onBranchInNewChat={onBranchInNewChat} forking={forking} writtenFiles={writtenFiles} onCompact={onCompact} isCompacting={isCompacting} compactError={compactError} onOpenModelSettings={onOpenModelSettings} turnDurationMs={turnDurationMs} expandLatestThinking={expandLatestThinking} />;
@@ -316,12 +326,12 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
   }
   if (message.role === "custom") {
     if ((message as CustomMessage).customType === "compaction") {
-      return <CompactionMessageView message={message as CustomMessage} />;
+      return <CompactionMessageView message={message as CustomMessage} onContentToggle={notifyContentToggle} />;
     }
     if ((message as CustomMessage).customType === "branch_summary") {
-      return <CompactionMessageView message={message as CustomMessage} kind="branch_summary" />;
+      return <CompactionMessageView message={message as CustomMessage} kind="branch_summary" onContentToggle={notifyContentToggle} />;
     }
-    return <CustomMessageView message={message as CustomMessage} cwd={cwd} onOpenFile={onOpenFile} />;
+    return <CustomMessageView message={message as CustomMessage} cwd={cwd} onOpenFile={onOpenFile} onContentToggle={notifyContentToggle} />;
   }
   if (message.role === "bashExecution") {
     return <BashExecutionView message={message as BashExecutionMessage} sessionId={sessionId} />;
@@ -350,10 +360,11 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.isCompacting === next.isCompacting
     && prev.compactError === next.compactError
     && prev.onOpenModelSettings === next.onOpenModelSettings
-    && prev.turnDurationMs === next.turnDurationMs;
+    && prev.turnDurationMs === next.turnDurationMs
+    && prev.onContentToggle === next.onContentToggle;
 });
 
-function UserMessageView({ message, cwd, onOpenFile, entryId, onEditContent, editDisabled, onCancelEdit, isEditing }: {
+function UserMessageView({ message, cwd, onOpenFile, entryId, onEditContent, editDisabled, onCancelEdit, isEditing, onContentToggle }: {
   message: UserMessage;
   cwd?: string;
   onOpenFile?: (filePath: string, page?: number) => void;
@@ -362,6 +373,9 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onEditContent, edi
   editDisabled?: boolean;
   onCancelEdit?: () => void;
   isEditing?: boolean;
+  /** A row that grows the page under the finger tells the scroll viewport, so the row
+   *  keeps its place and the control stays in reach: ChatWindow's `handleContentToggle`. */
+  onContentToggle?: (control: HTMLElement | null) => void;
 }) {
   const { t, locale } = useI18n();
   const [copied, setCopied] = useState(false);
@@ -413,7 +427,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onEditContent, edi
     : message;
 
   const imageBlocksNode = imageBlocks.length > 0 && (
-    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content ? 8 : 0 }}>
+    <div data-image-gallery style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content ? 8 : 0 }}>
       {imageBlocks.map((img, i) => {
         const src = imageSource(img);
         return (
@@ -466,7 +480,10 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onEditContent, edi
               {imageBlocksNode}
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" }}>
                 <button
-                  onClick={() => setExpanded((prev) => !prev)}
+                  onClick={(event) => {
+                    onContentToggle?.(event.currentTarget);
+                    setExpanded((prev) => !prev);
+                  }}
                   title={expanded ? t("i18n.collapse") : t("i18n.expand")}
                   aria-expanded={expanded}
                   style={{
@@ -530,8 +547,8 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onEditContent, edi
                   cwd={cwd}
                   onOpenFile={onOpenFile}
                   onExpandedChange={setPromptExpanded}
-                />
-              )}
+                  onContentToggle={onContentToggle}
+                />              )}
             </>
           )}
         </div>
@@ -850,7 +867,7 @@ function AssistantMessageView({
       >
         {modelTime && (
           <span className="message-assistant-model-time">
-            <ClockIcon size={10} />
+            <ClockIcon size={12} />
             {modelTime}
           </span>
         )}
@@ -1024,7 +1041,7 @@ function AssistantMessageView({
             onClick={() => { onBranchInNewChat!(entryId!); }}
             disabled={forking}
             title={forking ? t("i18n.creatingSession") : t("i18n.branchInNewChatTitle")}
-            className="message-assistant-action"
+            className="message-assistant-action message-branch-action"
             aria-live="polite"
             style={{
               display: "flex", alignItems: "center", gap: 4,
@@ -1332,15 +1349,13 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
 
   return (
     <div
+      // The tool call's own tint. It is a class, not an inline fill, so the phone's
+      // stylesheet owns how deep it sits on the page (app/native-theme.css).
+      className={`tool-call-card${isError ? " is-error" : aborted ? " is-aborted" : ""}`}
       style={{
         borderRadius: "var(--radius-md)",
         overflow: "hidden",
         fontSize: "var(--fs-caption)",
-        background: isError
-          ? "rgba(248,113,113,0.05)"
-          : aborted
-            ? "rgba(148,163,184,0.06)"
-            : "rgba(34,197,94,0.04)",
       }}
     >
       {/* ── Tool call header ── */}
@@ -1865,6 +1880,7 @@ function ResultImages({ images }: { images: ImageContent[] }) {
   const { t } = useI18n();
   return (
     <div
+      data-image-gallery
       style={{
         display: "flex",
         gap: 8,
@@ -1942,12 +1958,13 @@ function PairedResult({ text, isEmpty, isError }: {
 }
 
 const USER_TEXT_COLLAPSE_HEIGHT = 220;
-function CollapsibleUserText({ text, cwd, onOpenFile, onExpandedChange }: {
+function CollapsibleUserText({ text, cwd, onOpenFile, onExpandedChange, onContentToggle }: {
   text: string;
   cwd?: string;
   onOpenFile?: (filePath: string) => void;
   /** Tells the bubble it may drop its collapsed height cap, so "Expand" shows the whole prompt. */
   onExpandedChange?: (expanded: boolean) => void;
+  onContentToggle?: (control: HTMLElement | null) => void;
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
@@ -1994,8 +2011,11 @@ function CollapsibleUserText({ text, cwd, onOpenFile, onExpandedChange }: {
       </div>
       {overflowing && (
         <button
-          onClick={() => {
+          onClick={(event) => {
             const next = !expanded;
+            // The page grows under the finger: the viewport is told first, so it can pin
+            // this row and keep the control in reach.
+            onContentToggle?.(event.currentTarget);
             setExpanded(next);
             onExpandedChange?.(next);
           }}
@@ -2022,7 +2042,7 @@ function CollapsibleUserText({ text, cwd, onOpenFile, onExpandedChange }: {
   );
 }
 
-function CompactionMessageView({ message, kind = "compaction" }: { message: CustomMessage; kind?: "compaction" | "branch_summary" }) {
+function CompactionMessageView({ message, kind = "compaction", onContentToggle }: { message: CustomMessage; kind?: "compaction" | "branch_summary"; onContentToggle?: (control: HTMLElement | null) => void }) {
   const { t, locale } = useI18n();
   const summary = getMessageText(message.content);
   const parsedSummary = useMemo(() => parseCompactionSummary(summary), [summary]);
@@ -2046,7 +2066,10 @@ function CompactionMessageView({ message, kind = "compaction" }: { message: Cust
           type="button"
           className="compaction-card-header"
           aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
+          onClick={(event) => {
+            onContentToggle?.(event.currentTarget);
+            setExpanded((value) => !value);
+          }}
           title={t(expanded ? "chat.collapseCompaction" : "chat.expandCompaction")}
           style={{
             display: "flex",
@@ -2132,7 +2155,7 @@ function CompactionFileList({ title, files }: { title: string; files: string[] }
   );
 }
 
-function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessage; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void }) {
+function CustomMessageView({ message, cwd, onOpenFile, onContentToggle }: { message: CustomMessage; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void; onContentToggle?: (control: HTMLElement | null) => void }) {
   const { t, locale } = useI18n();
   const isHiddenDisplay = message.display === false;
   // A background subagent's report is a wall of text the main agent has already
@@ -2188,7 +2211,10 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             type="button"
             className="custom-message-header"
             aria-expanded={contentExpanded}
-            onClick={() => setContentExpanded((value) => !value)}
+            onClick={(event) => {
+              onContentToggle?.(event.currentTarget);
+              setContentExpanded((value) => !value);
+            }}
             title={t(contentExpanded ? "chat.collapseSubagentReport" : "chat.expandSubagentReport")}
             style={{
               display: "flex",
@@ -2249,7 +2275,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
         {contentExpanded ? (
           <div className="custom-message-body" style={{ padding: "6px 9px" }}>
             {images.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: text ? 8 : 0 }}>
+              <div data-image-gallery style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: text ? 8 : 0 }}>
                 {images.map((img, i) => {
                   const src = imageSource(img);
                   if (!src) return null;

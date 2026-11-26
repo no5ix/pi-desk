@@ -37,6 +37,11 @@ test("interrupted tool calls render a cancelled marker instead of success stylin
   // Loaded (non-streaming) message + no paired result ⇒ aborted.
   assert.match(messageSource, /aborted=\{!isStreaming && !result\}/);
   assert.match(messageSource, /t\("chat\.toolCancelled"\)/);
-  // Aborted styling is neutral slate, distinct from the green success tint.
-  assert.match(messageSource, /rgba\(148,163,184,0\.06\)/);
+  // Aborted styling is neutral slate, distinct from success: the card names its state
+  // and the app's stylesheet paints that state (deeper than the 6% wash that read as
+  // a blank row on a phone).
+  assert.match(messageSource, /className=\{`tool-call-card\$\{isError \? " is-error" : aborted \? " is-aborted" : ""\}`\}/);
+  const themeCss = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8");
+  assert.match(themeCss, /\.tool-call-card\.is-aborted\s*\{[^}]*rgba\(148, 163, 184, 0\.11\)/);
+  assert.match(themeCss, /\.tool-call-card\s*\{[^}]*rgba\(34, 197, 94, 0\.085\)/);
 });

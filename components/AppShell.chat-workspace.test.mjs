@@ -40,9 +40,12 @@ test("opening a chat closes and guards every project workbench entry point", () 
   );
   // A chat only opens files inside its own folder; legacy chats (no folder) open none.
   assert.match(source, /const handleOpenFile = useCallback\([\s\S]*?if \(isChatWorkspaceActive && !\(chatFolderCwd && isPathInside\(filePath, chatFolderCwd\)\)\) return;/);
-  assert.match(source, /const handleOpenTerminal = useCallback\(\(cwd: string\) => \{\s*if \(isChatWorkspaceActive\) return;/);
+  // A chat has no shell. The tab strip's `+` asks for a new tab, so the callback carries
+  // its options; the chat's guard is the first line either way.
+  assert.match(source, /const handleOpenTerminal = useCallback\(\(cwd: string, options\?: \{ newTab\?: boolean \}\) => \{\s*if \(isChatWorkspaceActive\) return;/);
   assert.match(source, /setArtifactOpener\(\(request\) => \{\s*if \(isChatWorkspaceActive\) return;/);
-  assert.match(source, /onNewTerminal=\{visibleProjectCwd \? \(\) => handleOpenTerminal\(visibleProjectCwd\) : undefined\}/);
+  // No project, no `onNewTerminal`: a chat's panel is offered no terminal at all.
+  assert.match(source, /onNewTerminal=\{visibleProjectCwd \? \(\) => handleOpenTerminal\(visibleProjectCwd, \{ newTab: true \}\) : undefined\}/);
 });
 
 test("chat composer and project picker cannot switch back into a project", () => {
@@ -58,7 +61,8 @@ test("a chat with a folder shows that folder in the right panel, but never a ter
   assert.match(source, /const workbenchCwd = visibleProjectCwd \?\? chatFolderCwd;/);
   assert.match(source, /\{workbenchCwd && fileTreeShown && \(/);
   assert.match(source, /cwd=\{workbenchCwd\}\s*onOpenFile=\{handleOpenFile\}/);
-  assert.match(source, /onNewTerminal=\{visibleProjectCwd \? \(\) => handleOpenTerminal\(visibleProjectCwd\) : undefined\}/);
+  // No project, no `onNewTerminal`: a chat's panel is offered no terminal at all.
+  assert.match(source, /onNewTerminal=\{visibleProjectCwd \? \(\) => handleOpenTerminal\(visibleProjectCwd, \{ newTab: true \}\) : undefined\}/);
   // The composer's @ completion is off in chats, so the panel offers no @mention either.
   assert.match(source, /onAtMention=\{isChatWorkspaceActive \? undefined : handleAtMention\}/);
   assert.match(source, /onOpenFile=\{handleOpenLinkedFile\}/);

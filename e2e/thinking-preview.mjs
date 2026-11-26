@@ -89,9 +89,24 @@ const read = await page.evaluate(() => {
       afterColor: after?.color,
       textEnd: preview?.textContent.trim().slice(-4),
       dots: card.querySelectorAll(".thinking-preview-dots").length,
+      onPlate: !!card.closest(".process-details-content"),
+      onPlate: !!card.closest(".process-details-content"),
     };
   });
-  return { clock: clock ? box(clock) : null, footerInk, prose: prose ? box(prose) : null, cards, pageBackground: getComputedStyle(document.body).backgroundColor };
+  // The plate's colour, flattened: what the marks over a thought inside the Process
+  // details group must be painted on. A probe element resolves the token to a colour.
+  const plateCard = document.querySelector("[data-plate] .thinking-card");
+  let plate = null;
+  if (plateCard) {
+    const host = plateCard.closest(".process-details-content");
+    const probe = document.createElement("div");
+    probe.style.display = "none";
+    probe.style.background = getComputedStyle(plateCard).getPropertyValue("--thinking-cut-surface").trim();
+    host.appendChild(probe);
+    plate = { surface: getComputedStyle(probe).backgroundColor, hostBackground: getComputedStyle(host).backgroundColor };
+    probe.remove();
+  }
+  return { clock: clock ? box(clock) : null, footerInk, prose: prose ? box(prose) : null, cards, plate, pageBackground: getComputedStyle(document.body).backgroundColor };
 });
 
 const [long, short] = read.cards;
@@ -124,6 +139,20 @@ assert.equal(long.afterBackground, long.cardBackground, "the marks sit on the ca
 assert.ok(!short.clipped, `a short thought is not cut, and says so (data-clipped=${short.clipped})`);
 assert.equal(short.afterContent, "none", "so nothing is painted over its end");
 assert.equal(short.dots, 0, "and no inline marks either: the text ended by itself");
+
+// 4. The usual place for a collapsed thought is the turn's Process details plate, which
+//    is translucent. Marks painted in the page's colour cut a light rectangle into it,
+//    so the marks carry the plate flattened: opaque, and the plate's own colour.
+const channels = (value) => (value.match(/[\d.]+/g) ?? []).slice(0, 4).map(Number);
+const plateCard = read.cards.find((card) => card.onPlate);
+assert.ok(plateCard, "the fixture draws a thought inside the Process details plate");
+assert.equal(plateCard.afterContent, '"•••"', "and it is cut the same way");
+assert.ok(plateCard.afterBackground, "the marks are painted on a colour");
+const markAlpha = channels(plateCard.afterBackground)[3] ?? 1;
+assert.ok(markAlpha > 0.99, `the marks are opaque over the line, not translucent (${plateCard.afterBackground})`);
+assert.equal(plateCard.afterBackground, read.plate.surface, `the marks carry the plate's colour (${plateCard.afterBackground} vs ${read.plate.surface})`);
+const markToPage = Math.max(...channels(plateCard.afterBackground).slice(0, 3).map((v, i) => Math.abs(v - channels(read.pageBackground)[i])));
+assert.ok(markToPage >= 2, `the plate is not the page, so the marks are not the page's colour either (Δ${markToPage}: ${plateCard.afterBackground} on ${read.pageBackground})`);
 
 await page.screenshot({ path: `${out}/thinking-collapsed.png`, clip: { x: 0, y: 0, width: 390, height: 420 } });
 await context.close();

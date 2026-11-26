@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { createJiti } from "jiti";
 
 // app/native-theme.css is the fork's stylesheet (globals.css and settings.css are
 // upstream's and stay byte-identical), and the phone's pass over the conversation
@@ -72,6 +73,17 @@ test("a collapsed thinking's first line ends with the three marks, and its glyph
   assert.ok(messageView.includes('className="thinking-card"'), "the thinking card carries the class the rule needs");
   assert.match(declared(".thinking-preview", "text-overflow").join("\n"), /text-overflow: clip/, "no single ellipsis character: the cut is named by the marks");
   assert.match(cssNoComments, /\.thinking-preview\[data-clipped="true"\]::after\s*\{[^}]*content: "•••"/, "the marks are painted over the cut");
+  // The marks are painted over the line, so they must carry the surface behind them.
+  // A collapsed thought is usually inside the turn's Process details group, whose plate
+  // is a translucent mix; the page's colour there would cut a light rectangle into it.
+  assert.match(declared(".thinking-preview[data-clipped=\"true\"]::after", "background").join("\n"), /background: var\(--thinking-cut-surface/, "the marks carry the surface they sit on, as a token");
+  assert.match(declared(".thinking-card", "--thinking-cut-surface").join("\n"), /--thinking-cut-surface: var\(--bg\)/, "on the page, that surface is the page");
+  assert.match(
+    declared(".process-details-content .thinking-card", "--thinking-cut-surface").join("\n"),
+    /--thinking-cut-surface: color-mix\(in srgb, var\(--surface\) 34%, var\(--bg\)\)/,
+    "inside the Process details plate, it is that plate flattened against the page",
+  );
+  assert.match(declared(".process-details-content", "background").join("\n"), /background: color-mix\(in srgb, var\(--surface\) 34%, transparent\)/, "…which is the plate's own mix, made opaque");
   assert.match(messageView, /export const THINKING_MORE_MARKER = "•••"/, "the same three marks in the component, for a line that ends before the box");
   assert.ok(messageView.includes('className="thinking-preview"') && messageView.includes("data-clipped="), "the preview span carries the class and the clipped state");
   assert.ok(messageView.includes("useIsTextClipped"), "the clipped state is measured, not guessed");
@@ -108,4 +120,35 @@ test("the composer's caret is armed by the finger and repainted after the lift (
   assert.ok(arms.length >= 2, "the text area and the card both arm the caret inside the gesture");
   const gestures = chatInput.match(/isTouchPointer\(event\.nativeEvent\)/g) ?? [];
   assert.ok(gestures.length >= 2, "…and only a finger's tap does it, never a mouse click");
+});
+
+test("the sidebar's search box is a label, not a sentence (pic: Search titles… · Enter for full te)", async () => {
+  const { forkLocalePlugins } = await createJiti(import.meta.url).import("../lib/i18n/locale-plugins.ts");
+  for (const { name, messages } of forkLocalePlugins) {
+    const label = messages["sidebar.searchSessions"];
+    assert.ok(label, `${name}: the search box is labelled`);
+    assert.ok(!label.includes("·") && !/Enter/i.test(label), `${name}: the second clause is gone (${label})`);
+  }
+  // The gesture it used to describe is not lost: the input's tooltip carries it.
+  const sidebar = readFileSync(new URL("../components/SessionSidebar.tsx", import.meta.url), "utf8");
+  assert.match(sidebar, /title=\{t\("sidebar\.searchAllHint"\)\}/, "Enter for full text search lives in the tooltip");
+});
+
+test("a tool call's band stands off the page, its clock is readable, and a phone is not asked to branch under every call (pic: the column of rows)", () => {
+  // The tint: the three states, deeper than the inline 4%/5%/6% they replace.
+  const tint = (selector) => declared(selector, "background").join("\n");
+  assert.match(tint(".tool-call-card"), /background: rgba\(34, 197, 94, 0\.0[89]\d?\)/, "a normal call is a band, not a wash");
+  assert.match(tint(".tool-call-card.is-error"), /background: rgba\(248, 113, 113, 0\.1\)/, "a failed one carries its own depth");
+  assert.match(tint(".tool-call-card.is-aborted"), /background: rgba\(148, 163, 184, 0\.11\)/, "and an aborted one");
+  assert.match(messageView, /className=\{`tool-call-card\$\{isError \? " is-error" : aborted \? " is-aborted" : ""\}`\}/, "the card carries the class the stylesheet needs");
+  assert.ok(!/background: isError\s*\n?\s*\? "rgba\(248,113,113,0\.05\)"/.test(messageView), "the inline 5% wash is gone from the card");
+
+  // The clock beside a reply's model: 10px was a dot; the row shares the app's 12px glyph.
+  assert.match(messageView, /className="message-assistant-model-time">\s*<ClockIcon size=\{12\} \/>/, "the message's clock is the app's 12px glyph");
+
+  // "Branch in new chat" under every tool call is a phone's column of identical buttons.
+  assert.match(messageView, /className="message-assistant-action message-branch-action"/, "the chip is addressable by name");
+  const hidden = cssNoComments.match(/@media \(max-width: 640px\)\s*\{[^}]*\.message-branch-action\s*\{[^}]*display: none !important/g);
+  assert.ok(hidden, "on a phone's width the chip is not drawn, and the rule is strong enough to beat the chip's inline display: flex");
+  assert.ok(!/\.message-copy-action\s*\{[^}]*display: none/.test(cssNoComments), "Copy is not taken with it");
 });

@@ -6,7 +6,7 @@ import { createJiti } from "jiti";
 const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 const searchSource = await readFile(new URL("./SessionSearch.tsx", import.meta.url), "utf8");
 const routeSource = await readFile(new URL("../app/api/sessions/search/route.ts", import.meta.url), "utf8");
-const { englishMessages } = await createJiti(import.meta.url).import("../lib/i18n/locale-plugins.ts");
+const { englishMessages, forkLocalePlugins } = await createJiti(import.meta.url).import("../lib/i18n/locale-plugins.ts");
 
 // The full-text session search was fully implemented upstream (component + API
 // route) but the fork's rewritten sidebar never mounted it, so the feature sat
@@ -41,10 +41,18 @@ test("the search row confirms content search with Enter, not a mode button", () 
   assert.match(source, /e\.key === "Enter"[\s\S]{0,240}?setContentSearch\(true\)/);
   assert.match(source, /e\.key === "Escape"[\s\S]{0,240}?setContentSearch\(false\)/);
   assert.match(source, /className="sidebar-search-clear"[\s\S]{0,400}?setContentSearch\(false\)/);
-  // Discoverability for the hidden gesture: the input itself carries the hint.
+  // Discoverability for the hidden gesture: the input itself carries the hint, in its
+  // tooltip. The placeholder stays a label — on a 390px phone the box is 235px wide, and
+  // "Search titles… · Enter for full text" was cut to "…full te", which reads as damage.
   assert.match(source, /title=\{t\("sidebar\.searchAllHint"\)\}/);
   assert.match(englishMessages["sidebar.searchAllHint"], /Enter/);
-  assert.match(englishMessages["sidebar.searchSessions"], /Enter/);
+  for (const { name, messages } of forkLocalePlugins) {
+    const locale = name ?? "locale";
+    const placeholder = messages["sidebar.searchSessions"];
+    assert.ok(placeholder, `${locale}: the search box keeps its label`);
+    assert.ok(!placeholder.includes("·"), `${locale}: no second clause in the label (${placeholder})`);
+    assert.ok(!/Enter/i.test(placeholder), `${locale}: the gesture is not the label's business (${placeholder})`);
+  }
 });
 
 test("selecting a result carries the entry id so the chat can jump to the match", () => {

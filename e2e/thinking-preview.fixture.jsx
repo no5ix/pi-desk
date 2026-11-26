@@ -38,6 +38,10 @@ const TURNS = [
   turn(2, [{ type: "thinking", thinking: SHORT_THINKING }, { type: "text", text: "the reply under a short one" }]),
 ];
 
+// A collapsed thought inside the turn's Process details plate: the plate is translucent,
+// so the marks over the cut must carry the plate flattened, not the page's colour.
+const PLATE_TURN = turn(3, [{ type: "thinking", thinking: LONG_THINKING }]);
+
 createRoot(document.getElementById("root")).render(
   <I18nProvider>
     <div className="app-shell chat-container" style={{ height: "100dvh", overflow: "auto" }}>
@@ -55,6 +59,20 @@ createRoot(document.getElementById("root")).render(
               />
             </section>
           ))}
+          <div className="process-details">
+            <div className="process-details-content">
+              <section data-plate data-turn={3}>
+                <MessageView
+                  message={PLATE_TURN}
+                  entryId="entry-plate"
+                  modelNames={{}}
+                  showTimestamp
+                  turnDurationMs={45000}
+                  expandLatestThinking={false}
+                />
+              </section>
+            </div>
+          </div>
         </div>
       </div>
     </div>

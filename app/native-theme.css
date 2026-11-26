@@ -1371,6 +1371,11 @@
   /* Motion: fast = hover and press feedback, base = panels, reveals and fades. */
   --dur-fast: 120ms;
   --dur-base: 180ms;
+  /* A popup travels this far on its way in and back out. Small on purpose: the card
+     is anchored to the control that opened it, so the travel reads as "it came from
+     there", not as a slide across the page. POP_EXIT_MS in hooks/usePopTransition.ts
+     is the same number of milliseconds. */
+  --pop-shift: 4px;
   /* fold = the sidebar's project expansion. It is a height the eye follows, so it runs
      longer than a fade and eases out like the native macOS sidebar. */
   --dur-fold: 240ms;
@@ -4199,6 +4204,122 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+/* ── One entrance and one exit for every popup ─────────────────────────────
+   A menu, a header card, a picker or a tip that is mounted on a click and unmounted on
+   the next one blinks: the entrance plays, the disappearance does not, because the node
+   is gone before anything can animate. So the owner holds the node for the exit and puts
+   `is-closing` on it — the idiom the settings dialog introduced (is-closing, and
+   DIRECTORY_PICKER_CLOSE_MS for the folder window), now shared through
+   hooks/usePopTransition.ts — and these are the rules that play. A card grows out of the
+   control that opened it and falls back into it; the exit is the entrance reversed, and it
+   stops taking clicks from its first frame, so a closing menu never swallows a tap meant
+   for what is underneath. The surfaces are the two the app already shares: `.native-popover`
+   (the composer's menus, which grew in from below) and `.app-menu` (every menu, the
+   header's read-only cards, the pickers), plus the surfaces of their own named below. */
+@keyframes app-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--pop-shift)) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes app-pop-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(var(--pop-shift)) scale(0.985);
+  }
+}
+
+/* Menus hang below the control that opened them, so they grow down from its edge. The
+   composer's menus are `.native-popover` as well, and they keep their own upward growth
+   above; `.animated-native-popover` animates itself and is left alone. */
+.app-menu:not(.native-popover):not(.animated-native-popover) {
+  transform-origin: var(--pop-origin, top center);
+  animation: app-pop-in var(--dur-fast) var(--ease-native) both;
+}
+
+/* After both entrance rules, so the exit outranks them at equal specificity. The origin
+   each entrance chose stays in place for the way out. */
+.native-popover.is-closing,
+.app-menu.is-closing {
+  animation: app-pop-out var(--dur-fast) var(--ease-native) both;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-menu:not(.native-popover):not(.animated-native-popover),
+  .native-popover.is-closing,
+  .app-menu.is-closing {
+    animation: none;
+  }
+}
+
+/* The header's read-only cards (Agents, System prompt, Tools, Session stats) are placed by
+   a wrapper AppShell keeps mounted for the exit, and the wrapper is what carries the
+   motion. The card inside is `.app-menu`, so it is told to sit still: a card scaling
+   inside an animation is a card that wobbles. The wrapper grows down out of the header. */
+.top-panel-card {
+  transform-origin: top center;
+  animation: app-pop-in var(--dur-fast) var(--ease-native) both;
+}
+
+.top-panel-card .app-menu {
+  animation: none;
+}
+
+.top-panel-card.is-closing {
+  animation: app-pop-out var(--dur-fast) var(--ease-native) both;
+  pointer-events: none;
+}
+
+/* Radix's pickers leave through Radix's own presence, which keeps the node for exactly
+   the length of an animation declared on the closed state. Same motion, same length. */
+.app-select-menu[data-state="closed"],
+.app-combobox-menu[data-state="closed"] {
+  animation: app-pop-out var(--dur-fast) var(--ease-native) both;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .top-panel-card,
+  .top-panel-card.is-closing,
+  .app-select-menu[data-state="closed"],
+  .app-combobox-menu[data-state="closed"] {
+    animation: none;
+  }
+}
+
+/*
+ * The header's tips (Path, Branch, Context usage) are a `role=tooltip`, not a menu, so they
+ * wear neither shared class. They appear on hover, focus or a tap and unmount when all
+ * three let go; components/TopbarTip.tsx holds the closing one for the length of the exit.
+ * Growing from the top edge keeps the tip under its chip while it fades.
+ */
+.app-topbar-tip {
+  transform-origin: top center;
+  animation: app-pop-in var(--dur-fast) var(--ease-native) both;
+}
+
+.app-topbar-tip.is-closing {
+  animation: app-pop-out var(--dur-fast) var(--ease-native) both;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-topbar-tip,
+  .app-topbar-tip.is-closing {
+    animation: none;
   }
 }
 
@@ -13776,6 +13897,19 @@ a:focus-visible {
   padding-left: 0 !important;
 }
 
+/* The cut end of a collapsed thought. `text-overflow: clip` stops the line mid-glyph,
+   which reads as a typo, so the three marks stand over the cut; they need the surface
+   behind them, and that surface is not always the page: the turn's Process details group
+   paints a translucent plate (`--surface` at a third over the page), so the marks carry
+   that plate flattened, or they would cut a light rectangle into the card. */
+.thinking-card {
+  --thinking-cut-surface: var(--bg);
+}
+
+.process-details-content .thinking-card {
+  --thinking-cut-surface: color-mix(in srgb, var(--surface) 34%, var(--bg));
+}
+
 .thinking-preview {
   position: relative;
   display: block;
@@ -13790,7 +13924,7 @@ a:focus-visible {
   position: absolute;
   right: 0;
   padding-left: 8px;
-  background: var(--bg);
+  background: var(--thinking-cut-surface, var(--bg));
   color: var(--text-muted);
   letter-spacing: 1px;
 }
@@ -13853,5 +13987,555 @@ a:focus-visible {
      overflows its own row and the strip's overflow fades cut it. */
   .file-tab-add-anchor {
     height: 36px;
+  }
+}
+
+/* The image overlay: a finger's swipe, a trackpad's flick, and a tap that means
+   "enough". One image of a turn becomes the ring of that turn's images: the swipe
+   moves, the tap closes. The controls are the overlay's own control — the close
+   button's shape, its surface and its shadow — so the overlay has one kind of button.
+   A swipe is a gesture, so the image must not also pan under a finger: `touch-action`
+   says the vertical direction is the page's, the horizontal is the overlay's. */
+.image-preview-image {
+  cursor: zoom-out;
+  touch-action: pan-y;
+}
+
+.image-preview-count {
+  position: absolute;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+}
+
+.image-preview-swipe {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 max(10px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+
+.image-preview-swipe-button {
+  display: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+.image-preview-swipe-button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* A thumb has no wheel and no arrow keys: on a touch device the ring says where it
+   goes, and the plate is a finger's size. */
+@media (pointer: coarse) {
+  .image-preview-swipe-button {
+    display: inline-flex;
+  }
+}
+
+/* ═════ The right panel's Git view (components/GitPanel.tsx) ═════
+
+   The panel header's Git button opens three levels in the panel's content area: the
+   branch tree, the selected branch's commits, and one commit's diff. It is a view, not
+   a dialog, so it gets the panel's own column: the content area gives way to it and the
+   file tree stays beside it, which is how the file list already behaves.
+
+   What the shapes take from the app, on purpose:
+   - the rows are the branch menu's rows, so they carry its mono branch names, its
+     `remote` tag and its three marks (`sidebar-project-context-menu-branch-mark`,
+     `-branch-name`, `-branch-tag`): the list a user reads here is the list the composer's
+     chip has always shown, in a wider box;
+   - the diff is painted by the file viewer's own view, inside `.git-panel-diff`, the
+     box that scrolls it. The patch is `width: max-content`, so the panel scrolls
+     sideways and the page never does;
+   - one surface, one accent: `--bg` for the reading area, `--bg-panel` for the heading,
+     `--separator` for the rules, and nothing painted in a colour the app has not already
+     got a token for. */
+.git-panel {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* The view's own header row: a way back, the branch/commit it is reading, and the one
+   action that reads git again. It is 34px, the panel's row, so the strip above it and
+   this row read as two bars of one panel. */
+.git-panel-heading {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 4px 8px;
+  background: var(--bg-panel);
+  border-bottom: var(--hairline) solid var(--separator);
+}
+
+.git-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-semibold);
+}
+
+.git-panel-title-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.git-panel-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.git-panel-action,
+.git-panel-back {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native);
+}
+
+.git-panel-action:hover:not(:disabled),
+.git-panel-back:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.git-panel-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* The arrow steps a level back, so it points back: the same glyph the branch tree
+   folds with, turned. */
+.git-panel-back .is-back {
+  transform: rotate(90deg);
+}
+
+.git-panel-spin {
+  animation: spin 0.8s linear infinite;
+}
+
+.git-panel-filter {
+  flex: 0 0 auto;
+  margin: 6px 8px 0;
+  padding: 5px 8px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-small);
+}
+
+.git-panel-filter:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 0;
+}
+
+/* The list scrolls inside the view, never the page: a long branch list or a long commit
+   list must not turn the phone's 390px page into a sideways scroll. */
+.git-panel-list,
+.git-panel-file-list {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding: 4px;
+}
+
+.git-panel-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.git-panel-file-list {
+  flex: 0 0 auto;
+  max-height: 34%;
+  border-bottom: var(--hairline) solid var(--separator);
+}
+
+.git-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-panel-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+/* The branch rows are the branch menu's rows: mono names, and the tree's indent one step
+   per level, taken from the `--branch-depth` the rows carry. */
+.git-branch-row,
+.git-branch-group {
+  padding-left: calc(8px + var(--branch-depth, 0) * 14px);
+  font-family: var(--font-mono);
+}
+
+.git-branch-group {
+  color: var(--text-muted);
+}
+
+.git-panel-row[aria-current="true"] {
+  color: var(--accent);
+  background: var(--bg-selected);
+}
+
+.git-panel-into {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-dim);
+}
+
+/* A commit row is two lines: what the commit says, then who and when and the sha. One
+   line would cut a subject in half on a phone, and a subject is the reason to open it. */
+.git-commit-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.git-commit-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.git-commit-subject {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.git-commit-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.git-commit-author {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.git-commit-sha,
+.git-file-path,
+.git-file-counts {
+  font-family: var(--font-mono);
+}
+
+.git-commit-sha {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+
+/* The commit's own line: author, age, sha, and the files it touched. The merge note is
+  here because a merge's diff is against a parent, and the panel has to say which one. */
+.git-panel-commit-meta {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-bottom: var(--hairline) solid var(--separator);
+}
+
+.git-panel-commit-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.git-panel-commit-author {
+  color: var(--text);
+  font-weight: var(--fw-semibold);
+}
+
+.git-panel-commit-subject {
+  color: var(--text);
+  font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+}
+
+.git-panel-dot {
+  color: var(--text-dim);
+}
+
+/* A file row: the letter git's status, the path, the counts, and the button that opens
+   the file as a panel tab. The row's main button is the filter: it narrows the diff
+   below to this file, which is why it is a pressed state, not a link. */
+.git-file-row {
+  padding: 0;
+}
+
+.git-file-row-main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 4px 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-file-row-main:hover {
+  background: var(--bg-hover);
+}
+
+.git-file-row-main[aria-pressed="true"] {
+  background: var(--bg-selected);
+}
+
+.git-file-status {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+
+.git-file-status.is-added { color: var(--success); }
+.git-file-status.is-deleted { color: var(--danger); }
+.git-file-status.is-renamed { color: var(--accent); }
+.git-file-status.is-conflict { color: var(--warning, var(--danger)); }
+
+.git-file-path {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.git-file-counts {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  margin-left: auto;
+  padding-left: 6px;
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.git-file-additions { color: var(--success); }
+.git-file-deletions { color: var(--danger); }
+
+.git-file-open {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.git-file-open:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+
+/* The commit's diff, in the box that scrolls it. The diff paints at its content width,
+   so this is where a long line sideways-scrolls — never the page. */
+.git-panel-diff {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--bg);
+}
+
+.git-panel-diff > :first-child {
+  flex: 0 0 auto;
+}
+
+.git-panel-more {
+  margin: 2px 8px 6px;
+  padding: 6px 8px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.git-panel-more:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* Loading, empty and error, in words. A spinner alone is a panel that says nothing
+   about what it is waiting for, and this app names its states. */
+.git-panel-hint {
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+
+.git-panel-error {
+  color: var(--danger);
+}
+
+.git-panel-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.git-panel-note-clear {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* The button in the panel's header row: the file list's toggle and this one are the
+   panel's two view toggles, so they stand together at its leading edge. */
+.right-panel-tab-strip > .git-panel-toggle {
+  order: -1;
+}
+
+/* A finger, not a cursor: the panel's icon buttons are 36px on a touch device, and so
+   are the view's own — the back arrow, the reload, and a file row's open button. */
+@media (pointer: coarse) {
+  .git-panel-action,
+  .git-panel-back,
+  .git-file-open {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+  }
+
+  .git-panel-row,
+  .git-file-row-main {
+    min-height: 36px;
+  }
+}
+
+/* The motion is opt-out, as everywhere else in the app. */
+@media (prefers-reduced-motion: reduce) {
+  .git-panel-spin {
+    animation: none;
+  }
+}
+
+/* A tool call's own band. The fill was an inline 4% tint, barely a step off the page,
+   so a run of ten calls read as ten blank rows on a phone. The three states keep the
+   hues the tool name already carries — the same green of a `read`, the same red of a
+   failed `bash` — at a depth that shows the band's edges. The class lives on the card,
+   so the conversation's stylesheet decides how deep, and a desktop merge keeps its own. */
+.tool-call-card {
+  background: rgba(34, 197, 94, 0.085);
+}
+
+.tool-call-card.is-aborted {
+  background: rgba(148, 163, 184, 0.11);
+}
+
+.tool-call-card.is-error {
+  background: rgba(248, 113, 113, 0.1);
+}
+
+/* "Branch in new chat" under every tool call: on a phone a turn is a column of tool
+   calls, and one chip under each is a column of buttons that all do the same thing to
+   the same conversation. The words are in the composer's branch chip and the sidebar's
+   Fork, where a finger is looking for them; the chip stays where a cursor has room to
+   aim at one. */
+@media (max-width: 640px) {
+  .message-branch-action {
+    /* The chip is drawn with an inline `display: flex`, so a plain `display: none`
+       here would lose to it. */
+    display: none !important;
   }
 }
