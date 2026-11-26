@@ -178,6 +178,26 @@ session that wrote it. `TurnWrittenFiles` passes its `sessionId`; `AppShell.hand
 opens the tab with `modeHint: "diff"` and `diffSessionId` (in `components/file-tab-state.ts`,
 carried by `TabBar`).
 
+**The header is a band, and the fold moves.** The header carries the count and the totals and is
+the control that opens and closes everything under it, so it is painted as one: the card's own
+surface is a 48% wash under the transcript, the rows stay transparent on it, and the header takes
+the app's plate recipe (a mostly-opaque `--surface` base with the palette's `--bg-selected` wash
+laid over it as a flat gradient — never a `color-mix()` of two colours, which leaves a
+half-transparent layer the page shows through). A hover takes `--bg-hover` over a stronger base,
+so the control answers.
+
+The rows are **not** added to and removed from the DOM any more: the list stays mounted inside
+`.turn-files-list` (`display: grid`) whose `grid-template-rows` animates `0fr → 1fr`, with
+`.turn-files-list-inner` clipping (`overflow: hidden; min-height: 0`) and the rows fading with
+the track. That mechanism is chosen for the runtime, not taste: `interpolate-size: allow-keywords`
+and `calc-size()` are the newer way to animate a height to `auto` and are **Chromium-only**, so on
+the desktop's WKWebView and on a phone the card would jump; `grid-template-rows` animates on
+Chromium and WebKit, measured mid-flight on both by `e2e/turn-files-animation.mjs`. Folded, the
+list is `inert`, so the clipped rows leave the tab order and the accessibility tree
+(`components/TurnWrittenFiles.open-diff.test.mjs` now pins "folded" as clipped + inert, not
+absent); `prefers-reduced-motion: reduce` drops the height motion and keeps the two end states and
+the hover tint.
+
 ## An assistant reply's content list is dense (`lib/assistant-content.ts`)
 Much of the chat walks a reply's blocks with `for…of`, `.some`, spread — loops that do **not** skip
 holes in a sparse array — so one slot with no block in it throws `undefined is not an object
@@ -212,9 +232,13 @@ switches between **Working-tree changes** and **Changes in this session** (`pref
 with the file). The session record is the default: it is the number the row was built from.
 
 ## A long prompt is a scroll box, and Expand shows it whole (`CollapsibleUserText`, `components/MessageView.tsx`)
-Collapsed, the prompt is `maxHeight: USER_TEXT_COLLAPSE_HEIGHT` with `overflowY: "auto"` — readable
-down its cap without pressing anything; the bottom fade only marks a box that is not scrolled to
-its end (`scrolledToEnd`). **Expand** removes the cap and the scroll, and tells the bubble
+Collapsed, the prompt is `maxHeight: USER_TEXT_COLLAPSE_HEIGHT` (660px — three times the 220px it
+started at: the box exists so a long prompt is readable without pressing **Expand**, and 220px
+showed a task's first four lines and a fade) with `overflowY: "auto"` — readable
+through its cap without pressing anything; the bottom fade only marks a box that is not scrolled to
+its end (`scrolledToEnd`). The bubble's own cap (`USER_BUBBLE_MAX_HEIGHT`, 900px) stays above the
+text cap, because a bubble shorter than the box scrolls the bubble and leaves the text capped.
+**Expand** removes the cap and the scroll, and tells the bubble
 (`onExpandedChange` → `promptExpanded`), because the bubble owns `USER_BUBBLE_MAX_HEIGHT` and
 `overflowY`: a scroll box inside a capped bubble cannot grow, so the cap has to be lifted where it
 lives. **Collapse** puts the box back. The toggle stays visible while expanded: the measurement is

@@ -53,6 +53,15 @@ test("the reply's footer carries the branch chip beside Copy", () => {
   assert.ok(gate, "the gate is one expression");
   assert.match(gate[0], /!isStreaming/, "the streaming tail has no entry on disk: forking it would copy a half answer");
   assert.match(gate[0], /!!entryId && !!onBranchInNewChat/, "a render without a session (a side-chat preview) shows no chip");
+  assert.match(gate[0], /!insideProcessDetails/, "a step inside a turn's Process details shows no chip: the report below the group is what a new chat continues from");
+  assert.match(messageView, /const insideProcessDetails = useContext\(ProcessDetailsContext\);/, "one context says so — the group's provider, the same one a thinking card reads");
+  const glyph = footer[0].match(/className="message-assistant-action message-branch-action"[\s\S]*?<svg([\s\S]*?)<\/svg>/);
+  assert.ok(glyph, "the chip carries its glyph");
+  assert.match(glyph[1], /<circle cx="6" cy="6" r="2\.5" \/>[\s\S]*<circle cx="18" cy="6" r="2\.5" \/>/, "a fork: two heads on top");
+  assert.match(glyph[1], /<circle cx="12" cy="18" r="2\.5" \/>/, "and one node below them, the session it starts");
+  assert.match(glyph[1], /<path d="M6 8\.5V10a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V8\.5M12 13v2\.5" \/>/,
+    "the two heads join one trunk: the row's fork mark's shape, sized for 12px");
+  assert.doesNotMatch(glyph[1], /<line x1="6" y1="3" x2="6" y2="15" \/>/, "the old lopsided rail is gone");
   assert.match(footer[0], /<span className="message-action-label">\{forking/,
     "the label is a span, so a phone under 380px keeps the glyph and the title");
 });

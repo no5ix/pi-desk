@@ -251,20 +251,10 @@ export function ImagePreview({ src, alt = "", children, className, style }: Imag
           {counter && (
             <span className="image-preview-count" aria-live="polite">{counter}</span>
           )}
-          {count > 1 && (
-            <div className="image-preview-swipe" aria-hidden="true">
-              <button type="button" className="image-preview-swipe-button is-prev" onClick={() => step(-1)} tabIndex={-1}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M15 18 9 12l6-6" />
-                </svg>
-              </button>
-              <button type="button" className="image-preview-swipe-button is-next" onClick={() => step(1)} tabIndex={-1}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="m9 18 6-6-6-6" />
-                </svg>
-              </button>
-            </div>
-          )}
+          {/* No direction plates: the ring is travelled by the hand — a swipe, a
+              trackpad flick, the arrow keys — and the picture's own count says where it
+              is. Two big white discs over the user's photo covered the very thing they
+              were looking at, and they sat on top of the image's own tap-to-close area. */}
           <button
             ref={closeButtonRef}
             type="button"

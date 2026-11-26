@@ -78,11 +78,31 @@ The travel list is read from the DOM when the overlay opens, from the nearest
 `[data-image-gallery]` container, and otherwise the rendered document (`.markdown-body`)
 or the message (`.message-assistant`, `.message-user`): the conversation is what decides
 the order of a turn's pictures, so no caller has to keep a list in step, and an image
-inline in prose travels with the images of that document. The two direction plates are
-`(pointer: coarse)` only — a mouse has the wheel and the arrows — and they are 44px, the
-overlay's own control size, the close button's shape. The neighbour is fetched while the
-current picture is looked at, so a swipe reveals a picture that is already there.
+inline in prose travels with the images of that document. The neighbour is fetched while
+the current picture is looked at, so a swipe reveals a picture that is already there.
+
+**The overlay has no direction plates.** Two 44px discs, `(pointer: coarse)` only, used to
+mark the ring's directions at the picture's edges; they sat on top of the photograph the
+user opened, over the area that closes on a tap, and they hid the part of the picture they
+claimed to navigate. The gesture, the wheel and the arrow keys travel the ring, and the
+count says where the hand is, so the plates carried no capability (the buttons were
+`tabIndex={-1}`, and no key, pointer, or a11y tree behaviour leaves with them).
+
+What the overlay does draw is two small plates — the count and the × — and both are
+**translucent** (`app/native-theme.css`): the user came to look at the picture, so the
+plate lets it through (`color-mix(in srgb, var(--surface) 52%, transparent)`) with
+`backdrop-filter: blur(10px)` under it, which is what keeps the ink readable over a photo
+that runs from blown-out white to near black. The × is a circle (`border-radius: 999px`,
+no hairline): the 6px box upstream draws reads as a form control pasted on a photograph,
+and every control that floats over the page here is a circle. A hover **closes** the plate
+to the app's opaque base plus the tint, so the control being aimed at becomes the least
+transparent thing on the screen — the translucency must never reach the hover state, which
+is the failure the hover pass pinned ([fork-ui](fork-ui.md)).
 
 Check: `e2e/image-swipe.mjs` (the phone shape and the desktop shape, on Chromium and
 WebKit: the count, the swipe, a mouse drag that is deliberately not a swipe, one flick
-one page, the ring, the arrows, a tap that closes).
+one page, the ring, the arrows, a tap that closes, and the plates measured: no direction
+buttons anywhere, the count and the × translucent, blurred, the × round);
+`e2e/panel-hover-wash.mjs` measures the rest plate's alpha under 1 and the hovered plate's
+alpha at 1, in both themes; `components/ImagePreview.test.mjs` pins the declarations and
+forbids `.image-preview-swipe` in the component and the stylesheet.

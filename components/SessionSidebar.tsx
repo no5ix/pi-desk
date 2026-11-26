@@ -2906,7 +2906,8 @@ function SessionItem({
   }, [menuOpen]);
 
   // The menu's real height decides whether it opens downward or upward.
-  const placedMenuPos = useMenuPlacement(menuOpen ? menuAnchor : null, menuRef);
+  // Keyed to the mounted flag, so the closing menu keeps the spot it was placed in.
+  const placedMenuPos = useMenuPlacement(menuPop.mounted ? menuAnchor : null, menuRef);
 
   // The fold toggle's name: the count it folds, plus how many of them are live, so a
   // breathing head is also said to a screen reader.
@@ -3095,7 +3096,10 @@ function SessionItem({
               aria-label={childToggleLabel}
               aria-expanded={!collapsed}
             >
-              <svg className={`session-item-children-glyph${childrenRunningCount > 0 ? " agent-status-icon--pulse" : ""}`} aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {/* The family's head, at the row's icon scale: 14px, the same size a plain
+                  row's leading bubble is. At 11px it was a smudge at the end of the
+                  title — the count next to it read bigger than the mark. */}
+              <svg className={`session-item-children-glyph${childrenRunningCount > 0 ? " agent-status-icon--pulse" : ""}`} aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="5" y="7" width="14" height="11" rx="2" />
                 <path d="M9 11h.01M15 11h.01M12 7V4" />
               </svg>

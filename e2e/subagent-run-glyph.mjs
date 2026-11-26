@@ -20,7 +20,7 @@ import { chromium } from "playwright";
  *  · the head fits its disc with room on every side and sits centred, so a bigger glyph
  *    has not become a clipped glyph;
  *  · a turn with no run under it keeps the square and nothing animates;
- *  · the sidebar row's fold head animates at the row's 11px, inside the 18px pill;
+ *  · the sidebar row's fold head animates at the row's 14px, inside the 18px pill;
  *  · `prefers-reduced-motion: reduce` stops every one of them, identically shaped;
  *  · in the dark theme the head keeps its ink on the disc it is painted on (measured
  *    WCAG contrast, not a colour name);
@@ -209,7 +209,7 @@ try {
     assert.ok(m.row.running, `${shape.name}: the toggle carries the running state`);
     assert.equal(m.row.glyph.animationName, "agent-run-pulse", `${shape.name}: the fold head breathes with the header`);
     assert.equal(m.row.glyph.animationDuration, "1.6s", `${shape.name}: one cycle everywhere`);
-    assert.ok(m.row.glyph.width <= 12 && m.row.glyph.height <= 12,
+    assert.ok(m.row.glyph.width <= 14 && m.row.glyph.height <= 14,
       `${shape.name}: the row's head stays a glyph (${m.row.glyph.width}×${m.row.glyph.height}px)`);
     assert.ok(Math.abs(m.row.height - 18) <= 1, `${shape.name}: the 18px pill is not pushed (${m.row.height}px)`);
     assert.match(m.row.label, /· 1 running/, `${shape.name}: the breathing icon is also said (${m.row.label})`);

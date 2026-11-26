@@ -97,6 +97,8 @@ test("a row whose subagent runs are live breathes", async () => {
   assert.match(sidebar, /childrenRunningCount=\{runningChildren\}/, "and hands the number to the row");
   assert.match(sidebar, /className=\{`session-item-children-glyph\$\{childrenRunningCount > 0 \? " agent-status-icon--pulse" : ""\}`\}/,
     "the fold head carries the app's one breathing class, and only while a run is live");
+  assert.match(sidebar, /className=\{`session-item-children-glyph\$\{[^}]*\}`\} aria-hidden="true" width="14" height="14"/,
+    "the head is 14px: the row's own icon scale, the size a plain row's leading bubble is, legible beside its count and inside the 18px pill");
   assert.match(sidebar, /className=\{`session-item-children-toggle\$\{collapsed \? " is-collapsed" : ""\}\$\{childrenRunningCount > 0 \? " is-running" : ""\}`\}/,
     "the toggle itself carries the state for a rule that wants the whole pill");
   assert.match(sidebar, /childrenRunningCount > 0 \? t\("chat\.subagentsRunning", \{ running: childrenRunningCount \}\)/,

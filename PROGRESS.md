@@ -942,3 +942,77 @@ See DECISIONS.md.
   `LSP ts/txt`: the strip is gone (`.extension-status-shelf` absent), the card
   shows one green row `LSP ts/txt` with the plain tooltip, and the card's
   `scrollWidth` equals its `clientWidth` at 1440px and 390px.
+
+## The report keeps the only branch chip; four chat plates read lighter (2026-11-26)
+
+**Task** — four UI asks: (1) no "Branch in new chat" chip inside a turn's
+"Process details", the chip only under the final report, and a nicer fork
+glyph; (2) the image overlay: drop the left/right navigation buttons, make the
+`3/3` count and the `x` translucent, the `x` round; (3) the prompt box three
+times taller; (4) the "Edited files" header gets its own background and the
+fold animates; (5) the sidebar's subagent icon a little bigger.
+
+**Implementation**
+- `components/MessageView.tsx` reads `ProcessDetailsContext` (the context a
+  thinking card already uses) and folds it into `canBranchInNewChat`, so a
+  step inside the group renders no chip; the reply that closes the turn keeps
+  its own. The glyph is now a fork (two heads above one node — the sidebar's
+  `.session-item-fork-glyph` shape at the chip's 1.75 stroke), replacing the
+  lopsided rail.
+- `components/ImagePreview.tsx`: the two `.image-preview-swipe-button` discs
+  are gone (they covered the photo and the tap-to-close area; the wheel, the
+  arrows, the keys and the ring travel the pictures). `app/native-theme.css`
+  (committed in the user's `[nosix]` polishing commit) makes the count and the
+  × translucent round plates: `color-mix(in srgb, var(--surface) 52%, transparent)`
+  + `backdrop-filter: blur(10px)`, the × `border-radius: 999px` with no
+  hairline; a hover closes the plate to the opaque base + tint.
+- `components/MessageView.tsx`: `USER_TEXT_COLLAPSE_HEIGHT` 220 → 660,
+  `USER_BUBBLE_MAX_HEIGHT` 300 → 900 (the bubble's cap stays above the text's,
+  or the bubble steals the scroll).
+- `components/TurnWrittenFiles.tsx`: the rows stay mounted inside
+  `.turn-files-list`, `inert` while folded; `app/native-theme.css` animates
+  `grid-template-rows: 0fr → 1fr` (`.turn-files-list-inner` clips), paints the
+  header as a band (the app's opaque `--surface` base under a flat
+  `--bg-selected` gradient; the rows are transparent on the card's 48% wash),
+  fades the rows, and drops the motion under `prefers-reduced-motion`.
+  `interpolate-size`/`calc-size` were rejected: Chromium-only, so WKWebView
+  and phones would jump.
+- `components/SessionSidebar.tsx`: the children fold head 11 → 14px, the row's
+  icon scale (the side-chat bubble is 14px); the 18px pill and the 32px phone
+  target are unchanged.
+
+**Tests**
+- Updated `components/MessageView.branch-in-new-chat.test.mjs` (the gate's four
+  terms, the glyph's circles, the old rail forbidden),
+  `MessageView.prompt-expand.test.mjs` (660/900),
+  `SessionSidebar.project-row.test.mjs` (14px), `ImagePreview.test.mjs` (no
+  swipe markup, the translucency and the round ×),
+  `TurnWrittenFiles.test.mjs` (the band's recipe, the animation, `inert`),
+  `TurnWrittenFiles.open-diff.test.mjs` ("folded" is now clipped + inert, not
+  absent), `e2e/image-swipe.mjs`, `e2e/panel-hover-wash.mjs`,
+  `e2e/subagent-run-glyph.mjs` (+ fixture).
+- New `e2e/turn-files-animation.mjs` (+ fixture, in `npm run test:e2e`):
+  Chromium and WebKit, light and dark — the header reads darker than its rows,
+  the list height moves between 0 and the rows' height with a mid-flight
+  sample, `inert` follows the state, the header keeps tinting while it animates,
+  and reduced motion keeps the end states.
+- Targeted unit run: 95 tests over the eight touched test files, 86 pass / 9
+  fail; a clean `HEAD` worktree run of the same nine files reproduces **the
+  same 9** failures (`app/css-variables`, two `app/native-theme-phone-pass`,
+  `AgentsConfig`, two `ChatInput`, `MobilePwaLayout`, `SessionSidebar`,
+  `scripts/upstream-css-baseline`), so none is this task's.
+- `lib/**` alone: 3047 pass / 0 fail. The rest: 1847 tests, the same 9 failures.
+- `node_modules/.bin/tsc --noEmit` clean; eslint clean on the touched sources.
+- `node e2e/image-swipe.mjs`, `node e2e/panel-hover-wash.mjs`,
+  `node e2e/turn-files-animation.mjs`, `node e2e/subagent-run-glyph.mjs` pass.
+- Live in Chromium on the dev server: 7 Process details groups with 241 footers
+  inside and **0** `.message-branch-action`; the reports carry 8 chips; the
+  sidebar heads measure 14px inside 18px pills; the open overlay has 0 direction
+  plates, a count and a × at alpha 0.52 with `blur(10px)` and `border-radius:
+  999px`, the hovered × at alpha 1; the user bubble caps at 900px.
+  `test-results/live-four/` keeps the screenshots.
+
+**Docs** — `docs/agents/fork-ui.md` (the chip's gate and glyph, the fold head's
+size, the overlay plate's two alphas), `docs/agents/sessions.md` (the Fork
+bullet), `docs/agents/fork-sessions.md` (the card's band and animation, the
+prompt box's caps), `docs/agents/client-platform.md` (the overlay's controls).

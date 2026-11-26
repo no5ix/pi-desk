@@ -14,6 +14,14 @@ import { chromium, webkit } from "playwright";
  * picture closes it, and the pictures of a turn are a ring, so the last one arrives at
  * the first. A mouse drag is deliberately not a swipe.
  *
+ * The ring has no direction plates: two 44px white discs sat on top of the user's own
+ * photograph, over the area that closes on a tap, and they hid the part of the picture
+ * they claimed to navigate. The gesture, the wheel and the arrow keys travel it, and the
+ * count says where the hand is. What the overlay does draw — the count and the close —
+ * is translucent here: both plates let the picture through, the close is a circle, and a
+ * hover closes the plate to solid so the control being aimed at is the least transparent
+ * thing on the screen.
+ *
  * Two shapes, on both engines: the phone (touch, 390px) and the desktop (a wheel, and
  * the arrow keys). WebKit is the phone's engine, Chromium the desktop's.
  */
@@ -66,6 +74,33 @@ const read = () => {
   const dialog = document.querySelector(".image-preview-dialog[open]");
   if (!dialog) return { open: false };
   const image = dialog.querySelector(".image-preview-image");
+  const plate = (node) => {
+    if (!node) return null;
+    const style = getComputedStyle(node);
+    // Both engines report a `color-mix()` result as `color(srgb r g b / a)`, not as
+    // `rgba()`: read the alpha after the slash, and fall back to the legacy 4th part.
+    const alphaOf = (value) => {
+      const text = String(value);
+      const after = text.split("/");
+      if (after.length > 1) {
+        const token = after[after.length - 1].replace(/[^\d.%]/g, "");
+        if (token.endsWith("%")) return parseFloat(token) / 100;
+        const n = parseFloat(token);
+        return Number.isNaN(n) ? 1 : Math.min(1, Math.max(0, n));
+      }
+      const parts = text.replace(/^rgba?\(|\)$/g, "").split(/[\s,]+/).map(Number);
+      return parts.length > 3 && Number.isFinite(parts[3]) ? parts[3] : 1;
+    };
+    const box = node.getBoundingClientRect();
+    const radius = parseFloat(style.borderRadius);
+    return {
+      alpha: alphaOf(style.backgroundColor),
+      background: style.backgroundColor,
+      radius: style.borderRadius,
+      round: box.width > 0 && Math.abs(box.width - box.height) < 1 && Math.min(box.width, box.height) / 2 <= radius,
+      blur: style.backdropFilter || style.webkitBackdropFilter || "none",
+    };
+  };
   return {
     open: true,
     count: dialog.dataset.count,
@@ -74,6 +109,8 @@ const read = () => {
     // their pixels, and their data URLs share a long prefix.
     picture: image.getAttribute("alt"),
     cursor: getComputedStyle(image).cursor,
+    countPlate: plate(dialog.querySelector(".image-preview-count")),
+    closePlate: plate(dialog.querySelector(".image-preview-close")),
     buttons: [...dialog.querySelectorAll(".image-preview-swipe-button")].map((button) => ({
       w: Math.round(button.getBoundingClientRect().width),
       shown: getComputedStyle(button).display !== "none",
@@ -104,8 +141,13 @@ for (const [name, browserType] of [["chromium", chromium], ["webkit", webkit]]) 
     assert.equal(opened.count, "3", `${name}: the overlay knows the three pictures of its container`);
     assert.equal(opened.label, "1 / 3", `${name}: the overlay says which picture this is`);
     assert.equal(opened.cursor, "zoom-out", `${name}: the picture says it is a way out`);
-    assert.deepEqual(opened.buttons.map((b) => b.shown), [true, true], `${name}: a thumb gets the two directions`);
-    assert.ok(opened.buttons.every((b) => b.w >= 44), `${name}: and both are finger-sized (${opened.buttons.map((b) => b.w).join("px")}px)`);
+    // No direction plates over the picture, on a thumb or anywhere: the swipe is the
+    // control, and two discs over a photo hide the photo.
+    assert.deepEqual(opened.buttons, [], `${name}: a thumb gets no plates over the picture`);
+    assert.ok(opened.countPlate.alpha < 1, `${name}: the count lets the picture through (${opened.countPlate.background})`);
+    assert.notEqual(opened.countPlate.blur, "none", `${name}: and a blur keeps its ink readable on any photo`);
+    assert.ok(opened.closePlate.alpha < 1, `${name}: the close is a translucent plate (${opened.closePlate.background})`);
+    assert.ok(opened.closePlate.round, `${name}: the close is a circle (${opened.closePlate.radius})`);
 
     const box = await page.locator(".image-preview-image").boundingBox();
     const y = Math.round(box.y + box.height / 2);
@@ -161,7 +203,7 @@ for (const [name, browserType] of [["chromium", chromium], ["webkit", webkit]]) 
     await page.waitForSelector("[data-image-preview-src]");
 
     const opened = await open(page);
-    assert.deepEqual(opened.buttons.map((b) => b.shown), [false, false], `${name}: a mouse needs no swipe plates`);
+    assert.deepEqual(opened.buttons, [], `${name}: a mouse gets no plates over the picture either`);
 
     const box = await page.locator(".image-preview-image").boundingBox();
     const y = Math.round(box.y + box.height / 2);

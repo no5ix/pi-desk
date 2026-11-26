@@ -52,7 +52,25 @@ const server = createServer((req, res) => {
 
 /** `rgb(...)` / `rgba(...)` → `{ red, green, blue, alpha }`. */
 function parseColor(value) {
-  const parts = String(value).replace(/^rgba?\(|\)$/g, "").split(/[\s,]+/).map(Number);
+  const text = String(value).trim();
+  // A `color-mix()` result comes back from both engines as `color(srgb r g b / a)` with
+  // 0–1 channels, not as `rgba(r, g, b, a)`. Reading only the legacy syntax made a
+  // translucent plate report the alpha of its own blue channel.
+  if (text.includes("/")) {
+    const tail = text.slice(text.lastIndexOf("/") + 1).replace(/\).*$/, "").trim();
+    const alpha = tail.endsWith("%") ? parseFloat(tail) / 100 : parseFloat(tail);
+    if (Number.isFinite(alpha)) {
+      if (!text.startsWith("color(")) {
+        // A colour this test cannot composite (an interpolation space such as `oklab`,
+        // sampled mid-transition): the alpha is readable, the channels are not.
+        return { red: NaN, green: NaN, blue: NaN, alpha };
+      }
+      const head = text.slice(text.indexOf("(") + 1, text.lastIndexOf("/")).trim().split(/[\s,]+/).map(Number);
+      const scale = head[0] <= 1 ? 255 : 1;
+      return { red: head[0] * scale, green: head[1] * scale, blue: head[2] * scale, alpha };
+    }
+  }
+  const parts = text.replace(/^rgba?\(|\)$/g, "").split(/[\s,]+/).map(Number);
   return { red: parts[0], green: parts[1], blue: parts[2], alpha: parts.length > 3 ? parts[3] : 1 };
 }
 
@@ -88,6 +106,8 @@ const measure = () => {
         image: computed.backgroundImage,
         opacity: computed.opacity,
         color: computed.color,
+        radius: computed.borderRadius,
+        blur: computed.backdropFilter || computed.webkitBackdropFilter || "none",
         // The dialog's `::backdrop` is not reachable from script, so the fixture paints
         // the same colour over a bright photo and the composite is done here.
         stage: getComputedStyle(document.querySelector(".photo-stage")).backgroundColor,
@@ -102,6 +122,15 @@ const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
 const port = await new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
 
+/** A control's own colour transitions are part of what is measured here, so a fixed
+ *  sleep can sample the plate mid-flight — a `color-mix()` fading to an opaque token
+ *  interpolates in `oklab`, whose channels are not rgb and cannot be composited. Wait
+ *  for the control's animations to finish instead. */
+const settle = (selector) => page.waitForFunction((sel) => {
+  const el = document.querySelector(sel);
+  return !el || el.getAnimations().every((animation) => animation.playState === "finished" || animation.playState === "idle");
+}, selector, { timeout: 4000 });
+
 for (const theme of ["light", "dark"]) {
   await page.goto(`http://127.0.0.1:${port}/`);
   await page.waitForSelector(".right-panel-close-button");
@@ -115,7 +144,8 @@ for (const theme of ["light", "dark"]) {
     `${theme}: at rest the button carries no plate of its own (${rest.button.background})`);
 
   await page.hover(".right-panel-close-button");
-  await page.waitForTimeout(120);
+  await settle(".right-panel-close-button");
+  await page.waitForTimeout(60);
   const hover = await page.evaluate(measure);
   const box = await page.locator(".right-panel-tab-strip").boundingBox();
   await page.screenshot({ path: `${out}/${theme}-hover.png`, clip: { x: box.x, y: box.y, width: box.width, height: box.height } });
@@ -147,13 +177,21 @@ for (const theme of ["light", "dark"]) {
   console.log(`ok: ${theme} — base ${hover.button.background} + tint ${tintMatch[0]} → ${washed.red},${washed.green},${washed.blue} over strip ${rest.strip}; the old wash ${rest.oldWash}`);
 
   // The image preview's close: clicking an attached image opens the photo in a dialog over
-  // a `rgba(0, 0, 0, .72)` backdrop, and upstream's hover plate is the palette's 4–5%
-  // overlay — over a dark backdrop that read as "a little bit transparent". The plate is
-  // solid in both states, and the hover is a step brighter.
+  // a `rgba(0, 0, 0, .72)` backdrop. The plate is translucent **at rest** — the user opened
+  // the overlay to look at the photograph, and an opaque token on top of it is a sticker —
+  // and a hover closes it: an opaque base with the palette's tint laid over that, so the
+  // control being aimed at is the least transparent thing on the screen. What must never
+  // come back is upstream's hover alone, the palette's 4–5% overlay with nothing under it:
+  // over a dark backdrop that read as "a little bit transparent" at the moment of pressing
+  // (the failure `app/native-theme-hover.test.mjs` pins).
   const photoRest = parseColor(rest.photo.background);
-  assert.equal(photoRest.alpha, 1, `${theme}: at rest the plate over the photo is opaque (${rest.photo.background})`);
+  assert.ok(photoRest.alpha > 0 && photoRest.alpha < 1,
+    `${theme}: at rest the plate over the photo lets the photo through (${rest.photo.background})`);
+  assert.notEqual(rest.photo.blur, "none",
+    `${theme}: a blur under the plate keeps its ink readable on any photograph (${rest.photo.blur})`);
   await page.hover(".image-preview-close");
-  await page.waitForTimeout(120);
+  await settle(".image-preview-close");
+  await page.waitForTimeout(60);
   const shot = await page.evaluate(measure);
   const plate = parseColor(shot.photo.background);
   assert.equal(Number(shot.photo.opacity), 1, `${theme}: the close never fades`);
@@ -180,10 +218,12 @@ for (const theme of ["light", "dark"]) {
   // above is not blind.
   await page.addStyleTag({ content: ".image-preview-close:hover { background: var(--bg-hover); }" });
   await page.hover(".image-preview-close");
-  await page.waitForTimeout(120);
-  const upstream = parseColor((await page.evaluate(measure)).photo.background);
+  await settle(".image-preview-close");
+  await page.waitForTimeout(60);
+  const upstreamShot = (await page.evaluate(measure)).photo.background;
+  const upstream = parseColor(upstreamShot);
   assert.ok(upstream.alpha < 1,
-    `${theme}: the control pass — upstream's hover plate is translucent (${(await page.evaluate(measure)).photo.background})`);
+    `${theme}: the control pass — upstream's hover plate is translucent (${upstreamShot})`);
   console.log(`ok: ${theme} — photo close base ${shot.photo.background} + tint ${photoTint[0]} → ${painted.red},${painted.green},${painted.blue} over the photo's backdrop ${behind.red},${behind.green},${behind.blue}; upstream's plate ${upstream.red},${upstream.green},${upstream.blue} / ${upstream.alpha}`);
 }
 

@@ -32,11 +32,16 @@ test("a row hands the file and its session to the opener, so the panel shows the
 test("the live card opens folded and keeps its rows hidden", () => {
   const folded = render({ files, sessionId: "s1", defaultExpanded: false });
   assert.match(folded, /aria-expanded="false"/);
-  assert.doesNotMatch(folded, /a\.ts/);
+  // The rows stay mounted so the card's height can animate (the collapse is a
+  // `grid-template-rows: 0fr` track, measured in e2e/turn-files-animation.mjs). Folded
+  // therefore means clipped, invisible and inert, not absent from the DOM.
+  assert.match(folded, /<div class="turn-files-list" inert=""/, "folded, the list is clipped and out of the tab order");
+  assert.doesNotMatch(folded, /turn-files-list is-open/, "and it is not marked open");
 
   const open = render({ files, sessionId: "s1" });
   assert.match(open, /aria-expanded="true"/);
   assert.match(open, /a\.ts/);
+  assert.match(open, /<div class="turn-files-list is-open"/, "open, the track is open and the rows are reachable");
 });
 
 test("the fold is the caller's choice, not the card's own state default", () => {

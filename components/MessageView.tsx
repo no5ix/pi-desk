@@ -167,8 +167,10 @@ function SafeMarkdownBody({ children, className, ...props }: React.ComponentProp
 }
 
 // Cap the user "sent" bubble's height so an abnormally long message does not
-// push the conversation off screen; overflow scrolls inside the bubble.
-const USER_BUBBLE_MAX_HEIGHT = 300;
+// push the conversation off screen; overflow scrolls inside the bubble. It sits
+// above USER_TEXT_COLLAPSE_HEIGHT: the inner box is the reading cap, and a bubble
+// shorter than it would scroll the bubble instead of the text.
+const USER_BUBBLE_MAX_HEIGHT = 900;
 
 function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
   const key = `${sessionId}:${entryId}:${blockIndex}`;
@@ -727,8 +729,13 @@ function AssistantMessageView({
   const unansweredTruncation = truncated && !hasAssistantAnswer(message);
   const [copied, setCopied] = useState(false);
   // A finished, saved reply has an entry to branch from; the streaming tail has none
-  // (its entry is not on disk, and forking it would copy a half answer).
-  const canBranchInNewChat = !isStreaming && !!entryId && !!onBranchInNewChat;
+  // (its entry is not on disk, and forking it would copy a half answer). Inside a turn's
+  // "Process details" the chip is gone too: the group is the record of how a turn worked,
+  // and a step's intermediate reply is not what a new chat continues from — the report
+  // below the group is, and it keeps its own chip. Opening the group and meeting a chip
+  // under every step is a column of buttons that all fork the same conversation.
+  const insideProcessDetails = useContext(ProcessDetailsContext);
+  const canBranchInNewChat = !isStreaming && !!entryId && !!onBranchInNewChat && !insideProcessDetails;
   const streamStartRef = useRef<number | null>(null);
   const [tps, setTps] = useState<number | null>(null);
   const blockItemsRef = useRef(blockItems);
@@ -1057,11 +1064,16 @@ function AssistantMessageView({
             onMouseEnter={(e) => { if (!forking) e.currentTarget.style.color = "var(--accent)"; }}
             onMouseLeave={(e) => { if (!forking) e.currentTarget.style.color = "var(--text-dim)"; }}
           >
+            {/* A fork: two heads above, one trunk below — the reply splits into a
+                session of its own. The same mark the sidebar puts on a forked row
+                (`.session-item-fork-glyph`), so the chip and the row it creates share
+                one shape. Thinner stroke than the row's: at 12px on a filled chip the
+                2px glyph reads heavy next to Copy's 1.75. */}
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="6" y1="3" x2="6" y2="15" />
-              <circle cx="18" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <path d="M18 9a9 9 0 0 1-9 9" />
+              <circle cx="6" cy="6" r="2.5" />
+              <circle cx="18" cy="6" r="2.5" />
+              <circle cx="12" cy="18" r="2.5" />
+              <path d="M6 8.5V10a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V8.5M12 13v2.5" />
             </svg>
             <span className="message-action-label">{forking ? t("i18n.creating") : t("i18n.branchInNewChat")}</span>
           </button>
@@ -1924,7 +1936,11 @@ function PairedResult({ text, isEmpty, isError }: {
   );
 }
 
-const USER_TEXT_COLLAPSE_HEIGHT = 220;
+/** A collapsed prompt's own scroll box. Three times the cap it started at: the box
+ *  exists so a long prompt is readable without pressing "Expand", and 220px showed a
+ *  task's first four lines and a fade. The overflow rule (collapse only above the cap
+ *  + 60) and the bubble's own cap both read this number. */
+const USER_TEXT_COLLAPSE_HEIGHT = 660;
 function CollapsibleUserText({ text, cwd, onOpenFile, onExpandedChange, onContentToggle }: {
   text: string;
   cwd?: string;

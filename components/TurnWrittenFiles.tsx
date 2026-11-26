@@ -103,27 +103,37 @@ export function TurnWrittenFiles({ files, onOpenFile, sessionId, defaultExpanded
         {counted.length > 0 && <LineStats added={totalAdded} removed={totalRemoved} />}
         <Chevron className="turn-files-chevron" />
       </button>
-      {expanded && files.map(({ filePath, added, removed }) => {
-        const name = getFileName(filePath);
-        const isMissing = missing.has(filePath);
-        return (
-          <button
-            key={filePath}
-            type="button"
-            className={`turn-files-row${isMissing ? " is-missing" : ""}`}
-            title={isMissing ? `${filePath}\n${t("files.notFound")}` : filePath}
-            aria-label={t("chat.openWrittenFile", { name })}
-            onClick={() => onOpenFile?.(filePath, sessionId)}
-            onContextMenu={(event) => showFileMenu(event, { filePath })}
-          >
-            <span className="turn-files-icon">{getFileIcon(name, 14)}</span>
-            <span className="turn-files-name">{name}</span>
-            {isMissing && <span className="turn-files-missing">{t("chat.writtenFileMissing")}</span>}
-            <LineStats added={added} removed={removed} />
-            <Chevron className="turn-files-row-chevron" />
-          </button>
-        );
-      })}
+      {/* The rows stay in the DOM and the list animates: `grid-template-rows: 0fr → 1fr`
+          with a clipping child is the one height-to-auto transition every engine in this
+          app animates (Chromium, WebKit, Firefox) — `interpolate-size`/`calc-size()` are
+          Chromium-only, so the collapse would jump on the desktop's WKWebView and on a
+          phone. A collapsed list is `inert`, so its rows leave the tab order and the
+          accessibility tree while they are clipped away. */}
+      <div className={`turn-files-list${expanded ? " is-open" : ""}`} inert={!expanded}>
+        <div className="turn-files-list-inner">
+          {files.map(({ filePath, added, removed }) => {
+            const name = getFileName(filePath);
+            const isMissing = missing.has(filePath);
+            return (
+              <button
+                key={filePath}
+                type="button"
+                className={`turn-files-row${isMissing ? " is-missing" : ""}`}
+                title={isMissing ? `${filePath}\n${t("files.notFound")}` : filePath}
+                aria-label={t("chat.openWrittenFile", { name })}
+                onClick={() => onOpenFile?.(filePath, sessionId)}
+                onContextMenu={(event) => showFileMenu(event, { filePath })}
+              >
+                <span className="turn-files-icon">{getFileIcon(name, 14)}</span>
+                <span className="turn-files-name">{name}</span>
+                {isMissing && <span className="turn-files-missing">{t("chat.writtenFileMissing")}</span>}
+                <LineStats added={added} removed={removed} />
+                <Chevron className="turn-files-row-chevron" />
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
