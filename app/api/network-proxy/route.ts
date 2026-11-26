@@ -11,6 +11,7 @@ import {
 } from "@/lib/network-proxy";
 import { isLocalRequest } from "@/lib/remote-access";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,7 +54,7 @@ export async function PUT(req: Request) {
     return NextResponse.json(forRequest(true, settings, effective));
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 500 },
     );
   }

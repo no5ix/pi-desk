@@ -13,6 +13,7 @@ import { summarizeReleaseHighlights } from "@/lib/app-update-summary";
 import { installLatestDesktopRelease, type DesktopUpgradeProgress } from "@/lib/desktop-updater";
 import { useI18n } from "@/hooks/useI18n";
 import { ConfigButton } from "./SettingsUi";
+import { errorMessage } from "@/lib/errors";
 
 interface Props {
   /** Lets the host settings dialog stay up while a signed update is installing. */
@@ -125,7 +126,7 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
       }
     } catch (error) {
       setUpgradeProgress(null);
-      setUpgradeError(error instanceof Error ? error.message : String(error));
+      setUpgradeError(errorMessage(error));
     }
   };
 

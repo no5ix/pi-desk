@@ -19,6 +19,7 @@ import { clearDraft } from "@/lib/draft-store";
 import { movePanelTab, orderPanelTabs } from "@/lib/panel-tab-order";
 import { TabBar, type Tab } from "./TabBar";
 import { LazyTerminalPanel as TerminalPanel, preloadTerminalPanel } from "./LazyTerminalPanel";
+import { errorMessage } from "@/lib/errors";
 
 // Heavy, rarely-used surfaces are code-split out of the main bundle. The
 // config modals may never be opened at all; FileViewer drags in markdown +
@@ -1118,7 +1119,7 @@ export function AppShell() {
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setInitialCwdError(error instanceof Error ? error.message : String(error));
+        setInitialCwdError(errorMessage(error));
         setInitialCwdStatus("error");
       });
 
@@ -1756,7 +1757,7 @@ export function AppShell() {
       setAutoNameStatus({ kind: "success" });
       autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 1800);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorMessage(error);
       const authenticationFailed = /\b401\b|authentication[_ ](?:error|fails?)|invalid[_ ]api[_ ]?key/i.test(detail);
       const message = authenticationFailed
         ? translate("title.authError")
@@ -2211,7 +2212,7 @@ export function AppShell() {
       setModelsRefreshKey((key) => key + 1);
       setSessionKey((key) => key + 1);
     } catch (error) {
-      setProjectTrustError({ error: error instanceof Error ? error.message : String(error) });
+      setProjectTrustError({ error: errorMessage(error) });
     } finally {
       setProjectTrustBusy(false);
     }

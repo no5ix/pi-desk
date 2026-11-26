@@ -5,6 +5,7 @@ import { useI18n } from "@/hooks/useI18n";
 import type { EffectiveNetworkProxy, NetworkProxySettings } from "@/lib/network-proxy";
 import type { ProxyTestResult } from "@/lib/network-proxy-test";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { errorMessage } from "@/lib/errors";
 
 interface NetworkProxyResponse {
   settings: NetworkProxySettings;
@@ -65,7 +66,7 @@ export function NetworkProxySection() {
       setNoProxyDraft(result.settings.noProxy);
       setSaved(true);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : String(error));
+      setSaveError(errorMessage(error));
     } finally {
       setSaving(false);
     }
@@ -84,7 +85,7 @@ export function NetworkProxySection() {
       if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
       setTestResult(result);
     } catch (error) {
-      setTestResult({ error: error instanceof Error ? error.message : String(error) });
+      setTestResult({ error: errorMessage(error) });
     } finally {
       setTesting(false);
     }

@@ -30,6 +30,7 @@ import { samePath } from "@/lib/paths";
 import { moveFolderToTrash } from "@/lib/trash";
 import { replaceFileAtomicSync } from "@/lib/atomic-file";
 import { forgetSessionUiState } from "@/lib/session-ui-state";
+import { errorMessage } from "@/lib/errors";
 
 export async function GET(
   req: Request,
@@ -389,7 +390,7 @@ export async function DELETE(
     try {
       await forgetSessionUiState(deletedSessionIds);
     } catch (error) {
-      console.warn(`[pi-web] could not clear the sidebar state of deleted session ${id}: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[pi-web] could not clear the sidebar state of deleted session ${id}: ${errorMessage(error)}`);
     }
     invalidateSessionListCache();
     let folderTrashed = false;

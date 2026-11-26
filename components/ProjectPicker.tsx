@@ -7,6 +7,7 @@ import { isTauriDesktop } from "@/lib/desktop-updater";
 import { selectDirectoryNative } from "@/lib/desktop-window";
 import { isImeComposing } from "@/lib/ime";
 import { useI18n } from "@/hooks/useI18n";
+import { errorMessage } from "@/lib/errors";
 
 interface ProjectPickerProps {
   recentProjects: string[];
@@ -123,7 +124,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
       closeDropdown();
       return true;
     } catch (e) {
-      setCustomPathError(e instanceof Error ? e.message : String(e));
+      setCustomPathError(errorMessage(e));
       return false;
     } finally {
       setCustomPathValidating(false);
@@ -148,7 +149,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
       onSelectCwd(path);
       closeDropdown();
     } catch (e) {
-      setCustomPathError(e instanceof Error ? e.message : String(e));
+      setCustomPathError(errorMessage(e));
       setDropdownOpen(true);
     }
   }, [selectedCwd, homeDir, onSelectCwd, closeDropdown]);
@@ -167,7 +168,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
       }
       setDropdownOpen(true);
     } catch (e) {
-      setCustomPathError(e instanceof Error ? e.message : String(e));
+      setCustomPathError(errorMessage(e));
       if (!isTauriDesktop()) {
         setCustomPathOpen(true);
       }

@@ -38,6 +38,7 @@ import {
   type FileViewerDisplayMode as DisplayMode,
   type FileViewerState,
 } from "@/lib/file-viewer-state";
+import { errorMessage } from "@/lib/errors";
 
 export type { FileViewerState } from "@/lib/file-viewer-state";
 
@@ -350,7 +351,7 @@ function DesktopPathActions({ filePath }: { filePath: string }) {
   const run = (action: (nativeApi: typeof import("@/lib/desktop-native")) => Promise<void>) => {
     import("@/lib/desktop-native").then(action).catch((error: unknown) => {
       appNotify.error({
-        message: t("fileViewer.actionFailed", { error: error instanceof Error ? error.message : String(error) }),
+        message: t("fileViewer.actionFailed", { error: errorMessage(error) }),
       });
     });
   };

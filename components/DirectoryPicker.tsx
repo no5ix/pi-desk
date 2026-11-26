@@ -7,6 +7,7 @@ import { readJsonOrThrow } from "@/lib/fetch-json";
 import { isImeComposing } from "@/lib/ime";
 import { AppSelect } from "./AppSelect";
 import { APP_PREF_KEYS, type AppPrefKey, getPrefJson, getPref, setPrefJson, setPref } from "@/lib/app-prefs";
+import { errorMessage } from "@/lib/errors";
 
 interface DirectoryEntry {
   name: string;
@@ -273,7 +274,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
       setDirectories(data.directories ?? []);
       setDrives(data.drives ?? null);
     } catch (cause) {
-      setLoadError(cause instanceof Error ? cause.message : String(cause));
+      setLoadError(errorMessage(cause));
     } finally {
       setLoading(false);
     }
@@ -356,7 +357,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
       setDirectoryName("");
       await navigateTo(createdPath);
     } catch (cause) {
-      setCreateError(cause instanceof Error ? cause.message : String(cause));
+      setCreateError(errorMessage(cause));
     } finally {
       setCreating(false);
     }

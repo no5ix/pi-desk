@@ -10,6 +10,7 @@ import type {
   ThinkingProbeSummary,
 } from "@/lib/thinking-level-probe";
 import { THINKING_LEVELS } from "@/lib/thinking-levels";
+import { errorMessage } from "@/lib/errors";
 
 type ProbeState =
   | { phase: "idle" }
@@ -97,7 +98,7 @@ export function ThinkingLevelProbe({
       });
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
-      setState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+      setState({ phase: "error", message: errorMessage(error) });
     }
   }, [model, provider, providerName]);
 

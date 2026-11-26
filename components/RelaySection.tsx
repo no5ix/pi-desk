@@ -8,6 +8,7 @@ import { formatRelativeTime } from "@/lib/i18n/format";
 import type { PendingPairing, RelayStatus } from "@/lib/relay/connector";
 import type { PairedDevice } from "@/lib/relay/store";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { errorMessage } from "@/lib/errors";
 
 interface RelayResponse {
   local: boolean;
@@ -101,7 +102,7 @@ export function RelaySection() {
       if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
       return body;
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      setError(errorMessage(caught));
       return null;
     } finally {
       setBusy(false);

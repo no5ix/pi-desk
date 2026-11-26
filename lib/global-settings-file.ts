@@ -4,6 +4,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import lockfile from "proper-lockfile";
 import { replaceFileAtomicSync } from "./atomic-file";
 import { isRecord } from "./is-record";
+import { errorMessage } from "./errors";
 
 // Locked read-modify-write of the global `settings.json` for the keys pi's
 // SettingsManager has no setter for (`defaultTools`). The lock is the one
@@ -27,7 +28,7 @@ function parseSettings(path: string): Record<string, unknown> {
     // say which file is broken. The error stays a `SyntaxError`, and the file
     // stays where it is: pi reads and writes the same file, and it refuses
     // every write until the user repairs it by hand.
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = errorMessage(error);
     throw new SyntaxError(`${path}: ${reason}`);
   }
   if (!isRecord(parsed)) throw new Error("Invalid settings.json: expected an object");

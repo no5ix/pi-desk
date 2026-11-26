@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { errorResponse, rejectUnsafeWrite } from "@/lib/scheduled-tasks/api";
 import { nextCronRuns, systemTimezone, validateCron } from "@/lib/scheduled-tasks/cron";
 import { isValidationError } from "@/lib/scheduled-tasks/types";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
     } catch (error) {
       return NextResponse.json({
         valid: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
         ...(isValidationError(error) && error.key ? { key: error.key, ...(error.params ? { params: error.params } : {}) } : {}),
       });
     }

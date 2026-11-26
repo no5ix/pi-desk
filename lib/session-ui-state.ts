@@ -14,6 +14,7 @@ import {
   type SessionUiStateRequest,
 } from "./session-ui-state-shared";
 import { errorCode } from "./errors";
+import { errorMessage } from "./errors";
 
 // The sidebar's pins, archive, project order and project names
 // (`lib/session-ui-state-shared.ts` has the rules) in `pi-web-session-state.json`
@@ -95,7 +96,7 @@ function notifySessionUiStateChange(): void {
       listener();
     } catch (error) {
       // One broken listener (a closed stream, say) must not stop the others.
-      console.warn(`[pi-web] a session UI state listener threw: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[pi-web] a session UI state listener threw: ${errorMessage(error)}`);
     }
   }
 }
@@ -173,7 +174,7 @@ export function readSessionUiState(path?: string): SessionUiState {
   try {
     return copyState(loadState(path ?? getSessionUiStatePath()));
   } catch (error) {
-    console.warn(`[pi-web] could not read the session UI state: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[pi-web] could not read the session UI state: ${errorMessage(error)}`);
     return emptySessionUiState();
   }
 }
@@ -194,7 +195,7 @@ function backUpCorruptFile(path: string): void {
     renameSync(path, backup);
     console.warn(`[pi-web] ${path} could not be parsed; moved it to ${backup} and started from an empty session UI state`);
   } catch (error) {
-    console.warn(`[pi-web] ${path} could not be parsed and could not be moved aside (${error instanceof Error ? error.message : String(error)}); starting from an empty session UI state`);
+    console.warn(`[pi-web] ${path} could not be parsed and could not be moved aside (${errorMessage(error)}); starting from an empty session UI state`);
   }
 }
 

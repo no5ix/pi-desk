@@ -47,6 +47,7 @@ import { NetworkProxySection } from "./NetworkProxySection";
 import { ChatsSettingsSection } from "./ChatsSettingsSection";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { TerminalSettingsSection } from "./TerminalSettingsSection";
+import { errorMessage } from "@/lib/errors";
 
 interface Props {
   cwd: string | null;
@@ -149,7 +150,7 @@ function GeneralSettings({
         if (!cancelled) setShellSettings(data);
       })
       .catch((cause) => {
-        if (!cancelled) setShellError(cause instanceof Error ? cause.message : String(cause));
+        if (!cancelled) setShellError(errorMessage(cause));
       });
     return () => { cancelled = true; };
   }, []);
@@ -170,7 +171,7 @@ function GeneralSettings({
         onSessionReloaded();
       }
     } catch (cause) {
-      setShellError(cause instanceof Error ? cause.message : String(cause));
+      setShellError(errorMessage(cause));
     } finally {
       setShellSaving(false);
     }

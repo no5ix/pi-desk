@@ -42,6 +42,7 @@ import { registerFileWatch } from "@/lib/file-watch-registry";
 import { createFileWatchStream, MAX_WATCHED_FILES_PER_STREAM, type FileWatchEntry } from "@/lib/file-watch-stream";
 import { pageStreamLabel, registerPageStream } from "@/lib/page-stream-registry";
 import { contentDisposition } from "@/lib/content-disposition";
+import { errorMessage } from "@/lib/errors";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -324,7 +325,7 @@ export async function POST(
           try {
             fs.unlinkSync(destination);
           } catch (error) {
-            errors.push({ name: source.fileName, error: error instanceof Error ? error.message : String(error) });
+            errors.push({ name: source.fileName, error: errorMessage(error) });
             continue;
           }
         }
@@ -332,7 +333,7 @@ export async function POST(
           fs.copyFileSync(source.sourcePath, destination);
           uploaded.push(source.fileName);
         } catch (error) {
-          errors.push({ name: source.fileName, error: error instanceof Error ? error.message : String(error) });
+          errors.push({ name: source.fileName, error: errorMessage(error) });
         }
       }
 
@@ -403,7 +404,7 @@ export async function POST(
       try {
         bytes = Buffer.from(await file.arrayBuffer());
       } catch (error) {
-        errors.push({ name: file.name, error: error instanceof Error ? error.message : String(error) });
+        errors.push({ name: file.name, error: errorMessage(error) });
         continue;
       }
 
@@ -415,7 +416,7 @@ export async function POST(
         }
         uploaded.push(file.name);
       } catch (error) {
-        errors.push({ name: file.name, error: error instanceof Error ? error.message : String(error) });
+        errors.push({ name: file.name, error: errorMessage(error) });
       }
     }
 
@@ -427,7 +428,7 @@ export async function POST(
     if (error instanceof RequestBodyTooLargeError) {
       return NextResponse.json({ error: "Import request is too large" }, { status: 413 });
     }
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }
 

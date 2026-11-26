@@ -49,6 +49,7 @@ import { addWorktree, removeWorktree } from "./worktree";
 import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
 import { isThinkingLevel } from "./thinking-levels";
+import { errorMessage } from "@/lib/errors";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -576,7 +577,7 @@ async function cleanupWorktree(
     await removeWorktree(parentCwd, worktree.path);
     return undefined;
   } catch (error) {
-    return `Worktree retained at ${worktree.path}: ${error instanceof Error ? error.message : String(error)}`;
+    return `Worktree retained at ${worktree.path}: ${errorMessage(error)}`;
   }
 }
 
@@ -884,7 +885,7 @@ export function createSubagentController(
             completedAt: new Date().toISOString(),
             ...(text ? { result: text } : {}),
             ...(!aborted
-              ? { error: error instanceof Error ? error.message : String(error) }
+              ? { error: errorMessage(error) }
               : {}),
           };
         } finally {
@@ -949,7 +950,7 @@ export function createSubagentController(
       if (stored.abortRequested) queued.cancel();
       void queued.promise.then(resolveCompletion, (error) => {
         if (dropSubagentRun(initialRun.sessionId, stored)) dependencies.invalidateSessionList();
-        resolveCompletion({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) });
+        resolveCompletion({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: errorMessage(error) });
       });
 
       return { run: stored.run, completion: stored.completion };
@@ -1056,7 +1057,7 @@ export function createSubagentController(
           status: stored.abortRequested || request.signal?.aborted ? "aborted" : "failed",
           completedAt: new Date().toISOString(),
           ...(text ? { result: text } : {}),
-          ...(!stored.abortRequested && !request.signal?.aborted ? { error: error instanceof Error ? error.message : String(error) } : {}),
+          ...(!stored.abortRequested && !request.signal?.aborted ? { error: errorMessage(error) } : {}),
         };
       } finally {
         limiter?.restore();
@@ -1106,7 +1107,7 @@ export function createSubagentController(
     if (stored.abortRequested) queued.cancel();
     void queued.promise.then(resolveCompletion, (error) => {
       if (dropSubagentRun(request.sessionId, stored)) dependencies.invalidateSessionList();
-      resolveCompletion({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) });
+      resolveCompletion({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: errorMessage(error) });
     });
     return { run: stored.run, completion };
   }
@@ -1219,7 +1220,7 @@ export function createSubagentController(
         if (takeResultConsumed(run)) return finish("consumed");
         if (!canSteerAfterTurn(parent, run.parentSessionId, event.message)) return;
         parent.inner.sendCustomMessage(parentNotificationMessage(run), { deliverAs: "steer" }).catch((error) => {
-          console.error("[pi-web] failed to steer subagent completion:", error instanceof Error ? error.message : String(error));
+          console.error("[pi-web] failed to steer subagent completion:", errorMessage(error));
         });
       });
       const idleCheck = setInterval(() => {

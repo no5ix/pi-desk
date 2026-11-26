@@ -75,6 +75,7 @@ import { OAuthPastePanel } from "./OAuthPastePanel";
 import { ProviderIcon } from "./ProviderIcon";
 import { ProviderUsageSummary } from "./ProviderUsageSummary";
 import { readJsonOrThrow } from "@/lib/fetch-json";
+import { errorMessage } from "@/lib/errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -404,7 +405,7 @@ function ProviderDetail({ name, editingName, fallbackLabel, provider, onChange, 
       setDiscoveryState({ phase: "success", models: data.models, endpoint: data.endpoint ?? provider.baseUrl ?? "" });
     } catch (error) {
       if (requestId !== discoveryRequestIdRef.current) return;
-      setDiscoveryState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+      setDiscoveryState({ phase: "error", message: errorMessage(error) });
     }
   }, [discoveryState.phase, name, provider]);
 
@@ -1051,7 +1052,7 @@ function ModelDetail({
         responseText: d.responseText,
       });
     } catch (e) {
-      setTestState({ phase: "error", message: e instanceof Error ? e.message : String(e) });
+      setTestState({ phase: "error", message: errorMessage(e) });
     }
   }, [model, provider, providerName, testState.phase]);
 
@@ -1083,7 +1084,7 @@ function ModelDetail({
       });
     } catch (error) {
       if (requestId !== catalogRequestIdRef.current) return;
-      setCatalogState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+      setCatalogState({ phase: "error", message: errorMessage(error) });
     }
   }, [catalogState.phase, model, onChange, effectiveBaseUrl, providerName]);
 
@@ -2106,7 +2107,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, onOpenMcp 
             ? { type: "provider", name: keys[0] }
             : null);
       })
-      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) => setLoadError(errorMessage(e)))
       .finally(() => setLoading(false));
     refreshAuthProviders();
   }, [refreshAuthProviders]);

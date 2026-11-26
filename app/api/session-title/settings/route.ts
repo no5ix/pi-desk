@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { isAutoTitleEnabled, writeAutoTitleEnabled } from "@/lib/session-title-settings";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ enabled: writeAutoTitleEnabled(body.enabled) });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 500 },
     );
   }

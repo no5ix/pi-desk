@@ -12,6 +12,7 @@ import {
   resolveSessionPath,
 } from "@/lib/session-reader";
 import type { SessionInfo } from "@/lib/types";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -92,6 +93,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
       return refusal(409, error.code, error.message);
     }
-    return refusal(500, "failed", error instanceof Error ? error.message : String(error));
+    return refusal(500, "failed", errorMessage(error));
   }
 }

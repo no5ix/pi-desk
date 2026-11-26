@@ -3,7 +3,6 @@ import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, statSync, writeFileSync } from "fs";
-import { resolve } from "path";
 import { isDeepStrictEqual } from "util";
 import { validateAgentImages } from "./image-attachments";
 import { userImageDisplayText, userMessageImageCount } from "./user-image-display";
@@ -25,6 +24,7 @@ import { realPathOrResolved } from "./paths";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { announceAttention, announceRunEnd } from "./task-completion-server";
 import type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
+import { errorMessage } from "@/lib/errors";
 export type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 import { isVerboseLogging } from "../bin/pi-web-options.js";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
@@ -552,7 +552,7 @@ export class AgentSessionWrapper {
       changed: (items, pendingVersion) => this.emit({ type: "composer_queue_update", items, pendingVersion }),
       failed: error => this.emit({
         type: "prompt_error",
-        errorMessage: error instanceof Error ? error.message : String(error),
+        errorMessage: errorMessage(error),
       }),
     });
     this.chatOnlyExtensionModel = options.chatOnlyExtensionModel;
@@ -1102,7 +1102,7 @@ export class AgentSessionWrapper {
       if (disposition === undefined) this.parkDuringCompaction(entry);
       this.emit({
         type: "prompt_error",
-        errorMessage: failure instanceof Error ? failure.message : String(failure),
+        errorMessage: errorMessage(failure),
       });
     }
     // The client of a plain prompt waits for prompt_done; the delivery that started
@@ -1699,7 +1699,7 @@ export class AgentSessionWrapper {
             if (preflightAccepted) {
               this.emit({
                 type: "prompt_error",
-                errorMessage: error instanceof Error ? error.message : String(error),
+                errorMessage: errorMessage(error),
               });
               if (!streamingBehavior) this.emit(this.promptDoneEvent());
             }
@@ -2405,7 +2405,7 @@ export class AgentSessionWrapper {
       type: "extension_error",
       extensionPath: `extension-widget:${key}`,
       event: "setWidget",
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     });
   }
 
@@ -2550,7 +2550,7 @@ export class AgentSessionWrapper {
     try {
       lines = custom.component.render(custom.width);
     } catch (error) {
-      lines = [`Extension custom UI render failed: ${error instanceof Error ? error.message : String(error)}`];
+      lines = [`Extension custom UI render failed: ${errorMessage(error)}`];
     }
     const event = {
       type: "extension_ui_request",
@@ -2595,7 +2595,7 @@ export class AgentSessionWrapper {
         type: "extension_error",
         extensionPath: `custom-ui:${id}`,
         event: "custom_ui_input",
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
     }
   }
@@ -2670,7 +2670,7 @@ export class AgentSessionWrapper {
             type: "extension_error",
             extensionPath: `custom-ui:${id}`,
             event: "custom_ui",
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage(error),
           });
           finish(undefined as T);
         });

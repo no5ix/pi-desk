@@ -6,6 +6,7 @@
  * plain POST the server answers 409 for when the switch is off. Failures are silent in
  * the completion path — a notification must never break a finished task's handler.
  */
+import { errorMessage } from "./errors";
 
 export interface NtfySettingsClient {
   enabled: boolean;
@@ -43,7 +44,7 @@ export async function saveNtfySettings(patch: Partial<NtfySettingsClient>): Prom
     }
     return data as NtfySettingsClient;
   } catch (error: unknown) {
-    return { error: error instanceof Error ? error.message : String(error) };
+    return { error: errorMessage(error) };
   }
 }
 
@@ -63,6 +64,6 @@ export async function sendNtfyNotification(options: {
     const data = await response.json().catch(() => null) as { error?: unknown } | null;
     return { sent: false, error: typeof data?.error === "string" ? data.error : `ntfy responded ${response.status}` };
   } catch (error: unknown) {
-    return { sent: false, error: error instanceof Error ? error.message : String(error) };
+    return { sent: false, error: errorMessage(error) };
   }
 }

@@ -3,6 +3,7 @@ import { resolveSessionPath } from "@/lib/session-reader";
 import { startRpcSession, getRpcSession, setRpcSessionTools } from "@/lib/rpc-manager";
 import { getComposerQueueVersion, getPendingComposerMessages } from "@/lib/composer-queue";
 import { cwdMissingBody, missingCwdFromBody } from "@/lib/missing-cwd";
+import { errorMessage } from "@/lib/errors";
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
@@ -65,7 +66,7 @@ export async function POST(
     // Read by its fields: the wrapper that threw may come from another route's bundle.
     const missingCwd = missingCwdFromBody(error);
     return NextResponse.json({
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
       ...(missingCwd ? cwdMissingBody(missingCwd) : {}),
       ...(commandType === "prompt" && !promptAccepted
         ? { code: "prompt_rejected", accepted: false }

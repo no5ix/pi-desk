@@ -5,6 +5,7 @@ import { buildSessionFileDiff } from "@/lib/session-file-diff";
 import { hasParentDirectorySegment } from "@/lib/path-security";
 import { isWindowsAbsolutePath } from "@/lib/file-access";
 import type { AgentMessage } from "@/lib/types";
+import { errorMessage } from "@/lib/errors";
 
 /**
  * The diff a session made to one file: `GET ?path=/abs/file`.
@@ -58,6 +59,6 @@ export async function GET(
       changes: diff.changes,
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

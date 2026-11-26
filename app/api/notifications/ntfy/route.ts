@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { publishNtfyMessage } from "@/lib/ntfy-publish";
 import { parseNtfyUpdate, readNtfySettings, writeNtfySettings } from "@/lib/ntfy-settings";
 import { isLocalRequest } from "@/lib/remote-access";
+import { errorMessage } from "@/lib/errors";
 
 /**
  * GET  /api/notifications/ntfy                       → the ntfy settings
@@ -56,7 +57,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ ...settings, local: true });
   } catch (error: unknown) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 500 },
     );
   }

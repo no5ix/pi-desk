@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { fetchRemote, listLocalBranches, listRemoteBranches, partitionBranchList, resolveProject } from "@/lib/worktree";
 import { isCwdAllowed } from "@/lib/file-access";
+import { errorMessage } from "@/lib/errors";
 
 // POST /api/worktrees/fetch  body: { cwd }  →  { branches, remoteBranches }
 // Runs `git fetch --prune` and returns the fresh branch lists so the switcher
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
     const { local: branches, remoteOnly: remoteBranches } = partitionBranchList(local, remote);
     return NextResponse.json({ success: true, branches, remoteBranches });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

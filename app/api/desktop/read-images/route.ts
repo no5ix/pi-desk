@@ -6,6 +6,7 @@ import { getImageMime } from "@/lib/file-types";
 import { MAX_ATTACHED_IMAGE_BYTES, MAX_ATTACHED_IMAGES } from "@/lib/image-attachments";
 import { parseJsonWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
 import { isDesktopApiRequestAllowed } from "@/lib/desktop-api-auth";
+import { errorMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Image selection is too large" }, { status: 413 });
     }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 500 },
     );
   }

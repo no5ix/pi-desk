@@ -5,6 +5,7 @@ import { chatDownloadsDir, isNetworkExposedServer } from "@/lib/chat-file-access
 import { isFileManagerSupported, launchFileManager } from "@/lib/open-in-file-manager";
 import { isLocalRequest } from "@/lib/remote-access";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -41,6 +42,6 @@ export async function POST(request: Request) {
     await launchFileManager(rel === "" ? target : dirname(target));
     return NextResponse.json({ opened: true });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

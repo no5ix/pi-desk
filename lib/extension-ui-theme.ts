@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { getPackageDir, Theme } from "@earendil-works/pi-coding-agent";
+import { errorMessage } from "@/lib/errors";
 
 // Extension components, widgets and statuses take a pi Theme; the page renders
 // their lines through `AnsiText`. pi-web answers as a terminal that reports no
@@ -98,7 +99,7 @@ async function loadPaletteTheme(): Promise<void> {
     if (typeof loaded.generateSystemThemeColors !== "function") throw new Error(`${path} has no generateSystemThemeColors`);
     globalThis.__piWebExtensionUiTheme = createPaletteTheme(loaded.generateSystemThemeColors({}));
   } catch (error) {
-    console.warn(`[pi-web] Extension UI stays plain text: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[pi-web] Extension UI stays plain text: ${errorMessage(error)}`);
   }
 }
 

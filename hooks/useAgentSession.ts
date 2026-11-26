@@ -65,6 +65,7 @@ import {
   streamReducer,
   type ClientAssistantMessageEvent,
 } from "@/lib/streaming-message";
+import { errorMessage } from "@/lib/errors";
 
 export interface SessionData {
   sessionId: string;
@@ -2045,7 +2046,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           ? prev
           : [...prev.slice(0, optimisticIndex), ...prev.slice(optimisticIndex + 1)];
       });
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      addNotice({ type: "error", message: errorMessage(e) });
       restoreSubmission(message, images, composerDraftKey);
       optimisticUserMessageKeyRef.current = null;
       // Rejection only describes this submission. Another tab or an event we
@@ -2090,7 +2091,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       promoteNewSession(1, inputText);
     } catch (e) {
       console.error("Failed to execute shell command:", e);
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      addNotice({ type: "error", message: errorMessage(e) });
       restoreSubmission(inputText, undefined, composerDraftKey);
     } finally {
       bashRunningRef.current = false;
@@ -2138,7 +2139,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
     } catch (e) {
       console.error("Fork failed:", e);
-      addNotice({ type: "error", message: t("chat.forkFailed", { error: e instanceof Error ? e.message : String(e) }) });
+      addNotice({ type: "error", message: t("chat.forkFailed", { error: errorMessage(e) }) });
     } finally {
       setForkingEntryId(null);
     }
@@ -2166,7 +2167,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
     } catch (e) {
       console.error("Branch in new chat failed:", e);
-      addNotice({ type: "error", message: t("chat.forkFailed", { error: e instanceof Error ? e.message : String(e) }) });
+      addNotice({ type: "error", message: t("chat.forkFailed", { error: errorMessage(e) }) });
     } finally {
       setForkingEntryId(null);
     }
@@ -2186,7 +2187,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return sessionIdRef.current === sid;
     } catch (e) {
       console.error("Failed to navigate:", e);
-      addNotice({ type: "error", message: t("chat.navigateFailed", { error: e instanceof Error ? e.message : String(e) }) });
+      addNotice({ type: "error", message: t("chat.navigateFailed", { error: errorMessage(e) }) });
       return false;
     }
   }, [addNotice, loadSession, t]);
@@ -2210,7 +2211,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // follow, the next prompt would continue the old one — say so.
       sendAgentCommand(sid, { type: "navigate_tree", targetId: leafId }).catch((e) => {
         if (sessionIdRef.current !== sid) return;
-        addNotice({ type: "error", message: t("chat.navigateFailed", { error: e instanceof Error ? e.message : String(e) }) });
+        addNotice({ type: "error", message: t("chat.navigateFailed", { error: errorMessage(e) }) });
       });
     }
   }, [addNotice, branchSummarySessionIdRef, isCompacting, loadContext, summarizeAndNavigate, t]);
@@ -2271,7 +2272,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setCurrentModelOverride(previousOverride);
       addNotice({
         type: "error",
-        message: `Failed to switch model: ${e instanceof Error ? e.message : String(e)}`,
+        message: `Failed to switch model: ${errorMessage(e)}`,
       });
       // A failed response can still follow a server-side write (for example, a
       // dropped connection), so let the server settle the displayed model.
@@ -2298,7 +2299,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // until the next turn (PR #38).
       await loadSession(sid, true, true);
     } catch (e) {
-      reportCompactFailure(e instanceof Error ? e.message : String(e));
+      reportCompactFailure(errorMessage(e));
     } finally {
       setIsCompacting(false);
     }
@@ -2327,7 +2328,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       signal?.throwIfAborted();
     } catch (e) {
       if (!signal?.aborted && !(e instanceof DOMException && e.name === "AbortError")) {
-        setModelError(e instanceof Error ? e.message : String(e));
+        setModelError(errorMessage(e));
       }
       throw e;
     }
@@ -2392,7 +2393,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       await saveDefaultPreferences({ provider, modelId });
     } catch (e) {
-      addNotice({ type: "error", message: `Failed to save default model: ${e instanceof Error ? e.message : String(e)}` });
+      addNotice({ type: "error", message: `Failed to save default model: ${errorMessage(e)}` });
       return;
     }
     addNotice({ type: "success", message: `Default model: ${provider}/${modelId}` });
@@ -2566,7 +2567,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           return { handled: false };
       }
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
+      const message = errorMessage(e);
       if (commandName === "compact" && compactNoopMessage(message)) {
         // The composer banner already says why; an error toast on top would repeat it.
         reportCompactFailure(message);
@@ -2614,7 +2615,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (isPromptRejectedError(e)) restore();
       addNotice({
         type: "error",
-        message: e instanceof Error ? e.message : String(e),
+        message: errorMessage(e),
       });
     }
   }, [addNotice, composerDraftKey, editEntryId, restoreSubmission]);
@@ -2672,7 +2673,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         restoreSubmission(item.message, images, key);
       }
     } catch (error) {
-      if (sessionGenerationRef.current === generation) addNotice({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      if (sessionGenerationRef.current === generation) addNotice({ type: "error", message: errorMessage(error) });
     }
   }, [addNotice, composerDraftKey, restoreSubmission]);
 
@@ -2735,7 +2736,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       await saveDefaultPreferences({ thinkingLevel: level });
     } catch (e) {
-      addNotice({ type: "error", message: `Failed to save default reasoning level: ${e instanceof Error ? e.message : String(e)}` });
+      addNotice({ type: "error", message: `Failed to save default reasoning level: ${errorMessage(e)}` });
       return;
     }
     addNotice({ type: "success", message: `Default reasoning level: ${level}` });

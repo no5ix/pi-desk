@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { isArtifactsPromptEnabled, writeArtifactsPromptEnabled } from "@/lib/artifact-settings";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ enabled: writeArtifactsPromptEnabled(body.enabled) });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 500 },
     );
   }

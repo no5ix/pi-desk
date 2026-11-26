@@ -12,6 +12,7 @@ import {
   resolveSessionPath,
 } from "@/lib/session-reader";
 import { appendClearedSessionToolSelection } from "@/lib/session-tool-selection";
+import { errorMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -74,7 +75,7 @@ export async function POST(
     });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 500 },
     );
   }

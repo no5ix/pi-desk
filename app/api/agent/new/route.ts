@@ -8,6 +8,7 @@ import { startRpcSession } from "@/lib/rpc-manager";
 import { ensureChatWorkspace, isChatWorkspacePath } from "@/lib/chat-workspace";
 import { cwdMissingBody } from "@/lib/missing-cwd";
 import { isThinkingLevel } from "@/lib/thinking-levels";
+import { errorMessage } from "@/lib/errors";
 
 function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
   if (value === undefined) return undefined;
@@ -103,7 +104,7 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     return NextResponse.json({
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
       ...(commandType === "prompt" && !promptAccepted
         ? { code: "prompt_rejected", accepted: false }
         : {}),

@@ -17,6 +17,7 @@ import {
   readPowerShellToolEnabled,
   writePowerShellToolEnabled,
 } from "@/lib/powershell-settings";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export const dynamic = "force-dynamic";
 const CHANGES = ["enabled", "codemode", "codemodeMode", "codemodeInlineBudget"] as const;
 
 function errorResponse(error: unknown) {
-  return mcpRefusalResponse(500, "internal", error instanceof Error ? error.message : String(error));
+  return mcpRefusalResponse(500, "internal", errorMessage(error));
 }
 
 async function readToolSettings(): Promise<ToolSettingsResponse> {

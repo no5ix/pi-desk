@@ -6,6 +6,7 @@ import { scheduledApi } from "@/lib/scheduled-tasks/client";
 import type { ScheduledRun, ScheduledTaskView } from "@/lib/scheduled-tasks/types";
 import { describeRunError } from "@/lib/scheduled-tasks/run-error";
 import { formatDateTime, formatDuration, isUnread, runDuration, runTime } from "./scheduled-helpers";
+import { errorMessage } from "@/lib/errors";
 
 interface Props {
   task: ScheduledTaskView;
@@ -35,7 +36,7 @@ export function ScheduledRunHistory({ task, onOpenSession }: Props) {
         setError(null);
       })
       .catch((caught) => {
-        if (id === requestId.current) setError(caught instanceof Error ? caught.message : String(caught));
+        if (id === requestId.current) setError(errorMessage(caught));
       });
   // The key already encodes everything that should trigger a reload.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -49,7 +50,7 @@ export function ScheduledRunHistory({ task, onOpenSession }: Props) {
       setRuns((current) => [...(current ?? []), ...page.runs]);
       setHasMore(page.hasMore);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      setError(errorMessage(caught));
     }
   }, [runs, task.id]);
 

@@ -50,6 +50,7 @@ import { itemsToSwitch, projectTrustReloadKey } from "./settings-ui-helpers";
 import { MarkdownBody } from "./MarkdownBody";
 import type { Translate } from "@/lib/i18n/types";
 import { readJsonOrThrow } from "@/lib/fetch-json";
+import { errorMessage } from "@/lib/errors";
 
 type SkillScope = "global" | "project" | "path";
 /**
@@ -232,7 +233,7 @@ function SkillDetail({
         setInstructions(skillInstructionsBody(data.content));
       } catch (error) {
         if (controller.signal.aborted) return;
-        setInstructionsError(error instanceof Error ? error.message : String(error));
+        setInstructionsError(errorMessage(error));
       }
     };
     void load();
@@ -755,7 +756,7 @@ export function SkillsConfig({
       });
       return list;
     } catch (e) {
-      if (isCurrent()) setError(e instanceof Error ? e.message : String(e));
+      if (isCurrent()) setError(errorMessage(e));
       return [];
     } finally {
       if (isCurrent()) setLoading(false);
@@ -816,7 +817,7 @@ export function SkillsConfig({
       const copy = list.find((entry) => sourceLabel(entry) === "project" && entry.name === skill.name);
       if (copy) setSelected(copy.filePath);
     } catch (e) {
-      setProjectError(e instanceof Error ? e.message : String(e));
+      setProjectError(errorMessage(e));
     } finally {
       setProjectBusy(null);
     }
@@ -842,7 +843,7 @@ export function SkillsConfig({
       const globalEntry = list.find((entry) => sourceLabel(entry) !== "project" && entry.name === skill.name);
       if (globalEntry) setSelected(globalEntry.filePath);
     } catch (e) {
-      setProjectError(e instanceof Error ? e.message : String(e));
+      setProjectError(errorMessage(e));
     } finally {
       setProjectBusy(null);
     }
@@ -892,7 +893,7 @@ export function SkillsConfig({
         return next;
       });
     } catch (e) {
-      setUpdateError(e instanceof Error ? e.message : String(e));
+      setUpdateError(errorMessage(e));
     } finally {
       setCheckingUpdates((current) => {
         const next = new Set(current);
@@ -939,7 +940,7 @@ export function SkillsConfig({
         },
       }));
     } catch (e) {
-      setUpdateError(e instanceof Error ? e.message : String(e));
+      setUpdateError(errorMessage(e));
     } finally {
       setUpdatingSkill(null);
     }
@@ -1016,7 +1017,7 @@ export function SkillsConfig({
         });
       }
     } catch (e) {
-      setGroupStatus({ group, error: e instanceof Error ? e.message : String(e) });
+      setGroupStatus({ group, error: errorMessage(e) });
     } finally {
       setBulkGroup(null);
       setToggling((current) => {

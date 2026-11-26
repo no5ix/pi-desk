@@ -14,6 +14,7 @@ import {
 import type { RemoteAccessConfig } from "@/lib/remote-access";
 import type { TailscaleStatus } from "@/lib/tailscale-status";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
+import { errorMessage } from "@/lib/errors";
 
 interface RemoteAccessResponse {
   config: RemoteAccessConfig | null;
@@ -76,7 +77,7 @@ function PushDeviceRow() {
       if (next) setState(next);
       if (success) setNote(success);
     } catch (error) {
-      setNote(t("remoteAccess.pushFailed", { error: error instanceof Error ? error.message : String(error) }));
+      setNote(t("remoteAccess.pushFailed", { error: errorMessage(error) }));
     } finally {
       setBusy(false);
     }
@@ -160,7 +161,7 @@ export function RemoteAccessSection() {
       if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
       setData((previous) => previous && { ...previous, config: result.config ?? null });
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : String(error));
+      setSaveError(errorMessage(error));
     } finally {
       setSaving(false);
     }

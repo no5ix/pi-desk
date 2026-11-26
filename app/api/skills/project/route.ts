@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { getAllowedFileRoots, isExistingFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
 import { installProjectSkill, isSafeSkillName, removeProjectSkill, setProjectSkillState, type ProjectSkillState } from "@/lib/project-skills";
 import { hasParentDirectorySegment } from "@/lib/path-security";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -72,7 +73,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, action, path: result.path, state: result.state, copied: result.files > 0 });
   } catch (error) {
     const code = (error as { code?: string })?.code;
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     const status = code === "skill-not-found" || code === "not-in-project" ? 404 : 500;
     return NextResponse.json({ ok: false, reason: code ?? "failed", error: message }, { status });
   }

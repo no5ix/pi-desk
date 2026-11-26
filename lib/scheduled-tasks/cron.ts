@@ -1,5 +1,6 @@
 import { Cron } from "croner";
 import { MIN_INTERVAL_MINUTES, ScheduledTaskValidationError } from "./types";
+import { errorMessage } from "@/lib/errors";
 
 /** How many upcoming runs are compared to find the shortest gap. */
 const INTERVAL_SAMPLE = 100;
@@ -24,7 +25,7 @@ function build(expr: string, timezone: string): Cron {
     return cron;
   } catch (error) {
     if (error instanceof ScheduledTaskValidationError) throw error;
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     throw /timezone/i.test(message)
       ? new ScheduledTaskValidationError(`invalid timezone: ${timezone}`, "scheduled.error.timezone", { zone: timezone })
       : new ScheduledTaskValidationError(`invalid cron expression: ${expr}`, "scheduled.error.cronInvalid", { expr });

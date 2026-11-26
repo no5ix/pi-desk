@@ -5,6 +5,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { formatAttachmentSize } from "@/lib/chat-attachments";
 import { revealItemInDirNative } from "@/lib/desktop-native";
 import { isTauriDesktop } from "@/lib/desktop-updater";
+import { errorMessage } from "@/lib/errors";
 
 export interface SavedFileInfo {
   path: string;
@@ -40,7 +41,7 @@ export function SavedFileCard({ file }: { file: SavedFileInfo }) {
         throw new Error(data.error ?? `HTTP ${res.status}`);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   };
 

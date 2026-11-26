@@ -7,6 +7,7 @@ import {
 } from "@/lib/remote-access";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { readTailscaleStatus } from "@/lib/tailscale-status";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,7 +40,7 @@ export async function PUT(req: Request) {
     return NextResponse.json({ config: writeRemoteAccessConfig(parsed.config) });
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 500 },
     );
   }

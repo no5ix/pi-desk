@@ -85,6 +85,7 @@ import { useMenuPlacement } from "@/hooks/useMenuPlacement";
 import { usePopTransition, useShownWhileClosing } from "@/hooks/usePopTransition";
 import { SideChatPlusIcon } from "./SideChatIcon";
 import { scrollMovesAnchor, type MenuAnchor } from "@/lib/menu-placement";
+import { errorMessage } from "@/lib/errors";
 
 function sessionListUrl(summary: boolean, force: boolean): string {
   if (summary) return "/api/sessions?summary=1";
@@ -527,7 +528,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         await revealItemInDirNative(root);
         setProjectMenu(null);
       } catch (e) {
-        setProjectRevealError(e instanceof Error ? e.message : String(e));
+        setProjectRevealError(errorMessage(e));
       }
       return;
     }
@@ -545,7 +546,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       const key = FILE_MANAGER_ERROR_KEYS[data.error ?? ""];
       setProjectRevealError(key ? t(key) : (data.error ?? `HTTP ${res.status}`));
     } catch (e) {
-      setProjectRevealError(e instanceof Error ? e.message : String(e));
+      setProjectRevealError(errorMessage(e));
     }
   }, [t]);
   const fileManagerPlatform = isTauriDesktop()
@@ -1140,7 +1141,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       });
       void loadSessions(false, true);
     } catch (e) {
-      appNotify.error({ message: t("sidebar.continueInProjectFailed", { error: e instanceof Error ? e.message : String(e) }) });
+      appNotify.error({ message: t("sidebar.continueInProjectFailed", { error: errorMessage(e) }) });
     }
   }, [activateProject, handleSelectSessionFromList, loadSessions, projectRootFor, t]);
 
@@ -1257,7 +1258,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         }
         onSessionDeleted?.(id);
       } catch (e) {
-        failure = t("sidebar.deleteFailed", { error: e instanceof Error ? e.message : String(e) });
+        failure = t("sidebar.deleteFailed", { error: errorMessage(e) });
         break;
       }
     }
@@ -1291,7 +1292,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       appNotify.success({ message: t("sidebar.forkedToast", { title: forked.name || forked.firstMessage || forked.id }) });
       void loadSessions();
     } catch (error) {
-      appNotify.error({ message: t("sidebar.forkFailed", { error: error instanceof Error ? error.message : String(error) }) });
+      appNotify.error({ message: t("sidebar.forkFailed", { error: errorMessage(error) }) });
     } finally {
       forkingIdsRef.current.delete(source.id);
     }
@@ -2809,7 +2810,7 @@ function SessionItem({
       }
       onRenamed?.();
     } catch (e) {
-      reportActionError(t("sidebar.renameFailed", { error: e instanceof Error ? e.message : String(e) }));
+      reportActionError(t("sidebar.renameFailed", { error: errorMessage(e) }));
     }
   }, [renameValue, session.id, session.name, onRenamed, reportActionError, t, title]);
 
@@ -2831,7 +2832,7 @@ function SessionItem({
       onDeleted?.(session.id);
     } catch (e) {
       setDeleting(false);
-      const message = t("sidebar.deleteFailed", { error: e instanceof Error ? e.message : String(e) });
+      const message = t("sidebar.deleteFailed", { error: errorMessage(e) });
       if (confirmDelete || folderDeleteOpen) setDeleteError(message);
       else reportActionError(message);
     }

@@ -51,6 +51,7 @@ import { itemsToSwitch, projectTrustReloadKey, scopeLabel } from "./settings-ui-
 import type { Translate } from "@/lib/i18n/types";
 import { readJsonOrThrow } from "@/lib/fetch-json";
 import { PluginDiscovery } from "./PluginDiscovery";
+import { errorMessage } from "@/lib/errors";
 
 type PluginScope = PluginPackageInfo["scope"];
 type PluginAction = "install" | "remove" | "update" | "disable" | "enable";
@@ -641,7 +642,7 @@ export function PluginsConfig({
             : null;
       });
     } catch (err) {
-      if (isCurrent()) setError(err instanceof Error ? err.message : String(err));
+      if (isCurrent()) setError(errorMessage(err));
     } finally {
       if (isCurrent()) setLoading(false);
     }
@@ -697,7 +698,7 @@ export function PluginsConfig({
         return next;
       });
     } catch (err) {
-      setUpdateError(err instanceof Error ? err.message : String(err));
+      setUpdateError(errorMessage(err));
     } finally {
       setCheckingUpdates((current) => {
         const next = new Set(current);
@@ -727,7 +728,7 @@ export function PluginsConfig({
         setActionMessage(`${t("i18n.packagesUpdated")} ${t("agents.reloadRequired")}`);
       }
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(errorMessage(err));
     } finally {
       setUpdatingAll(false);
     }
@@ -777,7 +778,7 @@ export function PluginsConfig({
         }
       }
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusyKey(null);
     }
@@ -831,7 +832,7 @@ export function PluginsConfig({
         });
       }
     } catch (err) {
-      setGroupStatus({ scope, note, error: err instanceof Error ? err.message : String(err) });
+      setGroupStatus({ scope, note, error: errorMessage(err) });
     } finally {
       setBusyKey(null);
     }
@@ -860,7 +861,7 @@ export function PluginsConfig({
       setInstallSource("");
       setActionMessage(t("i18n.packageInstalled"));
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusyKey(null);
     }
@@ -880,7 +881,7 @@ export function PluginsConfig({
       setDiscoveryMessage(t("i18n.sessionReloaded"));
       setDiscoveryReloadNeeded(false);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(errorMessage(err));
     } finally {
       setBusyKey(null);
     }
@@ -908,7 +909,7 @@ export function PluginsConfig({
       setDiscoveryMessage(sessionId ? t("plugins.discoveryInstalled") : t("i18n.packageInstalled"));
       setDiscoveryReloadNeeded(Boolean(sessionId));
     } catch (cause) {
-      setDiscoveryError({ name: `${scope}:${name}`, message: cause instanceof Error ? cause.message : String(cause) });
+      setDiscoveryError({ name: `${scope}:${name}`, message: errorMessage(cause) });
     } finally {
       setBusyKey(null);
       setDiscoveryInstalling(null);
