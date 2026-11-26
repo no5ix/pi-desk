@@ -455,3 +455,25 @@
   pre-task content (ProjectPicker to `HEAD`, the three menus minus my calls), because
   the shared dev server compiles the whole app and a half-finished expression in one
   popup blanks every page of the tree that the other eleven items are measured on.
+
+## The extension statuses moved to the Session stats card; the widgets did not
+
+- **The statuses read in the card, not under the composer.** `ctx.ui.setStatus`
+  lines (LSP, background tasks) were a bordered strip at the window's bottom
+  edge: it folded every status into one 17px line, clipped what did not fit, and
+  cost the conversation a row for a readout nobody consults while typing. The
+  Session stats card is opened to read, so the same lines go there, one row per
+  status in key order, colors kept, rows wrapping.
+- **The extension widgets keep the composer's strip.** A widget is a control: it
+  expands a panel above itself and answers clicks. A header card closes on the
+  next click and on any session switch, so moving the widgets there would break
+  the extension-compatibility rule (a pi CLI extension's UI has to stay usable).
+  The strip is therefore conditional on `belowEditorWidgets.length > 0` and
+  carries no status line any more.
+- **The lift is a prop, cleared on unmount.** `onExtensionStatusesChange` follows
+  the existing `onSessionStatsChange` / `onContextUsageChange` pattern; clearing
+  on unmount is what keeps a session switch from showing the previous session's
+  LSP line in the new session's card.
+- **A card with only statuses is openable.** The More menu's row used to be
+  disabled with no stats and no context; `sessionPanelHasContent` adds "has
+  statuses", because an extension reports state before the session has usage.

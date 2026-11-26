@@ -5,27 +5,32 @@ import type { ExtensionStatusItem } from "@/lib/types";
 import { AnsiText } from "./AnsiText";
 
 /**
- * Joins `ctx.ui.setStatus` entries into one footer line, ordered by key like
- * pi's TUI footer. Each text is collapsed to a single line: the row is a
- * one-line strip under the composer, and the full text stays in the tooltip.
+ * The `ctx.ui.setStatus` entries as the app shows them: ordered by key like
+ * pi's TUI footer, and without the ones whose text is blank once the ANSI
+ * codes are stripped (pi's footer prints nothing for those either).
  */
-export function formatExtensionStatusLine(statuses: ExtensionStatusItem[]): string {
+export function visibleExtensionStatuses(statuses: ExtensionStatusItem[]): ExtensionStatusItem[] {
   return [...statuses]
     .sort((a, b) => a.key.localeCompare(b.key))
-    .map(({ text }) => text.replace(/\s+/g, " ").trim())
-    .filter((text) => stripAnsi(text).trim().length > 0)
-    .join("  ");
+    .filter(({ text }) => stripAnsi(text).trim().length > 0);
 }
 
-export function ExtensionStatusLine({ statuses }: { statuses: ExtensionStatusItem[] }) {
-  const line = formatExtensionStatusLine(statuses);
-  if (!line) return null;
-  const plain = stripAnsi(line);
+/**
+ * One row per status in the Session stats card (components/AppShell.tsx). The
+ * card is opened to read, so every status keeps a row of its own and wraps
+ * inside it; the strip under the composer used to fold them into one 17px line
+ * and clipped the rest.
+ */
+export function ExtensionStatusList({ statuses }: { statuses: ExtensionStatusItem[] }) {
+  const visible = visibleExtensionStatuses(statuses);
+  if (visible.length === 0) return null;
   return (
-    <div role="status" className="extension-status-line" aria-label={plain} title={plain}>
-      <span className="extension-status-text">
-        <AnsiText text={line} />
-      </span>
+    <div className="session-stats-status-list">
+      {visible.map(({ key, text }) => (
+        <div key={key} className="session-stats-status-row" title={stripAnsi(text).trim()}>
+          <AnsiText text={text} />
+        </div>
+      ))}
     </div>
   );
 }

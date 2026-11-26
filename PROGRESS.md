@@ -898,3 +898,47 @@ as prose, exactly the complaint that put the chat's blocks on fills in the first
   both themes (page `rgb(240, 240, 241)` light, `rgb(25, 25, 26)` dark), screenshots read
   as a blue band in each; the card's box (radius 8px, 6px/10px padding) is unchanged.
   The throwaway probe script lived in gitignored `test-results/` and is deleted.
+
+## 2026-11-26 — the extension status strip reads in the Session stats card
+
+The user's pic1: a bordered strip under the composer carrying one green `LSP`,
+and the request was to move that strip into the header's **Session stats** card
+(pic2, the More menu's last row).
+
+**What changed**
+- `components/ExtensionStatusLine.tsx` — `visibleExtensionStatuses()` (key order,
+  ANSI-blank statuses dropped) and `ExtensionStatusList` (one row per status,
+  ANSI colors kept, full text in the tooltip). The old `ExtensionStatusLine`
+  (one 17px folded line) and `formatExtensionStatusLine` are gone.
+- `components/ChatWindow.tsx` — the composer's `.extension-status-shelf` keeps
+  only the extension widgets; the statuses are lifted to the shell with
+  `onExtensionStatusesChange` and cleared on unmount, so a session switch never
+  shows the session that was left.
+- `components/AppShell.tsx` — an **Extensions** section under the stats card's
+  head, plus `sessionPanelHasContent` (stats, context, or statuses) so the More
+  menu's row opens for a session that has only a status to report.
+- `app/native-theme.css` — `.session-stats-extensions`, `.session-stats-section-title`,
+  `.session-stats-status-list/-row` (the card's mono caption, rows that wrap; the
+  17px clip is not reused).
+- `lib/i18n/locale-plugins.ts` — `session.extensions` in en / zh-CN / zh-TW.
+- `components/ExtensionStatusLine.test.mjs` — the rows, the key order, the blank
+  filter, and the wiring: hook → ChatWindow lift → AppShell card, and the strip
+  pinned to the widgets only.
+- Docs: `docs/agents/sessions.md` (the status-bar section), `docs/agents/fork-ui.md`
+  (the stats card), `docs/agents/client-platform.md` (the keyboard rule's class).
+
+**Decision** — the widgets stay under the composer: an interactive control that
+expands a panel cannot live in a header card that closes on the next click.
+See DECISIONS.md.
+
+**Verification**
+- `node --test components/ExtensionStatusLine.test.mjs`: 5 pass.
+- `node_modules/.bin/tsc --noEmit` clean; eslint clean on the four changed sources.
+- Full unit suite (`node --test`, 4891 tests): 4880 pass / 10 fail, and every
+  failure is in a file this task did not touch (the composer/`ChatInput` rows,
+  the pop-transition hook, the sidebar, the upstream CSS baseline) — the tree
+  carries another agent's in-flight edits beside mine.
+- Live in Chromium against the dev server, on a session whose strip said
+  `LSP ts/txt`: the strip is gone (`.extension-status-shelf` absent), the card
+  shows one green row `LSP ts/txt` with the plain tooltip, and the card's
+  `scrollWidth` equals its `clientWidth` at 1440px and 390px.

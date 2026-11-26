@@ -3,7 +3,7 @@ import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { UnavailableWorkspaceNotice } from "@/lib/workspace-availability";
-import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode, SessionWorkspaceKind, ToolResultMessage } from "@/lib/types";
+import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionStatusItem, ExtensionUiRequest, LeafChangeOptions, SessionInfo, SessionTreeNode, SessionWorkspaceKind, ToolResultMessage } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { fillContentGaps } from "@/lib/assistant-content";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
@@ -25,7 +25,6 @@ import { APP_PREF_KEYS, getPrefBool, setPrefBool } from "@/lib/app-prefs";
 import { NewSessionWelcome } from "./NewSessionWelcome";
 import { ConversationNavigator, type ConversationTurnLocation } from "./ConversationNavigator";
 import { ExtensionWidgets } from "./ExtensionWidgets";
-import { ExtensionStatusLine, formatExtensionStatusLine } from "./ExtensionStatusLine";
 import { AnsiText } from "./AnsiText";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -95,6 +94,12 @@ interface Props {
   /** Opens Settings on a section: a bare `/mcp` that pi's built-in MCP extension owns opens Settings › MCP. */
   onOpenSettings?: (section: SettingsSection) => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
+  /**
+   * The session's `ctx.ui.setStatus` lines, pushed up so the header's Session
+   * stats card can show them (components/AppShell.tsx). Cleared on unmount, so a
+   * session switch never keeps the statuses of the session that was left.
+   */
+  onExtensionStatusesChange?: (statuses: ExtensionStatusItem[]) => void;
   /**
    * When the conversation's last prompt was sent, for the header's live clock
    * (TopbarElapsed). The user's own message starts the count — a background
@@ -320,7 +325,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, runningSubagentIds, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onBranchChipCwd, composerProjectRoot, composerProjectIsWorktree, onBranchSwitched, onComposerWorktreeCreated, onComposerWorktreeSelected, onComposerWorktreeRemoved, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, runningSubagentIds, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onExtensionStatusesChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onBranchChipCwd, composerProjectRoot, composerProjectIsWorktree, onBranchSwitched, onComposerWorktreeCreated, onComposerWorktreeSelected, onComposerWorktreeRemoved, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatOnly = workspaceKind === "chat" || session?.workspaceKind === "chat";
@@ -1075,6 +1080,13 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   }, [ctxKey, onContextUsageChange]);
   useEffect(() => () => { onContextUsageChange?.(null); }, [onContextUsageChange]);
 
+  // `ctx.ui.setStatus` lines go up to the header too: the Session stats card is
+  // where they are read now (the composer's shelf keeps only the widgets).
+  useEffect(() => {
+    onExtensionStatusesChange?.(extensionStatuses);
+  }, [extensionStatuses, onExtensionStatusesChange]);
+  useEffect(() => () => { onExtensionStatusesChange?.([]); }, [onExtensionStatusesChange]);
+
   // The header's clock runs from the user's own prompt: the newest message the
   // user (or a `/skill` command they sent) put in the conversation. A user entry
   // carries no time of its own, so the clock starts at the first time the
@@ -1568,7 +1580,6 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
 
   const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.placement !== "belowEditor");
   const belowEditorWidgets = extensionWidgets.filter((widget) => widget.placement === "belowEditor");
-  const hasExtensionStatus = formatExtensionStatusLine(extensionStatuses).length > 0;
 
   return (
     <div
@@ -2148,10 +2159,9 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
           </div>
         )}
         {chatInputElement}
-        {(belowEditorWidgets.length > 0 || hasExtensionStatus) && (
-          <div className={`extension-status-shelf${belowEditorWidgets.length > 0 ? " has-widgets" : ""}${hasExtensionStatus ? " has-status" : ""}`}>
-            {belowEditorWidgets.length > 0 && <ExtensionWidgets widgets={belowEditorWidgets} />}
-            {hasExtensionStatus && <ExtensionStatusLine statuses={extensionStatuses} />}
+        {belowEditorWidgets.length > 0 && (
+          <div className="extension-status-shelf has-widgets">
+            <ExtensionWidgets widgets={belowEditorWidgets} />
           </div>
         )}
       </div>

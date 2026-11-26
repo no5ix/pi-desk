@@ -69,6 +69,7 @@ import { useWorkspaceAvailability } from "@/hooks/useWorkspaceAvailability";
 import { WindowControls, useDesktopChrome, useReportDesktopReady, useWindowDrag } from "./desktop";
 import { SystemPromptPanel } from "./SystemPromptPanel";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
+import { ExtensionStatusList, visibleExtensionStatuses } from "./ExtensionStatusLine";
 import { AgentSessionPanel } from "./AgentSessionPanel";
 import { SessionChatPanel } from "./SessionChatPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
@@ -109,7 +110,7 @@ import {
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
 } from "@/lib/panel-layout";
-import type { BlockingExtensionUiRequest, CacheWarmingInfo, LeafChangeOptions, SessionInfo, SessionTreeNode, SessionWorkspaceKind } from "@/lib/types";
+import type { BlockingExtensionUiRequest, CacheWarmingInfo, ExtensionStatusItem, LeafChangeOptions, SessionInfo, SessionTreeNode, SessionWorkspaceKind } from "@/lib/types";
 import { shouldShowUsageBreakdown, UNATTRIBUTED_USAGE_KEY } from "@/lib/usage-breakdown";
 import { cacheWarmingRows } from "@/lib/cache-warming-display";
 import type { McpErrorResponse, ProjectTrustStatus } from "@/lib/api-types";
@@ -609,6 +610,15 @@ export function AppShell() {
     setContextUsage(usage);
   }, []);
 
+  // The session's `ctx.ui.setStatus` lines (LSP, background tasks) — populated by
+  // ChatWindow. They read in the Session stats card: the strip under the composer
+  // is the extension widgets' only, so a status no longer takes a row of the
+  // conversation at the bottom of the window.
+  const [extensionStatuses, setExtensionStatuses] = useState<ExtensionStatusItem[]>([]);
+  const handleExtensionStatusesChange = useCallback((statuses: ExtensionStatusItem[]) => {
+    setExtensionStatuses(statuses);
+  }, []);
+
   // When the open conversation's last prompt was sent — populated by ChatWindow,
   // and the header's live clock (TopbarElapsed) counts from it. The chat reports
   // null as it unmounts, so a session switch never leaves the clock running from
@@ -637,6 +647,11 @@ export function AppShell() {
     }
     return parts.length > 0 ? parts.join(" · ") : translate("appshell.statsHint");
   }, [sessionStats, contextUsage, translate]);
+
+  // A card with only extension statuses is worth opening too: an extension that
+  // sets a status has something to say before the session has any usage.
+  const extensionStatusLines = useMemo(() => visibleExtensionStatuses(extensionStatuses), [extensionStatuses]);
+  const sessionPanelHasContent = Boolean(sessionStats) || Boolean(contextUsage) || extensionStatusLines.length > 0;
 
   useEffect(() => {
     if (!sessionHasBranches) {
@@ -2807,7 +2822,7 @@ export function AppShell() {
                     { kind: "separator" },
                     {
                       label: `${translate("appshell.sessionStats")} — ${statsSummary}`,
-                      disabled: !sessionStats && !contextUsage,
+                      disabled: !sessionPanelHasContent,
                       checked: activeTopPanel === "session" ? true : undefined,
                       onSelect: () => toggleTopPanel("session"),
                     },
@@ -3008,7 +3023,7 @@ export function AppShell() {
                               className="app-topbar-more-item"
                               type="button"
                               role="menuitem"
-                              disabled={!sessionStats && !contextUsage}
+                              disabled={!sessionPanelHasContent}
                               onClick={() => toggleTopPanel("session")}
                             >
                               <span
@@ -3093,6 +3108,14 @@ export function AppShell() {
                     <strong className="session-stats-title">{translate("appshell.sessionStats")}</strong>
                     <span className="session-stats-summary">{statsSummary}</span>
                   </div>
+                  {/* What the session's extensions report (`ctx.ui.setStatus`): the line
+                      the composer's strip used to carry, as a section of this card. */}
+                  {extensionStatusLines.length > 0 && (
+                    <div className="session-stats-extensions">
+                      <div className="session-stats-section-title">{translate("session.extensions")}</div>
+                      <ExtensionStatusList statuses={extensionStatuses} />
+                    </div>
+                  )}
                   {sessionStats ? (() => {
                     const formatDuration = (ms: number) => {
                       if (ms <= 0) return "0s";
@@ -3364,6 +3387,7 @@ export function AppShell() {
               onSessionStatsPanelOpen={openSessionStatsPanel}
               onOpenSettings={openSettingsSection}
               onContextUsageChange={handleContextUsageChange}
+              onExtensionStatusesChange={handleExtensionStatusesChange}
               onLastPromptChange={handleLastPromptChange}
               onSelectProject={desktopMode && !isChatWorkspaceActive
                 ? () => void handleSelectProjectFromComposer()

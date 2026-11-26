@@ -13828,6 +13828,36 @@ html.dark {
 .session-stats-body {
   padding: 0 12px 12px;
 }
+/* What the session's extensions report (`ctx.ui.setStatus`) is read here, as a
+   section of the card: the strip under the composer is the extension widgets'
+   only now. That strip folded every status into one 17px line and clipped the
+   rest, and it cost the conversation a row at the window's bottom edge. */
+.session-stats-extensions {
+  min-width: 0;
+  padding: 0 12px 10px;
+}
+.session-stats-section-title {
+  margin-bottom: 6px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-bold);
+}
+.session-stats-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+}
+.session-stats-status-list .session-stats-status-row {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .session-stats-body {
   max-height: min(66dvh, 620px);
   overflow-y: auto;

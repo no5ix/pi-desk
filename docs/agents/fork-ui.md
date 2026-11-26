@@ -943,6 +943,11 @@ column. The compact rows keep `max-content max-content` tracks for the same reas
 `components/AppShell.topbar-branch.test.mjs` pins the placement and the tracks;
 live at 2342/1440/900/390 the card's `scrollWidth` equals its width and the page never
 scrolls sideways.
+The card also carries what the session's extensions report (`ctx.ui.setStatus` — LSP,
+background tasks): an **Extensions** section under the head, one row per status in key
+order, colors kept and rows wrapping (see sessions.md). It came out of the strip under
+the composer, which folded every status into one 17px line and took a row of the
+conversation; the strip is the extension widgets' only now.
 A running row leads with the header's subagent head (`AgentRunningIcon`, exported, at row
 size, pulsing), not a spinner: one shape for one state.
 The row
