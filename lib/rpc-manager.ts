@@ -180,9 +180,18 @@ export function resetRecentRunOutcomesForTests(): void {
 
 const BLOCKING_UI_METHODS = new Set<string>(["select", "confirm", "input", "editor", "custom"]);
 
-function agentRunOutcome(event: AgentEvent): AgentRunOutcome {
+/**
+ * The run's final assistant message — the report the page has on screen when `agent_end`
+ * arrives. pi fires `agent_end` from the low-level loop, so this is the last message the
+ * run produced, not an intermediate one: a reply with a tool call keeps the loop running.
+ */
+function lastAssistantMessage(event: AgentEvent): Record<string, unknown> | undefined {
   const messages = Array.isArray(event.messages) ? event.messages as Array<Record<string, unknown>> : [];
-  const last = [...messages].reverse().find((message) => message?.role === "assistant");
+  return [...messages].reverse().find((message) => message?.role === "assistant");
+}
+
+function agentRunOutcome(event: AgentEvent): AgentRunOutcome {
+  const last = lastAssistantMessage(event);
   if (last?.stopReason === "aborted") return { status: "aborted" };
   if (last?.stopReason === "error") {
     return { status: "failed", error: typeof last.errorMessage === "string" ? last.errorMessage : "" };
@@ -543,6 +552,17 @@ export class AgentSessionWrapper {
    * long after the answer landed, and the task that arrived in the middle of that was silent.
    */
   private agentRunSettled = false;
+  /**
+   * A finished run's report is on screen, and its post-run compaction has not opened yet.
+   *
+   * `agent_end` fires before the post-run pipeline runs (`agent-session.js` `_startRun` →
+   * `_handlePostAgentRun` → `_checkCompaction`), so an automatic compaction that opens right
+   * after a completed answer summarizes a task the user already has: a real summarization
+   * request, minutes of "Compacting…" beside a finished reply, and a second round on its
+   * retry backoff. Armed at that `agent_end` — only for a run that ended cleanly — and the
+   * next `compaction_start` decides. Cleared at `agent_start`, `agent_settled`, Stop, teardown.
+   */
+  private postRunCompactionGuard = false;
   // Whether the last run ended because it was stopped (pi 1.1's `agent_settled.aborted`), not finished.
   private lastRunAborted = false;
   private readonly manualCompactionWork = new Set<Promise<void>>();
@@ -1058,6 +1078,9 @@ export class AgentSessionWrapper {
       if (event.type === "agent_start") {
         this.agentRunNeedsCompletion = true;
         this.agentRunSettled = false;
+        // A run is under way (and a continuation of the one that just settled, or the next
+        // prompt's own pre-run compaction): its compaction is required, never cancel it.
+        this.postRunCompactionGuard = false;
         this.runStartedAt ??= Date.now();
         this.lastRunAborted = false;
         // A run starts its own silence clock and forgets the last run's stall, so a
@@ -1072,8 +1095,13 @@ export class AgentSessionWrapper {
       if (event.type === "agent_settled") {
         this.lastRunAborted = event.aborted === true;
         this.agentRunSettled = true;
+        // The post-run pipeline is over: the next compaction belongs to a new prompt, or to
+        // the user's /compact, and neither is this run's leftover.
+        this.postRunCompactionGuard = false;
       }
       if (event.type === "agent_end") {
+        // Read the run's messages and tools before the bookkeeping below clears them.
+        this.postRunCompactionGuard = this.canSkipPostRunCompaction(event);
         this.lastRunOutcome = agentRunOutcome(event);
         invalidateSessionListCache();
         notifyRunningChange();
@@ -1089,6 +1117,8 @@ export class AgentSessionWrapper {
         notifyRunningChange();
       }
       this.trackActiveToolEvent(event);
+      // Cancel the compaction the guard predicted, before the page is told it started.
+      if (event.type === "compaction_start") this.cancelPredictedPostRunCompaction(event);
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
       if (event.type === "compaction_end") {
         // Prompts parked while compaction ran go out now, FIFO, whatever its outcome (as the TUI).
@@ -1248,6 +1278,72 @@ export class AgentSessionWrapper {
         this.autoTitleSettled = false;
         console.warn("[pi-web] automatic session title failed:", error instanceof Error ? error.message : error);
       });
+  }
+
+  /**
+   * Whether the run that just ended makes its post-run compaction avoidable.
+   *
+   * Only a run whose final assistant message completed (`stopReason === "stop"`, no retry
+   * pending) has delivered the report the user asked for. pi's other post-run cases need the
+   * compaction to finish the task and keep it: a context overflow or a truncated reply goes
+   * through `_checkCompaction` → `_runAutoCompaction("overflow", true)` → `agent.continue()`,
+   * which is overflow recovery, not a summary of finished work. An API error, a stopped run
+   * (`aborted`) or a reply cut off by the token limit (`length`) is not a delivered report.
+   *
+   * Queued work is judged at `compaction_start`, when the queue is known — see
+   * `cancelPredictedPostRunCompaction()`.
+   */
+  private canSkipPostRunCompaction(event: AgentEvent): boolean {
+    const outcome = agentRunOutcome(event);
+    if (outcome.status !== "done") return false;
+    if (event.willRetry === true) return false;
+    // A tool call still open means the run has not handed over: no report was delivered.
+    if (this.activeToolEvents.size > 0) return false;
+    return lastAssistantMessage(event)?.stopReason === "stop";
+  }
+
+  /**
+   * Cancel the post-run compaction `canSkipPostRunCompaction()` predicted, once per run.
+   *
+   * `reason` is pi's own word for why it is compacting: `manual` is the user's `/compact` and
+   * is never touched; `threshold` and `overflow` are the automatic cases. An automatic one
+   * that opens while the answered run is still live, with nothing queued behind it, is the
+   * unnecessary work: `AgentSession.abortCompaction()` aborts the summarization request, the
+   * SDK emits `compaction_end { aborted: true }` and appends nothing to the session file, so
+   * the transcript, the report on screen, and the next prompt's own pre-run compaction check
+   * (the SDK's `_prepareRun`) all stay as they were. `abortCompaction()` is a no-op with
+   * nothing running, so repeated `agent_end`s, Stop and reconnects cannot error.
+   */
+  private cancelPredictedPostRunCompaction(event: AgentEvent): void {
+    if (!this.postRunCompactionGuard) return;
+    this.postRunCompactionGuard = false;
+    const reason = typeof event.reason === "string" ? event.reason : "unknown";
+    if (reason === "manual") return;
+    // Only this run's post-run pipeline. `_isAgentRunActive` stays true until the SDK emits
+    // `agent_settled`, so a compaction that opens outside a live run belongs to the next
+    // prompt (its pre-run check) and has to keep doing the context work for it.
+    if (this.inner.isStreaming !== true) return;
+    if (this.hasWorkQueuedAfterReport()) return;
+    const sessionId = this.sessionId;
+    try {
+      this.inner.abortCompaction();
+      console.info(`[pi-web] session ${sessionId}: cancelled post-run ${reason} compaction — the final report was already delivered`);
+    } catch (error) {
+      console.warn(`[pi-web] session ${sessionId}: post-run ${reason} compaction could not be cancelled:`, error instanceof Error ? error.message : error);
+    }
+  }
+
+  /**
+   * Work waiting behind the finished answer. A steering message, a follow-up, a composer row,
+   * a prompt parked behind a compaction, or a prompt still waiting on MCP servers makes the
+   * compaction useful: it builds the context that request goes out with, so it runs.
+   */
+  private hasWorkQueuedAfterReport(): boolean {
+    return this.parkedDuringCompaction.length > 0
+      || this.composerQueue.snapshot().length > 0
+      || this.mcpPromptWait !== null
+      || (this.inner.pendingMessageCount ?? 0) > 0
+      || this.inner.agent?.hasQueuedMessages?.() === true;
   }
 
   getTaskSnapshot(): AgentTaskSnapshot {
@@ -2052,6 +2148,9 @@ export class AgentSessionWrapper {
         return null;
 
       case "abort": {
+        // Stop cancels the run and, through `inner.abort()`, any compaction: the prediction
+        // of a post-run one is moot, and a later compaction is not this run's leftover.
+        this.postRunCompactionGuard = false;
         this.composerQueue.pause();
         this.forceShutdownOnIdle = true;
         // Arm the forced cleanup now: the reset above ran before this flag,
@@ -2518,6 +2617,7 @@ export class AgentSessionWrapper {
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
+    this.postRunCompactionGuard = false;
     // The liveness timer is unref'ed, so it cannot hold the process; it must still stop,
     // because a destroyed wrapper answers nothing and a late abort on one is noise.
     if (this.livenessTimer) {
