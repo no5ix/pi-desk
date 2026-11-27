@@ -608,6 +608,7 @@ export const enLocale: LocalePlugin = {
     "chat.branchTipBranchLabel": "Branch",
     "chat.branchTipWorktreeLabel": "Worktree branch",
     "chat.projectTipPathLabel": "Path",
+    "chat.projectListTitle": "Projects",
     "chat.projectTipTitle": "Project: {projectRoot}",
     "chat.subagentsTitle": "{total} subagent runs · {completed} completed · {aborted} aborted · {running} running",
     "chat.subagentsCompleted": "{completed} completed",

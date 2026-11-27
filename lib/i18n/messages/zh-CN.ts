@@ -608,6 +608,7 @@ export const zhCNLocale: LocalePlugin = {
     "chat.branchTipBranchLabel": "分支",
     "chat.branchTipWorktreeLabel": "worktree 分支",
     "chat.projectTipPathLabel": "路径",
+    "chat.projectListTitle": "项目",
     "chat.projectTipTitle": "项目：{projectRoot}",
     "chat.subagentsTitle": "{total} 个 subagent 运行 · {completed} 已完成 · {aborted} 已中止 · {running} 运行中",
     "chat.subagentsCompleted": "{completed} 已完成",

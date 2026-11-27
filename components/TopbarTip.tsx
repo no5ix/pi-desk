@@ -115,7 +115,17 @@ export function useTopbarTip<T extends HTMLElement = HTMLButtonElement>() {
     onClick: () => setPinned((current) => !current),
   };
 
-  return { anchorRef, tipRef, tipId, open, pop, pos, triggerProps };
+  /** Close what a tap opened. A tip that became a list needs it: picking a row
+   *  is the end of the interaction, and a tip left open over the new view reads
+   *  as a menu that cannot be dismissed. */
+  const close = useCallback(() => {
+    setPinned(false);
+    setHovered(false);
+    setFocused(false);
+    anchorRef.current?.blur();
+  }, []);
+
+  return { anchorRef, tipRef, tipId, open, pop, pos, triggerProps, close };
 }
 
 /**

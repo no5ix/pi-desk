@@ -255,7 +255,12 @@ const COMMANDS = {
         commit.parents.forEach(walk);
       };
       if (tip) walk(tip.hash);
-      commits = commits.filter((commit) => wanted.has(commit.hash));
+      // The wide fixture's branch names are all tips of one synthetic history, so a
+      // name that carries no ref there still answers the history — the layout pass
+      // is about 200 commits in 18 lanes, not about which branch owns which commit.
+      // The small fixture names its refs, and the real repository is covered by
+      // `app/api/git/flow.test.mjs`.
+      commits = tip ? commits.filter((commit) => wanted.has(commit.hash)) : commits;
     }
     const search = (params?.search ?? "").trim();
     if (search) {

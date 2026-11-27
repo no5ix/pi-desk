@@ -350,3 +350,45 @@ is mounted, then the fixture host's children are gone by the time the row geomet
 is measured, with **no page error** recorded. The layout assertions of that pass
 (the 18-lane log) are the next thing to restore; the ten fixes are asserted by the
 four panel passes and by `panel-reports.test.mjs`.
+
+## The second batch of panel reports (2026-07-29)
+
+Nine reports from the running app. All implemented; the two that were crashes are
+proved on a real repository.
+
+1. **The phone's Git panel has the expand button** in the strip's upper-right
+   corner (upstream hides it there), and expanded means the whole viewport.
+2. **The phone's header names the project and opens the app's projects** — the
+   sidebar's list, the sidebar's names, marked at the current one, tapping opens a
+   session in that project. The branch chip is desktop-only now.
+3. **A branch with hundreds of commits answered `No commit matches this filter.`**
+   The filter's identity was derived from a `refs/…` prefix alone, so every name
+   the sidebar sent (`bak/4pi-desk-main`) was refused, and the panel swallowed the
+   rejection into the empty state. `probePlainBranch` resolves a plain name in
+   git's order (`refs/heads/`, then `refs/remotes/`); a failed read is shown as a
+   failed read. Flow test: *picking a branch is git log <branch>*.
+4. **The chip is on the `Commits` row**, not a row of its own; the name truncates,
+   the × does not.
+5. **The row states `2026-11-25 23:21`** (`formatLogDate`), full time as its title.
+6. **The search box searches messages and hashes** — `-i --grep`, and a hex word
+   reads as a hash prefix over a wider page. Flow test: *the search box finds a
+   message, whatever the case, and a hex word finds a hash*.
+7. **Choosing a branch shows only its commits, tip first** — the same fix as 3,
+   asserted row by row against `git rev-list` in the flow test.
+8. **The filter row keeps its own band of space** (padding above, and a rule), so
+   it stops merging into the header row.
+9. **The crash on search** (`Cannot read properties of null (reading 'value')`) was
+   a state updater reading `event.target.value`: React runs the updater when it
+   renders, and the event's target is null by then. The fields read their value
+   into a local first; asserted for every updater in the panel.
+
+Verified: `tsc --noEmit` clean; eslint 0 errors on the touched files;
+`node e2e/git-panel.mjs` exit 0 (5 viewport passes + 4 wide passes), with the new
+measured checks: the chip on the `Commits` row, the filter row's gap (≥6px), the
+date column's `YYYY-MM-DD HH:MM`;
+suites: `app/api/git/flow.test.mjs` 13/13 (two new), `components/git/panel-reports.test.mjs` 8/8
+(+ the crash's updater scan), `components/git/panel-reports-2.test.mjs` 7/7 (new),
+`components/AppShell.git-panel.test.mjs` 12/12 (the repos route's real URL; the
+`--git-ref-synced` colour moved to the token block at the top of
+`app/native-theme.css`, so the panel's section carries no literal colour),
+`lib/git/*.test.mjs` 155/155, i18n suites 50/50 with the file's own.

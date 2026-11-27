@@ -81,11 +81,22 @@ await test("7 and 8. a branch is the log's filter, and × is the way back", () =
 });
 
 await test("9. the search box answers Enter, and sends the word to git", async () => {
-  assert.match(logPanel, /if \(event\.key === "Enter"\) \{[\s\S]*?search: event\.currentTarget\.value\.trim\(\)/,
+  assert.match(logPanel, /if \(event\.key === "Enter"\) \{[\s\S]*?const value = event\.currentTarget\.value\.trim\(\);[\s\S]*?search: value \}/,
     "Enter applies the trimmed word");
+  // React runs a state updater when it renders, and the event's target is null by
+  // then. An updater that reads `event.target.value` crashed the whole panel.
+  const updaters = logPanel.match(/setFilters\(\(current\) =>[\s\S]*?\}\)\)/g) ?? [];
+  assert.ok(updaters.length >= 4, `the filter fields update state (${updaters.length})`);
+  for (const updater of updaters) {
+    assert.ok(!/event\.(target|currentTarget)\./.test(updater), `no updater touches the event (${updater.slice(0, 60)})`);
+  }
   assert.match(logPanel, /if \(filters\.search\.trim\(\)\) base\.search = filters\.search\.trim\(\);/, "the word goes into the log query");
   const server = await read("lib/git/git-service.ts");
-  assert.match(server, /args\.push\(`--grep=\$\{options\.search\}`\)/, "git filters on the message (--grep)");
+  assert.match(server, /args\.push\("-i",\s*`--grep=\$\{options\.search\}`\)/, "git filters on the message (--grep), case-insensitively");
+  // A word of hex digits is a hash the reader just read in the row, and git's
+  // --grep says nothing about hashes: the rows are picked here.
+  assert.match(server, /const hashQuery = \/\^\[0-9a-f\]\{4,40\}\$\/i\.test\(options\.search/, "a hex word is read as a hash query");
+  assert.match(server, /commit\.hash\.startsWith\(word\)/, "and the hash itself matches the word");
 });
 
 await test("10. the switcher lists the app's projects, not just this folder's checkouts", async () => {

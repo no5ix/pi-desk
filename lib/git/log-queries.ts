@@ -59,8 +59,15 @@ export async function queryGraphPage(
   // on it made `git log refs/heads/<gone>` fail with `fatal: ambiguous
   // argument …`, and the panel cleared the commits, branches and tags it had
   // already fetched. Probe it like the structured refs instead.
+  //
+  // The panel's branch row names the branch the way git takes it on the command
+  // line — `feat/x` for a local branch, `origin/feat/x` for a remote one — and
+  // `check-ref-format --branch` accepts both. Deriving the identity from a
+  // `refs/…` prefix alone made every filter from the sidebar throw
+  // `Invalid Git branch ref: feat/x`, and the panel showed "No commit matches
+  // this filter" for a branch with hundreds of commits.
   if (!params.revision && params.branch) {
-    const filterRef = refIdentityFromFullRef(params.branch);
+    const filterRef = refIdentityFromFullRef(params.branch) ?? (await probePlainBranch(gitService, params.branch));
     if (!filterRef) throw new Error(`Invalid Git branch ref: ${params.branch}`);
     if (!(await gitService.resolveCommitRef(filterRef.fullRef))) return unavailable(filterRef);
   }
@@ -133,4 +140,43 @@ function assertRefIdentity(ref: GitRefIdentity): void {
 
 function unavailable(ref: GitRefIdentity): LogQueryResult {
   return { status: "ref-unavailable", ref };
+}
+
+/**
+ * The identity of the log's plain branch filter, when it resolves.
+ *
+ * The panel's branch row names the branch the way git takes it on the command
+ * line: `feat/x` for a local branch, `origin/feat/x` for a remote one — and a
+ * local branch may itself carry a slash (`bak/4pi-desk-main`), so a slash does
+ * not mean "remote". The namespaces are tried in git's own order of preference
+ * for a name (`refs/heads/`, then `refs/remotes/`) and the one that resolves is
+ * the identity reported: the availability probe and the `ref-unavailable` answer
+ * are shaped for the panel's sidebar, while the query itself runs on the plain
+ * name (`check-ref-format --branch` in the service).
+ *
+ * A name that is not a ref name at all answers `null`, so the caller refuses it
+ * instead of passing it to git.
+ */
+async function probePlainBranch(service: GitService, name: string): Promise<GitRefIdentity | null> {
+  if (!isPlainRefName(name)) return null;
+  for (const [type, prefix] of [["local", "refs/heads/"], ["remote", "refs/remotes/"]] as const) {
+    const fullRef = `${prefix}${name}`;
+    if (await service.resolveCommitRef(fullRef)) return { type, name, fullRef };
+  }
+  // Nothing resolved: report it as the branch the panel asked for.
+  return { type: "local", name, fullRef: `refs/heads/${name}` };
+}
+
+function isPlainRefName(name: string): boolean {
+  return (
+    !!name &&
+    !name.startsWith("-") &&
+    !name.startsWith("/") &&
+    !name.startsWith("refs/") &&
+    !name.includes("..") &&
+    !name.includes("//") &&
+    !name.includes("@{") &&
+    !name.includes(" ") &&
+    /^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(name)
+  );
 }

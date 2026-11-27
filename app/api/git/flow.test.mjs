@@ -304,3 +304,80 @@ await test("the remote branches are answered per remote, the shape the panel map
   assert.ok(origin.branches.includes("main"), "the pushed branch is there");
   assert.ok(origin.branches.includes("feat/remote-only"), "and a name with a slash is one entry, not two");
 });
+
+await test("picking a branch is git log <branch>: its commits only, and its tip first", async () => {
+  // The panel's branch row names the branch the way git takes it — `bak/4pi-desk-main`,
+  // a name with a slash in it. Deriving the filter's identity from a `refs/…` prefix
+  // alone threw `Invalid Git branch ref: bak/4pi-desk-main`, and the panel answered
+  // "No commit matches this filter." for a branch with hundreds of commits.
+  const { repo } = repository("branch-filter");
+  git(repo, "checkout", "-b", "bak/4pi-desk-main");
+  fs.writeFileSync(path.join(repo, "notes.md"), "# Notes\n\nfirst line\nbak line\n");
+  git(repo, "add", ".");
+  git(repo, "commit", "-m", "fix: a division on the panel");
+  const tip = git(repo, "rev-parse", "bak/4pi-desk-main");
+  const reachable = new Set(git(repo, "rev-list", "bak/4pi-desk-main").split("\n"));
+
+  const picked = await run(repo, "getGraphData", {
+    maxCount: 200,
+    currentRef: { type: "local", name: "bak/4pi-desk-main", fullRef: "refs/heads/bak/4pi-desk-main" },
+    branch: "bak/4pi-desk-main",
+  });
+  assert.equal(picked.status, "ok", "the branch answers, and does not throw");
+  const rows = picked.graphData.commits;
+  assert.ok(rows.length >= 2, `the branch's commits are listed (${rows.length})`);
+  assert.equal(rows[0].hash, tip, "the newest commit of that branch is the first row");
+  for (const row of rows) {
+    assert.ok(reachable.has(row.hash), `the row ${row.shortHash} is on that branch`);
+  }
+
+  // And the filter is not the whole repository: a commit made on `main` after the
+  // branch left it is not in the list.
+  git(repo, "checkout", "main");
+  fs.writeFileSync(path.join(repo, "notes.md"), "# Notes\n\nfirst line\nlast line\nmain line\n");
+  git(repo, "add", ".");
+  const mainCommit = git(repo, "rev-parse", "HEAD");
+  const mainOnly = new Set(git(repo, "rev-list", "main").split("\n"));
+  const ofMain = await run(repo, "getGraphData", {
+    maxCount: 200,
+    currentRef: { type: "local", name: "main", fullRef: "refs/heads/main" },
+    branch: "main",
+  });
+  assert.ok(ofMain.graphData.commits.length >= 1, "main answers its own list");
+  assert.ok(ofMain.graphData.commits.every((row) => mainOnly.has(row.hash)), "every row is on main");
+  assert.ok(!ofMain.graphData.commits.some((row) => row.hash === tip), "and the other branch's commit is not there");
+  assert.equal(ofMain.graphData.commits[0].hash, mainCommit, "with main's own tip on top");
+});
+
+await test("the search box finds a message, whatever the case, and a hex word finds a hash", async () => {
+  const { repo } = repository("log-search");
+  fs.writeFileSync(path.join(repo, "notes.md"), "# Notes\n\nfirst line\nMemory line\n");
+  git(repo, "add", ".");
+  git(repo, "commit", "-m", "fix: keep the Memory sampler inside the session budget");
+  const tip = git(repo, "rev-parse", "HEAD");
+
+  const byWord = await run(repo, "getGraphData", { maxCount: 200, search: "memory" });
+  assert.ok(byWord.graphData.commits.length >= 1, "the word finds the commit");
+  assert.ok(
+    byWord.graphData.commits.every((row) => /memory/i.test(`${row.subject} ${row.body}`)),
+    "and only that commit's rows",
+  );
+
+  // A search box is not a shell: the same word in another case is the same search.
+  const byCase = await run(repo, "getGraphData", { maxCount: 200, search: "MEMORY" });
+  assert.deepEqual(
+    byCase.graphData.commits.map((row) => row.hash),
+    byWord.graphData.commits.map((row) => row.hash),
+    "upper case finds what lower case found",
+  );
+
+  // The hash the reader just read in the row is a search word too. git's --grep
+  // matches the message, so this is the panel's own reading of the page.
+  const byHash = await run(repo, "getGraphData", { maxCount: 200, search: tip.slice(0, 8) });
+  assert.ok(
+    byHash.graphData.commits.some((row) => row.hash === tip),
+    `the short hash finds its commit (${byHash.graphData.commits.map((row) => row.shortHash).join(",")})`,
+  );
+  const byFullHash = await run(repo, "getGraphData", { maxCount: 200, search: tip });
+  assert.deepEqual(byFullHash.graphData.commits.map((row) => row.hash), [tip], "the full hash finds it alone");
+});

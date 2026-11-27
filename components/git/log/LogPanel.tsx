@@ -11,8 +11,8 @@ import {
   GitRowMenuButton,
   GitState,
   GitTabs,
-  formatCommitTime,
   formatFullTime,
+  formatLogDate,
   useGitMenu,
   type GitMenuItem,
   type GitMenuState,
@@ -227,6 +227,10 @@ export function LogPanel({
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  // A failed read is not an empty list. The panel used to swallow the rejection
+  // and show "No commit matches this filter." for a branch with hundreds of
+  // commits, which sent the reader to look for a filter they had not set.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [unavailableRef, setUnavailableRef] = useState<string | null>(null);
   const [selectedHash, setSelectedHash] = useState<string | null>(null);
   const [multi, setMulti] = useState<string[]>([]);
@@ -256,6 +260,7 @@ export function LogPanel({
     const request = ++requestRef.current;
     setLoading(true);
     setUnavailableRef(null);
+    setLoadError(null);
     void gitCommand<GraphPage>(target, "getGraphData", JSON.parse(paramsKey) as Record<string, unknown>)
       .then((page) => {
         if (request !== requestRef.current) return;
@@ -272,8 +277,9 @@ export function LogPanel({
         setHasMore(page.hasMore);
         setLoading(false);
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
         if (request !== requestRef.current) return;
+        setLoadError(cause instanceof Error ? cause.message : String(cause));
         setLoading(false);
       });
   }, [target, paramsKey, refreshToken]);
@@ -448,6 +454,29 @@ export function LogPanel({
       <div className="git-panel-section-header">
         <span className="git-panel-section-title">{t("git.logTitle")}</span>
         <span className="git-panel-section-count">{commits.length}</span>
+        {/* The filter belongs on this row: the chip under the title cost a row of
+            the log and read as a second heading. */}
+        {selectedRef ? (
+          <span className="git-filter-chips">
+            <span className="git-chip">
+              <span className="git-chip-label">{selectedRef.name}</span>
+              <button
+                type="button"
+                className="git-chip-clear"
+                aria-label={t("git.clearFilter")}
+                onClick={() => {
+                  setFilters({ search: "", author: "", since: "", until: "" });
+                  // The chip is the branch. Clearing only the text filters left it
+                  // on screen with the list still filtered, which reads as a button
+                  // that does nothing.
+                  onClearRef?.();
+                }}
+              >
+                ×
+              </button>
+            </span>
+          </span>
+        ) : null}
         <span className="git-toolbar-spacer" />
         <GitIconButton
           label={t("git.filterToggle")}
@@ -465,28 +494,6 @@ export function LogPanel({
         </GitIconButton>
       </div>
 
-      {selectedRef ? (
-        <div className="git-filter-chips">
-          <span className="git-chip">
-            {selectedRef.name}
-            <button
-              type="button"
-              className="git-chip-clear"
-              aria-label={t("git.clearFilter")}
-              onClick={() => {
-                setFilters({ search: "", author: "", since: "", until: "" });
-                // The chip is the branch. Clearing only the text filters left it
-                // on screen with the list still filtered, which reads as a button
-                // that does nothing.
-                onClearRef?.();
-              }}
-            >
-              ×
-            </button>
-          </span>
-        </div>
-      ) : null}
-
       {showFilters ? (
         <div className="git-filter-row">
           <input
@@ -495,14 +502,22 @@ export function LogPanel({
             value={filters.search}
             placeholder={t("git.filterSearch")}
             aria-label={t("git.filterSearch")}
-            onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+            onChange={(event) => {
+              // Read the field before handing React the updater. React runs the
+              // updater when it renders, and the event's target is null by then:
+              // an updater that reads `event.target.value` crashed the panel
+              // with `Cannot read properties of null (reading 'value')`.
+              const value = event.target.value;
+              setFilters((current) => ({ ...current, search: value }));
+            }}
             onKeyDown={(event) => {
               // The filter applies as it is typed; Enter applies the trimmed
               // text and keeps the caret out of the way, because a box that
               // answers Enter is a search box.
               if (event.key === "Enter") {
                 event.preventDefault();
-                setFilters((current) => ({ ...current, search: event.currentTarget.value.trim() }));
+                const value = event.currentTarget.value.trim();
+                setFilters((current) => ({ ...current, search: value }));
               }
             }}
           />
@@ -512,21 +527,30 @@ export function LogPanel({
             value={filters.author}
             placeholder={t("git.filterAuthor")}
             aria-label={t("git.filterAuthor")}
-            onChange={(event) => setFilters((current) => ({ ...current, author: event.target.value }))}
+            onChange={(event) => {
+              const value = event.target.value;
+              setFilters((current) => ({ ...current, author: value }));
+            }}
           />
           <input
             className="git-date-input"
             type="date"
             value={filters.since}
             aria-label={t("git.filterSince")}
-            onChange={(event) => setFilters((current) => ({ ...current, since: event.target.value }))}
+            onChange={(event) => {
+              const value = event.target.value;
+              setFilters((current) => ({ ...current, since: value }));
+            }}
           />
           <input
             className="git-date-input"
             type="date"
             value={filters.until}
             aria-label={t("git.filterUntil")}
-            onChange={(event) => setFilters((current) => ({ ...current, until: event.target.value }))}
+            onChange={(event) => {
+              const value = event.target.value;
+              setFilters((current) => ({ ...current, until: value }));
+            }}
           />
         </div>
       ) : null}
@@ -534,7 +558,10 @@ export function LogPanel({
       <GitErrorLine error={error} />
       {unavailableRef ? <GitState kind="empty" text={t("git.refUnavailable", { ref: unavailableRef })} /> : null}
       {loading ? <GitState kind="loading" text={t("git.logLoading")} /> : null}
-      {!loading && !commits.length && !unavailableRef ? <GitState kind="empty" text={t("git.logEmpty")} /> : null}
+      {!loading && loadError ? (
+        <GitState kind="error" text={t("git.logFailed", { reason: loadError })} onRetry={() => onChanged()} />
+      ) : null}
+      {!loading && !commits.length && !unavailableRef && !loadError ? <GitState kind="empty" text={t("git.logEmpty")} /> : null}
 
       <div
         className="git-log-scroll"
@@ -620,7 +647,7 @@ export function LogPanel({
                 </span>
                 <span className="git-log-hash">{commit.shortHash}</span>
                 <span className="git-log-date" title={formatFullTime(commit.authorDate)}>
-                  {formatCommitTime(commit.authorDate)}
+                  {formatLogDate(commit.authorDate)}
                 </span>
                 <GitRowMenuButton
                   label={t("git.rowMenu")}

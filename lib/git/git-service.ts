@@ -187,19 +187,24 @@ export class GitService {
       "--date-order",
     ];
 
-    if (options.maxCount) {
-      args.push(`--max-count=${options.maxCount}`);
-    } else {
-      args.push("--max-count=200");
-    }
+    // A word in the panel's search box is a **message** search, and a word made
+    // of hex digits is also a **hash**: the user pastes the short hash they just
+    // read in the row. git's `--grep` matches the message only, so a hash query
+    // reads a wider page and the rows are picked here (message substring, case
+    // insensitive, or the hash starting with the word) and cut back to the page.
+    const pageMax = options.maxCount ?? 200;
+    const hashQuery = /^[0-9a-f]{4,40}$/i.test(options.search?.trim() ?? "") ? options.search!.trim().toLowerCase() : null;
+    args.push(`--max-count=${hashQuery ? Math.min(pageMax * 4, 2000) : pageMax}`);
     if (options.skip) {
       args.push(`--skip=${options.skip}`);
     }
     if (options.author) {
       args.push(`--author=${options.author}`);
     }
-    if (options.search) {
-      args.push(`--grep=${options.search}`);
+    if (options.search && !hashQuery) {
+      // Case-insensitive: a search box is not a shell, and `Memory` and `memory`
+      // are the same search to a reader.
+      args.push("-i", `--grep=${options.search}`);
     }
     if (options.since) {
       args.push(`--since=${options.since}`);
@@ -213,7 +218,17 @@ export class GitService {
     }
 
     const output = await this.execGit(args);
-    const commits = parseLogOutput(output);
+    let commits = parseLogOutput(output);
+    if (hashQuery) {
+      const word = hashQuery;
+      commits = commits.filter((commit) =>
+        commit.hash.startsWith(word)
+        || commit.shortHash.startsWith(word)
+        || commit.subject.toLowerCase().includes(word)
+        || commit.body.toLowerCase().includes(word),
+      );
+    }
+    commits = commits.slice(0, pageMax);
     this.cache.set(cacheKey, commits);
     return commits;
   }

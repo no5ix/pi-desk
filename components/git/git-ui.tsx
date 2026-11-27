@@ -310,6 +310,21 @@ export function formatCommitTime(iso: string, now = Date.now()): string {
   return `${date.getDate()} ${date.toLocaleString("en", { month: "short" })}`;
 }
 
+/**
+ * The Log's date column: `2026-11-25 23:21`, local time, newest first.
+ *
+ * The relative form ("14h") is what a feed wants; a commit list is read for the
+ * moment a change was made, and the user reads the column across a week of
+ * commits. Zero padded, so the column sorts as it reads.
+ */
+export function formatLogDate(iso: string): string {
+  const time = Date.parse(iso);
+  if (!Number.isFinite(time)) return "";
+  const date = new Date(time);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export function formatFullTime(iso: string): string {
   const time = Date.parse(iso);
   if (!Number.isFinite(time)) return iso;

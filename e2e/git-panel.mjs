@@ -264,6 +264,32 @@ async function panel(label, { width, height, touch, theme = "light" }) {
     assert.equal(asked.at(-1)?.branch, "feat/panel/git-view", `${label}: the log is asked for that branch's commits (asked: ${JSON.stringify(asked.at(-1))})`);
     const chip = page.locator("#git-panel .git-filter-chips .git-chip");
     assert.ok((await chip.first().innerText()).includes("git-view"), `${label}: the picked branch shows as the filter`);
+    // The chip belongs to the row that names the view (`Commits 200`), not to a row
+    // of its own: a row under the title cost the log a line of commits.
+    const chipRow = await page.evaluate(() => {
+      const header = document.querySelector("#git-panel .git-panel-section-header");
+      const chipEl = document.querySelector("#git-panel .git-filter-chips .git-chip");
+      const h = header?.getBoundingClientRect();
+      const c = chipEl?.getBoundingClientRect();
+      return h && c ? { sameRow: c.top >= h.top - 1 && c.bottom <= h.bottom + 1, headerHeight: Math.round(h.height) } : null;
+    });
+    assert.ok(chipRow?.sameRow, `${label}: the branch chip is on the Commits row (${JSON.stringify(chipRow)})`);
+
+    // ─── the filter row, and the date a commit is read by ───
+    await page.locator("#git-panel .git-log-panel .git-panel-section-header .git-icon-button").first().click();
+    await page.waitForSelector("#git-panel .git-filter-row", { timeout: 5_000 });
+    const filterGap = await page.evaluate(() => {
+      const row = document.querySelector("#git-panel .git-filter-row");
+      const above = row?.previousElementSibling?.getBoundingClientRect();
+      // The reading gap: the field's own edge under the rule, not the row box,
+      // whose padding is the space.
+      const field = row?.querySelector(".git-search-input")?.getBoundingClientRect();
+      return field && above ? Math.round(field.top - above.bottom) : null;
+    });
+    assert.ok(filterGap !== null && filterGap >= 6, `${label}: the search row is not flush against the row above (${filterGap}px)`);
+    // The column says when, not “14h”: a commit list is read across a week.
+    const dateText = (await page.locator("#git-panel .git-log-date").first().innerText()).trim();
+    assert.match(dateText, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/, `${label}: the row states the date and the time (${dateText})`);
     const filteredRows = await page.locator("#git-panel .git-log-row").count();
     assert.ok(filteredRows < allRows, `${label}: the list is that branch's history, not every branch's (${filteredRows} of ${allRows})`);
     const firstSubject = (await page.locator("#git-panel .git-log-subject").first().innerText()).trim();

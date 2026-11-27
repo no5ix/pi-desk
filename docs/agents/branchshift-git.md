@@ -179,3 +179,55 @@ shipped broken:
 overlap, the subject readable, the indent equal to the graph's width, the graph
 within its cap and budget, no sideways page scroll — before and after picking a
 branch, which is how the breakage was reported.
+
+## The branch filter, the search box, and the row's date
+
+**A branch row's filter is the name git takes.** The panel sends `branch:
+"bak/4pi-desk-main"` — the same string a person would type after `git log`. The
+service resolves a plain name in git's own order (`refs/heads/`, then
+`refs/remotes/`) before answering, in `probePlainBranch`
+(`lib/git/log-queries.ts`), because the availability probe speaks in full refs
+(`resolveCommitRef` refuses anything that is not `refs/…`). Deriving the identity
+from a `refs/…` prefix alone threw `Invalid Git branch ref: bak/4pi-desk-main`,
+and the panel answered *"No commit matches this filter."* for a branch with
+hundreds of commits. A slash in a name does **not** mean "remote": a local branch
+is allowed to have one. The query itself runs on the plain name, validated by
+`check-ref-format --branch` in the service.
+
+A failed read is shown as a failed read. The Log used to swallow the rejection
+and paint the empty state, which sent the reader hunting for a filter they had
+not set.
+
+**The search box searches messages and hashes.** git's `--grep` matches the
+message, case-insensitively (`-i`, because `Memory` and `memory` are one search).
+A word made of 4–40 hex digits is also the short hash the reader just read in the
+row, and `--grep` says nothing about hashes: `getLog` reads a wider page and picks
+the rows whose hash starts with the word or whose message contains it, then cuts
+back to the page (`lib/git/git-service.ts`). The field says so: *Search the
+message or the hash*.
+
+**The date column states the moment.** `formatLogDate` (`components/git/git-ui.tsx`)
+renders `2026-11-25 23:21`, local time, zero padded, so the column sorts as it
+reads; the full time stays as the cell's title. The relative form (`14h`) belongs
+to a feed, not to a list read across a week.
+
+**The filter chip is on the row that names the view** (`.git-panel-section-header`),
+not in a row of its own: a row under the title cost the log a line of commits, and
+the chip is the title's state. Its name truncates (`.git-chip-label`), its × does
+not.
+
+## The panel on a phone
+
+Upstream's mobile CSS hides the strip's expand button (the panel already spans the
+width). The fork shows it again (`app/native-theme.css`, phone media query) because
+the Git panel is the view that wants the whole screen, and the top-right corner of
+the mobile panel was empty: **expanded** is the full viewport, **not expanded**
+leaves the chat's topbar above it, so the button changes what you see.
+
+The header's project chip is a **project switcher on the phone**: it lists the
+projects the sidebar lists (`availableProjectRoots`, named by
+`getProjectDisplayName`), marks the one this session works in, and opens a session
+in the one you tap (`components/TopbarProjectChip.tsx`, wired in
+`components/AppShell.tsx`). The desktop keeps the path tip — its sidebar is open.
+The branch chip is desktop-only: on a phone it is the first thing cut and the last
+thing a reader needs, with the Git panel one tap away.

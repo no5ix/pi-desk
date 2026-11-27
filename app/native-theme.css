@@ -16,6 +16,10 @@
   --fw-bold: 700;
   /* Hairlines: one device pixel on retina, where a CSS pixel is two. */
   --hairline: 1px;
+  /* The Git panel's synced chip: a branch and its remote sitting on the same
+     commit. The colour is an asked-for one, and it lives here so the panel's
+     section of this file names tokens and carries no literal colour. */
+  --git-ref-synced: #cdc12d;
 }
 @media (min-resolution: 2dppx) {
   :root { --hairline: 0.5px; }
@@ -3853,6 +3857,57 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   font-size: var(--fs-small);
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+/* The header's project switcher, on a phone: the sidebar's rows, in the tip the
+   chip already opens. Rows are 36px for a thumb, the name truncates because the
+   row's job is to be picked, and the current project is marked the way the
+   sidebar marks it. */
+.app-topbar-project-list {
+  display: grid;
+  gap: 2px;
+  min-width: 168px;
+  max-width: min(340px, calc(100vw - 24px));
+}
+
+.app-topbar-project-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: var(--fs-small);
+  text-align: left;
+}
+
+.app-topbar-project-row:hover {
+  background: var(--bg-hover);
+}
+
+.app-topbar-project-row.is-current {
+  background: var(--bg-selected);
+  color: var(--accent);
+}
+
+.app-topbar-project-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The phone's header row is short, and the branch is the first thing cut. It is
+   also the least useful thing there: the project is what a reader taps, and the
+   branch is one tap away in the Git panel. So the branch stays on the desktop,
+   where the row has room. */
+@media (max-width: 640px) {
+  .app-topbar-branch {
+    display: none;
+  }
 }
 
 /* The live clock after the branch: how long the task has been running since the
@@ -15149,8 +15204,6 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   --git-lane-6: var(--ansi-cyan);
   --git-lane-7: color-mix(in srgb, var(--ansi-red) 50%, var(--ansi-yellow));
   --git-lane-8: var(--ansi-bright-cyan);
-  /* A branch and the remote branch of the same name, at the same commit. */
-  --git-ref-synced: #cdc12d;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -15513,7 +15566,15 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   align-items: center;
   gap: 4px;
   flex: 0 0 auto;
-  padding: 0 8px 6px;
+  /* The filter row sits under the section header's rule. Flush against it read
+     as one crowded row of controls, so the row keeps its own band of space. */
+  padding: 7px 8px 6px;
+}
+
+/* The filter row is the header's second line: a rule above it keeps the two
+   rows from merging into one strip of controls. */
+.git-log-panel .git-filter-row {
+  border-top: 1px solid var(--separator, var(--border));
 }
 
 .git-date-input {
@@ -15723,10 +15784,30 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 
 .git-filter-chips {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  flex-wrap: nowrap;
   gap: 4px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   padding: 0 8px 6px;
+}
+
+/* The branch chip lives on the section header's row, beside the title, so it
+   does not cost the log a row of commits. */
+.git-panel-section-header .git-filter-chips {
+  padding: 0;
+}
+
+.git-panel-section-header .git-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.git-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .git-chip {
@@ -16509,6 +16590,32 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 
 .git-hidden-clear {
   display: none;
+}
+
+/* The phone's panel is an overlay card. Upstream hides the strip's expand
+   button there (the card already spans the width), which leaves the top-right
+   corner empty — and the Git panel is the view that wants the whole screen: a
+   branch tree, a commit list and a diff do not fit in a short card. So the
+   button stays, in the corner it has on the desktop, and on a phone "expand"
+   means the whole viewport: not expanded keeps the chat's topbar above it. */
+@media (max-width: 640px) {
+  .file-panel-expand-button {
+    display: inline-flex;
+  }
+
+  .right-panel-container.right-panel-open:not(.right-panel-full-width) {
+    top: 52px;
+    bottom: 0;
+    height: auto;
+    inset-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+  }
+
+  .right-panel-container.right-panel-open.right-panel-full-width {
+    top: 0;
+    bottom: 0;
+    height: var(--app-viewport-height, 100dvh);
+    inset-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+  }
 }
 
 /* A finger, not a cursor: the panel's icon buttons get a thumb plate, as the

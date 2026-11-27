@@ -2326,6 +2326,22 @@ export function AppShell() {
   const activeProjectBranch = useProjectBranch(
     isChatWorkspaceActive || pageOpen || selectedSession ? null : visibleProjectCwd,
   );
+  // The phone's project switcher. The sidebar holds the project list, and on a
+  // phone it is a drawer away, so the header's project chip carries the list
+  // itself: the same rows, in the sidebar's order, and picking one opens a
+  // session in that project. The desktop keeps the path tip — its sidebar is open.
+  const topbarProjects = useMemo(
+    () => (isMobile && availableProjectRoots.length
+      ? availableProjectRoots.map((root) => ({
+        name: getProjectDisplayName(root, availableProjectRoots) ?? root.split("/").filter(Boolean).pop() ?? root,
+        path: root,
+      }))
+      : null),
+    [availableProjectRoots, isMobile],
+  );
+  const handleTopbarProjectSelect = useCallback((projectRoot: string) => {
+    handleNewSession(`project-${Date.now()}`, projectRoot, "project");
+  }, [handleNewSession]);
   const topBarBranch = isChatWorkspaceActive || pageOpen
     ? null
     : selectedSession?.branch ?? activeProjectBranch;
@@ -2689,7 +2705,14 @@ export function AppShell() {
                   /* A control, like the branch chip: the label is a short name, the path
                      it stands for is longer than a phone, and nothing else in the header
                      says where the session works. Tap it for `Path` over the full path. */
-                  <TopbarProjectChip name={topBarSubtitle} path={visibleProjectCwd ?? ""} isWorktree={headerProjectIsWorktree} />
+                  <TopbarProjectChip
+                    name={topBarSubtitle}
+                    path={visibleProjectCwd ?? ""}
+                    isWorktree={headerProjectIsWorktree}
+                    projects={topbarProjects ?? undefined}
+                    currentPath={visibleProjectCwd ?? undefined}
+                    onSelectProject={topbarProjects ? handleTopbarProjectSelect : undefined}
+                  />
                 ) : (
                   <small className="app-topbar-project">
                     <span>{topBarSubtitle}</span>
