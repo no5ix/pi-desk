@@ -406,21 +406,44 @@ test("a finished background task is announced by the card, and the notice waits 
   // is opened. The subscribe response's counts are the chip's first paint.
   assert.match(bridges, /client\.onCounts\(\(facts\) => applyCounts\(facts\.counts, facts\.observedAt\)\)/);
   assert.match(bridges, /client\.onChanges\(\(frame\) =>/);
-  // A run that ends while the conversation's tasks are running is kept, and said when the last one
-  // settles: one notice, carrying the real end of the work.
-  assert.match(bridges, /if \(counts\.running === 0\) \{[\s\S]*?announceDeferredRunEnd\(sessionId\)/);
-  assert.match(bridges, /clearDeferredRunEnd\(sessionId\)/);
+  // A finished task pops no notification at all. The bridge tells the announcer that the
+  // conversation's tasks settled, which only opens the quiet window; the settlement is never an
+  // announcement. The conversation going quiet is, and it carries the kept run's start.
+  assert.match(bridges, /if \(counts\.running === 0\) noteBackgroundTasksSettled\(sessionId, observedAt\)/);
+  assert.ok(!bridges.includes("announceDeferredRunEnd"), "a task settling is not an announcement moment");
+  assert.match(bridges, /releaseConversationCompletion\(sessionId\)/);
   // The turn the extension woke to hand in a result says nothing on any channel; a run the
   // conversation asked for is announced, always.
   assert.match(rpc, /this\.agentRunAnnouncesCompletion = !runWokeByBackgroundTask\(this\.sessionId, this\.localRunRequestedAt\)/);
   assert.match(rpc, /if \(!this\.agentRunAnnouncesCompletion\) \{/);
   assert.match(rpc, /if \(RUN_STARTING_COMMANDS\.has\(type\)\) this\.localRunRequestedAt = Date\.now\(\);/);
   assert.match(gate, /export const COMPLETION_WINDOW_MS/);
-  // The announcer refuses a run whose conversation is still working, and gives one notice per
-  // session per window: three tasks settling is one finished task to the user, not three rows in
-  // Notification Center of the same sentence.
-  assert.match(announcer, /if \(env\.backgroundTasksRunning\(sessionId\) > 0\) \{\s*\n\s*deferRunEnd\(request, env\);/);
+  // The session reports a run starting (the conversation is at work, so a kept notice is not due)
+  // and hands the machine-woken turn's end to the announcer, which is where the kept notice is said
+  // with that end: one judge, in one module.
+  assert.match(rpc, /if \(!this\.suppressCompletionNotifications\) noteConversationRunStart\(this\.sessionId\)/);
+  assert.match(rpc, /void noteConversationRunSettled\(this\.sessionId, \{/);
+  // The announcer refuses a run whose conversation is still working, waits for it to go quiet, and
+  // gives one notice per session per window: three tasks settling is one finished task to the user,
+  // not three rows in Notification Center of the same sentence.
+  assert.match(announcer, /if \(\s*\n\s*env\.backgroundTasksRunning\(sessionId\) > 0\s*\n\s*\|\| env\.backgroundTasksObserved\(sessionId\)\s*\n\s*\|\| request\.backgroundWorkStarted === true\s*\n\s*\) \{\s*\n\s*holdRunEnd\(request, env, overrides\);/);
+  assert.match(announcer, /export const CONVERSATION_QUIET_MS/);
+  // The run that called the extension's task tool is never announced on its own end: the app's
+  // frames report an empty registry at the moment a fast answer lands, so the tool call is the
+  // race-free signal, and the session hands it to the announcer.
+  assert.match(rpc, /const BACKGROUND_TASK_TOOLS = new Set\(\["bg_run"\]\);/);
+  assert.match(rpc, /if \(typeof eventToolName === "string" && BACKGROUND_TASK_TOOLS\.has\(eventToolName\)\) \{/);
+  assert.match(announcer, /\|\| request\.backgroundWorkStarted === true/);
   assert.match(announcer, /export const COMPLETION_NOTICE_COOLDOWN_MS/);
-  assert.match(announcer, /export async function announceDeferredRunEnd/);
-  assert.match(announcer, /outcome: \{ \.\.\.pending\.request\.outcome, endedAt: now \}/);
+  assert.match(announcer, /export function noteBackgroundTasksSettled/);
+  assert.match(announcer, /export async function noteConversationRunSettled/);
+  assert.match(announcer, /export async function quietTick/);
+  assert.match(announcer, /startedAt: earliest\(held\.startedAt, request\.outcome\.startedAt\)/);
+  assert.ok(!announcer.includes("announceDeferredRunEnd"), "nothing announces the settlement of a task");
+  // Every channel answers for itself, in one line of the server's log: a Safari that never buzzed is
+  // a refused endpoint in the log, not a guess.
+  assert.match(announcer, /function reportAnnouncement/);
+  const push = read("../lib/web-push.ts");
+  assert.match(push, /export interface PushDelivery/);
+  assert.match(push, /a web push did not reach/);
 });

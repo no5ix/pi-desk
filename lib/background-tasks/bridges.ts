@@ -16,7 +16,7 @@
  */
 
 import { BackgroundTaskHostClient, type EventBusLike } from "./host-client";
-import { announceDeferredRunEnd, clearDeferredRunEnd } from "../task-completion-server";
+import { noteBackgroundTasksSettled, releaseConversationCompletion } from "../task-completion-server";
 import { clearBackgroundTaskCompletions, noteBackgroundTaskSettlement } from "./completion-gate";
 import { type BgTaskCounts } from "./protocol";
 import { clearBackgroundTasksRunning, recordBackgroundTasksRunning } from "./running-index";
@@ -86,14 +86,11 @@ export function attachBackgroundTasksBridge(
       unseenFailed: counts.unseenFailed,
       observedAt,
     });
-    // The run the conversation finished while these tasks ran is kept by the announcer and said
-    // here, once, when the last task settles: the user's notice carries the real end of the work
-    // they asked for, not the fifteen seconds the answer took (task-completion-server.ts).
-    if (counts.running === 0) {
-      void announceDeferredRunEnd(sessionId).catch((error: unknown) => {
-        console.error("[pi-web] the settlement notice failed:", error instanceof Error ? error.message : String(error));
-      });
-    }
+    // A finished task announces nothing on its own. The card is where a finished task is read — the
+    // row moves, a failure wears its mark, the log is there — and the conversation's notice waits
+    // for the conversation to go quiet, which is the end of what the user asked for. So the
+    // settlement only opens the quiet window (task-completion-server.ts).
+    if (counts.running === 0) noteBackgroundTasksSettled(sessionId, observedAt);
     // A task that left `running` and settled is news the extension is about to tell: its notice
     // lands in the conversation and, by its default, it asks the agent for a turn about the
     // result. That turn is not the user's task ending, and the app announces a finished run on
@@ -137,7 +134,7 @@ export function releaseBackgroundTasksBridge(sessionId: string): boolean {
   clearBackgroundTasksRunning(sessionId);
   clearBackgroundTaskCompletions(sessionId);
   // A notice kept for tasks that will never settle with this conversation is nobody's news.
-  clearDeferredRunEnd(sessionId);
+  releaseConversationCompletion(sessionId);
   notify();
   return true;
 }

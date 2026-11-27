@@ -58,9 +58,10 @@ export interface WebPushNotifier {
    * One session's news. `sessionName`: the caller's copy of the title (null = untitled);
    * omitted, it is looked up. A `complete` event is only worth sending when it can speak
    * the format — the session's name and a span (`completionAnnouncement`); `announceRunEnd`
-   * is the sender and it refuses the rest.
+   * is the sender and it refuses the rest. The answer is what the push service said, so a
+   * finished run's notice can report a channel that stayed silent.
    */
-  notifySessionEvent: (sessionId: string, event: SessionPushEvent, sessionName?: string | null) => Promise<void>;
+  notifySessionEvent: (sessionId: string, event: SessionPushEvent, sessionName?: string | null) => Promise<PushDelivery>;
   /** Send a test notification to one subscription; false when it is not registered. */
   sendTest: (endpoint: string) => Promise<boolean>;
 }
@@ -98,6 +99,26 @@ export function vapidSubject(): string {
 // `lib/notification-tags.ts` owns the number, and `public/sw.js` collapses whatever does
 // arrive late.
 export const PUSH_OPTIONS = { TTL: PUSH_TTL_SECONDS, urgency: "high" as const };
+
+/**
+ * What one send did. Every subscription answers on its own, so "the push channel works" is a count
+ * and not a boolean: a browser that was never subscribed, a phone whose pairing was revoked, and an
+ * Apple endpoint that refused this server's VAPID key are three different news, and each one lands
+ * as silence on the device. `announceRunEnd` logs the summary for every finished run.
+ */
+export interface PushDelivery {
+  /** Subscriptions this send asked (0 means nobody is subscribed: the channel has no listener). */
+  attempted: number;
+  /** Subscriptions whose push service took the message. */
+  sent: number;
+  /** Subscriptions the push service told us to drop (404 / 410). */
+  pruned: number;
+  failures: { endpoint: string; statusCode: number }[];
+}
+/** An endpoint as a log line: enough to point at a device, not a whole URL on every row. */
+function shortEndpoint(endpoint: string): string {
+  return endpoint.replace(/^https:\/\//, "").slice(0, 24);
+}
 
 function getDefaultEnvironment(): WebPushEnvironment {
   return {
@@ -302,20 +323,33 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
   };
 
   // Gone subscriptions (404 / 410) are dropped; with `rethrow`, other failures reach the caller.
+  // Every failure is named in the log first: a push that Apple refused (a stale VAPID key, a
+  // subscription from an earlier install) is invisible on the phone, and a channel nobody can
+  // inspect is a channel nobody can fix.
   const sendAll = async (
     subscriptions: PushSubscriptionRecord[],
     payloadFor: (locale: string) => object,
     rethrow = false,
-  ) => {
+  ): Promise<PushDelivery> => {
+    const delivery: PushDelivery = { attempted: subscriptions.length, sent: 0, pruned: 0, failures: [] };
     let pruned = false;
     try {
       for (const subscription of subscriptions) {
         try {
           await environment.send(subscription, JSON.stringify(payloadFor(subscription.locale)), state.vapidKeys);
+          delivery.sent += 1;
         } catch (error) {
           const statusCode = pushStatusCode(error);
+          delivery.failures.push({ endpoint: subscription.endpoint, statusCode: statusCode ?? 0 });
+          console.warn(
+            `[pi-web] a web push did not reach ${shortEndpoint(subscription.endpoint)}`
+            + `${subscription.login ? ` (login ${subscription.login})` : ""}`
+            + `${subscription.relayDevice ? ` (relay device ${subscription.relayDevice})` : ""}`
+            + `: ${statusCode === undefined ? (error instanceof Error ? error.message : String(error)) : `HTTP ${String(statusCode)}`}`,
+          );
           if (statusCode === 404 || statusCode === 410) {
             state.subscriptions = state.subscriptions.filter((s) => s.endpoint !== subscription.endpoint);
+            delivery.pruned += 1;
             pruned = true;
           }
           if (rethrow) throw error;
@@ -324,19 +358,24 @@ export function createWebPushNotifier(environment: WebPushEnvironment): WebPushN
     } finally {
       if (pruned) saveState();
     }
+    return delivery;
   };
 
   const deliverable = (subscription: PushSubscriptionRecord) =>
     (!subscription.login || (environment.isLoginAllowed?.(subscription.login) ?? false))
     && (!subscription.relayDevice || (environment.isRelayDevicePaired?.(subscription.relayDevice) ?? false));
 
-  const notifySessionEvent = async (sessionId: string, event: SessionPushEvent, knownName?: string | null) => {
+  const notifySessionEvent = async (
+    sessionId: string,
+    event: SessionPushEvent,
+    knownName?: string | null,
+  ): Promise<PushDelivery> => {
     const recipients = state.subscriptions.filter(deliverable);
-    if (recipients.length === 0) return;
+    if (recipients.length === 0) return { attempted: 0, sent: 0, pruned: 0, failures: [] };
     const sessionName = knownName !== undefined
       ? knownName ?? undefined
       : (await environment.listSessionNames()).get(sessionId);
-    await sendAll(recipients, (locale) => sessionPushPayload(sessionId, sessionName, event, locale));
+    return sendAll(recipients, (locale) => sessionPushPayload(sessionId, sessionName, event, locale));
   };
 
   return {
@@ -395,9 +434,9 @@ export async function notifySessionEvent(
   sessionId: string,
   event: SessionPushEvent,
   sessionName?: string | null,
-): Promise<void> {
+): Promise<PushDelivery> {
   const notifier = await getNotifier();
-  await notifier.notifySessionEvent(sessionId, event, sessionName);
+  return notifier.notifySessionEvent(sessionId, event, sessionName);
 }
 
 export function removeSubscription(endpoint: string): Promise<boolean> {

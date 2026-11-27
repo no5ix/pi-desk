@@ -22,7 +22,7 @@ import {
 import { cacheSessionPath, getLatestModelChange, getLatestResponseModel, getSessionListVersion, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { computeLiveSessionTotalActiveMs } from "./session-timing";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
-import { announceAttention, announceRunEnd } from "./task-completion-server";
+import { announceAttention, announceRunEnd, noteConversationRunSettled, noteConversationRunStart } from "./task-completion-server";
 import type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 export type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 import { isVerboseLogging } from "../bin/pi-web-options.js";
@@ -140,7 +140,7 @@ export interface AgentEvent {
 }
 
 type EventListener = (event: AgentEvent) => void;
-type AgentRunCompleteListener = (sessionId: string, outcome: AgentRunOutcome) => void;
+type AgentRunCompleteListener = (sessionId: string, outcome: AgentRunOutcome, requestedAt: number, backgroundWorkStarted: boolean) => void;
 /**
  * A blocking extension dialog (select / confirm / input / editor / custom) is waiting for
  * the user. `requestId` is the dialog's own id: a dialog announces once, however often its
@@ -396,6 +396,17 @@ const RUN_STARTING_COMMANDS = new Set([
   "navigate_tree",
 ]);
 
+/**
+ * The background task tool the `pi-background-tasks` extension puts on a session.
+ *
+ * A run that called it has work of its own in flight, whatever the app's running index says at the
+ * moment the answer lands: the index keeps only conversations with news, and the bridge's first
+ * frame is a subscribe answer with an empty registry, so both read as "no background work" for a
+ * prompt that starts a task and answers two seconds later. The tool call is the race-free signal,
+ * and it is the reason such a run is never announced on its own end (lib/task-completion-server.ts).
+ */
+const BACKGROUND_TASK_TOOLS = new Set(["bg_run"]);
+
 export interface RpcSessionStartOptions {
   toolNames?: string[];
   initialModel?: { provider: string; modelId: string };
@@ -532,6 +543,11 @@ export class AgentSessionWrapper {
   // Overwritten by every `agent_end`, so an auto-retry that recovers reports success.
   private lastRunOutcome: AgentRunOutcome = { status: "done" };
   private runStartedAt: number | null = null;
+  /**
+   * Whether the run in flight called the extension's task tool. Its work is then in flight whatever
+   * the app's frames have reported yet, and the run's own end is not the end of the job.
+   */
+  private runStartsBackgroundWork = false;
   // Set once this wrapper has named the session, or found it already named.
   private autoTitleSettled = false;
   private retrying = false;
@@ -840,7 +856,11 @@ export class AgentSessionWrapper {
         this.agentRunNeedsCompletion = true;
         this.agentRunSettled = false;
         this.runStartedAt ??= Date.now();
+        this.runStartsBackgroundWork = false;
         this.lastRunAborted = false;
+        // The announcer keeps a finished run whose conversation is still at work; a run starting is
+        // that work going on, so a kept notice is not due until this one ends.
+        if (!this.suppressCompletionNotifications) noteConversationRunStart(this.sessionId);
         // Cross-window liveness: idle → running must reach other windows'
         // sidebars through the running-events stream, not just this one's SSE.
         notifyRunningChange();
@@ -867,6 +887,12 @@ export class AgentSessionWrapper {
         notifyRunningChange();
       }
       this.trackActiveToolEvent(event);
+      // The run started a background task of its own: the announcer is told, because a run that
+      // starts a task and answers two seconds later must not be announced as a finished job.
+      const eventToolName = (event as { toolName?: unknown }).toolName;
+      if (typeof eventToolName === "string" && BACKGROUND_TASK_TOOLS.has(eventToolName)) {
+        this.runStartsBackgroundWork = true;
+      }
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
       if (event.type === "compaction_end") {
         // Prompts parked while compaction ran go out now, FIFO, whatever its outcome (as the TUI).
@@ -966,6 +992,8 @@ export class AgentSessionWrapper {
     // "The task lasted 0h18m13s, started at 10:04:34, and ended at 10:22:47", and a run
     // this process never saw `agent_start` for has no span to say.
     const runStartedAt = this.runStartedAt;
+    const backgroundWorkStarted = this.runStartsBackgroundWork;
+    this.runStartsBackgroundWork = false;
     this.agentRunNeedsCompletion = false;
     this.agentRunSettled = false;
     // Cleared with the run: the run that follows it — a queued follow-up, a report, a
@@ -986,6 +1014,17 @@ export class AgentSessionWrapper {
     // after it — the user's next task — is announced again.
     if (!this.agentRunAnnouncesCompletion) {
       this.agentRunAnnouncesCompletion = true;
+      // The turn a finished task woke says nothing about itself: no notification pops out when a
+      // background task finishes, and the card is where the task is read. This turn is very often
+      // the last of what the user's prompt set in motion, though, so the notice kept for that prompt
+      // is due now, with this turn's end closing the sentence (lib/task-completion-server.ts).
+      void noteConversationRunSettled(this.sessionId, {
+        startedAt: runStartedAt ?? undefined,
+        endedAt: finishedAt,
+        backgroundWorkStarted,
+      }).catch((error: unknown) => {
+        console.error("[pi-web] failed to announce the finished conversation:", error instanceof Error ? error.message : error);
+      });
       return;
     }
     // A subagent of this session is still at work: each report starts a run here, and the run
@@ -995,7 +1034,12 @@ export class AgentSessionWrapper {
     recordRecentRunOutcome(this.sessionId, this.lastFinishedRun);
     // A stopped run still reports its "aborted" outcome; listeners decide what to announce.
     try {
-      this.onAgentRunComplete?.(this.sessionId, withRunSpan(this.lastRunOutcome, runStartedAt, finishedAt));
+      this.onAgentRunComplete?.(
+        this.sessionId,
+        withRunSpan(this.lastRunOutcome, runStartedAt, finishedAt),
+        this.localRunRequestedAt,
+        backgroundWorkStarted,
+      );
     } catch (error) {
       console.error("[pi-web] completion listener failed:", error instanceof Error ? error.message : error);
     }
@@ -4251,7 +4295,7 @@ export async function startRpcSession(
       chatWorkspace,
       chatFolder,
       chatUnlocked,
-      onAgentRunComplete: (completedSessionId, outcome) => {
+      onAgentRunComplete: (completedSessionId, outcome, requestedAt, backgroundWorkStarted) => {
         // The live session knows its own name, and a nameless session titles itself by its
         // first prompt, straight out of its own entries (the sidebar's rule).
         const sessionName = getRpcSessionNotificationTitle(inner);
@@ -4263,8 +4307,9 @@ export async function startRpcSession(
         // One sender for every channel that needs no page: the phone push, the ntfy
         // message, the Mac's Notification Center row. Announced once per run, and never
         // for a run this process is only catching up on, nor for a run the user stopped
-        // (lib/task-completion-server.ts).
-        void announceRunEnd({ sessionId: completedSessionId, sessionName, outcome }).catch((error) => {
+        // (lib/task-completion-server.ts). `requestedAt` lets that module be the one judge
+        // of which run a finished background task woke — the same test the session applies.
+        void announceRunEnd({ sessionId: completedSessionId, sessionName, outcome, requestedAt, backgroundWorkStarted }).catch((error) => {
           console.error("[pi-web] failed to announce the finished run:", error instanceof Error ? error.message : error);
         });
       },

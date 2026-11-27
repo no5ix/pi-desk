@@ -40,7 +40,6 @@ interface SettledCounts {
   running: number;
   settled: number;
 }
-
 /** How long after a completion a run still counts as woken by it. The extension's follow-up turn
  *  starts when its notice lands; a run much later than that was asked for. */
 export const COMPLETION_WINDOW_MS = 30_000;
@@ -99,6 +98,24 @@ export function runWokeByBackgroundTask(
   const now = options.now ?? Date.now();
   const windowMs = options.windowMs ?? COMPLETION_WINDOW_MS;
   return now - settledAt <= windowMs;
+}
+
+/**
+ * Whether the extension has ever shown this conversation a background task.
+ *
+ * This is the announcer's "this conversation has background work" signal, and it is deliberately
+ * not the running index: the index holds only conversations with news (a task running, a failure
+ * unseen), so a conversation whose tasks all finished and were read has no entry, and the bridge's
+ * first frame is a subscribe answer with an empty registry — both of which read as "no background
+ * work here" at the moment a fast run settles, which is exactly the instant the announcement is
+ * made. The gate's frames outlive that: once the extension has reported tasks for this conversation,
+ * the conversation is a conversation with background work, and its notices go through the quiet
+ * window. The entry leaves with the bridge.
+ */
+export function backgroundTasksObservedIn(sessionId: string): boolean {
+  const counts = store().counts.get(sessionId);
+  if (!counts) return false;
+  return counts.running + counts.settled > 0;
 }
 
 /** A conversation the server is not holding has no completions to explain runs. */
