@@ -53,8 +53,8 @@ test("the search row escalates typed text to content search, with Enter as the w
   );
   assert.match(
     source,
-    /if \(filteredSessions\.length > 0\) return;/,
-    "a query the tree answers keeps the tree: the box only asks the server when the tree is empty",
+    /if \(filteredSessions\.length > 0\) \{\s*setContentSearch\(false\);\s*return;/,
+    "a query the tree answers keeps the tree, and the results list closes when the tree can answer again",
   );
   assert.match(
     source,
@@ -67,7 +67,7 @@ test("the search row escalates typed text to content search, with Enter as the w
   assert.match(source, /<SessionSearch[\s\S]{0,200}?scope=\{contentScope\}/, "the open list answers the scope that opened it");
   assert.match(searchSource, /new URLSearchParams\(\{ q: search, scope \}\)/, "the scope goes to the route");
   assert.match(routeSource, /scope === "prompts" \? searchSessionPrompts : searchSessionContents/);
-  const promptSearch = await read("../lib/session-prompt-search.ts");
+  const promptSearch = await readFile(new URL("../lib/session-prompt-search.ts", import.meta.url), "utf8");
   assert.match(promptSearch, /cachedSessionPrompts\(session\.path\)/, "prompts come from the calendar's cached reader, not a fresh scan per keystroke");
   assert.match(promptSearch, /const TIME_BUDGET_MS = \d+;/, "a cold first pass is bounded");
   // Discoverability for the hidden gesture: the input itself carries the hint, in its

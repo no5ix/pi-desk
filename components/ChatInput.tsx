@@ -1354,13 +1354,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     return () => window.clearTimeout(id);
   }, [autoFocus, isMobile, draftKey]);
 
+  // The composer's own edits outrank the byte store's answer. A page that has pasted, moved, or
+  // removed an attachment never takes a late restore's snapshot: that snapshot is the picture the
+  // user just threw away, and a reload must not hand it back.
+  const attachmentsTouchedRef = useRef<Set<string>>(new Set());
+  const markAttachmentsTouched = useCallback(() => {
+    const key = draftKeyRef.current;
+    if (key) attachmentsTouchedRef.current.add(key);
+  }, []);
+
   const appendAttachedImages = useCallback((newImages: AttachedImage[]) => {
+    markAttachmentsTouched();
     setAttachedImages((prev) => {
       const accepted = newImages.slice(0, Math.max(0, MAX_ATTACHED_IMAGES - prev.length));
       newImages.slice(accepted.length).forEach(revokeImagePreview);
       return [...prev, ...accepted];
     });
-  }, []);
+  }, [markAttachmentsTouched]);
 
   const processImageFiles = useCallback(async (files: File[]) => {
     if (compact) return;
@@ -1389,6 +1399,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [appendAttachedImages, compact]);
 
   const removeImage = useCallback((index: number) => {
+    markAttachmentsTouched();
     setAttachedImages((prev) => {
       const next = [...prev];
       const [removed] = next.splice(index, 1);
@@ -1396,17 +1407,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       attachedImagesRef.current = next;
       return next;
     });
-  }, []);
+  }, [markAttachmentsTouched]);
 
   const clearImages = useCallback(() => {
+    markAttachmentsTouched();
     attachedImagesRef.current = [];
     setAttachedImages((prev) => {
       prev.forEach(revokeImagePreview);
       return [];
     });
-  }, []);
+  }, [markAttachmentsTouched]);
 
   const clearAttachedFiles = useCallback(() => {
+    markAttachmentsTouched();
     attachedFilesRef.current = [];
     setAttachedFiles([]);
     setPasteNotice(null);
@@ -1414,10 +1427,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const removeAttachedFile = useCallback((id: string) => {
+    markAttachmentsTouched();
     const next = attachedFilesRef.current.filter((file) => file.id !== id);
     attachedFilesRef.current = next;
     setAttachedFiles(next);
-  }, []);
+  }, [markAttachmentsTouched]);
 
   const clearInput = useCallback(() => {
     valueRef.current = "";
@@ -1466,6 +1480,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     void loadStoredDraftAttachments(startedIn)
       .then((draft) => {
         if (!alive || !draft || draftKeyRef.current !== startedIn) return;
+        // The user has edited this composer's attachments: their box is the truth now.
+        if (attachmentsTouchedRef.current.has(startedIn)) return;
         const restoredImages = draftImagesToAttachedImages(draft.images);
         const restoredFiles = draft.files ?? [];
         setAttachedImages((current) => {

@@ -1395,7 +1395,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // and a timer reset by each of those refreshes would never fire.
   useEffect(() => {
     if (normalizeSessionQuery(sessionQuery).length < AUTO_CONTENT_SEARCH_MIN_CHARS) return;
-    if (filteredSessions.length > 0) return;
+    // The tree answers this query again, so the tree comes back: a results list the user has
+    // out-typed is worse than no results list.
+    if (filteredSessions.length > 0) {
+      setContentSearch(false);
+      return;
+    }
     const timer = setTimeout(() => {
       setContentScope("prompts");
       setContentSearch(true);

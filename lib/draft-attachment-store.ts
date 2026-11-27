@@ -138,6 +138,9 @@ export function createDraftAttachmentStore(kv: DraftAttachmentKv): DraftAttachme
       signatures.set(key, signature);
       try {
         if (isEmpty(clean)) {
+          // The composer's attachments went to zero: the user took the picture out, or the prompt
+          // was sent. A draft that is only moving between keys passes this by (setDraft's
+          // keepDurableAttachmentsWhenEmpty), because the page doing it has not read the bytes.
           await kv.delete(key);
           return;
         }
@@ -306,35 +309,65 @@ export function getDraftAttachmentStore(): DraftAttachmentStore | null {
   return scope.__piDraftAttachmentStore;
 }
 
-export async function loadDraftAttachments(key: string): Promise<DraftAttachments | null> {
-  if (!key) return null;
-  const store = getDraftAttachmentStore();
-  if (!store) return null;
-  try {
-    return await store.load(key);
-  } catch {
-    return null;
-  }
+export function loadDraftAttachments(key: string): Promise<DraftAttachments | null> {
+  if (!key) return Promise.resolve(null);
+  return enqueue(key, async () => {
+    const store = getDraftAttachmentStore();
+    if (!store) return null;
+    try {
+      return await store.load(key);
+    } catch {
+      return null;
+    }
+  });
 }
 
-export async function saveDraftAttachments(key: string, attachments: DraftAttachments): Promise<void> {
-  if (!key) return;
-  const store = getDraftAttachmentStore();
-  if (!store) return;
-  await store.save(key, attachments);
+export function saveDraftAttachments(key: string, attachments: DraftAttachments): Promise<void> {
+  if (!key) return Promise.resolve();
+  return enqueue(key, async () => {
+    const store = getDraftAttachmentStore();
+    if (!store) return;
+    await store.save(key, attachments);
+  });
 }
 
-export async function removeDraftAttachments(key: string): Promise<void> {
-  if (!key) return;
-  const store = getDraftAttachmentStore();
-  if (!store) return;
-  await store.remove(key);
+export function removeDraftAttachments(key: string): Promise<void> {
+  if (!key) return Promise.resolve();
+  return enqueue(key, async () => {
+    const store = getDraftAttachmentStore();
+    if (!store) return;
+    await store.remove(key);
+  });
 }
 
-export async function clearDraftAttachments(): Promise<void> {
-  const store = getDraftAttachmentStore();
-  if (!store) return;
-  await store.clear();
+export function clearDraftAttachments(): Promise<void> {
+  return enqueue("*", async () => {
+    const store = getDraftAttachmentStore();
+    if (!store) return;
+    await store.clear();
+  });
+}
+
+/**
+ * One key's operations run in the order they were asked for.
+ *
+ * The draft store clears a key and writes the same key inside one synchronous rekey: a reload
+ * moves the project's parked draft onto the composer's own key, and the parked draft's attachments
+ * are that composer's. Two unchained IndexedDB transactions on one record can land in either
+ * order, and a delete that wins is a screenshot lost on reload. A read that overtakes a queued
+ * write reads back nothing.
+ */
+const queues = new Map<string, Promise<unknown>>();
+
+function enqueue<T>(key: string, op: () => Promise<T>): Promise<T> {
+  const previous = queues.get(key) ?? Promise.resolve();
+  const next = previous.then(op, op);
+  queues.set(key, next);
+  // A settled chain is dropped so the map does not grow with every composer ever touched.
+  next.catch(() => undefined).finally(() => {
+    if (queues.get(key) === next) queues.delete(key);
+  });
+  return next;
 }
 
 /** A memory backend for tests and for a page with no IndexedDB to fall back on. */
@@ -345,7 +378,7 @@ export function createMemoryDraftAttachmentKv(initial?: Record<string, DraftAtta
 } {
   const records = new Map<string, DraftAttachmentRecord>(Object.entries(initial ?? {}));
   let writes = 0;
-  const kv = {
+  const kv: DraftAttachmentKv & { records: Map<string, DraftAttachmentRecord>; writes: number } = {
     records,
     get writes() {
       return writes;

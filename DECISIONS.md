@@ -568,3 +568,30 @@
   (`loadStoredDraftAttachments`) and applied only to a composer with nothing attached; where the
   browser has no IndexedDB (private mode, an embedded view that blocks it) everything behaves as
   before, so the text draft never depends on the byte store.
+
+## The reload that keeps its screenshot: which key answers, and who may delete
+
+The first cut of the byte store passed its unit tests and lost the picture in the running app: the
+record was written under the project's parked key and deleted by the reloaded page before the
+composer asked for it. Two rules fix that, both in `lib/draft-store.ts`.
+
+- **Reads may derive the parked key; writes may not (unless they own it).**
+  `durableAttachmentsKey` is the mirror (`parked-new:<cwd>`, registered by the app shell) or the
+  key's own record; `durableAttachmentsKeyForRead` adds the parked key derived from a fresh
+  composer key, because the shell's registration effect lands after the composer's mount effect.
+  `durableAttachmentsKeyForWrite` uses that derivation only for a key the page has opened
+  (`ownedDurableKeys`), so a stale composer key cannot delete or overwrite the record its
+  successor owns. The derivation matches the cwd suffix against the parked keys the page knows
+  (`knownParkedKeys`) rather than splitting `new:<draftId>:<cwd>` on a colon: a restored composer's
+  id is `initial:<cwd>`, and a Windows cwd carries a drive letter's colon, so the split produced a
+  doubled key and the reload restored nothing.
+- **Only a page that has the bytes may throw them away.** `dropDurableRecord` deletes on a send,
+  and on a cleared box or a removed picture only when this page wrote the record or read it into
+  its composer. A reload writes text-only drafts — its own restore, `rekeyDraft`'s handover from the
+  parked key, a composer that moved on — before its async read of the bytes lands, and a delete from
+  any of those is the user's screenshot lost on refresh. `rekeyDraft` also merges one draft rather
+  than concatenating two (`mergeRekeyedDraft`): the composer's key is seeded from the parked draft,
+  so a union showed the same prompt twice, joined with a blank line, and the same picture twice.
+- **The composer's edits outrank the store's answer.** `attachmentsTouchedRef`
+  (`components/ChatInput.tsx`) marks a key whose attachments the user edited on this page; a restore
+  snapshot arriving after that is dropped, so a box the user cleared is not refilled by an older read.

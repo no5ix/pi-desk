@@ -1192,6 +1192,27 @@ attachments have not changed (the signature), so typing never carries a screensh
 a cleared box and a sign-out remove the record; where the browser has no IndexedDB the draft simply
 stays in memory, as it did before.
 
+Two rules keep the record alive across the reload they exist for, and both are about *which* key a
+write answers for (`durableAttachmentsKey`, `durableAttachmentsKeyForRead`,
+`durableAttachmentsKeyForWrite` in `lib/draft-store.ts`):
+
+- **A composer's own key is not durable.** `new:<draftId>:<cwd>` is a new id on every page, so the
+  bytes live under the project's parked draft, which the shell mirrors. A read may fall back to
+  deriving that parked key (the shell registers the mirror a beat after the composer mounts); a
+  write may derive it only once this page has the record in hand. The composer key is also not
+  parseable by splitting on `:` — a restored composer's id carries a cwd and a Windows cwd carries
+  a drive letter — so the derivation matches the cwd suffix against the parked keys the page knows.
+- **Only the page that has the bytes may delete them** (`ownedDurableKeys`, `dropDurableRecord`).
+  A reload writes text-only drafts before its async read of the bytes has landed — its own restore,
+  the handover from the parked key (`rekeyDraft`, which passes `keepDurableAttachmentsWhenEmpty` and
+  merges one draft rather than concatenating two), a composer that moved on — and a delete from any
+  of those is the screenshot lost on refresh. A send always takes the record with it; taking a
+  picture out deletes it, because that page wrote it or restored it.
+
+The composer adds one guard of its own: `attachmentsTouchedRef` in `components/ChatInput.tsx` marks
+a key whose attachments the user edited on this page, and a restore snapshot that lands after that
+is dropped — the box the user just cleared must not be refilled by the store's older answer.
+
 `lib/draft-attachment-store.test.mjs`, `lib/draft-store.test.mjs`,
 `components/sidebar-insert-into-chat.test.mjs`, `components/SessionSidebar.session-search.test.mjs`
 and `e2e/search-draft-insert.mjs` pin these.
