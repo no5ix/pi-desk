@@ -20,10 +20,50 @@ import type { FileTreeHiddenReason } from "@/lib/file-tree-visibility";
 import { useI18n } from "@/hooks/useI18n";
 import { APP_PREF_KEYS, getPref, setPref } from "@/lib/app-prefs";
 import { isImeComposing } from "@/lib/ime";
+import { ChatConfirmDialog } from "./ChatConfirmDialog";
+import {
+  FileTreeMenu,
+  FileTreeRowMenuButton,
+  useFileTreeMenu,
+  type FileTreeMenuItem,
+} from "./FileTreeMenu";
+import { getDesktopPlatform } from "@/lib/desktop-window";
+import { revealItemInDirNative } from "@/lib/desktop-native";
+import { revealLabelKey } from "@/lib/file-context-menu";
+import { copyText } from "@/lib/clipboard";
 type Translate = ReturnType<typeof useI18n>["t"];
 
 /** Why a listed entry is normally left out; only listings with `hidden=1` report it. */
 type HiddenReason = Exclude<FileTreeHiddenReason, "always">;
+
+/**
+ * The row menu's whole contract, as one prop.
+ *
+ * A row asks the tree to open its menu (the tree owns the items, the callbacks
+ * and the messages), and it hosts the two inline editors a menu starts: the
+ * rename field in the row, and the name field for a new file or folder at the
+ * top of the folder that is being created.
+ */
+export interface TreeRowActions {
+  menuLabel: string;
+  openMenu: (anchor: Element, node: FileNode) => void;
+  /** The row whose name is being edited, and the field's value. */
+  renamingPath: string | null;
+  renameValue: string;
+  onRenameChange: (value: string) => void;
+  onRenameCommit: () => void;
+  onRenameCancel: () => void;
+  /** The folder a new file or folder is being named in. */
+  creating: { directory: string; kind: "file" | "directory" } | null;
+  createValue: string;
+  onCreateChange: (value: string) => void;
+  onCreateCommit: () => void;
+  onCreateCancel: () => void;
+  /** A path an operation is running on; its row shows the wait, not a spinner storm. */
+  busyPath: string | null;
+  /** A paste is queued: a folder's menu offers it. */
+  pasteCount: number;
+}
 
 interface FileEntry {
   name: string;
@@ -62,6 +102,15 @@ interface Props {
   onFileSearchOpenChange?: (open: boolean) => void;
   /** Also list what Git ignores, dimmed (the explorer bar's switch). */
   showHidden?: boolean;
+  /** "Select for Compare": the panel opens the diff between these two files. */
+  onCompareFiles?: (left: string, right: string) => void;
+  /** The git history of one path, in the Git panel. */
+  onShowFileHistory?: (filePath: string) => void;
+  /** Git blame for one path. */
+  onGitBlame?: (filePath: string) => void;
+  /** The Git panel's open state, for the folder's "Show Git Changes". */
+  gitPanelOpen?: boolean;
+  onGitPanelOpenChange?: (open: boolean) => void;
 }
 
 export interface FileExplorerHandle {
@@ -217,6 +266,7 @@ export function TreeNode({
   dropTargetPath,
   onDropFiles,
   onDropTargetChange,
+  actions,
   t,
 }: {
   node: FileNode;
@@ -237,6 +287,8 @@ export function TreeNode({
   dropTargetPath?: string | null;
   onDropFiles?: (directory: string, items: DroppedItem[]) => void;
   onDropTargetChange?: (path: string | null) => void;
+  /** The row's menu, the rename field and the new-file field (see TreeRowActions). */
+  actions?: TreeRowActions;
   t: Translate;
 }) {
   const open = expandedPaths.has(node.fullPath);
@@ -374,7 +426,7 @@ export function TreeNode({
           onDropTargetChange?.(null);
           onDropFiles(node.fullPath, droppedItems(event.dataTransfer));
         } : undefined}
-        className={isDropTarget ? "file-tree-drop-target" : undefined}
+        className={isDropTarget ? "file-tree-row file-tree-drop-target" : "file-tree-row"}
         style={{
           position: "relative",
           display: "flex",
@@ -402,21 +454,52 @@ export function TreeNode({
         <span style={{ flexShrink: 0, display: "flex", alignItems: "center", opacity: hidden ? HIDDEN_ENTRY_OPACITY : 1 }}>
           {node.isDir ? <FolderIcon size={14} open={open} /> : getFileIcon(node.name, 14)}
         </span>
-        <span
-          data-hidden-reason={hidden}
-          style={{
-            fontSize: "var(--fs-caption)",
-            color: hidden ? "var(--text-muted)" : "var(--text)",
-            opacity: hidden ? HIDDEN_ENTRY_OPACITY : 1,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            flex: 1,
-          }}
-          title={hidden ? `${node.fullPath}\n${t(HIDDEN_REASON_KEYS[hidden])}` : node.fullPath}
-        >
-          {node.name}
-        </span>
+        {actions?.renamingPath === node.fullPath ? (
+          <input
+            type="text"
+            className="file-tree-name-input"
+            value={actions.renameValue}
+            onChange={(event) => actions.onRenameChange(event.target.value)}
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (isImeComposing(event)) return;
+              if (event.key === "Enter") {
+                event.preventDefault();
+                actions.onRenameCommit();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                actions.onRenameCancel();
+              }
+            }}
+            ref={(input) => {
+              // Focus once, and select the name without its extension: a rename
+              // usually changes the name, not the suffix.
+              if (!input || input.dataset.focused === "1") return;
+              input.dataset.focused = "1";
+              input.focus();
+              const dot = input.value.lastIndexOf(".");
+              input.setSelectionRange(0, dot > 0 ? dot : input.value.length);
+            }}
+          />
+        ) : (
+          <span
+            data-hidden-reason={hidden}
+            style={{
+              fontSize: "var(--fs-caption)",
+              color: hidden ? "var(--text-muted)" : "var(--text)",
+              opacity: hidden ? HIDDEN_ENTRY_OPACITY : 1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              flex: 1,
+            }}
+            title={hidden ? `${node.fullPath}\n${t(HIDDEN_REASON_KEYS[hidden])}` : node.fullPath}
+          >
+            {node.name}
+          </span>
+        )}
         {!hovered && pendingLinkTarget && (
           <span
             title={t("files.outsideLink", { target: pendingLinkTarget })}
@@ -462,74 +545,36 @@ export function TreeNode({
             <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4" />
           </svg>
         )}
-        {onAtMention && hovered && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onAtMention(getRelativeFilePath(node.fullPath, cwd), node.isDir);
-            }}
-            title={t("files.insertPath")}
-            style={{
-              position: "absolute",
-              right: !node.isDir ? 28 : 4,
-              top: "50%",
-              transform: "translateY(-50%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 4,
-              padding: "0 8px",
-              height: 20,
-              background: "var(--bg-panel)",
-              border: "var(--hairline) solid var(--border)",
-              borderRadius: "var(--radius-xs)",
-              color: "var(--accent)",
-              cursor: "pointer",
-              fontSize: "var(--fs-micro)",
-              fontWeight: "var(--fw-semibold)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            <MentionIcon />
-            {t("files.mention")}
-          </button>
-        )}
-        {hovered && !node.isDir && (
-          <a
-            href={`/api/files/${encodeFilePathForApi(node.fullPath)}?type=download`}
-            download
-            onClick={(e) => e.stopPropagation()}
-            title={t("files.download")}
-            style={{
-              position: "absolute",
-              right: 4,
-              top: "50%",
-              transform: "translateY(-50%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 4,
-              padding: "0 5px",
-              height: 20,
-              background: "var(--bg-panel)",
-              border: "var(--hairline) solid var(--border)",
-              borderRadius: "var(--radius-xs)",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: "var(--fs-micro)",
-              fontWeight: "var(--fw-semibold)",
-              whiteSpace: "nowrap",
-              textDecoration: "none",
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="7 10 12 15 17 10" />
-              <line x1="12" y1="15" x2="12" y2="3" />
-            </svg>
-          </a>
+        {actions && (
+          <FileTreeRowMenuButton
+            label={actions.menuLabel}
+            onOpen={(anchor) => actions.openMenu(anchor, node)}
+          />
         )}
       </div>
+      {node.isDir && open && actions?.creating?.directory === node.fullPath && (
+        <div className="file-tree-create-row" style={{ paddingLeft: 8 + (depth + 1) * 14 }}>
+          <input
+            type="text"
+            className="file-tree-name-input"
+            placeholder={t(actions.creating.kind === "file" ? "files.newFileNamePlaceholder" : "files.newFolderNamePlaceholder")}
+            value={actions.createValue}
+            onChange={(event) => actions.onCreateChange(event.target.value)}
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (isImeComposing(event)) return;
+              if (event.key === "Enter") {
+                event.preventDefault();
+                actions.onCreateCommit();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                actions.onCreateCancel();
+              }
+            }}
+            autoFocus
+          />
+        </div>
+      )}
       {node.isDir && open && pendingLinkTarget && (
         <div
           style={{
@@ -612,6 +657,7 @@ export function TreeNode({
               dropTargetPath={dropTargetPath}
               onDropFiles={onDropFiles}
               onDropTargetChange={onDropTargetChange}
+              actions={actions}
               t={t}
             />
           ))}
@@ -631,7 +677,7 @@ export function TreeNode({
   );
 }
 
-type OpenFileOptions = { sourceSessionId?: string | null; modeHint?: "diff" };
+type OpenFileOptions = { sourceSessionId?: string | null; modeHint?: "diff" | "edit" };
 
 type OpenFileHandler = (filePath: string, fileName: string, options?: OpenFileOptions) => void;
 
@@ -921,6 +967,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   fileSearchOpen = false,
   onFileSearchOpenChange,
   showHidden = false,
+  onCompareFiles,
+  onShowFileHistory,
+  onGitBlame,
+  gitPanelOpen = false,
+  onGitPanelOpenChange,
 }, ref) {
   const { t } = useI18n();
   const [roots, setRoots] = useState<FileNode[]>([]);
@@ -941,6 +992,27 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const [uploadSummary, setUploadSummary] = useState<UploadSummary | null>(null);
   const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  /* ─── the row menu: every file and folder carries its own menu button ─── */
+  const { menu: rowMenu, open: openRowMenu, close: closeRowMenu } = useFileTreeMenu();
+  // "Reveal in Finder" is a native call: it exists only in the desktop shell.
+  const [canReveal, setCanReveal] = useState(false);
+  useEffect(() => {
+    void import("@/lib/desktop-native").then(({ isTauriDesktop }) => setCanReveal(isTauriDesktop())).catch(() => setCanReveal(false));
+  }, []);
+  const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
+  const [creating, setCreating] = useState<{ directory: string; kind: "file" | "directory" } | null>(null);
+  const [createValue, setCreateValue] = useState("");
+  const [opBusy, setOpBusy] = useState<string | null>(null);
+  const [opError, setOpError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ path: string; name: string; isDir: boolean } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  /** Cut and Copy mark rows here; a folder's menu pastes them into itself. */
+  const [clipboard, setClipboard] = useState<{ paths: string[]; mode: "cut" | "copy" } | null>(null);
+  /** The file "Select for Compare" marked first; the second pick opens the diff. */
+  const [compareSource, setCompareSource] = useState<string | null>(null);
 
   const [searchPaths, setSearchPaths] = useState<string[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -986,12 +1058,25 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     if (fileSearchOpen) searchInputRef.current?.focus();
   }, [fileSearchOpen]);
 
+  /** A folder whose menu started the search: only what sits under it is listed. */
+  const [searchScope, setSearchScope] = useState<string | null>(null);
+  const scopedSearchPaths = useMemo(() => {
+    if (!searchScope) return searchPaths;
+    const prefix = getRelativeFilePath(searchScope, cwd);
+    if (!prefix) return searchPaths;
+    const normalized = normalizeFilePathSlashes(prefix);
+    return searchPaths.filter((relative) => {
+      const path = normalizeFilePathSlashes(relative);
+      return path === normalized || path.startsWith(`${normalized}/`);
+    });
+  }, [cwd, searchPaths, searchScope]);
+
   // Results render as a tree; keep every directory that contains a match
   // expanded, while preserving the user's manual collapses as they type.
   useEffect(() => {
-    if (searchPaths.length === 0) return;
+    if (scopedSearchPaths.length === 0) return;
     const dirs = new Set<string>();
-    for (const relative of searchPaths) {
+    for (const relative of scopedSearchPaths) {
       const parts = relative.split("/");
       let path = "";
       for (let i = 0; i < parts.length - 1; i++) {
@@ -1007,7 +1092,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       }
       return changed ? next : prev;
     });
-  }, [cwd, searchPaths]);
+  }, [cwd, scopedSearchPaths]);
 
   const searchRoots = useMemo(() => {
     const toFileNode = (node: SearchTreeNode): FileNode => ({
@@ -1018,8 +1103,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       children: node.children.map(toFileNode),
       loaded: true,
     });
-    return buildSearchTree(searchPaths).map(toFileNode);
-  }, [cwd, searchPaths]);
+    return buildSearchTree(scopedSearchPaths).map(toFileNode);
+  }, [cwd, scopedSearchPaths]);
 
   const gitStatusByPath = useMemo(() => new Map(
     gitFiles.map((status) => [normalizeFilePathSlashes(status.filePath), status]),
@@ -1138,6 +1223,284 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     event.target.value = "";
     void prepareUpload(files, cwd);
   }, [cwd, prepareUpload]);
+
+  /* ─── the operations a row menu runs ────────────────────────────────── */
+
+  /** One POST, one refresh. The route answers a refusal by name (`lib/file-ops.ts`). */
+  const runFileOp = useCallback(async (target: string, body: Record<string, unknown>) => {
+    const response = await fetch(`/api/files/${encodeFilePathForApi(target)}?type=fsop`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => null) as { path?: string; code?: string; error?: string } | null;
+    if (!response.ok) {
+      throw new Error(String(payload?.code ?? payload?.error ?? response.statusText));
+    }
+    // Every operation moves what the tree lists, so the open folders re-list.
+    setTreeRefreshKey((value) => value + 1);
+    return payload ?? {};
+  }, []);
+
+  const opFailed = useCallback((action: string, error: unknown) => {
+    setOpError(t("files.opFailed", { action, error: error instanceof Error ? error.message : String(error) }));
+  }, [t]);
+
+  const startRename = useCallback((node: FileNode) => {
+    setCreating(null);
+    setRenaming({ path: node.fullPath, value: node.name });
+  }, []);
+
+  const commitRename = useCallback(() => {
+    if (!renaming) return;
+    const name = renaming.value.trim();
+    const previous = renaming;
+    setRenaming(null);
+    const node = previous.path.slice(previous.path.lastIndexOf("/") + 1);
+    if (!name || name === node) return;
+    setOpBusy(previous.path);
+    void runFileOp(previous.path, { op: "rename", name })
+      .then(() => {
+        setNotice(t("files.renameDone", { name }));
+        setOpError(null);
+      })
+      .catch((error: unknown) => opFailed(t("files.rename"), error))
+      .finally(() => setOpBusy(null));
+  }, [opFailed, renaming, runFileOp, t]);
+
+  const startCreate = useCallback((directory: string, kind: "file" | "directory") => {
+    setRenaming(null);
+    setCreateValue("");
+    setCreating({ directory, kind });
+  }, []);
+
+  const commitCreate = useCallback(() => {
+    if (!creating) return;
+    const name = createValue.trim();
+    if (!name) return;
+    const directory = creating.directory;
+    setCreating(null);
+    setOpBusy(directory);
+    void runFileOp(directory, { op: creating.kind === "file" ? "create" : "mkdir", name })
+      .then((payload) => {
+        setNotice(t("files.created", { name }));
+        setOpError(null);
+        // A new file is worth opening: the user named it to write in it.
+        if (payload.path && creating.kind === "file") {
+          onOpenFile(payload.path, name, { modeHint: "edit" });
+        }
+      })
+      .catch((error: unknown) => opFailed(t(creating.kind === "file" ? "files.newFile" : "files.newFolder"), error))
+      .finally(() => setOpBusy(null));
+  }, [createValue, creating, onOpenFile, opFailed, runFileOp, t]);
+
+  const performDelete = useCallback(() => {
+    if (!confirmDelete) return;
+    const target = confirmDelete.path;
+    setDeleting(true);
+    setDeleteError(null);
+    void runFileOp(target, { op: "delete" })
+      .then(() => {
+        setConfirmDelete(null);
+        setNotice(t("files.deleteDone", { name: confirmDelete.name }));
+        setOpError(null);
+      })
+      .catch((error: unknown) => setDeleteError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setDeleting(false));
+  }, [confirmDelete, runFileOp, t]);
+
+  const copyPath = useCallback((filePath: string, relative: boolean) => {
+    const text = relative ? (getRelativeFilePath(filePath, cwd) || filePath) : filePath;
+    void copyText(text)
+      .then(() => { setNotice(t(relative ? "files.relativePathCopied" : "files.pathCopied")); setOpError(null); })
+      .catch(() => setOpError(t("files.copyFailed")));
+  }, [cwd, t]);
+
+  const revealPath = useCallback((filePath: string) => {
+    import("@/lib/desktop-native")
+      .then(({ revealItemInDirNative }) => revealItemInDirNative(filePath))
+      .catch((error: unknown) => opFailed(t(revealLabelKey(getDesktopPlatform())), error));
+  }, [opFailed, t]);
+
+  const downloadFile = useCallback((filePath: string) => {
+    const anchor = document.createElement("a");
+    anchor.href = `/api/files/${encodeFilePathForApi(filePath)}?type=download`;
+    anchor.download = "";
+    anchor.rel = "noopener";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  }, []);
+
+  const pasteInto = useCallback((directory: string) => {
+    if (!clipboard) return;
+    const { paths, mode } = clipboard;
+    setOpBusy(directory);
+    void Promise.all(paths.map((source) => runFileOp(source, {
+      op: mode === "cut" ? "move" : "copy",
+      targetDirectory: directory,
+    })))
+      .then(() => {
+        setClipboard(null);
+        setNotice(t(mode === "cut" ? "files.pasteMoved" : "files.pasted", { count: paths.length }));
+        setOpError(null);
+      })
+      .catch((error: unknown) => opFailed(t("files.paste"), error))
+      .finally(() => setOpBusy(null));
+  }, [clipboard, opFailed, runFileOp, t]);
+
+  /** "Find in Folder…": the tree's own search, restricted to this folder. */
+  const findInFolder = useCallback((directory: string) => {
+    setSearchScope(directory);
+    onFileSearchOpenChange?.(true);
+  }, [onFileSearchOpenChange]);
+
+  /** "Reveal in Folder": expand the tree down to this row. Where there is no
+   *  native Finder, the tree is the folder the user is standing in. */
+  const revealInTree = useCallback((directory: string) => {
+    const relative = getRelativeFilePath(directory, cwd);
+    if (!relative) return;
+    const dirs: string[] = [];
+    let acc = "";
+    for (const part of relative.split("/")) {
+      acc = acc ? `${acc}/${part}` : part;
+      dirs.push(joinFilePath(cwd, acc));
+    }
+    setExpandedPaths((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const dir of dirs) {
+        if (!next.has(dir)) { next.add(dir); changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [cwd]);
+
+  /** The menu for one row. A file and a folder are asked different questions. */
+  const buildRowMenu = useCallback((node: FileNode): FileTreeMenuItem[] => {
+    const marked = compareSource && compareSource !== node.fullPath ? getFileName(compareSource) : null;
+    const items: FileTreeMenuItem[] = [];
+    if (node.isDir) {
+      items.push({ id: "newFile", label: t("files.newFile"), onSelect: () => startCreate(node.fullPath, "file") });
+      items.push({ id: "newFolder", label: t("files.newFolder"), onSelect: () => startCreate(node.fullPath, "directory") });
+      if (clipboard) {
+        items.push({
+          id: "paste",
+          label: t("files.paste"),
+          hint: t("files.pasteCount", { count: clipboard.paths.length }),
+          disabled: opBusy !== null,
+          onSelect: () => pasteInto(node.fullPath),
+        });
+      }
+    }
+    items.push({
+      id: "reveal",
+      label: t(revealLabelKey(getDesktopPlatform())),
+      onSelect: () => { if (canReveal) revealPath(node.fullPath); else revealInTree(node.fullPath); },
+    });
+    if (node.isDir) {
+      items.push({
+        id: "find",
+        label: t("files.findInFolder"),
+        onSelect: () => findInFolder(node.fullPath),
+      });
+      items.push({
+        id: "changes",
+        label: t("files.showGitChanges"),
+        disabled: !onGitPanelOpenChange || gitPanelOpen,
+        onSelect: () => onGitPanelOpenChange?.(true),
+      });
+      items.push({
+        id: "cut",
+        label: t("files.cut"),
+        onSelect: () => setClipboard({ paths: [node.fullPath], mode: "cut" }),
+      });
+      items.push({
+        id: "copy",
+        label: t("files.copy"),
+        onSelect: () => setClipboard({ paths: [node.fullPath], mode: "copy" }),
+      });
+    } else {
+      items.push({
+        id: "compare",
+        label: marked ? t("files.compareWith", { name: marked }) : t("files.compareSelect"),
+        hint: compareSource === node.fullPath ? t("files.compareMarked") : undefined,
+        disabled: !onCompareFiles,
+        onSelect: () => {
+          if (marked && compareSource) {
+            onCompareFiles?.(compareSource, node.fullPath);
+            setCompareSource(null);
+          } else {
+            setCompareSource(node.fullPath);
+            setNotice(t("files.compareMarkedName", { name: node.name }));
+          }
+        },
+      });
+    }
+    items.push({ id: "copyPath", label: t("fileMenu.copyPath"), onSelect: () => copyPath(node.fullPath, false) });
+    items.push({ id: "copyRelative", label: t("files.copyRelativePath"), onSelect: () => copyPath(node.fullPath, true) });
+    items.push({ id: "separator-1", label: "", separator: true });
+    items.push({
+      id: "rename",
+      label: t(node.isDir ? "files.renameFolder" : "files.rename"),
+      onSelect: () => startRename(node),
+    });
+    items.push({
+      id: "delete",
+      label: t("files.delete"),
+      danger: true,
+      onSelect: () => {
+        setDeleteError(null);
+        setConfirmDelete({ path: node.fullPath, name: node.name, isDir: node.isDir });
+      },
+    });
+    if (!node.isDir) {
+      items.push({ id: "separator-2", label: "", separator: true });
+      items.push({
+        id: "history",
+        label: t("files.showGitHistory"),
+        disabled: !onShowFileHistory,
+        onSelect: () => onShowFileHistory?.(node.fullPath),
+      });
+      items.push({
+        id: "blame",
+        label: t("files.gitBlame"),
+        disabled: !onGitBlame,
+        onSelect: () => onGitBlame?.(node.fullPath),
+      });
+      items.push({
+        id: "mention",
+        label: t("files.mention"),
+        disabled: !onAtMention,
+        onSelect: () => onAtMention?.(getRelativeFilePath(node.fullPath, cwd), false),
+      });
+      items.push({ id: "download", label: t("files.download"), onSelect: () => downloadFile(node.fullPath) });
+    }
+    return items;
+  }, [
+    canReveal, compareSource, clipboard, copyPath, cwd, downloadFile, findInFolder, gitPanelOpen,
+    onAtMention, onCompareFiles, onGitBlame, onGitPanelOpenChange, onShowFileHistory, opBusy,
+    pasteInto, revealInTree, revealPath, startCreate, startRename, t,
+  ]);
+
+  const actions: TreeRowActions = useMemo(() => ({
+    menuLabel: t("files.rowMenu"),
+    openMenu: (anchor: Element, node: FileNode) => openRowMenu(anchor, buildRowMenu(node)),
+    renamingPath: renaming?.path ?? null,
+    renameValue: renaming?.value ?? "",
+    onRenameChange: (value: string) => setRenaming((current) => (current ? { ...current, value } : current)),
+    onRenameCommit: commitRename,
+    onRenameCancel: () => setRenaming(null),
+    creating,
+    createValue,
+    onCreateChange: setCreateValue,
+    onCreateCommit: commitCreate,
+    onCreateCancel: () => setCreating(null),
+    busyPath: opBusy,
+    pasteCount: clipboard?.paths.length ?? 0,
+  }), [
+    buildRowMenu, clipboard, commitCreate, commitRename, createValue, creating, openRowMenu, opBusy, renaming, t,
+  ]);
 
   useImperativeHandle(ref, () => ({
     openUploadPicker() {
@@ -1459,8 +1822,24 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
           <div style={{ paddingTop: 3 }}>
             {searchLoading && <div role="status" style={{ padding: "6px 2px", fontSize: "var(--fs-micro)", color: "var(--text-dim)" }}>{t("sidebar.searchingFiles")}</div>}
             {!searchLoading && searchError && <div role="alert" style={{ padding: "6px 2px", fontSize: "var(--fs-micro)", color: "var(--danger)" }}>{t("i18n.networkError")}</div>}
-            {!searchLoading && !searchError && searchPaths.length === 0 && <div style={{ padding: "6px 2px", fontSize: "var(--fs-micro)", color: "var(--text-dim)" }}>{t("sidebar.noMatchingFiles")}</div>}
-            {!searchLoading && !searchError && searchPaths.length > 0 && (
+            {searchScope && (
+              <div className="file-tree-search-scope">
+                <span className="file-tree-search-scope-label">
+                  {t("files.searchInFolder", { name: getFileName(searchScope) || searchScope })}
+                </span>
+                <button
+                  type="button"
+                  className="file-tree-search-scope-clear"
+                  aria-label={t("files.clearSearchScope")}
+                  title={t("files.clearSearchScope")}
+                  onClick={() => setSearchScope(null)}
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            {!searchLoading && !searchError && scopedSearchPaths.length === 0 && <div style={{ padding: "6px 2px", fontSize: "var(--fs-micro)", color: "var(--text-dim)" }}>{t("sidebar.noMatchingFiles")}</div>}
+            {!searchLoading && !searchError && scopedSearchPaths.length > 0 && (
               <div>
                 {searchRoots.map((node) => (
                   <TreeNode
@@ -1481,6 +1860,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                     highlightedPaths={highlightedPaths}
                     gitStatusByPath={gitStatusByPath}
                     changedDirectoryPaths={changedDirectoryPaths}
+                    actions={actions}
                     t={t}
                   />
                 ))}
@@ -1585,6 +1965,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                 dropTargetPath={dropTargetPath}
                 onDropFiles={handleDropFiles}
                 onDropTargetChange={handleDropTargetChange}
+                actions={actions}
                 t={t}
               />
             ))
@@ -1594,6 +1975,18 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               {t("files.noFiles")}
             </div>
           )}
+        </div>
+      )}
+      {notice && (
+        <div role="status" aria-live="polite" className="file-tree-notice">
+          <span className="file-tree-notice-text">{notice}</span>
+          <DismissButton onClick={() => setNotice(null)} title={t("files.dismissNotice")} />
+        </div>
+      )}
+      {opError && (
+        <div role="alert" className="file-tree-notice is-error">
+          <span className="file-tree-notice-text">{opError}</span>
+          <DismissButton onClick={() => setOpError(null)} title={t("files.dismissError")} />
         </div>
       )}
       {/* Last, pinned to the bottom: at the top it pushed every row down as
@@ -1612,6 +2005,21 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               : (getFileName(cwd) || cwd),
           })}
         </div>
+      )}
+      {rowMenu && <FileTreeMenu menu={rowMenu} onDone={closeRowMenu} />}
+      {confirmDelete && (
+        <ChatConfirmDialog
+          title={t(confirmDelete.isDir ? "files.deleteFolderTitle" : "files.deleteFileTitle")}
+          subject={confirmDelete.name}
+          body={t(confirmDelete.isDir ? "files.deleteFolderBody" : "files.deleteFileBody")}
+          confirmLabel={t("files.delete")}
+          cancelLabel={t("files.cancel")}
+          danger
+          busy={deleting}
+          error={deleteError}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => void performDelete()}
+        />
       )}
     </div>
   );

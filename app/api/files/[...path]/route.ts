@@ -42,6 +42,11 @@ import { registerFileWatch } from "@/lib/file-watch-registry";
 import { createFileWatchStream, MAX_WATCHED_FILES_PER_STREAM, type FileWatchEntry } from "@/lib/file-watch-stream";
 import { pageStreamLabel, registerPageStream } from "@/lib/page-stream-registry";
 import { MAX_WRITE_SIZE, writeProjectFile } from "@/lib/file-write";
+import {
+  FILE_OPERATION_FAILURE_STATUS,
+  runFileOperation,
+  type FileOperation,
+} from "@/lib/file-ops";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -140,6 +145,54 @@ function parseFileRequestType(value: string): FileRequestType | null {
   return FILE_REQUEST_TYPE_SET.has(value) ? (value as FileRequestType) : null;
 }
 
+/**
+ * The tree's row menu: rename, a new file, a new folder, a delete to the Trash,
+ * and a paste's copy or move. The rules live in `lib/file-ops.ts`; this is the
+ * transport, and it answers a refusal by name the way the write path does.
+ */
+async function fileOperationRequest(request: NextRequest, segments: string[]): Promise<NextResponse> {
+  if (!hasJsonContentType(request)) {
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  }
+  let body: unknown;
+  try {
+    body = await parseJsonWithinLimit(request, MAX_IMPORT_JSON_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json({ error: "Request body too large" }, { status: 413 });
+    }
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const record = (body ?? {}) as { op?: unknown; name?: unknown; targetDirectory?: unknown; overwrite?: unknown };
+  const ops = ["rename", "create", "mkdir", "delete", "copy", "move"] as const;
+  if (typeof record.op !== "string" || !ops.includes(record.op as (typeof ops)[number])) {
+    return NextResponse.json({ error: "op must be one of " + ops.join(", "), code: "BAD_REQUEST" }, { status: 400 });
+  }
+  if (record.targetDirectory !== undefined && typeof record.targetDirectory !== "string") {
+    return NextResponse.json({ error: "targetDirectory must be a path", code: "BAD_REQUEST" }, { status: 400 });
+  }
+  const targetDirectory = typeof record.targetDirectory === "string" && record.targetDirectory.trim()
+    ? path.resolve(record.targetDirectory)
+    : undefined;
+  const sourcePath = path.resolve(filePathFromApiSegments(segments));
+  if (hasParentDirectorySegment(sourcePath) || (targetDirectory && hasParentDirectorySegment(targetDirectory))) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+  const result = await runFileOperation(sourcePath, {
+    op: record.op as FileOperation,
+    name: typeof record.name === "string" ? record.name : undefined,
+    targetDirectory,
+    overwrite: record.overwrite === true,
+  });
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: result.message, code: result.code },
+      { status: FILE_OPERATION_FAILURE_STATUS[result.code] },
+    );
+  }
+  return NextResponse.json({ ok: true, path: result.path, kind: result.kind, trash: result.renamed });
+}
+
 async function getUploadDirectory(segments: string[]): Promise<
   { directory: string } | { response: NextResponse }
 > {
@@ -220,6 +273,7 @@ export async function POST(
     const { path: segments } = await params;
     const type = request.nextUrl.searchParams.get("type") ?? "upload";
     if (type === "allow-link") return allowLinkedDirectory(request, segments);
+    if (type === "fsop") return fileOperationRequest(request, segments);
 
     const uploadDirectory = await getUploadDirectory(segments);
     if ("response" in uploadDirectory) return uploadDirectory.response;

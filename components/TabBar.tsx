@@ -16,6 +16,10 @@ export interface Tab {
   sourceSessionId?: string | null;
   /** Open the diff a session recorded for this file (`GET /api/sessions/[id]/file-diff`). */
   diffSessionId?: string | null;
+  /** The commit a commit-panel file row opened: the Diff mode reads that commit. */
+  diffCommitSha?: string | null;
+  /** The other file of a "Select for Compare" pair (`GET /api/files/compare`). */
+  compareWith?: string | null;
   initialDisplayMode?: FileViewerDisplayMode;
   /** PDF page requested by the link that opened this tab (`#page=N`). */
   page?: number;

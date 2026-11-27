@@ -57,6 +57,13 @@ interface Props {
   diffSessionId?: string | null;
   /** The commit whose change to this file the Diff mode shows. */
   diffCommitSha?: string | null;
+  /**
+   * The other file of a "Select for Compare" pair. The Diff mode then reads
+   * `/api/files/compare` (the two files as they are on disk) instead of the
+   * working tree's diff, and the tab is the comparison — of a file with itself
+   * against the repository, which is what a committed clean file cannot be.
+   */
+  compareWith?: string | null;
   onOpenFile?: (filePath: string, page?: number) => void;
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   /** Insert this file's relative path into the chat input (@ mention). */
@@ -1113,6 +1120,8 @@ export function FileViewer({
   cwd,
   sourceSessionId,
   diffSessionId,
+  diffCommitSha,
+  compareWith,
   onOpenFile,
   onMentionLines,
   onAtMention,
@@ -1138,7 +1147,7 @@ export function FileViewer({
   if (isDocumentPreviewPath(filePath)) {
     return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} initialPage={initialPage} watchEnabled={watchEnabled} />;
   }
-  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} diffSessionId={diffSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} onAtMention={onAtMention} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} initialState={initialState} onStateChange={onStateChange} watchEnabled={watchEnabled} onDirtyChange={onDirtyChange} initialDraft={initialDraft} onDraftChange={onDraftChange} />;
+  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} diffSessionId={diffSessionId} diffCommitSha={diffCommitSha} compareWith={compareWith} onOpenFile={onOpenFile} onMentionLines={onMentionLines} onAtMention={onAtMention} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} initialState={initialState} onStateChange={onStateChange} watchEnabled={watchEnabled} onDirtyChange={onDirtyChange} initialDraft={initialDraft} onDraftChange={onDraftChange} />;
 }
 
 function TextFileViewer({
@@ -1146,6 +1155,8 @@ function TextFileViewer({
   cwd,
   sourceSessionId,
   diffSessionId,
+  diffCommitSha,
+  compareWith,
   onOpenFile,
   onMentionLines,
   onAtMention,
@@ -1372,6 +1383,28 @@ function TextFileViewer({
   const fetchGitDiff = useCallback(async (targetPath: string) => {
     const requestId = ++gitDiffRequestRef.current;
     setGitDiffLoading(true);
+    // A "Select for Compare" tab has no working-tree story to tell: it compares
+    // two files as they sit on disk, which `/api/files/compare` answers with
+    // `git diff --no-index`. The same Diff mode renders it.
+    if (compareWith) {
+      try {
+        const params = new URLSearchParams({ a: targetPath, b: compareWith });
+        const response = await fetch(`/api/files/compare?${params.toString()}`);
+        const next = await response.json() as { patch?: string; identical?: boolean; error?: string };
+        if (requestId !== gitDiffRequestRef.current) return;
+        setGitDiff(response.ok && typeof next.patch === "string"
+          ? { supported: true, patch: next.identical ? "" : next.patch }
+          : null);
+      } catch {
+        if (requestId === gitDiffRequestRef.current) setGitDiff(null);
+      } finally {
+        if (requestId === gitDiffRequestRef.current) {
+          setGitDiffLoading(false);
+          setGitDiffResolved(true);
+        }
+      }
+      return;
+    }
     if (!cwd) {
       setGitDiff(null);
       setGitDiffLoading(false);
@@ -1394,7 +1427,7 @@ function TextFileViewer({
         setGitDiffResolved(true);
       }
     }
-  }, [cwd]);
+  }, [cwd, compareWith]);
 
   // The session's own record of the file, for the same diff view. A committed
   // change, or a file outside the repository, has no git diff; the session's
