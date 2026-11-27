@@ -15,7 +15,7 @@ import { useMenuPlacement } from "@/hooks/useMenuPlacement";
 import type { MenuAnchor } from "@/lib/menu-placement";
 import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
-import { clearDraft } from "@/lib/draft-store";
+import { clearDraft, registerDraftMirror } from "@/lib/draft-store";
 import { movePanelTab, orderPanelTabs } from "@/lib/panel-tab-order";
 import { TabBar, type Tab } from "./TabBar";
 import { LazyTerminalPanel as TerminalPanel, preloadTerminalPanel } from "./LazyTerminalPanel";
@@ -1107,6 +1107,10 @@ export function AppShell() {
         const draftId = `initial:${requestedCwd}`;
         setNewSessionDraftId(draftId);
         activeNewSessionDraftKeyRef.current = `new:${draftId}:${data.cwd}`;
+        // A New Session draft that outlived a reload comes back to this project's composer: the
+        // parked key is where lib/draft-store.ts keeps it, and the composer takes it over now,
+        // before the composer mounts and reads its own key.
+        rekeyDraft(parkedNewSessionDraftKey(data.cwd), `new:${draftId}:${data.cwd}`);
         setNewSessionCwd(data.cwd);
         if (data.workspaceKind === "chat") {
           setChatWorkspaceCwd(data.cwd);
@@ -2137,6 +2141,14 @@ export function AppShell() {
   useLayoutEffect(() => {
     activeNewSessionDraftKeyRef.current = newSessionDraftKey;
   }, [newSessionDraftKey]);
+  // A New Session draft crosses a reload through the project's parked key (lib/draft-store.ts):
+  // the composer's own key carries a per-composer id that a reload mints anew, so the pair is
+  // mirrored while this composer is the page's fresh one. Creating the session rekeys the parked
+  // draft into the session, and the project's stored copy goes with it.
+  useLayoutEffect(() => {
+    if (!newSessionDraftKey || !effectiveNewSessionCwd) return;
+    return registerDraftMirror(newSessionDraftKey, parkedNewSessionDraftKey(effectiveNewSessionCwd));
+  }, [newSessionDraftKey, effectiveNewSessionCwd]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   const projectTrustCwd = isChatWorkspaceActive
     ? null

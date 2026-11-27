@@ -8,6 +8,7 @@ import type { UnavailableWorkspaceNotice } from "@/lib/workspace-availability";
 import type { TextContent, UserMessage } from "@/lib/types";
 import {
   clearDraft,
+  clearSentDraft,
   getDraft,
   mergeRestoredSubmissionDraft,
   mergeRestoredSubmissionText,
@@ -1402,7 +1403,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setAtQuery(null);
     setHashQuery(null);
     setHistoryMenuOpen(false);
-    if (draftKey) clearDraft(draftKey);
+    // The sent prompt is no longer a draft anywhere: the composer's key, the project's parked
+    // copy of a New Session draft, and this device's composer copy all go together, so a reload
+    // never offers back what was just sent.
+    if (draftKey) clearSentDraft(draftKey);
     if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDraft(draftKeyRef.current);
     // The sent prompt is no longer a draft anywhere: this device's copy goes too,
     // or the other devices' rows would keep offering what was just sent.

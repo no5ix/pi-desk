@@ -73,9 +73,58 @@ const storeHolds = new Map<string, number>();
 let storeTimer: ReturnType<typeof setTimeout> | null = null;
 let flushListenersAdded = false;
 
-/** A fresh composer's keys hold a per-composer id; only a session id means the same draft after a reload. */
+/**
+ * A fresh composer's key holds a per-composer id (`new:<draftId>:<cwd>`), so it names the same
+ * draft across a reload; the parked key does — it is the project's, and it is what the next
+ * fresh composer in that cwd adopts. So the parked key is stored, and the `new:` key is not:
+ * a per-composer id would leave a copy behind in storage that nothing ever reads again.
+ */
 function isStoredDraftKey(key: string): boolean {
-  return !key.startsWith(NEW_SESSION_PREFIX) && !key.startsWith(PARKED_NEW_SESSION_PREFIX);
+  return !key.startsWith(NEW_SESSION_PREFIX);
+}
+
+/**
+ * A fresh composer's key, and the durable per-project key its draft survives a reload under
+ * (`parked-new:<cwd>` — the key the next fresh composer in that project takes back).
+ */
+const draftMirrors = new Map<string, string>();
+
+/**
+ * Keeps `key`'s draft in step with `mirrorKey` while the registration lives. AppShell registers
+ * the pair for the page's fresh composer, so a New Session draft typed in a project's composer
+ * is stored under that project and comes back after a reload; creating the session rekeys the
+ * parked draft away, and clearing a composer clears the stored copy with it.
+ */
+export function registerDraftMirror(key: string, mirrorKey: string): () => void {
+  if (!key || !mirrorKey || key === mirrorKey) return () => {};
+  draftMirrors.set(key, mirrorKey);
+  const own = drafts.get(key);
+  if (own) {
+    writeMirroredDraft(mirrorKey, own);
+  } else {
+    // A composer that has not written anything yet takes back what the project parked, so a
+    // reload does not lose the prompt. Registration never clears the durable copy: an empty
+    // composer has nothing to say about it.
+    const durable = getDraft(mirrorKey);
+    if (durable) drafts.set(key, cloneDraft(durable));
+  }
+  return () => {
+    if (draftMirrors.get(key) === mirrorKey) draftMirrors.delete(key);
+  };
+}
+
+function mirrorKeyFor(key: string): string | null {
+  const mirror = draftMirrors.get(key);
+  return mirror && mirror !== key ? mirror : null;
+}
+
+/** The mirror write, with the guard that matters: a durable key never mirrors anything. */
+function writeMirroredDraft(mirror: string, draft: ChatDraft): void {
+  seededKeys.add(mirror);
+  const previous = drafts.get(mirror);
+  drafts.set(mirror, cloneDraft(draft));
+  if (!draft.value) removeStoredDraft(mirror);
+  else if (previous?.value !== draft.value) scheduleStoredDraft(mirror);
 }
 
 function readStoredDraft(key: string): ChatDraft | null {
@@ -241,7 +290,9 @@ export function getDraft(key: string): ChatDraft | null {
 
 export function setDraft(key: string, draft: ChatDraft): void {
   if (isEmptyDraft(draft)) {
-    clearDraft(key);
+    // Deleting the last character is the user clearing the box: the durable copy goes with it,
+    // so a reload never offers back a prompt that was typed away.
+    clearDraftWithMirror(key);
     return;
   }
   seededKeys.add(key);
@@ -249,12 +300,32 @@ export function setDraft(key: string, draft: ChatDraft): void {
   drafts.set(key, cloneDraft(draft));
   if (!draft.value) removeStoredDraft(key);
   else if (previous?.value !== draft.value) scheduleStoredDraft(key);
+  const mirror = mirrorKeyFor(key);
+  if (mirror) writeMirroredDraft(mirror, draft);
 }
 
 export function clearDraft(key: string): void {
   seededKeys.add(key);
   drafts.delete(key);
   removeStoredDraft(key);
+}
+
+/**
+ * A prompt that was SENT: the composer's draft and the durable copy it mirrors are both gone, so
+ * a reload never offers the prompt again. Only the send says this; a composer that is cleared
+ * because the page moved on (a key switch, a mount that had nothing to show) leaves the
+ * project's parked prompt alone, which is the whole point of parking it.
+ */
+export function clearSentDraft(key: string): void {
+  clearDraftWithMirror(key);
+}
+
+function clearDraftWithMirror(key: string): void {
+  clearDraft(key);
+  const mirror = mirrorKeyFor(key);
+  if (!mirror) return;
+  drafts.delete(mirror);
+  removeStoredDraft(mirror);
 }
 
 export function mergeRestoredSubmissionText(submitted: string, current: string): string {
