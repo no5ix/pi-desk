@@ -125,6 +125,11 @@ label, in every language. The numbers are the extension's own,
 streamed (see the running feed below): a chip with no entry in the index shows a plain zero and
 wears no marks, because a badge the app cannot back up is a claim.
 
+**No news, no chip.** `AppShell` renders the control only when the conversation's index entry
+reports a running task or an unacknowledged failure (`bgTasksHasNews`), or while the card it opens
+is open — a card always keeps the control it hangs under. A chip that sits at `0` on every
+conversation is a badge that says "nothing" in the row that only carries news.
+
 `components/BackgroundTasksPanel.tsx` is the card, in **two pages in one track**: the list (counts,
 the five status filters, one row per task, a stop on every running row), and the task's
 own page, which slides in from the right with a back control in its upper-left corner —
@@ -157,7 +162,14 @@ Geometry is shared with the Agents card, exactly: `AppShell`'s `activeTopPanel` 
 `--top-panel-max-height` so the card is **as tall as the Agents card's box**: the card fills that
 box up to its cap, and is floored at its own 224px so a conversation with no tasks is a box that
 says so, never a strip; its list, its detail
-page and its log scroll in their own layers. It is a header card, not a side panel, and closes
+page and its log scroll in their own layers. The detail page's body (`.bg-tasks-detail`) is the
+page's scroller (`overflow-y: auto`), because the page clips: a task's rows are taller than the
+card at a short window, and without that layer the rows pushed the log's four buttons and the log's
+own first line past the card's edge, and an output path that wraps over three lines ended mid-token.
+The log is a window there, not a demand — it grows into the room the card has and shrinks to a 96px
+floor — and the log's label row keeps its height (`flex: 0 0 auto`) and wraps its four buttons at a
+narrow width. A task's page floors the card at `min(300px, 58vh)`, so a conversation with one task
+is a monitor and not a note. It is a header card, not a side panel, and closes
 with the shared Escape / outside-click rules. Its surface is `.app-menu`; every rule is in
 `app/native-theme.css` under `.bg-tasks-*`. The name the extension gives a task (built from the
 prompt that started it, and sometimes a paragraph long) is one clipped line in the row and in the

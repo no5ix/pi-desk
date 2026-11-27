@@ -15728,12 +15728,28 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 .bg-tasks-page.is-detail .bg-tasks-detail {
   flex: 1 1 auto;
   min-height: 0;
+  /* The page clips (`.bg-tasks-page`), so this is the layer that scrolls. Without it the task's
+     rows pushed everything below them out of the card and the card's frame cut them: an output
+     path that wraps over three lines ended mid-token, the log's four buttons came back as four
+     caps, and the log's first line was drawn in half. */
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* A task's page is a report: the task's rows, its log's buttons and the log. The card floors
+   taller there than the list's floor, so a conversation with one task still reads as a monitor and
+   not as a note. Bounded by the viewport, so a short window keeps the card on the screen. */
+.bg-tasks-panel:has(.bg-tasks-pages[data-page="detail"]) {
+  min-height: min(300px, 58vh);
 }
 
 .bg-tasks-page.is-detail .bg-tasks-log {
   height: auto;
   flex: 1 1 auto;
-  min-height: 156px;
+  /* A window, not a demand: it grows into the room the card has, and shrinks to a readable floor
+     when the task's rows need the height. A floor of 156px at a short card pushed the log's own
+     buttons past the card's edge. */
+  min-height: 96px;
 }
 
 .bg-tasks-detail-note {
@@ -15809,6 +15825,8 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   display: flex;
   align-items: center;
   gap: 6px;
+  /* The label and its controls keep their row's height: the log below is the thing that shrinks. */
+  flex: 0 0 auto;
   color: var(--text-muted);
   font-size: var(--fs-micro);
 }
@@ -15822,6 +15840,10 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   display: inline-flex;
   gap: 4px;
   margin-left: auto;
+  /* Four buttons at the tail of a label: at a narrow width, or on a phone, they wrap onto a second
+     line of this row rather than run out of the card. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .bg-tasks-log {

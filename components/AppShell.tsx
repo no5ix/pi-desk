@@ -645,6 +645,14 @@ export function AppShell() {
   // The running-task index for the controls that are not the card: the composer's disc and the
   // sidebar's running mark (hooks/useBackgroundTasksRunning.ts).
   const bgTasksRunning = useBackgroundTasksRunning();
+  // The conversation's own numbers, read once: the chip wears them and the rule below uses them.
+  const bgTasksRunningCount = bgTasksRunning.runningIn(selectedSession?.id);
+  const bgTasksUnseenFailed = bgTasksRunning.unseenFailedIn(selectedSession?.id);
+  // Nothing running and no unacknowledged failure is a conversation with no background work to
+  // monitor, so the header wears no chip at all: a permanent `0` on every conversation is a badge
+  // that says "nothing" in the row that only carries news. The chip stays mounted while its card is
+  // open, so the card the user is reading never loses the control it hangs under.
+  const bgTasksHasNews = bgTasksRunningCount > 0 || bgTasksUnseenFailed > 0;
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number; floating?: boolean } | null>(null);
   // The header's cards (Agents, System prompt, Tools, Session stats) are mounted by the
   // chip that opens them. The wrapper is held for the shared exit animation, and keeps the
@@ -2737,12 +2745,13 @@ export function AppShell() {
                     extension reports for THIS conversation, and opens the task card under the
                     row. It is a chip of this row — and the same size as the subagents glyph —
                     because the card hangs under it, exactly as the Agents card hangs under the
-                    counts. */}
-                {showChat && !pageOpen && (
+                    counts. A conversation with no running task and no unread failure wears
+                    nothing (the chip stays only while its own card is open). */}
+                {showChat && !pageOpen && (bgTasksHasNews || activeTopPanel === "tasks") && (
                   <TopbarBackgroundTasksButton
                     ref={topbarTasksRef}
-                    running={bgTasksRunning.runningIn(selectedSession?.id)}
-                    unseenFailed={bgTasksRunning.unseenFailedIn(selectedSession?.id)}
+                    running={bgTasksRunningCount}
+                    unseenFailed={bgTasksUnseenFailed}
                     title={translate("backgroundTasks.title")}
                     tasksOpen={activeTopPanel === "tasks"}
                     onToggle={() => toggleTopPanel("tasks")}
