@@ -426,6 +426,7 @@ export function TreeNode({
           onDropTargetChange?.(null);
           onDropFiles(node.fullPath, droppedItems(event.dataTransfer));
         } : undefined}
+        data-file-path={node.fullPath}
         className={isDropTarget ? "file-tree-row file-tree-drop-target" : "file-tree-row"}
         style={{
           position: "relative",
@@ -1374,6 +1375,20 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       }
       return changed ? next : prev;
     });
+    // Expanding the ancestors is only half of a reveal: the row has to be seen.
+    // The highlight marks it and the scroll brings it into the panel, so the
+    // action answers even where the tree was already open — the case in which
+    // this used to leave the panel exactly as it was, and the menu item looked
+    // like it did nothing.
+    setHighlightedPaths(new Set([directory]));
+    const revealRow = () => {
+      const selector = `[data-file-path="${CSS.escape(directory)}"]`;
+      const row = document.querySelector(selector);
+      row?.scrollIntoView({ block: "center", behavior: "smooth" });
+    };
+    // The expansion paints on the next frame; the row only exists after that.
+    requestAnimationFrame(() => requestAnimationFrame(revealRow));
+    window.setTimeout(() => setHighlightedPaths((prev) => (prev.has(directory) ? new Set() : prev)), 1600);
   }, [cwd]);
 
   /** The menu for one row. A file and a folder are asked different questions. */
@@ -1396,7 +1411,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     items.push({
       id: "reveal",
       label: t(revealLabelKey(getDesktopPlatform())),
-      onSelect: () => { if (canReveal) revealPath(node.fullPath); else revealInTree(node.fullPath); },
+      onSelect: () => {
+        // A reveal asks two things. The OS file manager, where the desktop shell
+        // can open it; and the app's own tree, which always answers by bringing
+        // the row into view. Doing only the first left the web shell — and any
+        // desktop shell whose native call failed — with a menu item that appeared
+        // to do nothing.
+        revealInTree(node.fullPath);
+        if (canReveal) revealPath(node.fullPath);
+      },
     });
     if (node.isDir) {
       items.push({

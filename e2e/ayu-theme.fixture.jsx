@@ -22,6 +22,8 @@ const MARKDOWN = `# Ayu Monokai
 
 A paragraph with **bold**, *italic*, ~~struck~~, \`inline_code\`, a [guide](https://example.com/guide), a bare <https://example.com/naked> address, and raw <span>HTML</span> inside.
 
+![A figure](data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7)
+
 ## Second level
 
 ### Third level

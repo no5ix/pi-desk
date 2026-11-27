@@ -84,8 +84,20 @@ await test("the bar opens from the toolbar's corner, and closes from its own", (
   assert.match(viewer, /is-level-\$\{Math\.min\(heading\.level, 6\)\}/, "and the indentation is the level");
   assert.match(viewer, /editor\.revealLine\(heading\.line\)/, "in the editor, a row reveals the heading's line");
   assert.match(viewer, /querySelectorAll\("h1,h2,h3,h4,h5,h6"\)\[heading\.index\]/, "in the preview, the heading element of that index");
-  assert.match(css, /\.file-toc \{[\s\S]*?position: absolute;[\s\S]*?border-left: var\(--hairline\) solid var\(--separator\);/,
-    "the bar sits on the right of the file, and keeps the document's width");
+  // The outline is a column of the panel, never a sheet over the document: the
+  // body is a flex row, the outline is a column of its own width, the document is
+  // the flexible half that may shrink, and nothing about the outline is
+  // positioned over anything.
+  assert.match(css, /\.file-viewer-body \{\s*display: flex;\s*flex: 1;/,
+    "the document and the outline are columns of one row");
+  assert.match(css, /\.file-viewer-body \.file-viewer-content \{\s*min-width: 0;/,
+    "the document may shrink, so the outline never pushes it sideways");
+  assert.match(css, /\.file-toc \{[^}]*width: 268px;[^}]*\}/, "the outline has its own width");
+  assert.doesNotMatch(css, /\.file-toc \{[^}]*position: absolute;/, "it is not an overlay");
+  assert.doesNotMatch(css, /\.file-toc \{[^}]*z-index;/, "it has nothing to sit above");
+  assert.match(viewer, /className="file-viewer-body"/, "the row is in the markup");
+  // A reader who opens a Markdown file sees its headings: the column starts open.
+  assert.match(viewer, /const \[tocOpen, setTocOpen\] = useState\(true\);/, "the headings are expanded by default");
   assert.match(css, /\.file-toc-row\.is-level-2 \{ padding-left: 20px; \}/, "the tree is read as an indent, not a list");
 });
 

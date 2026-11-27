@@ -130,8 +130,9 @@ function loadMonaco(): Promise<MonacoModule> {
  *
  * The provider claims the request (`incompleteCompletions` is not set, and no
  * other provider is registered), so the popup holds exactly the document's
- * words. Enter and Tab accept the highlighted entry, Escape closes it, and Tab
- * indents when the popup is closed — Monaco's own keybindings.
+ * words. Tab accepts the highlighted entry, Escape closes it, Tab indents when
+ * the popup is closed, and Enter is the newline the typist typed — Monaco's own
+ * keybindings, with `acceptSuggestionOnEnter` turned off.
  *
  * The `kind` is not decoration. Monaco's suggest model builds a *disabled kinds*
  * set from the `editor.suggest.show*` options and drops every item whose kind is
@@ -291,7 +292,12 @@ export const CodeEditor = forwardRef<CodeEditorHandle, Props>(function CodeEdito
         // Sublime's Tab: it completes inside a word and accepts a visible
         // suggestion; with nothing to complete it indents as usual.
         tabCompletion: "on",
-        acceptSuggestionOnEnter: "on",
+        /* Enter is the newline the typist is asking for, never an acceptance: the
+         * word list is accepted with Tab and dismissed with Escape, so a line
+         * ending mid-suggestion does not silently pick a word. Monaco's own
+         * "Enter commits the selected suggestion" is the default that made a typed
+         * newline become `formatCommitTime`. */
+        acceptSuggestionOnEnter: "off",
         acceptSuggestionOnCommitCharacter: false,
         multiCursorModifier: "alt",
         accessibilitySupport: "auto",
@@ -352,8 +358,13 @@ export const CodeEditor = forwardRef<CodeEditorHandle, Props>(function CodeEdito
     if (current === value) return;
     const position = editor.getPosition();
     const scrollTop = editor.getScrollTop();
-    const edits = model.getFullModelRange();
-    model.setValue(value);
+    // Not `model.setValue`. A full-model flush (`_setValueFromTextBuffer`) drops
+    // every undo item the buffer collected, so a save whose refetch briefly
+    // re-states the older text left Cmd+Z with nothing to undo — and the buffer
+    // flashed back to the pre-edit words on the way. An edit over the full range
+    // is the same replacement with the history intact: it lands as one undoable
+    // change, so the reader can undo the reload too.
+    model.applyEdits([{ range: model.getFullModelRange(), text: value }]);
     if (position) editor.setPosition(position);
     editor.setScrollTop(scrollTop);
   }, [value, filePath]);

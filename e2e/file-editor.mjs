@@ -193,6 +193,9 @@ async function editor(label, { width, height, touch, theme }) {
   await page.waitForFunction(() => window.__writes.length >= 2, null, { timeout: 5_000 });
   const byHand = await page.evaluate(() => window.__writes.at(-1));
   assert.match(byHand.content, /\/\/ by hand/, `${label}: Cmd+S writes the buffer immediately`);
+  // A save's effect on the undo stack is measured in e2e/editor-undo.mjs, where
+  // the editor's own change reports are the instrument: this harness can only
+  // read Monaco's rendered lines, which cover the visible window, not the model.
 
   // ─── completion: the document's words, and Tab accepts one ───
   await page.keyboard.press("End");

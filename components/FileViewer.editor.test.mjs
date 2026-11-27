@@ -35,6 +35,12 @@ await test("the editor is mounted over the file, and its buffer is the source of
 await test("the save is a PUT to the file API, against the disk time the file was read at", () => {
   assert.match(viewer, /method: "PUT"/);
   assert.match(viewer, /body: JSON\.stringify\(\{ content: buffer, baseMtime: baseMtimeRef\.current, allowOverwrite: options\.overwrite === true \}\)/);
+  // A save states the disk's new content before the draft is cleared. Clearing
+  // the draft first gave the editor one render in which its value was the older
+  // read-view text; the value sync replaced the model, and a full-model flush
+  // discards the undo history — Cmd+Z did nothing after a save.
+  assert.match(viewer, /setData\(\(current\) => \(current\s*\? \{ \.\.\.current, content: buffer, mtime: payload\.mtime \?\? current\.mtime \}\s*: current\)\);\s*setDraftAndDirty\(null\);/,
+    "the base content and the draft change in one pass");
   // The refusal codes drive the save bar; the client does not guess.
   assert.match(viewer, /const code = payload\.code \?\? String\(response\.status\);/);
   assert.match(viewer, /code === "CONFLICT" \? "conflict" : "error"/);
@@ -85,7 +91,16 @@ await test("completion is the document's words, with nothing from a language ser
   assert.match(editor, /completeWords\(cached\.index, prefix, \{ excludeWord: prefix \}\)/);
   assert.match(editor, /monaco\.languages\.registerCompletionItemProvider\("\*"/);
   assert.match(editor, /tabCompletion: "on"/, "Tab completes, as Sublime's did");
-  assert.match(editor, /acceptSuggestionOnEnter: "on"/);
+  // Enter is the newline the typist asked for. Monaco's default commits the
+  // selected suggestion on Enter, which turned a finished line into a word from
+  // the list; the list is accepted with Tab and dismissed with Escape.
+  assert.match(editor, /acceptSuggestionOnEnter: "off"/, "Enter never accepts a suggestion");
+  // A reload replaces the buffer with an edit over the full range, not a model
+  // flush: setValue drops the undo history, which is why Cmd+Z went dead after a
+  // save (the refetch re-stated the older text and the model was flushed twice).
+  assert.doesNotMatch(editor, /model\.setValue\(/, "no full-model flush in the editor");
+  assert.match(editor, /model\.applyEdits\(\[\{ range: model\.getFullModelRange\(\), text: value \}\]\)/,
+    "an external reload is one undoable edit");
 });
 
 await test("the editor paints with the generated Ayu Monokai theme, not a hand-copied palette", () => {

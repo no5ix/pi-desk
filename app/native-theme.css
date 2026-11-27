@@ -17288,27 +17288,38 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   white-space: nowrap;
 }
 
-/* The Markdown outline: a bar on the right of the file, opened from the toolbar's
-   corner and dismissed from its own. The document keeps its width — an outline
-   that reflows the text it points at is a bad way to read one. */
+/* The panel's expand button, wearing the open state. */
 .file-viewer-toc-toggle.is-active {
   color: var(--accent);
   background: var(--bg-selected);
 }
 
+/* The panel's body row: the document, and its outline beside it. */
+.file-viewer-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The document is the flexible half of that row: it may shrink below the width
+   of what it holds, so the outline's column never pushes it sideways. */
+.file-viewer-body .file-viewer-content {
+  min-width: 0;
+}
+
+/* The Markdown outline is a column of the file panel — its own width, its own
+   scroll, taken from the panel and never from the document. A reader with the
+   outline open reads the same lines at the same measure as without it, and the
+   panel's expand button opens and closes the column. (An outline that reflows,
+   and covers, the text it points at is a bad way to read a file.) */
 .file-toc {
-  position: absolute;
-  top: 41px;
-  right: 0;
-  bottom: 0;
-  z-index: 3;
+  flex: none;
   display: flex;
   flex-direction: column;
-  width: min(280px, 46%);
+  width: 268px;
   min-height: 0;
   border-left: var(--hairline) solid var(--separator);
   background: var(--bg-panel);
-  box-shadow: var(--shadow-popover);
 }
 
 .file-toc-header {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo, type ComponentPropsWithoutRef, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import {
   createElement as renderSyntaxNode,
   type SyntaxHighlighterProps,
@@ -43,6 +43,88 @@ import {
 } from "@/lib/file-viewer-state";
 
 export type { FileViewerState } from "@/lib/file-viewer-state";
+
+/**
+ * The Markdown preview's renderers, at module scope on purpose.
+ *
+ * ReactMarkdown renders through the *types* in its `components` map. A map built
+ * inside the render hands it new function types on every render, React unmounts
+ * the whole document and mounts a new one, and a reader watches the images
+ * re-load and the scroll position jump each time the panel's state ticks — a
+ * save, a watcher event, the save-status chip. Built once, with the values the
+ * renderers need read from a context, a re-render patches the document in place:
+ * an `<img>` keeps its node, so its bytes are fetched once.
+ */
+interface MarkdownPreviewScope {
+  cwd: string | null;
+  /** The folder the document lives in — where a relative image or link points. */
+  markdownDirectory: string;
+  sourceSessionId?: string | null;
+  onOpenFile?: (path: string, page?: number) => void;
+}
+
+const MARKDOWN_PREVIEW_ROOT: MarkdownPreviewScope = { cwd: null, markdownDirectory: "" };
+const MarkdownPreviewScopeContext = createContext<MarkdownPreviewScope>(MARKDOWN_PREVIEW_ROOT);
+
+function MarkdownPreviewCode(props: { className?: string; children?: ReactNode }) {
+  const { className, children, ...rest } = props;
+  const lang = className?.replace("language-", "").toLowerCase() ?? "";
+  const raw = String(children);
+  const isBlock = className?.includes("language-") || raw.includes("\n");
+  if (isBlock) {
+    if (lang === "mermaid") {
+      return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
+    }
+    return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
+  }
+  return <code className={className} {...rest}>{children}</code>;
+}
+
+/** A code block draws its own frame, so the `pre` around it steps aside. */
+function MarkdownPreviewPre({ children }: { children?: ReactNode }) {
+  return <>{children}</>;
+}
+
+function MarkdownPreviewLink(props: ComponentPropsWithoutRef<"a"> & { node?: unknown }) {
+  const { href, children, ...rest } = props;
+  delete (rest as { node?: unknown }).node;
+  const { cwd, markdownDirectory, onOpenFile } = useContext(MarkdownPreviewScopeContext);
+  const linkedFile = onOpenFile && href
+    ? resolveLocalFileHref(href, markdownDirectory, cwd ?? markdownDirectory)
+    : null;
+  if (!linkedFile || !onOpenFile) {
+    return <a href={href} {...rest}>{children}</a>;
+  }
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!shouldOpenLocalFileInApp(event)) return;
+    event.preventDefault();
+    onOpenFile(linkedFile, parsePdfPageFragment(href) ?? undefined);
+  };
+  return <a href={href} {...rest} onClick={handleClick}>{children}</a>;
+}
+
+function MarkdownPreviewImage(props: ComponentPropsWithoutRef<"img"> & { node?: unknown }) {
+  const { src, alt, ...rest } = props;
+  delete (rest as { node?: unknown }).node;
+  const { cwd, markdownDirectory, sourceSessionId } = useContext(MarkdownPreviewScopeContext);
+  const imagePath = typeof src === "string"
+    ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
+    : null;
+  // A path inside the project is served by the file API; a remote one loads as
+  // written. The URL has no revision in it, so the same document asks for the
+  // same bytes — a re-render must not look like a reload.
+  const imageSrc = imagePath ? getFileApiUrl(imagePath, "read", sourceSessionId) : src;
+  // Dynamic local paths are served directly by the file API.
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...rest} />;
+}
+
+const MARKDOWN_PREVIEW_COMPONENTS = {
+  code: MarkdownPreviewCode,
+  pre: MarkdownPreviewPre,
+  a: MarkdownPreviewLink,
+  img: MarkdownPreviewImage,
+};
 
 interface Props {
   filePath: string;
@@ -1297,6 +1379,15 @@ function TextFileViewer({
       }
       baseMtimeRef.current = payload.mtime ?? null;
       setBaseMtime(payload.mtime ?? null);
+      // The disk now holds what the buffer holds, so say so *before* the draft is
+      // cleared. Clearing the draft first left one render in which the editor's
+      // value was the older read-view text while the model carried the typed
+      // words; the value sync replaced the model, and a full-model flush drops
+      // the undo history — Cmd+Z did nothing after a save. One state pass keeps
+      // the buffer, the base and the chip agreeing at every frame.
+      setData((current) => (current
+        ? { ...current, content: buffer, mtime: payload.mtime ?? current.mtime }
+        : current));
       setDraftAndDirty(null);
       setExternalChange(false);
       setSaveState("saved");
@@ -1515,9 +1606,11 @@ function TextFileViewer({
 
   const viewerContent = data?.content ?? "";
   const sourceLines = useMemo(() => viewerContent.split("\n"), [viewerContent]);
-  // The outline. Opened from the toolbar, it lists the document's headings and
-  // takes the reader there: the line in the editor, the element in the preview.
-  const [tocOpen, setTocOpen] = useState(false);
+  // The outline. It is a column of the panel, and it starts open: the headings
+  // of a Markdown file are the shape of it, and a reader who opened the file to
+  // read wants that shape in view, not hidden behind a button. The panel's expand
+  // button closes and opens the column.
+  const [tocOpen, setTocOpen] = useState(true);
   const tocHeadings = useMemo(() => parseMarkdownHeadings(draft ?? viewerContent), [draft, viewerContent]);
   const revealTocHeading = useCallback((heading: MarkdownHeading) => {
     const editor = editorRef.current;
@@ -1697,6 +1790,17 @@ function TextFileViewer({
     requestedInitialDisplayMode,
   ]);
 
+  // What the preview's renderers ask the app for: the folder the document is
+  // in, the session it came from, the way to open a linked file. Memoised, so the
+  // context's value — and with it the renderers' identity — holds still across
+  // the panel's ticks: a new object each render re-renders the document, and a
+  // new *component type* replaces it, which is what makes an image reload and a
+  // reader's scroll jump. It is a hook, so it sits above the early returns.
+  const markdownPreviewScope = useMemo<MarkdownPreviewScope>(
+    () => ({ cwd: cwd ?? null, markdownDirectory: getFileDirectory(filePath), sourceSessionId, onOpenFile }),
+    [cwd, filePath, sourceSessionId, onOpenFile],
+  );
+
   if (loading || (requestedInitialDisplayMode === "diff" && diffLoading && !data)) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "var(--fs-body)" }}>
@@ -1713,10 +1817,14 @@ function TextFileViewer({
     );
   }
 
+  // What the preview's renderers ask the app for. Memoised so the context's
+  // value — and with it the renderers' identity — holds still across the panel's
+  // ticks; a new object every render re-renders the document, and a new
+  // *component type* replaces it. It is a hook, so it sits above the early
+  // return, and it reads the folder from the path it is given.
   if (!data && !isDeletedDiff) return null;
 
   const content = viewerContent;
-  const markdownDirectory = getFileDirectory(filePath);
   const lines = sourceLines;
   const canEdit = !isBinary && !isDeletedDiff && isEditableExtension(filePath);
   const displayModes: DisplayMode[] = isDeletedDiff
@@ -1985,6 +2093,11 @@ function TextFileViewer({
         </div>
       )}
 
+      {/* The document and its outline sit side by side. The outline is a column
+          that takes its width from the panel, never a sheet laid over the text:
+          a reader with the outline open reads the same lines they read without
+          it, and the panel's own expand button opens and closes it. */}
+      <div className="file-viewer-body">
       {/* Content area */}
       <div
         ref={contentRef}
@@ -2037,71 +2150,22 @@ function TextFileViewer({
             />
           )
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
-          <div
-            className="markdown-body markdown-file-preview"
-            style={{ padding: "24px 32px" }}
-          >
-            {frontmatter?.data && <FrontmatterCard data={frontmatter.data} />}
-            <ReactMarkdown
-              remarkPlugins={markdownPreviewRemarkPlugins}
-              rehypePlugins={markdownPreviewRehypePlugins}
-              urlTransform={onOpenFile ? markdownUrlTransform : undefined}
-              components={{
-                code({ className, children, ...props }) {
-                  const lang = className?.replace("language-", "").toLowerCase() ?? "";
-                  const raw = String(children);
-                  const isBlock = className?.includes("language-") || raw.includes("\n");
-                  if (isBlock) {
-                    if (lang === "mermaid") {
-                      return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
-                    }
-                    return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
-                  }
-                  return (
-                    <code className={className} {...props}>
-                      {children}
-                    </code>
-                  );
-                },
-                pre({ children }) {
-                  // Render the code block directly — CodeBlock provides its own wrapping.
-                  // For non-mermaid blocks, pass through to default pre rendering.
-                  return <>{children}</>;
-                },
-                a({ href, children, ...props }) {
-                  delete props.node;
-                  const linkedFile = onOpenFile
-                    ? resolveLocalFileHref(href, markdownDirectory, cwd ?? markdownDirectory)
-                    : null;
-                  if (!linkedFile || !onOpenFile) {
-                    return <a href={href} {...props}>{children}</a>;
-                  }
-
-                  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-                    if (!shouldOpenLocalFileInApp(event)) return;
-                    event.preventDefault();
-                    onOpenFile(linkedFile, parsePdfPageFragment(href) ?? undefined);
-                  };
-
-                  return <a href={href} {...props} onClick={handleClick}>{children}</a>;
-                },
-                img({ src, alt, ...props }) {
-                  delete props.node;
-                  const imagePath = typeof src === "string"
-                    ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
-                    : null;
-                  const imageSrc = imagePath
-                    ? getFileApiUrl(imagePath, "read", sourceSessionId)
-                    : src;
-                  // Dynamic local paths are served directly by the file API.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  return <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;
-                },
-              }}
+          <MarkdownPreviewScopeContext.Provider value={markdownPreviewScope}>
+            <div
+              className="markdown-body markdown-file-preview"
+              style={{ padding: "24px 32px" }}
             >
-              {markdownPreview}
-            </ReactMarkdown>
-          </div>
+              {frontmatter?.data && <FrontmatterCard data={frontmatter.data} />}
+              <ReactMarkdown
+                remarkPlugins={markdownPreviewRemarkPlugins}
+                rehypePlugins={markdownPreviewRehypePlugins}
+                urlTransform={onOpenFile ? markdownUrlTransform : undefined}
+                components={MARKDOWN_PREVIEW_COMPONENTS}
+              >
+                {markdownPreview}
+              </ReactMarkdown>
+            </div>
+          </MarkdownPreviewScopeContext.Provider>
         ) : isDelimitedTable && effectiveDisplayMode === "preview" ? (
           <DelimitedTable
             content={viewerContent}
@@ -2178,6 +2242,7 @@ function TextFileViewer({
           </div>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

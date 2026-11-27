@@ -82,3 +82,70 @@ its look is `.markdown-body` CSS. In source it is Prism `markdown` tokens, which
   `scripts/release-workflows.test.mjs`, `lib/branding.test.mjs` pass (104 tests).
 - Production build for the e2e server mode:
   `PI_WEB_DESKTOP_BUILD=1 node_modules/next/dist/bin/next build --webpack` → exit 0.
+
+## Bug batch (2026-11-28, on top of `a2667c23`)
+
+Reported from screenshots: the right sidebar (bugs3), the editor's chrome, and
+branchshift (bs2). Each fix below carries a check that fails without it.
+
+### Shipped and verified
+
+- **Cmd+Z died after a save.** A save clears the draft; while the read that
+  follows was in flight the editor's `value` was the older read-view text, so the
+  value sync called `model.setValue`, which goes through
+  `_setValueFromTextBuffer` and drops every undo item (`monaco-editor` 0.52.2,
+  `textModel.js`). Two flushes per save, so the stack was empty.
+  `saveDraft` now states the disk's content in the same pass the draft is
+  cleared, and the value sync replaces the buffer with
+  `model.applyEdits([...full range...])`, which keeps the history.
+  Check: `e2e/editor-undo.mjs` (the parent replays the old ordering; the report
+  disappears from the buffer with the fix, and Cmd+Z answers with nothing when
+  `CodeEditor.tsx` is reverted) plus the save-flow assertions in
+  `components/FileViewer.editor.test.mjs`.
+- **Completion is Tab's, never Enter's.** `acceptSuggestionOnEnter: "off"`
+  (Monaco's default commits a selected suggestion on Enter, so a finished line
+  became a word from the list). `tabCompletion: "on"` stays.
+  Check: `components/CodeEditor.completion.test.mjs`, and the Enter-breaks-the-line
+  measurement in `e2e/editor-undo.mjs`.
+- **Markdown preview images flashed and the panel scrolled.** ReactMarkdown
+  renders through the *types* in its `components` map; the map was built in the
+  render, so every panel tick (auto-save, watcher, save chip, outline) unmounted
+  and remounted the document — a mounted `<img>` fetches again, and a replaced
+  document moves. The renderers are module-level (`MARKDOWN_PREVIEW_COMPONENTS`)
+  over a memoised scope context.
+  Check: `e2e/markdown-preview-stability.mjs` measures node identity, the `src`,
+  the reader's scroll offset and the outline's geometry; it fails on `HEAD`
+  ("the same `<img>` node is on the page…").
+- **The outline is a column, not a sheet, and starts open.** The file panel's
+  body is a flex row (`.file-viewer-body`); the document is the flexible half
+  (`min-width: 0`), `.file-toc` is a 268px column with no `position`, no
+  `z-index`, and `tocOpen` defaults to true.
+  Check: `components/FileViewer.toc.test.mjs` (rewritten to the sidebar
+  contract) and the geometry assertion in `e2e/markdown-preview-stability.mjs`
+  (the two boxes do not overlap).
+- **A reveal answers in every shell.** The row menu's reveal now reveals in the
+  app's tree — ancestors expanded, the row scrolled to the centre and flashed —
+  and calls the native Finder reveal in the desktop shell. Before, the web shell
+  only expanded (nothing visible when the tree was already open), which is what
+  made the item look dead. Rows carry `data-file-path` for it.
+
+### Open, not started
+
+- File-list load speed (needs a measurement of `/api/file-tree` against the
+  pre-fork behaviour before anything is changed).
+- The Git view as a tab: mutual exclusion with the file/terminal tabs, the
+  changed-file badge on the glyph, no reload when tabs are switched, and the
+  broken diff for an uncommitted file (`Access denied` in the diff pane).
+  Lead for the diff: `/api/git/diff` answers 403 from
+  `isExistingFilePathAllowed(cwd)` / `isDiffPathAllowed(path)`
+  (`app/api/git/diff/route.ts:47-53`), the stricter pair that resolves the
+  real path, while the read route the panel uses to show the file gets past the
+  plain `isFilePathAllowed` check. A branchshift linked worktree whose path
+  resolves through a symlink (a home under a link, `/tmp`, a case-differing
+  volume) is the case that splits the two. Reproduce it in a unit test over
+  `lib/file-access.ts` with a linked root before changing either check.
+- Editor chrome: the tab's `x` centred on its row, the Monaco find widget's
+  alignment. A probe measured the widget in the app's stylesheet (419px wide,
+  the actions centred on the second row); the fix needs the real panel's DOM.
+- branchshift bs2: the mobile expand button, the project list without branch
+  info, left-aligned branch/commit menus.
