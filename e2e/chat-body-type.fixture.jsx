@@ -84,7 +84,7 @@ function Fixture() {
   return (
     <div className="app-shell chat-container" style={{ maxWidth: 860, margin: "0 auto" }}>
       <section data-case="report">
-        <MarkdownBody>The final report: the map of the run, in the reply's prose, read at 14px on 1.7 leading, with `inline code` in the sentence.</MarkdownBody>
+        <MarkdownBody>The final report: the map of the run, in the prose of the reply, read at 14px on 1.7 leading, with `inline code` in the sentence.</MarkdownBody>
       </section>
       <section data-case="thinking">
         <MessageView message={turn} entryId="entry-0" showTimestamp={false} expandLatestThinking />
