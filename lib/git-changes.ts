@@ -230,7 +230,7 @@ export async function getGitFileDiff(cwd: string, filePath: string, ref?: string
     if (!relative || relative.startsWith("..")) return { supported: false };
     const run = async (range: string[]) => {
       try {
-        const { stdout } = await execGitFile(repositoryRoot, ["--no-pager", "diff", "--no-color", "--no-ext-diff", "--unified=3", ...range, "--", relative]);
+        const stdout = await runGit(repositoryRoot, ["--no-pager", "diff", "--no-color", "--no-ext-diff", "--unified=3", ...range, "--", relative]);
         return stdout.includes("@@") ? stdout : null;
       } catch {
         return null;

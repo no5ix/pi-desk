@@ -191,6 +191,11 @@ interface Props {
   onOpenFileDiff: (options: { from: string; to: string; file: string; label: string }) => void;
   onOpenFileAtRevision: (hash: string, filePath: string) => void;
   onOpenFileHistory: (filePath: string) => void;
+  /** One file's history, asked from the file's own menu. The log then lists the
+   *  commits that touched it, and the chip says so: a filtered list that does not
+   *  name its filter reads as a repository with a suspiciously short history. */
+  fileFilter?: string | null;
+  onClearFileFilter?: () => void;
   onOpenBlame: (filePath: string) => void;
   onSelectedCommitChange?: (commit: CommitNode | null) => void;
   /** The log's ref filter belongs to the panel above: × on the chip hands it
@@ -215,6 +220,8 @@ export function LogPanel({
   onOpenBlame,
   onSelectedCommitChange,
   onClearRef,
+  fileFilter,
+  onClearFileFilter,
 }: Props) {
   const { t } = useI18n();
   const { menu, open, close } = useGitMenu();
@@ -243,6 +250,7 @@ export function LogPanel({
     if (filters.author.trim()) base.author = filters.author.trim();
     if (filters.since.trim()) base.since = filters.since.trim();
     if (filters.until.trim()) base.until = filters.until.trim();
+    if (fileFilter) base.file = fileFilter;
     if (selectedRef) {
       base.currentRef = { type: selectedRef.type, name: selectedRef.name, fullRef: selectedRef.fullRef };
       // The log is *this ref's* commits, newest first — `git log <ref>`. The
@@ -252,7 +260,7 @@ export function LogPanel({
       if (selectedRef.type === "local" || selectedRef.type === "remote") base.branch = selectedRef.name;
     }
     return base;
-  }, [filters, selectedRef]);
+  }, [filters, selectedRef, fileFilter]);
 
   const paramsKey = JSON.stringify(params);
 
@@ -456,25 +464,42 @@ export function LogPanel({
         <span className="git-panel-section-count">{commits.length}</span>
         {/* The filter belongs on this row: the chip under the title cost a row of
             the log and read as a second heading. */}
-        {selectedRef ? (
+        {selectedRef || fileFilter ? (
           <span className="git-filter-chips">
-            <span className="git-chip">
-              <span className="git-chip-label">{selectedRef.name}</span>
-              <button
-                type="button"
-                className="git-chip-clear"
-                aria-label={t("git.clearFilter")}
-                onClick={() => {
-                  setFilters({ search: "", author: "", since: "", until: "" });
-                  // The chip is the branch. Clearing only the text filters left it
-                  // on screen with the list still filtered, which reads as a button
-                  // that does nothing.
-                  onClearRef?.();
-                }}
-              >
-                ×
-              </button>
-            </span>
+            {selectedRef ? (
+              <span className="git-chip">
+                <span className="git-chip-label">{selectedRef.name}</span>
+                <button
+                  type="button"
+                  className="git-chip-clear"
+                  aria-label={t("git.clearFilter")}
+                  onClick={() => {
+                    setFilters({ search: "", author: "", since: "", until: "" });
+                    // The chip is the branch. Clearing only the text filters left it
+                    // on screen with the list still filtered, which reads as a button
+                    // that does nothing.
+                    onClearRef?.();
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            ) : null}
+            {fileFilter ? (
+              <span className="git-chip git-chip-file" title={fileFilter}>
+                <span className="git-chip-label">
+                  {fileFilter.split("/").filter(Boolean).pop() ?? fileFilter}
+                </span>
+                <button
+                  type="button"
+                  className="git-chip-clear"
+                  aria-label={t("git.clearFileFilter")}
+                  onClick={() => onClearFileFilter?.()}
+                >
+                  ×
+                </button>
+              </span>
+            ) : null}
           </span>
         ) : null}
         <span className="git-toolbar-spacer" />

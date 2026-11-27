@@ -5,6 +5,16 @@ import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWi
 import { getGitFileDiff } from "@/lib/git-changes";
 import { hasParentDirectorySegment } from "@/lib/path-security";
 
+/**
+ * A commit named by hash. The commit panel hands the tab a full sha, and a
+ * search box may type any prefix of one; the ref reaches git as an argument
+ * (never through a shell), so the shape is what keeps it a commit and not a
+ * revision range, a ref name, or an option.
+ */
+function isCommitSha(value: string): boolean {
+  return /^[0-9a-f]{4,64}$/i.test(value);
+}
+
 function isDiffPathAllowed(filePath: string, allowedRoots: Set<string>): boolean {
   if (hasParentDirectorySegment(filePath)) return false;
   // Deleted files (and their parents) may be absent. Authorize the nearest

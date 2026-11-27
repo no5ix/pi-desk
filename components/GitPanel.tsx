@@ -35,10 +35,28 @@ interface Props {
   /** A file, opened as a panel tab (the shell's `handleOpenFile`). The path is the
    *  file's own — an absolute path, which is what a tab is keyed by. */
   onOpenFile: (filePath: string, fileName: string) => void;
-  /** A file's working-tree diff, opened as a panel tab in the Diff mode. */
-  onOpenFileGitDiff?: (filePath: string, fileName: string) => void;
+  /** A file's diff, opened as a panel tab in the Diff mode. `commitSha` is the
+   *  commit a commit-panel file row was clicked on: the tab reads that commit
+   *  against its parent, because a committed file has no working-tree diff. */
+  onOpenFileGitDiff?: (filePath: string, fileName: string, commitSha?: string) => void;
+  /** The app's own project list, for the switcher's Projects group. */
+  projects?: { path: string; name: string }[];
+  /** The panel's own way to take the full width. On a phone the panel is already
+   *  full width, and the header's button is the only expand control that sits
+   *  where a reader looks for it: above the content, at the right. */
+  onToggleFullWidth?: () => void;
+  fullWidth?: boolean;
   /** A worktree of the same repository, selected from the switcher. */
   onSwitchRepository?: (cwd: string) => void;
+  /**
+   * A file the tree's menu asked the history of: the log switches to that file,
+   * with its chip. The panel reports the request consumed (`onGitFileRequestDone`)
+   * so a tab switch away and back does not re-apply a filter the user has cleared.
+   */
+  fileHistoryPath?: string | null;
+  /** The same, for Git blame: it opens the blame dialog for that file. */
+  blameRequestPath?: string | null;
+  onGitFileRequestDone?: () => void;
   /** The shell's busy line: a git operation the panel started. */
   onBusyChange?: (label: string | null) => void;
 }
@@ -51,11 +69,12 @@ const SPLIT_STORAGE_KEY = "pi-git-split";
 const SPLIT_MIN = 170;
 const SPLIT_MAX = 420;
 
-export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepository, onBusyChange }: Props) {
+export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepository, onBusyChange, fileHistoryPath, blameRequestPath, onGitFileRequestDone, onToggleFullWidth, fullWidth = false }: Props) {
   const { t } = useI18n();
   const [activeCwd, setActiveCwd] = useState(cwd);
   const [tab, setTab] = useState<PanelTab>("log");
   const [narrowView, setNarrowView] = useState<NarrowView>("branches");
+  const [fileFilter, setFileFilter] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [selectedRef, setSelectedRef] = useState<GitRefIdentity | null>(null);
@@ -160,6 +179,24 @@ export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepositor
     if (onOpenFileGitDiff) onOpenFileGitDiff(absolute, name, commitSha);
     else onOpenFile(absolute, name);
   }, [toAbsolutePath, onOpenFile, onOpenFileGitDiff]);
+
+  // A file's menu in the tree asked for its history: the log switches to that
+  // file. The request is consumed at once — from then on the filter is the
+  // panel's own state, and clearing it must not be undone by switching tabs
+  // away and back.
+  useEffect(() => {
+    if (!fileHistoryPath) return;
+    setTab("log");
+    setNarrowView("log");
+    setFileFilter(fileHistoryPath);
+    onGitFileRequestDone?.();
+  }, [fileHistoryPath, onGitFileRequestDone]);
+
+  useEffect(() => {
+    if (!blameRequestPath) return;
+    setDialog({ kind: "blame", filePath: blameRequestPath });
+    onGitFileRequestDone?.();
+  }, [blameRequestPath, onGitFileRequestDone]);
 
   const openFileAtRevision = useCallback(async (hash: string, filePath: string) => {
     if (!filePath) return;
@@ -287,6 +324,17 @@ export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepositor
             <span className="git-badge">{conflicts.data?.length}</span>
           ) : null}
         </GitIconButton>
+        {onToggleFullWidth ? (
+          <GitIconButton
+            label={t(fullWidth ? "gitPanel.restoreWidth" : "gitPanel.expandWidth")}
+            onClick={onToggleFullWidth}
+            active={fullWidth}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d={fullWidth ? "M4 9V4h5M20 15v5h-5M4 15v5h5M20 9V4h-5" : "M15 4h5v5M9 20H4v-5M20 15v5h-5M4 9V4h5"} />
+            </svg>
+          </GitIconButton>
+        ) : null}
         <GitIconButton label={t("gitPanel.reload")} onClick={refresh}>
           <RefreshIcon />
         </GitIconButton>
@@ -342,12 +390,18 @@ export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepositor
                     refreshToken={refreshToken}
                     selectedRef={selectedRef}
                     onClearRef={() => setSelectedRef(null)}
+                    fileFilter={fileFilter}
+                    onClearFileFilter={() => setFileFilter(null)}
                     currentBranch={current?.name ?? null}
                     onBusy={setBusy}
                     onChanged={refresh}
-                    onOpenFileDiff={({ label, to }) => openFileDiff(label, undefined, to)}
+                    onOpenFileDiff={({ file, label, to }) => openFileDiff(file, label, to)}
                     onOpenFileAtRevision={(hash, filePath) => void openFileAtRevision(hash, filePath)}
-                    onOpenFileHistory={(filePath) => openFile(filePath)}
+                    onOpenFileHistory={(filePath) => {
+                      setTab("log");
+                      setNarrowView("log");
+                      setFileFilter(filePath);
+                    }}
                     onOpenBlame={(filePath) => setDialog({ kind: "blame", filePath })}
                   />
                 )}
@@ -402,12 +456,18 @@ export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepositor
                   refreshToken={refreshToken}
                   selectedRef={selectedRef}
                   onClearRef={() => setSelectedRef(null)}
+                  fileFilter={fileFilter}
+                  onClearFileFilter={() => setFileFilter(null)}
                   currentBranch={current?.name ?? null}
                   onBusy={setBusy}
                   onChanged={refresh}
-                  onOpenFileDiff={({ label }) => openFileDiff(label)}
+                  onOpenFileDiff={({ file, label, to }) => openFileDiff(file, label, to)}
                   onOpenFileAtRevision={(hash, filePath) => void openFileAtRevision(hash, filePath)}
-                  onOpenFileHistory={(filePath) => openFile(filePath)}
+                  onOpenFileHistory={(filePath) => {
+                    setTab("log");
+                    setNarrowView("log");
+                    setFileFilter(filePath);
+                  }}
                   onOpenBlame={(filePath) => setDialog({ kind: "blame", filePath })}
                 />
               </div>

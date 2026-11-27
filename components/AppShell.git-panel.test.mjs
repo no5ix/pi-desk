@@ -55,7 +55,7 @@ test("the Git button lives in the right panel's header row, beside the file list
 test("a chat's panel has no Git button, and no view", () => {
   const guard = appShell.match(/\{visibleProjectCwd && !isChatWorkspaceActive && \(\s*<button[\s\S]{0,400}?git-panel-toggle/);
   assert.ok(guard, "the button is guarded by the project's cwd and the chat workspace flag");
-  const view = appShell.slice(appShell.indexOf("{gitPanelOpen && visibleProjectCwd ? ("));
+  const view = appShell.slice(appShell.indexOf("{visibleProjectCwd && rightPanelOpen ? ("));
   assert.ok(view.length > 200, "the content area's branch is in AppShell");
   assert.ok(/<GitPanel/.test(view.slice(0, 900)), "the view only renders for a project folder");
 });
@@ -66,10 +66,16 @@ test("opening the Git view takes the panel's content area, and gives it back", (
   assert.match(appShell, /active=\{rightPanelOpen && tab\.id === activeFileTabId && !gitPanelOpen\}/,
     "and a hidden shell is not told it is active — its xterm must not repaint under the view");
   const body = appShell.slice(
-    appShell.indexOf("{gitPanelOpen && visibleProjectCwd ? ("),
+    appShell.indexOf("{visibleProjectCwd && rightPanelOpen ? ("),
     appShell.indexOf("{terminalTabs.map((tab) => ("),
   );
   assert.ok(/<GitPanel/.test(body.slice(0, 900)), "the Git view is the branch's first case");
+  // The view is not unmounted by its own toggle: closing the Git view inside an
+  // open sidebar hides it, so reopening is a look at the same read of the
+  // repository. Closing the sidebar is the boundary that starts a fresh read.
+  assert.match(body, /className="git-panel-keepalive" hidden=\{!gitPanelOpen\}/,
+    "the view is hidden, not unmounted, while its toggle is off");
+  assert.match(appShell, /\{gitPanelOpen \? null : \(/, "the file, side-chat and empty content step aside while it is on");
   assert.match(body, /className="session-chat-panel"/, "the side-chat tab steps aside with it");
   assert.match(body, /className="right-panel-empty"/, "and so does the \"no file open\" line");
   const openFile = appShell.slice(appShell.indexOf("const handleGitPanelOpenFile"), appShell.indexOf("const handleGitPanelOpenFile") + 260);

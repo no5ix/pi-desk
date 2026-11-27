@@ -39,12 +39,23 @@ const MENU_MARGIN = 8;
 const MENU_WIDTH = 244;
 const MENU_MAX_HEIGHT = 420;
 
+/**
+ * The row a menu belongs to. A menu opened from the small button at a row's
+ * right edge is a menu about the row, so it opens under the row's left edge —
+ * the way a native context menu does. Anchored to the button, it hung in the
+ * middle of the list, and in a narrow panel the button's own x pushed it off
+ * the row it described.
+ */
+const MENU_ROW_SELECTOR = ".git-branch-row, .git-log-row, .git-shelf-row, .git-change-row, [data-git-menu-row]";
+
 /** Place a menu at a point or beside an element, inside the viewport. */
 function anchorTo(anchor: { x: number; y: number } | Element, width = MENU_WIDTH): Anchored {
   const rect = anchor instanceof Element ? anchor.getBoundingClientRect() : { left: anchor.x, top: anchor.y, bottom: anchor.y + 1, right: anchor.x };
+  const row = anchor instanceof Element ? anchor.closest(MENU_ROW_SELECTOR) : null;
+  const leftEdge = row ? row.getBoundingClientRect().left : rect.left;
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
-  const left = Math.max(MENU_MARGIN, Math.min(rect.left, viewportWidth - width - MENU_MARGIN));
+  const left = Math.max(MENU_MARGIN, Math.min(leftEdge, viewportWidth - width - MENU_MARGIN));
   const spaceBelow = viewportHeight - rect.bottom - MENU_MARGIN;
   const spaceAbove = rect.top - MENU_MARGIN;
   const top = spaceBelow < 160 && spaceAbove > spaceBelow

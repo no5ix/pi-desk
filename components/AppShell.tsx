@@ -1876,15 +1876,18 @@ export function AppShell() {
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
-    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number; diffSessionId?: string | null; diffCommitSha?: string | null },
+    options?: { sourceSessionId?: string | null; modeHint?: "diff" | "edit"; page?: number; diffSessionId?: string | null; diffCommitSha?: string | null; compareWith?: string | null },
   ) => {
     if (isChatWorkspaceActive && !(chatFolderCwd && isPathInside(filePath, chatFolderCwd))) return;
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
     const diffSessionId = options?.diffSessionId;
     const diffCommitSha = options?.diffCommitSha;
+    const compareWith = options?.compareWith;
     const page = options?.page;
-    const tabId = `file:${filePath}`;
+    // A compare tab is its own view: the same file opened plainly is a different
+    // question, and one tab id cannot carry both.
+    const tabId = compareWith ? `compare:${filePath}:${compareWith}` : `file:${filePath}`;
     setFileTabs((prev) => openFileTab(prev, {
       fileName,
       filePath,
@@ -1893,6 +1896,7 @@ export function AppShell() {
       sourceSessionId,
       diffSessionId,
       diffCommitSha,
+      compareWith,
       tabId,
     }));
     setActiveFileTabId(tabId);
@@ -2298,6 +2302,28 @@ export function AppShell() {
   const handleGitPanelOpenFileDiff = useCallback((filePath: string, fileName: string, commitSha?: string) => {
     setGitPanelOpen(false);
     handleOpenFile(filePath, fileName, { modeHint: "diff", diffCommitSha: commitSha ?? null });
+  }, [handleOpenFile]);
+  /**
+   * A file menu that asks the Git panel something ("Show File Git History",
+   * "Git Blame"). It opens the panel and names the file; the panel consumes the
+   * request and clears it, so switching tabs away and back does not re-apply a
+   * filter the user has since cleared.
+   */
+  const [gitFileRequest, setGitFileRequest] = useState<{ kind: "history" | "blame"; path: string } | null>(null);
+  const handleShowFileHistory = useCallback((filePath: string) => {
+    setRightPanelOpen(true);
+    setGitPanelOpen(true);
+    setGitFileRequest({ kind: "history", path: filePath });
+  }, []);
+  const handleFileGitBlame = useCallback((filePath: string) => {
+    setRightPanelOpen(true);
+    setGitPanelOpen(true);
+    setGitFileRequest({ kind: "blame", path: filePath });
+  }, []);
+  /** "Select for Compare" from the tree: the tab is the diff between two files. */
+  const handleCompareFiles = useCallback((left: string, right: string) => {
+    const name = (value: string) => value.split("/").pop() ?? value;
+    handleOpenFile(left, `${name(left)} \u2194 ${name(right)}`, { modeHint: "diff", compareWith: right });
   }, [handleOpenFile]);
   const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
   // Which project the header's folder belongs to. A linked worktree is not a new
@@ -3815,18 +3841,28 @@ export function AppShell() {
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
         <div ref={panelBodyRef} className="right-panel-body" style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {gitPanelOpen && visibleProjectCwd ? (
-            // The Git view takes the content area: the side-chat tab and the panel's
-            // empty state step aside with it. The project's shells stay mounted below,
-            // hidden and told they are not active, so a shell is never restarted by
-            // reading its history.
-            <GitPanel
-              key={visibleProjectCwd}
-              cwd={visibleProjectCwd}
-              onOpenFile={handleGitPanelOpenFile}
-              onOpenFileGitDiff={handleGitPanelOpenFileDiff}
-            />
-          ) : (
+          {/* The Git view stays mounted for as long as the right sidebar is open, and
+              hides when its own toggle is off. Closing the Git view and opening it
+              again is a look at the same repository, not a reason to read it from
+              disk again — the panel's refresh buttons and the git event stream are
+              what move its data. Closing the whole sidebar is the boundary: the next
+              open starts from a fresh read. */}
+          {visibleProjectCwd && rightPanelOpen ? (
+            <div className="git-panel-keepalive" hidden={!gitPanelOpen}>
+              <GitPanel
+                key={visibleProjectCwd}
+                cwd={visibleProjectCwd}
+                onOpenFile={handleGitPanelOpenFile}
+                onOpenFileGitDiff={handleGitPanelOpenFileDiff}
+                fileHistoryPath={gitFileRequest?.kind === "history" ? gitFileRequest.path : null}
+                blameRequestPath={gitFileRequest?.kind === "blame" ? gitFileRequest.path : null}
+                onGitFileRequestDone={() => setGitFileRequest(null)}
+                fullWidth={rightPanelFullWidth}
+                onToggleFullWidth={handleRightPanelExpandToggle}
+              />
+            </div>
+          ) : null}
+          {gitPanelOpen ? null : (
             <>
           {activeSideTab ? (
             <div className="session-chat-panel" key={activeSideTab.sessionId}>
@@ -4009,6 +4045,19 @@ export function AppShell() {
                   showHidden={fileTreeShowGenerated}
                   changesCollapsed={changesCollapsed}
                   onChangesCountChange={setChangesCount}
+                  gitPanelOpen={gitPanelOpen}
+                  onGitPanelOpenChange={(open) => {
+                    setGitPanelOpen(open);
+                    // The tree's "Show Git Changes" opens the panel the header's
+                    // folder opens, and on a phone that means leaving the drawer.
+                    if (open) {
+                      setRightPanelOpen(true);
+                      if (isMobile) setSidebarOpen(false);
+                    }
+                  }}
+                  onCompareFiles={handleCompareFiles}
+                  onShowFileHistory={handleShowFileHistory}
+                  onGitBlame={handleFileGitBlame}
                 />
               </div>
               </div>
