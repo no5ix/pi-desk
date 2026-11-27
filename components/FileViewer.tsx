@@ -6,7 +6,7 @@ import {
   type SyntaxHighlighterProps,
 } from "react-syntax-highlighter";
 import { SyntaxHighlighter } from "@/lib/syntax-highlighting";
-import { calmCodeTheme } from "@/lib/code-theme";
+import { calmCodeTheme, markdownCodeTheme } from "@/lib/code-theme";
 import { CodeEditor, type CodeEditorHandle } from "./CodeEditor";
 import { isEditableExtension } from "@/lib/editor/language";
 import ReactMarkdown from "react-markdown";
@@ -614,74 +614,38 @@ export function DiffView({ patch }: { patch: string }) {
       {segments.map((seg, si) => {
         if (seg.hidden) {
           const result = (
-            <div
-              key={si}
-              style={{
-                padding: "2px 16px",
-                color: "var(--text-dim)",
-                background: "var(--bg-panel)",
-                fontSize: "var(--fs-micro)",
-                borderTop: "var(--hairline) solid var(--border)",
-                borderBottom: "var(--hairline) solid var(--border)",
-              }}
-            >
+            <div className="file-diff-gap">
               {seg.count === null ? "⋯" : diffGapLabel(seg.count, t)}
             </div>
           );
           return result;
         }
         const lines = seg.lines.map((line, li) => {
-          const bg =
-            line.type === "added"
-              ? "rgba(0,200,80,0.12)"
-              : line.type === "removed"
-              ? "rgba(240,60,60,0.14)"
-              : "transparent";
+          /* Added and removed lines are states of the row, so their wash, rail
+             and sign ink live with the row's other rules in the stylesheet —
+             palette tokens, the same greens and reds the editor's diff gutter
+             uses. */
+          const kind = line.type === "added" ? " is-added" : line.type === "removed" ? " is-removed" : "";
           const prefix =
             line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
-          const prefixColor =
-            line.type === "added" ? "var(--success)" : line.type === "removed" ? "var(--danger)" : "var(--text-dim)";
 
           return (
             <div
               key={li}
-              className="file-diff-line"
-              style={{
-                display: "flex",
-                minWidth: "100%",
-                background: bg,
-                borderLeft: line.type === "added"
-                  ? "3px solid var(--success)"
-                  : line.type === "removed"
-                  ? "3px solid var(--danger)"
-                  : "3px solid transparent",
-              }}
+              className={`file-diff-line${kind}`}
             >
               <span
-                style={FILE_LINE_NUMBER_STYLE}
+                className="file-diff-line-number"
               >
                 {line.type === "removed" ? line.oldLineNo : line.newLineNo}
               </span>
               <span
-                style={{
-                  minWidth: 16,
-                  padding: "0 6px",
-                  color: prefixColor,
-                  userSelect: "none",
-                  flexShrink: 0,
-                  fontWeight: "var(--fw-semibold)",
-                }}
+                className="file-diff-line-prefix"
               >
                 {prefix}
               </span>
               <span
                 className="file-diff-line-content"
-                style={{
-                  flexShrink: 0,
-                  padding: "0 8px 0 0",
-                  whiteSpace: "pre",
-                  color: "var(--text)",
-                }}
               >
                 {line.text || "\u00a0"}
               </span>
@@ -1590,12 +1554,18 @@ function TextFileViewer({
   // react-syntax-highlighter rebuilds every token element on each render, which
   // costs hundreds of milliseconds on large files. Cache the rendered trees so
   // unrelated re-renders (panel open/close, selection changes) reuse them as-is.
+  // Markdown reads through its own sheet: Prism's markdown grammar aliases a
+  // heading to `title`/`bold`/`important` and inline code to `keyword`, so a
+  // sheet built for code roles paints a document as code — an emphasis in the
+  // string green, a code span in the keyword orange — while the preview shows the
+  // palette's headings and code chips. One language, two moods.
+  const sourceTheme = language === "markdown" ? markdownCodeTheme : calmCodeTheme;
   const highlightedSource = useMemo(
     () => (
       <SyntaxHighlighter
         className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
         language={language === "text" ? "plaintext" : language}
-        style={calmCodeTheme}
+        style={sourceTheme}
         showLineNumbers
         lineNumberStyle={wrapLines ? FILE_LINE_NUMBER_STYLE : FILE_PINNED_LINE_NUMBER_STYLE}
         customStyle={{
@@ -1623,7 +1593,7 @@ function TextFileViewer({
         {viewerContent}
       </SyntaxHighlighter>
     ),
-    [language, viewerContent, wrapLines],
+    [language, viewerContent, wrapLines, sourceTheme],
   );
   const lightweightSourceLines = useMemo(
     () => useLightweightSource ? sourceLines.map((line, lineIndex) => (

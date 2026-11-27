@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { SyntaxHighlighter } from "@/lib/syntax-highlighting";
-import { calmCodeTheme } from "@/lib/code-theme";
+import { calmCodeTheme, markdownCodeTheme } from "@/lib/code-theme";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
@@ -357,6 +357,9 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
   const foldable = !isStreaming && lineCount > CODE_FOLD_LINES;
   const folded = foldable && !expanded;
   const showLineNumbers = lineCount >= CODE_LINE_NUMBER_MIN_LINES;
+  // A markdown fence reads as Markdown: the same roles the file panel gives a .md
+  // source, so one thing does not have two readings in the app.
+  const fenceTheme = /^markdown?$/.test((lang ?? "").toLowerCase()) ? markdownCodeTheme : calmCodeTheme;
 
   const copy = () => {
     copyText(code).then(() => {
@@ -403,7 +406,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
       ) : (
         <SyntaxHighlighter
           language={lang || "text"}
-          style={calmCodeTheme}
+          style={fenceTheme}
           showLineNumbers={showLineNumbers}
           lineNumberStyle={{ color: "var(--text-dim)", fontStyle: "normal" }}
           customStyle={{

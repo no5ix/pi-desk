@@ -80,24 +80,51 @@ export const ayuMonokaiMonacoColors = {
   "editorLineNumber.activeForeground": "#6c7380e6",
   "editorCursor.foreground": "#e6b450",
   "editor.selectionBackground": "#409fff4d",
-  "editor.selectionHighlightBackground": "#7fd96226",
-  "editor.wordHighlightBackground": "#73b8ff14",
+  "editor.selectionHighlightBackground": "#409fff21",
+  "editor.wordHighlightBackground": "#409fff21",
   "editor.lineHighlightBackground": "#131721",
+  "editorIndentGuide.background1": "#6c738033,#6c738033,#6c738080",
+  "editorIndentGuide.activeBackground1": "#6c738080",
+  "editorGutter.background": "#0b0e14",
   "editorGutter.addedBackground": "#7fd962cc",
   "editorGutter.modifiedBackground": "#73b8ffcc",
   "editorGutter.deletedBackground": "#f26d78cc",
-  "editorBracketMatch.background": "#6c73804d",
-  "editorBracketMatch.border": "#6c73804d",
-  "editor.findMatchBackground": "#6c5980",
-  "editorWidget.background": "#0f131a",
-  "editorWidget.border": "#1e232b",
-  "editorSuggestWidget.background": "#0f131a",
-  "editorSuggestWidget.border": "#1e232b",
-  "editorSuggestWidget.highlightForeground": "#e6b450",
-  "editorSuggestWidget.selectedBackground": "#47526640",
-  "editorHoverWidget.background": "#0f131a",
-  "editorHoverWidget.border": "#1e232b",
-  "editorWhitespace.foreground": "#6c738099"
+  "editorBracketMatch.background": "#409fff21",
+  "editorBracketMatch.border": "#e6b450",
+  "editor.findMatchBackground": "#e6b45033",
+  "editorWidget.background": "#131721",
+  "editorWidget.border": "#1c212e",
+  "editorSuggestWidget.background": "#131721",
+  "editorSuggestWidget.border": "#1c212e",
+  "editorSuggestWidget.highlightForeground": "#FFB454",
+  "editorSuggestWidget.selectedBackground": "#161c28",
+  "editorHoverWidget.background": "#131721",
+  "editorHoverWidget.border": "#1c212e",
+  "editorWhitespace.foreground": "#6c738099",
+  "scrollbarSlider.background": "rgba(108, 115, 128, 0.36)",
+  "scrollbarSlider.hoverBackground": "rgba(108, 115, 128, 0.5)",
+  "scrollbarSlider.activeBackground": "rgba(108, 115, 128, 0.6)",
+  "editor.inactiveSelectionBackground": "#409fff21",
+  "editorGutter.foreground": "#6c738099",
+  "editorGutter.foregroundIsActive": "#6c7380e6",
+  "editorBracketHighlight.foreground1": "#FFB454",
+  "editorBracketHighlight.foreground2": "#D2A6FF",
+  "editorBracketHighlight.foreground3": "#59C2FF",
+  "editorBracketHighlight.foreground4": "#AAD94C",
+  "editorBracketHighlight.foreground5": "#F07178",
+  "editorBracketHighlight.foreground6": "#95E6CB",
+  "editorBracketHighlight.unexpectedBracket.foreground": "#F04747",
+  "editorGuides.indentation": "#6c738033",
+  "editorGuides.highlightedIndentation": "#6c738080",
+  "editorGuides.bracketPairs": "#6c738033",
+  "editorGuides.highlightedBracketPairs": "#6c738080",
+  "editorGuides.indentationAndBracketPairs": "#6c738033",
+  "editorGuides.highlightedIndentationAndBracketPairs": "#6c738080",
+  "editorGuideType.indent": "#6c738033",
+  "editorGuideType.activeIndent": "#6c738080",
+  "editorGuideType.bracketPair": "#6c738033",
+  "editorGuideType.activeBracketPair": "#6c738080",
+  "editor.findMatchHighlightBackground": "#409fff33"
 } as const;
 
 /** Monaco token rules, in theme order (Monaco matches a rule by scope prefix). */
@@ -106,7 +133,7 @@ export interface EditorTokenRule { token: string; foreground: string; fontStyle?
 export const ayuMonokaiMonacoRules: EditorTokenRule[] = [
   {
     "token": "comment",
-    "foreground": "#ACB6BF8C",
+    "foreground": "#646F73",
     "fontStyle": "italic"
   },
   {
@@ -131,7 +158,7 @@ export const ayuMonokaiMonacoRules: EditorTokenRule[] = [
   },
   {
     "token": "variable.language",
-    "foreground": "#39BAE6",
+    "foreground": "#FF8F40",
     "fontStyle": "italic"
   },
   {
@@ -140,28 +167,28 @@ export const ayuMonokaiMonacoRules: EditorTokenRule[] = [
   },
   {
     "token": "keyword",
-    "foreground": "#AAD94C",
+    "foreground": "#FF8F40",
     "fontStyle": "bold"
   },
   {
     "token": "keyword.operator",
-    "foreground": "#F29668"
+    "foreground": "#B3AE9C"
   },
   {
     "token": "delimiter",
-    "foreground": "#BFBDB6B3"
+    "foreground": "#BFBDB6"
   },
   {
     "token": "storage.type",
-    "foreground": "#39BAE6"
+    "foreground": "#FF8F40"
   },
   {
     "token": "identifier",
-    "foreground": "#F07178"
+    "foreground": "#FFB454"
   },
   {
     "token": "parameter",
-    "foreground": "#D2A6FF"
+    "foreground": "#BFBDB6"
   },
   {
     "token": "entity.name",
@@ -170,11 +197,11 @@ export const ayuMonokaiMonacoRules: EditorTokenRule[] = [
   },
   {
     "token": "tag",
-    "foreground": "#FB2372"
+    "foreground": "#F07178"
   },
   {
     "token": "metatag",
-    "foreground": "#C594C5"
+    "foreground": "#FFB454"
   },
   {
     "token": "attribute.name",
@@ -182,28 +209,47 @@ export const ayuMonokaiMonacoRules: EditorTokenRule[] = [
   },
   {
     "token": "type",
-    "foreground": "#39BAE6",
+    "foreground": "#59C2FF",
     "fontStyle": "normal"
   },
   {
     "token": "class",
-    "foreground": "#39BAE6"
+    "foreground": "#59C2FF"
   },
   {
     "token": "invalid",
-    "foreground": "#D95757"
+    "foreground": "#F04747"
+  },
+  {
+    "token": "string.link",
+    "foreground": "#59C2FF"
+  },
+  {
+    "token": "emphasis",
+    "foreground": "#BFBDB6",
+    "fontStyle": "bold italic"
+  },
+  {
+    "token": "strong",
+    "foreground": "#FF8F40",
+    "fontStyle": "bold italic"
+  },
+  {
+    "token": "quote",
+    "foreground": "#646F73",
+    "fontStyle": "italic"
   },
   {
     "token": "string.inserted",
-    "foreground": "#7FD962"
+    "foreground": "#98E6C2"
   },
   {
     "token": "string.changed",
-    "foreground": "#73B8FF"
+    "foreground": "#72A0E0"
   },
   {
     "token": "string.deleted",
-    "foreground": "#F26D78"
+    "foreground": "#F04747"
   }
 ];
 

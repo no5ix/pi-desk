@@ -128,20 +128,35 @@ test("an upstream border is named zero, never just dropped", () => {
   }
 });
 
-test("the six heading levels each get their own ink, in both themes", () => {
-  // The reference: a document whose headings are coloured per level, so its
-  // structure is visible at a glance.
+test("the six heading levels read as one ink, and the hierarchy is size, weight and rule", () => {
+  // The document used to colour a heading per level — six hues, twelve values —
+  // which made a Markdown document look like a colour chart and put its own
+  // palette next to the editor's. The palette has one heading ink (heading
+  // amber), and a level is told apart by size, weight and the rule under the
+  // section-opening levels. The `--heading-N` names survive as the levels' own
+  // handles, all pointing at the one ink.
   for (let level = 1; level <= 6; level++) {
-    assert.match(css, new RegExp(`--heading-${level}: #[0-9a-f]{6};`), `--heading-${level} is a colour`);
-    assert.match(declared(`.markdown-body h${level}`, "color").join("\n"), new RegExp(`color: var\\(--heading-${level}\\)`));
+    assert.match(css, new RegExp(`--heading-${level}: var\\(--md-heading\\);`), `--heading-${level} is the palette's heading ink`);
+    assert.match(declared(`.markdown-body h${level}`, "color").join("\n"), new RegExp(`color: var\\(--heading-${level}\\)`), `h${level} asks for its own level token`);
   }
-  const inks = new Set(Array.from(css.matchAll(/--heading-\d: (#[0-9a-f]{6});/g), (m) => m[1]));
-  assert.equal(inks.size, 12, "twelve distinct colours: six levels, light and dark");
-  // Both themes define the six: the light page's darker shades, the dark page's brighter.
-  const blocks = css.match(/--heading-1: #[0-9a-f]{6};[\s\S]*?--heading-6: #[0-9a-f]{6};/g) ?? [];
+  // One ink, in both themes, spelled once per theme.
+  const inks = new Set(Array.from(css.matchAll(/--md-heading:\s*([^;]+);/g), (m) => m[1].trim()));
+  assert.equal(inks.size, 2, "one heading ink per theme — the light page's and the dark page's");
+  const blocks = css.match(/--heading-1: var\(--md-heading\);[\s\S]*?--heading-6: var\(--md-heading\);/g) ?? [];
   assert.equal(blocks.length, 2, "one token block for the light page, one for the dark");
-  for (const block of blocks) {
-    const inks = new Set(Array.from(block.matchAll(/#[0-9a-f]{6}/g), (m) => m[0]));
-    assert.equal(inks.size, 6, "six levels in one theme, each its own colour");
+  // The hierarchy is typographic: every level has a size and a weight, and in the
+  // document surface the two section-opening levels wear a rule. A chat reply
+  // stays flat — a reply is not a document — so the rule belongs to the preview.
+  for (let level = 1; level <= 6; level++) {
+    assert.ok(declared(`.markdown-body h${level}`, "font-size").length, `h${level} has a size`);
+    assert.ok(declared(`.markdown-body h${level}`, "font-weight").length, `h${level} has a weight`);
   }
+  for (const level of [1, 2]) {
+    const borders = declared(`.markdown-file-preview h${level}`, "border-bottom");
+    assert.ok(borders.some((d) => /solid var\(--md-rule\)/.test(d)), `the document's h${level} opens its section with the palette's rule`);
+  }
+  // The small levels step down from the ink's own size, so a deep heading is not
+  // the body text with a colour on it.
+  const sizes = [1, 2, 3, 4, 5, 6].map((level) => declared(`.markdown-body h${level}`, "font-size").join(" "));
+  assert.ok(sizes.every((s) => /\dem\b|\d+%|calc\(/.test(s)), "levels step by size, not by hue");
 });

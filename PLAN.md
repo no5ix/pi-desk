@@ -1,93 +1,84 @@
-# PLAN — Branchshift in the right sidebar + an editable file panel
+# Ayu Monokai theme — plan
 
-Branch `feat/branchshift-integration-editor` (from `pi-desk-main` @ 38d99e1a).
+## Architecture found (pi-desk / pi-web fork)
 
-Two asks, one branch:
+| Surface | Mechanism | Ink source |
+|---|---|---|
+| File panel source view (read) | `react-syntax-highlighter` PrismLight (`lib/syntax-highlighting.ts`) + `calmCodeTheme` (`lib/code-theme.ts`) | inline styles from `--code-accent`, `--code-warm`, `--code-comment`, `--text`, `--text-muted` |
+| Markdown fence in chat + preview | same, through `CodeBlock` (`components/MermaidBlock.tsx`) | same |
+| Markdown preview (file panel) | `ReactMarkdown` → `.markdown-body.markdown-file-preview` | `app/native-theme.css` 7078-7660, `--heading-1..6`, `--accent`, `--text*` |
+| Chat Markdown | `components/MarkdownBody.tsx` → `.markdown-body` | same |
+| Source editing | Monaco (`components/CodeEditor.tsx`) | generated `lib/editor/ayu-monokai.ts` from `vendor/ayu-monokai/Ayu Monokai-color-theme.json` |
+| App chrome | `:root` (light, 1292) and `html.dark` (dark, 1405) in `app/native-theme.css` | literals, per theme |
+| Diff view | inline styles (`rgba(0,200,80,.12)`, `rgba(240,60,60,.14)`) + `--success`/`--danger` | literals |
+| File tree icons | `var(--md, #d2a6ff)` etc. per language | literals |
+| Terminal panel | `--workspace-terminal-*` (Ayu: `#BFBDB6`/`#0b0e14`) | Ayu already |
 
-1. Port the Branchshift Git workflow (branch tree, commit graph, commit detail,
-   commit/shelf/stash workflow, conflicts, compare, blame) into pi-desk's right
-   sidebar, replacing the VS Code extension host with pi-desk's API routes.
-2. Turn the read-only file viewer into a lightweight editor: edit + save,
-   unsaved-change protection, document-local word completion (Sublime Text 2
-   style, Tab accepts), and the Ayu Monokai theme.
+Single palette source of truth in this fork = the vendored VS Code theme
+(`vendor/ayu-monokai/Ayu Monokai-color-theme.json`) → `scripts/build-ayu-monokai.mjs`
+→ `lib/editor/ayu-monokai.ts`. The task's table is exactly that theme's
+`workbench.colorCustomizations` + `tokenColors`.
 
-## Phases
+Markdown has **no** syntax-token highlighting in preview (it renders to HTML);
+its look is `.markdown-body` CSS. In source it is Prism `markdown` tokens, which
+`calmCodeTheme` collapses to 3 hues.
 
-- [x] **P0 Setup.** Worktree + branch from `pi-desk-main`; deps
-  (`zustand`, `@tanstack/react-virtual`, `monaco-editor`); read the
-  Branchshift source, the 8 reference screenshots and the pi-desk sidebar shot.
-- [x] **P1 Git backend.** `lib/git/**` (ported from `src/git/**`), command
-  table `lib/git/commands.ts`, repository discovery + boundary
-  (`lib/git/workspace.ts`), SSE refresh (`lib/git/events.ts`,
-  `lib/git/watch-stream.ts`), dashboard store, routes
-  `/api/git/execute|repos|events`.
-- [x] **P2 Git backend tests.** The 112 ported Branchshift suites +
-  `lib/git/workspace.test.mjs` (10) + `lib/git/commands.test.mjs` (33) +
-  `app/api/git/execute/route.test.mjs` (9).
-- [x] **P3 Git panel UI.** (done: `d97c45ab`, `7e783dd3`) `components/git/**`: Log (branch tree · graph +
-  commit list · detail) and Commit (Commit · Shelf · Stash), context menus,
-  push/rollback/conflict dialogs, compare, blame, repo switcher; mounted as a
-  right-panel tab; CSS in `app/native-theme.css`; i18n in all three locales.
-- [x] **P4 Editor.** (done: Monaco, `CodeEditor.tsx`, the `edit` mode, the `PUT`
-  route with conflict + atomic write, Cmd+S, the dirty tab dot, the close
-  confirm, and the watcher that never overwrites a dirty buffer.)
-  `components/CodeEditor.tsx`, the `edit` display mode in `FileViewer`,
-  `PUT /api/files/[...path]` with conflict detection + atomic write,
-  Cmd+S, dirty tab indicator + close guards, external-change reload.
-- [x] **P5 Ayu Monokai.** (done: vendored theme + `scripts/build-ayu-monokai.mjs`
-  → `lib/editor/ayu-monokai.ts`; the editor paints from it. The read view keeps
-  `calmCodeTheme` so a light theme is not given a dark palette — DECISIONS.) `themes/Ayu Monokai-color-theme.json`, generate
-  the editor theme + the CSS token colours from it (no hand-copied palette).
-- [x] **P6 Word completion.** (done: `lib/editor/word-completions.ts` +
-  a provider registered for every language; Monaco's own word/keyword/snippet
-  lists are off, `wordBasedSuggestions: "off"`; Tab completes, Enter accepts.) Document-local word index, prefix match, ranking,
-  Tab accept, Esc dismiss, arrows, no Tab hijack when the list is closed.
-- [x] **P7 Editor tests.** (done: `lib/editor/word-completions.test.mjs` 9,
-  `app/api/files/write-route.test.mjs` 11, `app/api/git/flow.test.mjs` 11 on real
-  repositories, `components/FileViewer.editor.test.mjs` 12. Five real write-path
-  bugs found and fixed.) Editing, saving, reopen, dirty indicator, Cmd+S,
-  external edits, save conflicts, binary protection, completion cases, tabs,
-  highlighting, preview and diff modes.
-- [x] **P8 Visual verification (partial).** `e2e/git-panel.mjs` passes and
-  screenshots the panel at desktop / desktop-dark / phone / phone-dark / narrow
-  (branch tree, graph rows, commit detail, working tree, touch plates, no
-  sideways page scroll). `e2e/file-editor.mjs` mounts the real Monaco and
-  screenshots the editor at four widths and both themes: it asserts the file is
-  painted in the panel's box, the Ayu Monokai ink, the unsaved bar, Cmd/Ctrl+S
-  writing the buffer against the read's `mtime`, `Saved`, and no sideways
-  scroll — and its completion assertion fails, diagnosed in BLOCKERS.md, so the
-  harness is not in `npm run test:e2e` yet.
-- [ ] **P8b Finish the completion check.** Bisect the editor's suggest options in
-  `e2e/file-editor.mjs` against the probe that works, fix, then add the harness
-  to `npm run test:e2e`.
-- [ ] **P8c Visual pass at the reference sizes.** (next) Compare
-  `test-results/git-panel/*.png` and `test-results/file-editor/*.png` against the
-  eight Branchshift screenshots at 1440/1280/900/760/390 and fix what differs.
-- [ ] **P8f Rebase through the API in a real checkout.** (next) The flow suite's
-  rebase case was removed (see PROGRESS.md): build a fixture where the replayed
-  commit applies cleanly and assert `rebaseBranch` finishes with git's editors
-  disabled, `getRebaseState().isRebasing === false`, a linear log.
-- [ ] **P8d Reference-check the old panel harnesses.** (next) The eight
-  file-workbench e2e harnesses (file-tabs, file-watch, file-markdown,
-  file-image, file-html, file-preview-ui, file-viewer-ui, file-tree) have not
-  been re-run since the editor CSS and the write route landed.
-- [ ] **P8e Reference-check the desktop payload.** (next) `npm run desktop:prepare
-  && npm run desktop:verify` — monaco-editor is a new dependency of the payload.
-- [ ] **P8 Visual verification.** Dev server + Playwright at the reference
-  viewport widths; compare with the screenshots; fix mismatches.
-- [ ] **P9 Finish.** `npm test`, `tsc --noEmit`, `npm run lint`, production
-  build, full-diff review, commits, push, final report.
+## Decisions
 
-## Standing decisions
+1. `app/native-theme.css` gains one **Ayu token block** (light + dark) that is the
+   only place palette hex values are written: `--ayu-*` primitives, then the app
+   roles (`--bg`, `--text`, `--accent`, …) and the syntax roles (`--code-*`,
+   `--md-*`, `--diff-*`, `--editor-*`) derived from them. Dark = the requested
+   palette; light = the same hues darkened for paper (documented derivations).
+2. `lib/code-theme.ts` becomes a real Ayu Monokai Prism map (keyword `#FF8F40`,
+   string `#AAD94C`, number `#D2A6FF`, function `#FFB454`, type `#59C2FF`,
+   comment `#ACB6BF8C`, default `#BFBDB6`) expressed **only** as `var(--code-*)`,
+   so light/dark is still a CSS change and the highlighter never re-renders.
+3. Markdown preview styling is rewritten in the same palette: headings all
+   `--md-heading` (`#FFB454`) with a size/weight/letter-spacing hierarchy, bold
+   `--md-strong` (`#FF8F40`), italic default ink, links `--md-link` (`#59C2FF`),
+   inline code `--md-inline-code` (`#AAD94C`), quote `--md-quote`
+   (`#ACB6BF8C`), list markers `--md-list` (`#FFB454`), tables on
+   `--md-table-border`, task checkboxes, hr, strikethrough.
+4. Prism's `markdown` token classes get the same treatment in CSS (source view of
+   `.md` files): heading / bold / italic / url / string / list / quote / punctuation.
+5. The diff rows move onto palette tokens (`--diff-added`, `--diff-deleted` and
+   their washes) and out of inline styles; the dead role tokens the palette
+   carried (`--tree-icon-*`, `--code-accent`, `--code-warm`, `--code-tag`,
+   `--code-invalid`, `--diff-modified`) are deleted, because a role nothing
+   paints is a second source of truth.
 
-- No VS Code, no code-server, no extension host, no language servers.
-- Git runs server-side only, through `execFile("git", argv)`; the browser never
-  names a repository, a path outside a checkout, an argv array, or a shell string.
-- One Git state system: the panel reads `lib/git/**`; the file tree keeps its
-  cwd-scoped projection (`lib/git-changes.ts`) and the live refresh that feeds
-  both is the SSE stream.
-- pi-desk's scope note (CONTRIBUTING.md) declines Git-client and file-editing
-  features for upstream pi-web. This fork wants them; the user asked explicitly,
-  so they are built here and recorded in DECISIONS.md.
-- Fork CSS goes in `app/native-theme.css` only; `globals.css`/`settings.css`
-  stay byte-identical to upstream.
+## Verification (shipped state)
+
+- `node --test lib/ayu-palette.test.mjs` — 6/6. Role tokens declared in both
+  themes and painted; the Prism sheets colour only with `var(--…)`; the requested
+  palette present verbatim on a dark page; `lib/editor/ayu-monokai.ts` generated
+  and drawn from the vendored theme; Monaco's editor surface equal to the CSS
+  tokens for the same roles; no component paints a literal.
+- `node e2e/ayu-theme.mjs` — passes, and is in `npm run test:e2e`. A browser
+  measures: Markdown preview (heading amber, keyword bold, string inline code,
+  type links, the quote's tone and rule, list markers, table header, checked task
+  box, the fenced block's page), Markdown source (the same constructs by the word
+  they paint), the read view for TypeScript / JSON / CSS / HTML (comment, keyword,
+  string, number, type, function, property, selector, attribute), the chat's
+  fenced blocks through the real `CodeBlock` (surface, roles, line numbers),
+  Monaco (page `rgb(11, 14, 20)`, ink, gutter `rgba(108, 115, 128, 0.6)` with the
+  caret line at 0.9), and the light palette (paper, heading, keyword, string,
+  link). Screenshots and `report.json` land in `test-results/e2e-theme/`.
+- `node --test` over `app/ lib/ scripts/ components/ hooks/` — 2 failures,
+  `lib/composer-panel-placement.test.mjs` ("every composer menu goes through the
+  helper", "a server render falls back to the plain anchoring"). Verified
+  pre-existing: both fail on a clean `HEAD` (working tree stashed), and they
+  concern the composer, which this task does not touch.
+- `node e2e/file-editor.mjs` — the Monaco completion section fails here too, at
+  the adjacent assertion on a clean `HEAD` ("the document's own word is offered",
+  with the suggest widget reporting `Loading…`). Pre-existing, untouched by this
+  change.
+- `node_modules/.bin/tsc --noEmit` clean; `npx eslint .` reports 0 errors (41
+  pre-existing warnings, none in the files this task touched);
+  `scripts/upstream-css-baseline.test.mjs` confirms `app/globals.css` and
+  `app/settings.css` stay byte-identical to upstream;
+  `components/fork-extractions.test.mjs`, `scripts/ui-menu-consistency.test.mjs`,
+  `scripts/release-workflows.test.mjs`, `lib/branding.test.mjs` pass (104 tests).
+- Production build for the e2e server mode:
+  `PI_WEB_DESKTOP_BUILD=1 node_modules/next/dist/bin/next build --webpack` → exit 0.
