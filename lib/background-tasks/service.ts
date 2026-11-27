@@ -126,15 +126,18 @@ export async function readBackgroundTasksSnapshot(
   sessionId: string,
   options: { limit?: number; cursors?: Record<string, string> } = {},
 ): Promise<BackgroundTasksSnapshot> {
-  const source = resolveBackgroundTasksExtension();
   const observedAt = Date.now();
+  const wrapper = getRpcSession(sessionId);
+  // Resolved for THIS conversation's working directory: the extension is a plugin the user
+  // installed for pi, and the app may be running from a checkout that ships no copy of it (a
+  // linked worktree). A fixed process.cwd() said "not installed" over a real global install.
+  const source = resolveBackgroundTasksExtension(process.env, wrapper?.cwd ?? process.cwd());
   if (source.reason === "disabled") {
     return emptySnapshot("disabled", "PI_WEB_DISABLE_BACKGROUND_TASKS is set", observedAt);
   }
   if (source.reason === "not-installed" || !source.entryPath) {
     return emptySnapshot("not-installed", "pi-background-tasks is not installed", observedAt);
   }
-  const wrapper = getRpcSession(sessionId);
   if (!wrapper || !wrapper.isAlive()) {
     return emptySnapshot("no-session", "This conversation is not running, so its background tasks are gone with it.", observedAt);
   }

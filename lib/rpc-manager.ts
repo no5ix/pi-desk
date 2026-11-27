@@ -3938,7 +3938,7 @@ export async function startRpcSession(
     // load no extensions at all, so they get neither.
     const backgroundTasksSource = subagentResources || chatOnly
       ? { entryPath: null as string | null, reason: null as "disabled" | "not-installed" | null }
-      : resolveBackgroundTasksExtension();
+      : resolveBackgroundTasksExtension(process.env, sessionCwd);
     const backgroundTasksEventBus = backgroundTasksSource.entryPath ? createEventBus() : undefined;
     const backgroundTasksOptions = backgroundTasksLoaderOptions(backgroundTasksSource);
     const services = await createAgentSessionServices({

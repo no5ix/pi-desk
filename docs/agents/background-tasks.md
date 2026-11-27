@@ -44,15 +44,43 @@ Rules the interface imposes, all of them pinned in `lib/background-tasks/host-cl
 - **`logs` is a byte window** of the task's output file, tail by default, capped at 65536 bytes
   (asking for more is answered `TOO_LARGE`, so the client clamps its own request).
 
+## Which copy loads (`lib/background-tasks/extension.ts`)
+
+A conversation gets exactly one `pi-background-tasks` activation, and it is picked per **working
+directory**, in this order:
+
+1. the plugin the user installed for pi — a non-filtered entry in the settings' `packages` whose
+   source names the package (`npm:pi-background-tasks`, a git source), resolved through
+   `DefaultPackageManager.listConfiguredPackages()`. Global (`user`) installs land under
+   `~/.pi/agent/npm/node_modules/<pkg>`; that is the copy Settings › Plugins shows as Loaded, the
+   one `/bg` runs, and the one the panel must talk to. A project-scoped install counts only in a
+   trusted project — it is project code.
+2. the copy this checkout ships as a dependency (`node_modules/pi-background-tasks`), so a plain
+   `npm run dev` from the app's own directory works with nothing configured in pi.
+
+The extension file is the manifest's `background-tasks` resource — by resource name, else by the
+file's own name — never "the first extension the package lists": a package with several resources
+and no such name is not loaded under a guess. A settings entry with resource filters, or switched
+off in Settings, is skipped: that is the user's own decision about this package's resources. The
+answer is cached per cwd for 30 seconds (`invalidateBackgroundTasksEntryCache()` drops it) so a
+plugin installed while the app runs is picked up, and a removed one is noticed.
+
+**Resolution order is the load-bearing part.** The app runs from any checkout: a linked worktree
+ships no dependency of its own, and looking only at `node_modules` under `process.cwd()` made the
+panel answer *"pi-background-tasks is not installed"* and left the session with no extension (so
+`/bg` had no slash commands) while the Plugins page showed the package Loaded, globally. The
+`not-installed` state now means what it says: no copy of the extension exists for this
+conversation's directory, with the plugin install as the named remedy.
+
 ## Where the bridge lives (`lib/rpc-manager.ts`)
 
-`lib/background-tasks/extension.ts` resolves the installed package's host entrypoint from its
-own `pi.extensions` manifest and hands it to the session as `additionalExtensionPaths`, together
-with an `extensionsOverride` that keeps **one** activation. Two activations mean two registries
-and a panel that leases one of them: a task started in the conversation would not appear, and a
-task in the panel would not be stoppable. The user's own copy (under pi's package dir or
-`~/.pi/agent/node_modules`) wins the dedupe over the copy pi-desk ships, because that is the
-copy `/bg`, `/tasks` and the extension's update notice talk about.
+`lib/background-tasks/extension.ts` resolves the entrypoint as above and hands it to the session
+as `additionalExtensionPaths`, together with an `extensionsOverride` that keeps **one**
+activation. Two activations mean two registries and a panel that leases one of them: a task
+started in the conversation would not appear, and a task in the panel would not be stoppable.
+The user's own copy wins the dedupe — anything under `~/.pi/agent` (the plugin layout) or under
+pi's package dir counts as the user's — because that is the copy `/bg`, `/tasks` and the
+extension's update notice talk about.
 
 `lib/background-tasks/bridges.ts` keeps one `BackgroundTaskHostClient` per live conversation,
 keyed by session id and grouped by `cwd`. `lib/rpc-manager.ts` attaches it when the wrapper is
@@ -92,9 +120,10 @@ followed on a short tick, monotonic request ids so a reply for a conversation th
 dropped, and a closed `EventSource` and cleared timers on unmount.
 
 Availability is a resolution, not a guess: `disabled` (`PI_WEB_DISABLE_BACKGROUND_TASKS`),
-`not-installed`, `not-ready`, `no-session`, `closed`. A session started before the package was
-installed keeps working and shows `not-ready`, and the panel says so; the extension is never
-injected into a running session.
+`not-installed`, `not-ready`, `no-session`, `closed`. `not-installed` means no copy resolves for
+this conversation's directory, and the card names `pi install npm:pi-background-tasks` as the way
+to fix it. A session started before the package was installed keeps working and shows `not-ready`,
+and the panel says so; the extension is never injected into a running session.
 
 ## Development switches
 
@@ -112,7 +141,9 @@ conflicting peer. A pi SDK bump needs no change here, because the references fol
 
 The version compatibility of the seam — the extension's real answers, on a real session and a
 real bus — is pinned by `lib/background-tasks/integration.test.mjs`, which fails loudly if the
-published shapes move under this SDK.
+published shapes move under this SDK. It resolves the copy for the current directory (the app's
+dependency or the plugin pi installs) and skips with the install command in its name when neither
+is present, so a checkout without the package reports a skip rather than a failure.
 
 ## Tests
 
@@ -120,8 +151,8 @@ published shapes move under this SDK.
 | --- | --- |
 | `lib/background-tasks/protocol.test.mjs` | channels, schemas, frames, task views, the documented result shapes, the error-code set |
 | `lib/background-tasks/host-client.test.mjs` | lease and sequence rules, the single retry, timeouts, change de-duplication, the closed activation, dispose, bounds |
-| `lib/background-tasks/integration.test.mjs` | the real extension on a real session: capabilities, an empty registry, a task the conversation started, the live feed, logs, stop, seen, `NOT_FOUND`, shutdown, no-extension |
-| `lib/background-tasks/extension.test.mjs` | resolution, the switches, the dedupe, the loader options |
+| `lib/background-tasks/integration.test.mjs` | the real extension on a real session: capabilities, an empty registry, a task the conversation started, the live feed, logs, stop, seen, `NOT_FOUND`, shutdown, no-extension; skips when no copy is installed |
+| `lib/background-tasks/extension.test.mjs` | which copy loads (the user's plugin under the agent dir, the copy the checkout ships), the manifest resource rule, source matching, the per-cwd cache, the switches, the dedupe, the loader options |
 | `lib/background-tasks/bridges.test.mjs` | the per-session registry: keying, project grouping, replacement, release, listeners |
 | `lib/background-tasks/service.test.mjs` | the merged snapshot, partial failures, owner resolution, the merged `stop_all`, the ranked `mark_seen`, the log window, the unavailable states |
 | `app/api/background-tasks/route.test.mjs` | the HTTP gate: required ids, the four actions, the byte window, 409 with the extension's code |

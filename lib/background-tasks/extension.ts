@@ -24,15 +24,23 @@
  * importing as roots.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
-import { getAgentDir, getPackageDir } from "@earendil-works/pi-coding-agent";
+import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
+import {
+  DefaultPackageManager,
+  getAgentDir,
+  getPackageDir,
+  SettingsManager,
+} from "@earendil-works/pi-coding-agent";
 import type { Extension, LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
+import { getProjectTrustStatus } from "../project-trust";
 
 export const BACKGROUND_TASKS_PACKAGE_NAME = "pi-background-tasks";
 /** The manifest entry that registers the task registry, the tools, the dock and the host interface. */
 export const BACKGROUND_TASKS_ENTRY_RELATIVE_PATH = "dist/extensions/background-tasks.js";
+/** The package's own name for that resource (`pi.extensions[].name` in its package.json). */
+export const BACKGROUND_TASKS_EXTENSION_RESOURCE_NAME = "background-tasks";
 
 /** Set to `1`/`true` to keep the extension out of every session — the panel then says so. */
 export function isBackgroundTasksDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -49,6 +57,131 @@ export function backgroundTasksOverridePath(env: NodeJS.ProcessEnv = process.env
 interface PackageManifest {
   name?: string;
   pi?: { extensions?: unknown };
+}
+
+/** A configured plugin package that points at this extension, and the scope it is installed in. */
+export interface InstalledBackgroundTasksPackage {
+  root: string;
+  scope: "user" | "project";
+}
+
+function readPackageManifest(packageRoot: string): PackageManifest | undefined {
+  try {
+    return JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as PackageManifest;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The manifest resource that carries the task registry: the one named `background-tasks`, else
+ * the file named `background-tasks*`. A package that lists several resources and names none of
+ * them that is not used — loading an unrelated extension and calling it the task registry is
+ * worse than the panel saying the extension is not installed.
+ */
+export function pickBackgroundTasksExtensionFile(
+  manifest: PackageManifest | undefined,
+  packageRoot: string,
+): string | null {
+  const declared = Array.isArray(manifest?.pi?.extensions) ? (manifest!.pi!.extensions as unknown[]) : [];
+  const candidates: Array<{ name: string; file: string }> = [];
+  for (const item of declared) {
+    const spec = typeof item === "string"
+      ? { name: undefined as string | undefined, path: item }
+      : item && typeof item === "object"
+        ? {
+            name: typeof (item as { name?: unknown }).name === "string" ? (item as { name: string }).name : undefined,
+            path: typeof (item as { path?: unknown }).path === "string" ? (item as { path: string }).path : "",
+          }
+        : { name: undefined, path: "" };
+    if (spec.path.length === 0) continue;
+    const file = isAbsolute(spec.path) ? spec.path : resolve(packageRoot, spec.path.replace(/^\.\//, ""));
+    candidates.push({ name: spec.name ?? basename(file, extname(file)), file });
+  }
+  const named = candidates.find((candidate) => candidate.name === BACKGROUND_TASKS_EXTENSION_RESOURCE_NAME)
+    ?? candidates.find((candidate) => basename(candidate.file).startsWith(BACKGROUND_TASKS_EXTENSION_RESOURCE_NAME));
+  return named ? named.file : null;
+}
+
+/** True when a configured plugin source names this package (`npm:pi-background-tasks`, a git URL). */
+export function backgroundTasksPackageSourceMatches(source: string, packageName = BACKGROUND_TASKS_PACKAGE_NAME): boolean {
+  const tail = source.trim().replace(/\/+$/, "").split("/").pop() ?? "";
+  const name = tail.startsWith("npm:") ? tail.slice("npm:".length) : tail;
+  return name === packageName || name.endsWith(`/${packageName}`);
+}
+
+/**
+ * The plugin packages the user configured for pi that are this package, in priority order: the
+ * user/global install (`pi install npm:pi-background-tasks` → `~/.pi/agent/npm/node_modules/…`,
+ * what Settings › Plugins shows) first, then a project-scoped one. An entry with resource
+ * filters, or switched off in Settings, is skipped: that is the user's own decision about this
+ * package's resources, and forcing it on would override it. A project-scoped package is project
+ * code, so an untrusted project does not get it.
+ */
+export function configuredBackgroundTasksPackages(
+  cwd: string,
+  deps: { agentDir?: string; isProjectTrusted?: (cwd: string) => boolean } = {},
+): InstalledBackgroundTasksPackage[] {
+  const agentDir = deps.agentDir ?? getAgentDir();
+  const isProjectTrusted = deps.isProjectTrusted ?? ((target: string) => getProjectTrustStatus(target, agentDir).trusted);
+  try {
+    const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: isProjectTrusted(cwd) });
+    const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
+    const found: InstalledBackgroundTasksPackage[] = [];
+    for (const pkg of packageManager.listConfiguredPackages()) {
+      if (!pkg.installedPath || pkg.filtered) continue;
+      if (pkg.scope !== "user" && pkg.scope !== "project") continue;
+      if (!backgroundTasksPackageSourceMatches(pkg.source)) continue;
+      if (pkg.scope === "project" && !isProjectTrusted(cwd)) continue;
+      found.push({ root: pkg.installedPath, scope: pkg.scope });
+    }
+    return found.sort((a, b) => (a.scope === b.scope ? 0 : a.scope === "user" ? -1 : 1));
+  } catch {
+    return [];
+  }
+}
+
+/** How long a cwd's resolved entrypoint is reused, so a plugin installed while the app runs appears. */
+export const BACKGROUND_TASKS_ENTRY_TTL_MS = 30_000;
+const entryPathCache = new Map<string, { at: number; entryPath: string | null }>();
+
+/** Drop the per-cwd resolution (a plugin was installed, removed, or a test needs a clean slate). */
+export function invalidateBackgroundTasksEntryCache(cwd?: string): void {
+  if (cwd === undefined) entryPathCache.clear();
+  else entryPathCache.delete(cwd);
+}
+
+/**
+ * The extension path for one conversation's working directory: the copy the user installed for
+ * pi wins, then the copy this checkout ships (`node_modules/pi-background-tasks`, so a plain
+ * `npm run dev` from the app's own directory works with no setup in pi's settings).
+ *
+ * Only the app's `node_modules` is not enough: the app runs from any checkout — a linked
+ * worktree has no dependency of its own — while `pi install npm:pi-background-tasks` lands under
+ * the agent dir for every pi process on the machine. That is the copy the Plugins page shows as
+ * Loaded, the one `/bg` runs, and the one the panel must talk to.
+ */
+export function resolveBackgroundTasksEntryForCwd(
+  cwd: string,
+  source: { resolveInstalledPackages?: (cwd: string) => InstalledBackgroundTasksPackage[] } = {},
+): string | null {
+  const cached = entryPathCache.get(cwd);
+  if (cached && Date.now() - cached.at < BACKGROUND_TASKS_ENTRY_TTL_MS) return cached.entryPath;
+  const installed = source.resolveInstalledPackages ?? ((target: string) => configuredBackgroundTasksPackages(target));
+  let entryPath: string | null = null;
+  for (const pkg of installed(cwd)) {
+    const file = pickBackgroundTasksExtensionFile(readPackageManifest(pkg.root), pkg.root);
+    if (file && existsSync(file)) {
+      entryPath = file;
+      break;
+    }
+  }
+  if (!entryPath) {
+    const shipped = resolveInstalledBackgroundTasksEntry();
+    entryPath = shipped && existsSync(shipped) ? shipped : null;
+  }
+  entryPathCache.set(cwd, { at: Date.now(), entryPath });
+  return entryPath;
 }
 
 /** The path of the installed package's host entrypoint, from its own manifest. */
@@ -80,11 +213,13 @@ export interface BackgroundTasksExtensionSource {
 
 export function resolveBackgroundTasksExtension(
   env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd(),
+  source: { resolveInstalledPackages?: (cwd: string) => InstalledBackgroundTasksPackage[] } = {},
 ): BackgroundTasksExtensionSource {
   if (isBackgroundTasksDisabled(env)) return { entryPath: null, reason: "disabled" };
   const override = backgroundTasksOverridePath(env);
   if (override) return existsSync(override) ? { entryPath: override, reason: null } : { entryPath: null, reason: "not-installed" };
-  const installed = resolveInstalledBackgroundTasksEntry();
+  const installed = resolveBackgroundTasksEntryForCwd(cwd, source);
   return installed ? { entryPath: installed, reason: null } : { entryPath: null, reason: "not-installed" };
 }
 
@@ -104,10 +239,10 @@ export function isBackgroundTasksExtension(
  */
 export function isUserInstalledBackgroundTasks(extension: Pick<Extension, "path" | "resolvedPath">): boolean {
   const packageDir = getPackageDir();
-  const agentNodeModules = join(getAgentDir(), "node_modules");
+  const agentDir = getAgentDir();
   const candidates = [extension.resolvedPath, extension.path];
   return candidates.some(
-    (candidate) => candidate.startsWith(packageDir) || candidate.startsWith(agentNodeModules),
+    (candidate) => candidate.startsWith(packageDir) || candidate.startsWith(agentDir),
   );
 }
 
