@@ -154,7 +154,7 @@ async function editor(label, { width, height, touch, theme }) {
   assert.ok(overflow.scrollWidth <= overflow.clientWidth + 1,
     `${label}: the editor does not widen the page (${overflow.scrollWidth} > ${overflow.clientWidth})`);
 
-  // ─── typing marks the file unsaved, and the bar says so ───
+  // ─── typing marks the file unsaved, in the toolbar's own row ───
   // Monaco's layers are absolute and its text layer is as tall as the file, so
   // an element click aims outside the visible area. The click is aimed at a
   // point inside the editor's own box, which is what a finger or a cursor hits.
@@ -163,24 +163,36 @@ async function editor(label, { width, height, touch, theme }) {
   await page.mouse.click(host.x + Math.min(160, host.width / 2), host.y + Math.min(40, host.height / 2));
   await page.keyboard.press("ArrowDown");
   await page.keyboard.type(" // panel edit");
-  await page.waitForSelector(".file-editor-bar", { timeout: 5_000 });
-  const barText = await page.locator(".file-editor-bar").innerText();
-  assert.match(barText, /Unsaved changes|有未保存的改动|有未儲存的變更/, `${label}: the bar names the unsaved buffer (${barText})`);
+  // ─── typing marks the file unsaved, in the toolbar's own row ───
+  // The editor has no "Unsaved changes" row any more: it saves itself, a second
+  // after the typing stops. The state is stated in the toolbar, and the write that
+  // follows is what the harness measures.
+  await page.waitForSelector(".file-editor-status", { timeout: 5_000 });
+  const barText = await page.locator(".file-editor-status").innerText();
+  assert.match(barText, /Unsaved changes|有未保存的改动|有未儲存的變更/, `${label}: the toolbar names the unsaved buffer (${barText})`);
   assert.equal(await page.evaluate(() => window.__dirty.at(-1)), true, `${label}: the tab is told the file is dirty`);
+  assert.equal(await page.locator(".file-editor-bar").count(), 0, `${label}: there is no row of Save buttons under the toolbar`);
   if (touch) {
-    const save = await box(page, ".file-editor-bar-actions .file-viewer-mode-button");
-    assert.ok(save.w >= 36 && save.h >= 36, `${label}: a finger gets ${save.w}×${save.h} on Save (36 required)`);
+    const action = await box(page, ".file-editor-status .file-viewer-mode-button");
+    assert.ok(action.w >= 36 && action.h >= 36, `${label}: a finger gets ${action.w}×${action.h} on the row's action (36 required)`);
   }
 
-  // ─── Cmd/Ctrl+S writes the buffer, against the time it read ───
-  await page.keyboard.press(label.startsWith("mac") ? "Meta+S" : "Control+S");
+  // ─── the buffer saves itself, against the time it read ───
   await page.waitForFunction(() => window.__writes.length >= 1, null, { timeout: 5_000 });
   const write = await page.evaluate(() => window.__writes.at(-1));
-  assert.match(write.content, /\/\/ panel edit/, `${label}: the save carries the buffer`);
+  assert.match(write.content, /\/\/ panel edit/, `${label}: the auto-save carries the buffer`);
   assert.ok(typeof write.baseMtime === "string" && write.baseMtime.length > 0, `${label}: and the modification time it read at`);
   await page.waitForFunction(() => window.__dirty.at(-1) === false, null, { timeout: 5_000 });
-  const afterSave = await page.locator(".file-editor-bar").innerText();
-  assert.match(afterSave, /Saved|已保存|已儲存/, `${label}: the bar reports the save (${afterSave})`);
+  const afterSave = await page.locator(".file-editor-status").innerText();
+  assert.match(afterSave, /Saved|已保存|已儲存/, `${label}: the toolbar reports the save (${afterSave})`);
+
+  // ─── Cmd/Ctrl+S still answers, at once ───
+  await page.keyboard.press("End");
+  await page.keyboard.type(" // by hand");
+  await page.keyboard.press(label.startsWith("mac") ? "Meta+S" : "Control+S");
+  await page.waitForFunction(() => window.__writes.length >= 2, null, { timeout: 5_000 });
+  const byHand = await page.evaluate(() => window.__writes.at(-1));
+  assert.match(byHand.content, /\/\/ by hand/, `${label}: Cmd+S writes the buffer immediately`);
 
   // ─── completion: the document's words, and Tab accepts one ───
   await page.keyboard.press("End");
@@ -196,7 +208,9 @@ async function editor(label, { width, height, touch, theme }) {
   assert.match(completed, /formatCommitTime/, `${label}: Tab accepted the completion`);
   // The buffer now differs from the disk, so the bar is back: the same channel
   // that reports typing reports a completion's insert.
-  assert.match(await page.locator(".file-editor-bar").innerText(), /Unsaved changes|有未保存的改动|有未儲存的變更/,
+  // The buffer now differs from the disk, so the state is back: the same channel
+  // that reports typing reports a completion's insert.
+  assert.match(await page.locator(".file-editor-status").innerText(), /Unsaved changes|有未保存的改动|有未儲存的變更/,
     `${label}: a completion's insert counts as an edit`);
 
   results.push({ label, painted: painted.split("\n")[0], suggestions: suggestions.length });

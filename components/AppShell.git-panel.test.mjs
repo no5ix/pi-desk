@@ -43,8 +43,13 @@ test("the Git button lives in the right panel's header row, beside the file list
   assert.match(appShell, /aria-controls="git-panel"/, "and points at the view it opens");
   assert.match(appShell, /translate\(gitPanelOpen \? "gitPanel\.hide" : "gitPanel\.show"\)/,
     "the title and label are the app's translate");
-  assert.match(appShell, /aria-label=\{translate\(gitPanelOpen \? "gitPanel\.hide" : "gitPanel\.show"\)\}/,
-    "the label is on the button, not only the title");
+  assert.match(appShell, /aria-label=\{changesCount > 0[\s\S]{0,220}?gitPanel\.show"\)\}/,
+    "the label is on the button, not only the title, and names the count when there is one");
+  // The count the panel is about, on the button that opens it.
+  assert.match(appShell, /<span className="git-panel-toggle-badge" aria-hidden="true" data-count=\{changesCount\}>/,
+    "the button carries the number of files the working tree changed");
+  assert.match(appShell, /translate\("sidebar\.changedFiles", \{ count: changesCount \}\)/,
+    "the count is spoken in the app's words, beside the show/hide label");
 });
 
 test("a chat's panel has no Git button, and no view", () => {

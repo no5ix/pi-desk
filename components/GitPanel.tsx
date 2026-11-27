@@ -9,7 +9,7 @@ import { LogPanel } from "./git/log/LogPanel";
 import { CommitPanel } from "./git/commit/CommitPanel";
 import { BlameDialog, CompareDialog, ConflictDialog, PushDialog } from "./git/dialogs/GitDialogs";
 import { fetchGitRepos, gitCommand, useGitEvents, useGitQuery, type GitRepoList, type GitTarget } from "./git/git-api";
-import { GitIconButton, GitState, GitTabs, formatCommitTime } from "./git/git-ui";
+import { GitIconButton, GitState, GitTabs } from "./git/git-ui";
 
 /**
  * The right panel's Git view: Branchshift's two surfaces, in pi-desk's panel.
@@ -32,8 +32,11 @@ import { GitIconButton, GitState, GitTabs, formatCommitTime } from "./git/git-ui
 interface Props {
   /** The project folder the panel reads: a main checkout or a linked worktree. */
   cwd: string;
-  /** A file, opened as a panel tab (the shell's `handleOpenFile`). */
+  /** A file, opened as a panel tab (the shell's `handleOpenFile`). The path is the
+   *  file's own — an absolute path, which is what a tab is keyed by. */
   onOpenFile: (filePath: string, fileName: string) => void;
+  /** A file's working-tree diff, opened as a panel tab in the Diff mode. */
+  onOpenFileGitDiff?: (filePath: string, fileName: string) => void;
   /** A worktree of the same repository, selected from the switcher. */
   onSwitchRepository?: (cwd: string) => void;
   /** The shell's busy line: a git operation the panel started. */
@@ -48,7 +51,7 @@ const SPLIT_STORAGE_KEY = "pi-git-split";
 const SPLIT_MIN = 170;
 const SPLIT_MAX = 420;
 
-export function GitPanel({ cwd, onOpenFile, onSwitchRepository, onBusyChange }: Props) {
+export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepository, onBusyChange }: Props) {
   const { t } = useI18n();
   const [activeCwd, setActiveCwd] = useState(cwd);
   const [tab, setTab] = useState<PanelTab>("log");
@@ -128,6 +131,35 @@ export function GitPanel({ cwd, onOpenFile, onSwitchRepository, onBusyChange }: 
   useEffect(() => {
     void loadRepos(false);
   }, [loadRepos]);
+
+  /**
+   * A path the panel reads from git — repo-relative, as git names it — as the
+   * absolute path a file tab is keyed by.
+   *
+   * Passing git's name straight to the shell opened a tab for `README.md`, and
+   * the file route answered `Access denied` for a relative path: the panel showed
+   * a tall empty view with one red word in it. The repository is the base, and a
+   * path that is already absolute (a service result) is left alone.
+   */
+  const toAbsolutePath = useCallback((repoPath: string) => {
+    const clean = repoPath.replace(/^\.\//, "");
+    if (!clean) return target.cwd;
+    if (clean.startsWith("/") || /^[A-Za-z]:[\\/]/.test(clean)) return clean;
+    const base = target.cwd.endsWith("/") ? target.cwd.slice(0, -1) : target.cwd;
+    return `${base}/${clean}`;
+  }, [target.cwd]);
+
+  const openFile = useCallback((repoPath: string, label?: string) => {
+    const absolute = toAbsolutePath(repoPath);
+    onOpenFile(absolute, label ?? absolute.split("/").pop() ?? absolute);
+  }, [toAbsolutePath, onOpenFile]);
+
+  const openFileDiff = useCallback((repoPath: string, label?: string) => {
+    const absolute = toAbsolutePath(repoPath);
+    const name = label ?? absolute.split("/").pop() ?? absolute;
+    if (onOpenFileGitDiff) onOpenFileGitDiff(absolute, name);
+    else onOpenFile(absolute, name);
+  }, [toAbsolutePath, onOpenFile, onOpenFileGitDiff]);
 
   const openFileAtRevision = useCallback(async (hash: string, filePath: string) => {
     if (!filePath) return;
@@ -313,9 +345,9 @@ export function GitPanel({ cwd, onOpenFile, onSwitchRepository, onBusyChange }: 
                     currentBranch={current?.name ?? null}
                     onBusy={setBusy}
                     onChanged={refresh}
-                    onOpenFileDiff={({ label }) => onOpenFile(label, label.split("/").pop() ?? label)}
+                    onOpenFileDiff={({ label }) => openFileDiff(label)}
                     onOpenFileAtRevision={(hash, filePath) => void openFileAtRevision(hash, filePath)}
-                    onOpenFileHistory={(filePath) => onOpenFile(filePath, filePath.split("/").pop() ?? filePath)}
+                    onOpenFileHistory={(filePath) => openFile(filePath)}
                     onOpenBlame={(filePath) => setDialog({ kind: "blame", filePath })}
                   />
                 )}
@@ -373,9 +405,9 @@ export function GitPanel({ cwd, onOpenFile, onSwitchRepository, onBusyChange }: 
                   currentBranch={current?.name ?? null}
                   onBusy={setBusy}
                   onChanged={refresh}
-                  onOpenFileDiff={({ label }) => onOpenFile(label, label.split("/").pop() ?? label)}
+                  onOpenFileDiff={({ label }) => openFileDiff(label)}
                   onOpenFileAtRevision={(hash, filePath) => void openFileAtRevision(hash, filePath)}
-                  onOpenFileHistory={(filePath) => onOpenFile(filePath, filePath.split("/").pop() ?? filePath)}
+                  onOpenFileHistory={(filePath) => openFile(filePath)}
                   onOpenBlame={(filePath) => setDialog({ kind: "blame", filePath })}
                 />
               </div>
@@ -388,7 +420,7 @@ export function GitPanel({ cwd, onOpenFile, onSwitchRepository, onBusyChange }: 
               onBusy={setBusy}
               onChanged={refresh}
               onOpenFile={(filePath) => onOpenFile(filePath, filePath.split("/").pop() ?? filePath)}
-              onOpenFileDiff={() => undefined}
+              onOpenFileDiff={({ filePath, label }) => openFileDiff(filePath, label)}
             />
           )}
         </div>

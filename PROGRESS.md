@@ -392,3 +392,45 @@ suites: `app/api/git/flow.test.mjs` 13/13 (two new), `components/git/panel-repor
 `--git-ref-synced` colour moved to the token block at the top of
 `app/native-theme.css`, so the panel's section carries no literal colour),
 `lib/git/*.test.mjs` 155/155, i18n suites 50/50 with the file's own.
+
+## The third batch: the editor's day, and the panel's badge (2026-07-29)
+
+Six reports, all implemented.
+
+1. **The find widget's × is on the row.** Monaco sizes its find-widget buttons by
+   hand; the fork flexes the box, so the glyph sits on the line
+   (`app/native-theme.css`, `.code-editor-monaco .monaco-editor .find-widget > .button`).
+2. **The "Unsaved changes" row is gone; the editor saves a second after the typing
+   stops.** `AUTO_SAVE_MS = 1_000` in `components/FileViewer.tsx`: a debounce on the
+   dirty buffer, cleared on every keystroke. Cmd+S still writes at once. The state
+   moved into the toolbar's row (`files.editorAutoSave` → *Unsaved changes — saved a
+   second after you stop typing* → `Saved`), and the actions that stay are the ones
+   with no safe default: Revert, Reload, and Overwrite when the file changed under us.
+   A refused save (conflict, failed write) stops the loop instead of hammering.
+3. **The strip's Git button carries the count** of files the working tree changed
+   (`.git-panel-toggle-badge`, `99+` capped, `aria-label` speaks it with the
+   show/hide label). The number is the FileExplorer's `onChangesCountChange`, already
+   in AppShell as `changesCount`.
+4. **The Markdown outline.** A button in the toolbar's corner (Markdown files, not the
+   Diff mode) opens a bar on the right of the file: the headings, `#` marks, indentation
+   by level, a title, and a collapse button of its own. `parseMarkdownHeadings`
+   (`lib/markdown.ts`) skips fenced blocks — a `# comment` in a code sample is not a
+   section. A row jumps: the editor's `revealLine(line)`, the preview's Nth heading
+   element. `components/FileViewer.toc.test.mjs` (new) 5/5.
+5. **The toolbar names the file, then the folders** it sits in, in a smaller font
+   (`getPathNameAndDir`, `.file-viewer-path-name` / `-dir`).
+6. **A click on a changed file showed `Access denied`.** The Git panel handed git's
+   repo-relative name (`README.md`) to the shell, and the file route answers 403 for
+   a relative path. `toAbsolutePath` joins it on the repository, and the Commit
+   panel's row now opens the **diff** tab (`onOpenFileGitDiff` →
+   `handleOpenFile(…, { modeHint: "diff" })`).
+
+Verified: `tsc --noEmit` clean; eslint 0 errors on the touched files;
+`node e2e/git-panel.mjs` exit 0 (5 viewport passes + 4 wide passes);
+`node e2e/file-editor.mjs` passes the typing / **auto-save** (buffer + `baseMtime`) /
+`Saved` / Cmd+S / no-bar / touch-plate assertions and stops at the known
+completion-popup blocker (BLOCKERS.md, P8b);
+suites: `components/FileViewer.toc.test.mjs` 5/5 (new), `FileViewer.editor` 12,
+`AppShell.git-panel` 12 (the strip's button now carries the badge),
+`panel-reports` 8, `panel-reports-2` 7, `inline-style-tokens` 2, i18n 3 (the new
+`files.editorAutoSave` and `files.toc*` keys in en, zh-CN, zh-TW).

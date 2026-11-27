@@ -2282,6 +2282,12 @@ export function AppShell() {
     setGitPanelOpen(false);
     handleOpenFile(filePath, fileName);
   }, [handleOpenFile]);
+  // The same tab, in the Diff mode: a file the working tree changed is read as its
+  // diff, which is what a tap on a row of the Commit panel asks for.
+  const handleGitPanelOpenFileDiff = useCallback((filePath: string, fileName: string) => {
+    setGitPanelOpen(false);
+    handleOpenFile(filePath, fileName, { modeHint: "diff" });
+  }, [handleOpenFile]);
   const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
   // Which project the header's folder belongs to. A linked worktree is not a new
   // project: the label names its repository (`tab-to-find`, not the worktree's folder)
@@ -3740,7 +3746,9 @@ export function AppShell() {
               className={`file-workbench-icon-button git-panel-toggle${gitPanelOpen ? " is-active" : ""}`}
               onClick={handleGitPanelToggle}
               title={translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")}
-              aria-label={translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")}
+              aria-label={changesCount > 0
+                ? `${translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")} — ${translate("sidebar.changedFiles", { count: changesCount })}`
+                : translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")}
               aria-pressed={gitPanelOpen}
               aria-controls="git-panel"
             >
@@ -3750,6 +3758,13 @@ export function AppShell() {
                 <circle cx="6" cy="18" r="2.6" />
                 <path d="M18 9a9 9 0 0 1-9 9" />
               </svg>
+              {/* The count the panel is about: how many files the working tree changed.
+                  A reader decides to open it from that number, not from the glyph. */}
+              {changesCount > 0 && (
+                <span className="git-panel-toggle-badge" aria-hidden="true" data-count={changesCount}>
+                  {changesCount > 99 ? "99+" : changesCount}
+                </span>
+              )}
             </button>
           )}
           <button
@@ -3798,6 +3813,7 @@ export function AppShell() {
               key={visibleProjectCwd}
               cwd={visibleProjectCwd}
               onOpenFile={handleGitPanelOpenFile}
+              onOpenFileGitDiff={handleGitPanelOpenFileDiff}
             />
           ) : (
             <>

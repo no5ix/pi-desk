@@ -9196,6 +9196,9 @@ span.linenumber {
 
 
 .file-viewer-path {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
   overflow: hidden;
   flex: 1 1 auto;
@@ -16705,6 +16708,159 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   width: 100%;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* Monaco's find widget: the row's buttons are boxes Monaco sizes by hand, and its
+   close glyph sat low in the row. Flex the box, and the glyph is on the line. */
+.code-editor-monaco .monaco-editor .find-widget > .button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.code-editor-monaco .monaco-editor .find-widget > .button > .codicon {
+  display: block;
+  line-height: 1;
+}
+
+/* The strip's Git button carries the count the panel is about: the files the
+   working tree changed. A reader opens the panel from that number, not from the
+   glyph, so it hangs off the corner the button already has. */
+.git-panel-toggle {
+  position: relative;
+}
+
+.git-panel-toggle-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--bg-panel);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* A finger on the toolbar's state row: its actions are taps, not hovers. */
+@media (pointer: coarse) {
+  .file-editor-status .file-viewer-mode-button {
+    min-height: 36px;
+    min-width: 36px;
+  }
+}
+
+/* The Markdown outline: a bar on the right of the file, opened from the toolbar's
+   corner and dismissed from its own. The document keeps its width — an outline
+   that reflows the text it points at is a bad way to read one. */
+.file-viewer-toc-toggle.is-active {
+  color: var(--accent);
+  background: var(--bg-selected);
+}
+
+.file-toc {
+  position: absolute;
+  top: 41px;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  width: min(280px, 46%);
+  min-height: 0;
+  border-left: var(--hairline) solid var(--separator);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-popover);
+}
+
+.file-toc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 6px 8px 6px 10px;
+  border-bottom: var(--hairline) solid var(--border);
+}
+
+.file-toc-title {
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-semibold);
+}
+
+.file-toc-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 0;
+}
+
+.file-toc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 10px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  text-align: left;
+}
+
+.file-toc-row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.file-toc-mark {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.file-toc-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-toc-row.is-level-1 .file-toc-text {
+  color: var(--text);
+  font-weight: var(--fw-medium);
+}
+
+/* The depth of a heading is its indentation: the outline is read as a tree. */
+.file-toc-row.is-level-2 { padding-left: 20px; }
+.file-toc-row.is-level-3 { padding-left: 30px; }
+.file-toc-row.is-level-4 { padding-left: 40px; }
+.file-toc-row.is-level-5 { padding-left: 50px; }
+.file-toc-row.is-level-6 { padding-left: 60px; }
+
+.file-toc-empty {
+  display: block;
+  padding: 8px 10px;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+}
+
+/* The folders behind the name: the check, not the scan. */
+.file-viewer-path-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
 }
 
 .file-editor-bar {

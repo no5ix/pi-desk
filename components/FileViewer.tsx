@@ -19,6 +19,7 @@ import {
   isVideoPath,
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import { parseMarkdownHeadings, type MarkdownHeading } from "@/lib/markdown";
 import { DelimitedTable } from "./DelimitedTable";
 import { subscribeFileWatch } from "@/lib/file-watch-channel";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
@@ -404,6 +405,28 @@ function DesktopPathActions({ filePath }: { filePath: string }) {
   );
 }
 
+/**
+ * The toolbar's identity: the file's name in the row's font, and the folders it
+ * sits in behind it, in a smaller one.
+ *
+ * The row used to print the relative path, so a root file showed a bare name with
+ * nothing beside it and a deep one spent its whole width on folders the reader
+ * already knows. The name is what a reader scans; the folder is what they check.
+ */
+/** The editor's own save: a second after the last keystroke, before a reader
+ *  thinks to ask. The window for a save of their own (Cmd+S) stays open. */
+const AUTO_SAVE_MS = 1_000;
+
+function getPathNameAndDir(filePath: string, cwd?: string): { name: string; dir: string } {
+  const relative = getRelativeFilePath(filePath, cwd);
+  const slash = relative.lastIndexOf("/");
+  if (slash < 0) return { name: relative, dir: "" };
+  const name = relative.slice(slash + 1);
+  // A path that starts with `/` (no project folder known) has no directory half
+  // worth showing: the leading slash is not a folder name.
+  return { name: name || relative, dir: slash === 0 ? "" : relative.slice(0, slash + 1) };
+}
+
 function FileViewerToolbar({
   filePath,
   cwd,
@@ -420,7 +443,6 @@ function FileViewerToolbar({
   children?: ReactNode;
 }) {
   const { t } = useI18n();
-  const relativePath = getRelativeFilePath(filePath, cwd);
   const liveLabel = watching ? t("i18n.liveSync") : t("i18n.notWatching");
   return (
     <div className="file-viewer-toolbar">
@@ -428,7 +450,17 @@ function FileViewerToolbar({
         <span className="file-viewer-file-icon" aria-hidden="true">
           {getFileIcon(getFileName(filePath), 15)}
         </span>
-        <span className="file-viewer-path" title={filePath}>{relativePath}</span>
+        <span className="file-viewer-path" title={filePath}>
+          {(() => {
+            const parts = getPathNameAndDir(filePath, cwd);
+            return (
+              <>
+                <span className="file-viewer-path-name">{parts.name}</span>
+                {parts.dir ? <span className="file-viewer-path-dir">{parts.dir}</span> : null}
+              </>
+            );
+          })()}
+        </span>
         {metadata && <span className="file-viewer-meta" title={metadata}>{metadata}</span>}
       </div>
       <span
@@ -1323,6 +1355,18 @@ function TextFileViewer({
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [saveDraft, displayMode]);
 
+  // The editor saves itself, one second after the typing stops. A Save button in a
+  // row of its own asked the reader to press it for every keystroke they made; the
+  // buffer is the document, and the document is saved. Cmd+S keeps working, and a
+  // save that was refused (the file changed under us, a write that failed) stops
+  // the loop and is stated in the toolbar with its Revert / Overwrite.
+  useEffect(() => {
+    if (displayMode !== "edit" || !dirty) return;
+    if (saveState === "conflict" || saveState === "error") return;
+    const timer = setTimeout(() => { void saveDraft(); }, AUTO_SAVE_MS);
+    return () => clearTimeout(timer);
+  }, [displayMode, dirty, saveState, saveDraft]);
+
   const fetchGitDiff = useCallback(async (targetPath: string) => {
     const requestId = ++gitDiffRequestRef.current;
     setGitDiffLoading(true);
@@ -1471,6 +1515,21 @@ function TextFileViewer({
 
   const viewerContent = data?.content ?? "";
   const sourceLines = useMemo(() => viewerContent.split("\n"), [viewerContent]);
+  // The outline. Opened from the toolbar, it lists the document's headings and
+  // takes the reader there: the line in the editor, the element in the preview.
+  const [tocOpen, setTocOpen] = useState(false);
+  const tocHeadings = useMemo(() => parseMarkdownHeadings(draft ?? viewerContent), [draft, viewerContent]);
+  const revealTocHeading = useCallback((heading: MarkdownHeading) => {
+    const editor = editorRef.current;
+    if (editor) {
+      editor.revealLine(heading.line);
+      return;
+    }
+    // The preview renders the document, so the outline's Nth heading is its Nth
+    // heading element: the same reading, the same target.
+    const node = contentRef.current?.querySelectorAll("h1,h2,h3,h4,h5,h6")[heading.index];
+    node?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, []);
   const language = data?.language ?? "text";
   const isBinary = data?.binary === true;
   const isDelimitedTable = !isBinary && isDelimitedTablePath(filePath);
@@ -1685,7 +1744,15 @@ function TextFileViewer({
         }}
       >
         <span className="file-viewer-path" style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
+          {(() => {
+            const parts = getPathNameAndDir(filePath, cwd);
+            return (
+              <>
+                <span className="file-viewer-path-name">{parts.name}</span>
+                {parts.dir ? <span className="file-viewer-path-dir">{parts.dir}</span> : null}
+              </>
+            );
+          })()}
         </span>
 
         <span className="file-viewer-meta" title={metadata}>{metadata}</span>
@@ -1702,6 +1769,76 @@ function TextFileViewer({
         )}
 
         <div className="file-viewer-controls">
+          {/* The outline's way in, at the corner of the toolbar: a Markdown file
+              has sections, and a reader wants to jump between them. */}
+          {isMarkdown && effectiveDisplayMode !== "diff" ? (
+            <button
+              type="button"
+              className={`file-viewer-mode-button file-viewer-toc-toggle${tocOpen ? " is-active" : ""}`}
+              onClick={() => setTocOpen((open) => !open)}
+              aria-pressed={tocOpen}
+              aria-controls="file-toc"
+              title={t("files.tocToggle")}
+              aria-label={t("files.tocToggle")}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 5v14" />
+                <path d="M8 6h12" />
+                <path d="M11 12h9" />
+                <path d="M11 18h9" />
+              </svg>
+            </button>
+          ) : null}
+          {/* The editor's state, in the toolbar's own row. The dedicated
+              "Unsaved changes" row is gone: the editor saves a second after the
+              typing stops, so there is no Save button to press. What stays in
+              reach is the decision that has no safe default — a file that changed
+              under us — and the way back from a mistake. */}
+          {effectiveDisplayMode === "edit" && (dirty || externalChange || saveState !== "clean") ? (
+            <span
+              className={`file-editor-status${saveState === "conflict" || saveState === "error" ? " is-error" : ""}`}
+              role="status"
+              aria-live="polite"
+            >
+              <span className="file-editor-status-text">
+                {saveState === "saving"
+                  ? t("files.editorSaving")
+                  : saveState === "conflict"
+                    ? t("files.editorConflict")
+                    : saveState === "error"
+                      ? t("files.editorSaveFailed", { message: saveMessage ?? "" })
+                      : externalChange
+                        ? t("files.editorExternalChange")
+                        : dirty
+                          ? t("files.editorAutoSave")
+                          : t("files.editorSaved")}
+              </span>
+              {dirty ? (
+                <button type="button" className="file-viewer-mode-button" onClick={reloadDraft}>
+                  {t("files.editorRevert")}
+                </button>
+              ) : null}
+              {externalChange && !dirty ? (
+                <button type="button" className="file-viewer-mode-button" onClick={reloadDraft}>
+                  {t("files.editorReload")}
+                </button>
+              ) : null}
+              {saveState === "conflict" ? (
+                <>
+                  <button type="button" className="file-viewer-mode-button" onClick={reloadDraft}>
+                    {t("files.editorReload")}
+                  </button>
+                  <button
+                    type="button"
+                    className="file-viewer-mode-button is-danger"
+                    onClick={() => void saveDraft({ overwrite: true })}
+                  >
+                    {t("files.editorOverwrite")}
+                  </button>
+                </>
+              ) : null}
+            </span>
+          ) : null}
           {displayModes.length > 1 && (
             <div className="file-viewer-mode-switch" aria-label={t("i18n.fileViewMode")}>
               {displayModes.map((mode) => {
@@ -1808,64 +1945,9 @@ function TextFileViewer({
       {/* The save bar. The buffer's state is stated in words, with the two
           actions it calls for: save, and take the disk's version. A change the
           watcher reports while the buffer is dirty is offered, never applied. */}
-      {effectiveDisplayMode === "edit" && (dirty || externalChange || saveState !== "clean") ? (
-        <div
-          className={`file-editor-bar${saveState === "conflict" || saveState === "error" ? " is-error" : ""}`}
-          role="status"
-          aria-live="polite"
-        >
-          <span className="file-editor-bar-text">
-            {saveState === "saving"
-              ? t("files.editorSaving")
-              : saveState === "conflict"
-                ? t("files.editorConflict")
-                : saveState === "error"
-                  ? t("files.editorSaveFailed", { message: saveMessage ?? "" })
-                  : externalChange
-                    ? t("files.editorExternalChange")
-                    : dirty
-                      ? t("files.editorDirty")
-                      : t("files.editorSaved")}
-          </span>
-          <span className="file-editor-bar-actions">
-            {dirty ? (
-              <button
-                type="button"
-                className="file-viewer-mode-button is-primary"
-                title={t("files.editorShortcutHint")}
-                disabled={saveState === "saving"}
-                onClick={() => void saveDraft()}
-              >
-                {t("files.editorSave")}
-              </button>
-            ) : null}
-            {dirty ? (
-              <button type="button" className="file-viewer-mode-button" onClick={reloadDraft}>
-                {t("files.editorRevert")}
-              </button>
-            ) : null}
-            {externalChange && !dirty ? (
-              <button type="button" className="file-viewer-mode-button" onClick={reloadDraft}>
-                {t("files.editorReload")}
-              </button>
-            ) : null}
-            {saveState === "conflict" ? (
-              <>
-                <button type="button" className="file-viewer-mode-button" onClick={reloadDraft}>
-                  {t("files.editorReload")}
-                </button>
-                <button
-                  type="button"
-                  className="file-viewer-mode-button is-danger"
-                  onClick={() => void saveDraft({ overwrite: true })}
-                >
-                  {t("files.editorOverwrite")}
-                </button>
-              </>
-            ) : null}
-          </span>
-        </div>
-      ) : null}
+      {/* The editor's state and its actions live in the toolbar above: the buffer
+          saves itself, and the row that used to stand here asked for a decision
+          there is no reason to make. */}
 
       {data?.truncated && (
         <div
@@ -2050,6 +2132,46 @@ function TextFileViewer({
           highlightedSource
         )}
       </div>
+
+      {/* The outline, as a bar on the right of the file. The document keeps its
+          width, and the bar is dismissed from its own corner, the way a reader
+          expects of a side panel. */}
+      {isMarkdown && tocOpen ? (
+        <div className="file-toc" id="file-toc" role="complementary" aria-label={t("files.tocToggle")}>
+          <div className="file-toc-header">
+            <span className="file-toc-title">{t("files.tocTitle")}</span>
+            <button
+              type="button"
+              className="file-viewer-icon-button"
+              onClick={() => setTocOpen(false)}
+              title={t("files.tocCollapse")}
+              aria-label={t("files.tocCollapse")}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M15 4v16" />
+                <path d="m9 9 3 3-3 3" />
+              </svg>
+            </button>
+          </div>
+          <div className="file-toc-list">
+            {tocHeadings.length === 0 ? (
+              <span className="file-toc-empty">{t("files.tocEmpty")}</span>
+            ) : tocHeadings.map((heading, i) => (
+              <button
+                key={`${heading.line}-${i}`}
+                type="button"
+                className={`file-toc-row is-level-${Math.min(heading.level, 6)}`}
+                onClick={() => revealTocHeading(heading)}
+                title={heading.title}
+              >
+                <span className="file-toc-mark" aria-hidden="true">{"#".repeat(heading.level)}</span>
+                <span className="file-toc-text">{heading.title}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
