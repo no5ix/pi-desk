@@ -4,8 +4,11 @@
  * One client per live session's EventBus, because that is the bus the extension's
  * activation listens on. The client owns exactly what the contract makes the host own:
  *
- * - a **lease** (`subscribe` with a stable `clientId`), taken lazily and retaken when the
- *   service says the lease is dead;
+ * - a **lease** (`subscribe` with a stable `clientId`): a client that registers a change
+ *   listener takes it at once, a client that only reads takes it on the first read and retakes
+ *   it when the service says the lease is dead. Eager for a listener is not politeness, it is
+ *   the contract: the service publishes a change frame only while a lease is live, so a lazily
+ *   leased listener never hears anything (see `ensureLease`);
  * - a **strictly increasing sequence** per lease, handed out by one queue so two concurrent
  *   React refreshes can never publish the same sequence (a reused sequence is a `CONFLICT`,
  *   and a sequence at or below the high-water mark is a `STALE_REQUEST` that is never
@@ -34,6 +37,7 @@ import {
   bgHostRequestFrame,
   parseBgChangedFrame,
   parseBgResponseFrame,
+  type BgActivationFacts,
   type BgCapabilities,
   type BgChangedFrame,
   type BgDetailResult,
@@ -124,6 +128,14 @@ export class BackgroundTaskHostClient {
   private unsubscribeResponse: (() => void) | null = null;
   private unsubscribeChanged: (() => void) | null = null;
   private lease: Lease | null = null;
+  /**
+   * The facts of the last successful `subscribe`: the activation, the revision, and the registry's
+   * counts at that moment. A lease is taken eagerly by a listener, so this is the state of the
+   * conversation's tasks at the moment the app started watching it — the first paint of the
+   * header's chip, before any change frame has arrived.
+   */
+  private lastFacts: BgActivationFacts | null = null;
+  private countsListeners = new Set<(facts: BgActivationFacts) => void>();
   private lastChange: { activationId: string; revision: number; kind: string } | null = null;
   /** A monotonically increasing request counter; `request_id` must be unique per activation. */
   private requests = 0;
@@ -162,12 +174,17 @@ export class BackgroundTaskHostClient {
       if (!frame) return;
       if (frame.kind === "ready") this.readyActivationId = frame.activationId;
       if (frame.kind === "closed") this.closedActivationId = frame.activationId;
+      // A listener wants frames, and an activation that has just appeared is the first moment one
+      // can be leased: take it now, so the pushes start with this activation and not after the
+      // next read.
+      if (frame.kind === "ready" && this.changes.size > 0 && !this.lease) void this.ensureLease();
       if (!isNewBgChangeFrame(this.lastChange, frame)) return;
       this.lastChange = { activationId: frame.activationId, revision: frame.revision, kind: frame.kind };
       // The activation this client leased is gone: drop it, so the next operation takes a
       // fresh lease from the activation that replaced it.
       if (frame.kind === "closed" && this.lease && this.lease.activationId === frame.activationId) {
         this.lease = null;
+        this.lastFacts = null;
       }
       for (const listener of this.changes) {
         try {
@@ -183,7 +200,53 @@ export class BackgroundTaskHostClient {
   onChanges(listener: ChangeListener): () => void {
     if (this.disposed) return () => {};
     this.changes.add(listener);
+    // The service publishes only while a lease is live (`leases.size === 0` returns before the
+    // publish), so a listener that leases lazily — as a panel that leases on its first read does —
+    // hears nothing at all until something opens the panel. The bridge is the listener that is
+    // always there (the header's chip, the composer's disc, the sidebar's running mark), so the
+    // lease is taken with the listener, not with the first read.
+    void this.ensureLease();
     return () => this.changes.delete(listener);
+  }
+
+  /**
+   * Called with the registry's facts after every successful `subscribe`, so a listener learns the
+   * state of the conversation's tasks at the moment it started watching, not only after the next
+   * change. A lease taken before any frame arrives is the difference between a chip that says
+   * "0" and a chip that says what is running.
+   */
+  onCounts(listener: (facts: BgActivationFacts) => void): () => void {
+    if (this.disposed) return () => {};
+    this.countsListeners.add(listener);
+    if (this.lastFacts) {
+      try {
+        listener(this.lastFacts);
+      } catch (error) {
+        this.logger.warn(`[pi-web] a background-task counts handler threw: ${String(error)}`);
+      }
+    }
+    return () => this.countsListeners.delete(listener);
+  }
+
+  /**
+   * The lease, taken now, never throwing.
+   *
+   * Nothing here is fatal: an activation that is not ready, a package that is not installed, a
+   * session that is closing — each answers an error, and the next `ready` frame retries. A bridge
+   * that cannot lease yet keeps its listeners and asks again; a bridge that never leases is a
+   * conversation with no background tasks in it, which is what the panel says anyway.
+   */
+  async ensureLease(): Promise<BgActivationFacts | null> {
+    if (this.disposed) return null;
+    if (this.lease && this.lastFacts) return this.lastFacts;
+    try {
+      await this.acquireLease();
+      return this.lastFacts;
+    } catch (error) {
+      const code = error instanceof BackgroundTaskHostError ? error.code : null;
+      this.logger.warn(`[pi-web] background-task lease not taken (${code ?? "error"}): ${String(error)}`);
+      return null;
+    }
   }
 
   /** The last `ready` frame's activation, and the last `closed` one. For the panel's states. */
@@ -199,6 +262,7 @@ export class BackgroundTaskHostClient {
   /** The lease is dead on our side too — the next operation re-subscribes. */
   invalidateLease(): void {
     this.lease = null;
+    this.lastFacts = null;
   }
 
   /**
@@ -226,6 +290,8 @@ export class BackgroundTaskHostClient {
     }
     this.pending.clear();
     this.changes.clear();
+    this.countsListeners.clear();
+    this.lastFacts = null;
     try {
       // The service releases the lease on shutdown; asking is polite and cheap.
       if (this.lease) {
@@ -296,6 +362,24 @@ export class BackgroundTaskHostClient {
     const lease: Lease = { leaseId: result.leaseId, activationId: result.activationId, sequence: 0 };
     this.lease = lease;
     this.readyActivationId = result.activationId;
+    // The subscribe response is the registry as it is now: counts, revision, observed at. Hand it
+    // to the listeners before anything is awaited on them, and keep it for a listener that
+    // arrives later (a session opened in a second window).
+    const facts: BgActivationFacts = {
+      activationId: result.activationId,
+      sessionId: result.sessionId,
+      revision: result.revision,
+      observedAt: result.observedAt,
+      counts: result.counts,
+    };
+    this.lastFacts = facts;
+    for (const listener of this.countsListeners) {
+      try {
+        listener(facts);
+      } catch (error) {
+        this.logger.warn(`[pi-web] a background-task counts handler threw: ${String(error)}`);
+      }
+    }
     return lease;
   }
 

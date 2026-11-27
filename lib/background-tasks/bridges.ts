@@ -16,7 +16,9 @@
  */
 
 import { BackgroundTaskHostClient, type EventBusLike } from "./host-client";
+import { announceDeferredRunEnd, clearDeferredRunEnd } from "../task-completion-server";
 import { clearBackgroundTaskCompletions, noteBackgroundTaskSettlement } from "./completion-gate";
+import { type BgTaskCounts } from "./protocol";
 import { clearBackgroundTasksRunning, recordBackgroundTasksRunning } from "./running-index";
 
 export interface BackgroundTasksBridge {
@@ -78,13 +80,20 @@ export function attachBackgroundTasksBridge(
   // are on screen for conversations whose card is closed. So every frame this conversation's own
   // activation pushes is recorded here, listener or no listener: the extension is the source, and
   // pi-desk keeps only the count of what it said is running.
-  client.onChanges((frame) => {
-    if (frame.kind === "closed") {
-      clearBackgroundTasksRunning(sessionId);
-      clearBackgroundTaskCompletions(sessionId);
-      return;
+  const applyCounts = (counts: BgTaskCounts, observedAt: number): void => {
+    recordBackgroundTasksRunning(sessionId, {
+      running: counts.running,
+      unseenFailed: counts.unseenFailed,
+      observedAt,
+    });
+    // The run the conversation finished while these tasks ran is kept by the announcer and said
+    // here, once, when the last task settles: the user's notice carries the real end of the work
+    // they asked for, not the fifteen seconds the answer took (task-completion-server.ts).
+    if (counts.running === 0) {
+      void announceDeferredRunEnd(sessionId).catch((error: unknown) => {
+        console.error("[pi-web] the settlement notice failed:", error instanceof Error ? error.message : String(error));
+      });
     }
-    recordBackgroundTasksRunning(sessionId, { ...frame.counts, observedAt: frame.observedAt });
     // A task that left `running` and settled is news the extension is about to tell: its notice
     // lands in the conversation and, by its default, it asks the agent for a turn about the
     // result. That turn is not the user's task ending, and the app announces a finished run on
@@ -92,10 +101,22 @@ export function attachBackgroundTasksBridge(
     // card is left as the one place that says it (background-tasks/completion-gate.ts).
     noteBackgroundTaskSettlement({
       sessionId,
-      running: frame.counts.running,
-      settled: frame.counts.completed + frame.counts.failed + frame.counts.killed,
-      at: frame.observedAt,
+      running: counts.running,
+      settled: counts.completed + counts.failed + counts.killed,
+      at: observedAt,
     });
+  };
+  // The subscribe response carries the registry's counts, so the first thing the app knows about
+  // this conversation is what is running in it now — not zero until the next change. Registering
+  // the listener is also what takes the lease: the extension publishes only while one is live.
+  client.onCounts((facts) => applyCounts(facts.counts, facts.observedAt));
+  client.onChanges((frame) => {
+    if (frame.kind === "closed") {
+      clearBackgroundTasksRunning(sessionId);
+      clearBackgroundTaskCompletions(sessionId);
+      return;
+    }
+    applyCounts(frame.counts, frame.observedAt);
   });
   notify();
   return bridge;
@@ -115,6 +136,8 @@ export function releaseBackgroundTasksBridge(sessionId: string): boolean {
   // sidebar row cannot keep wearing a spinner for a conversation that ended.
   clearBackgroundTasksRunning(sessionId);
   clearBackgroundTaskCompletions(sessionId);
+  // A notice kept for tasks that will never settle with this conversation is nobody's news.
+  clearDeferredRunEnd(sessionId);
   notify();
   return true;
 }

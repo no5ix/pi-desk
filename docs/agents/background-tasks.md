@@ -129,10 +129,12 @@ the hidden page is `inert`, so its controls are not in the tab order behind the 
 **Stop all is one of the head's three glyph buttons, in front of Refresh** (`StopAllIcon`, in the
 danger colour); clicking it asks first, in a strip under the head that names the count of what is
 about to be stopped (`role="alert"`) — it stops every running task of this conversation at once,
-and a text button in the head was the widest control in a row of 13px glyphs. **Each page clips to
-its own box** (`.bg-tasks-page { overflow: hidden }`): the list's rows carry long single-token text
-(a path, a pid), and a row wider than its page would draw past the edge and show up as a sliver of
-the slid-out page beside the detail page. The
+and a text button in the head was the widest control in a row of 13px glyphs. **Each page is the
+box that clips** (`.bg-tasks-pages` is relative and `overflow: hidden`, each `.bg-tasks-page` is
+`inset: 0`): the list's rows carry long single-token text (a path, a pid), and the old
+one-wide-track-of-two-pages slide left the slid-out page's last pixels drawn inside the card's
+padding — overflow clips at the *padding box*, not the content box — a strip of the list beside the
+detail page. The
 detail page carries the task's rows, its command, its exit and the bounded log tail that follows
 while its bottom is in view, with the task's own actions (stop, rerun) in its bar. The card shows
 one conversation's tasks, so it says nothing about the project's other conversations: no
@@ -166,8 +168,9 @@ sidebar's running mark. They read an index of the extension's counts, not a task
 
 - `lib/background-tasks/running-index.ts` keeps `{ sessionId: { running, unseenFailed, observedAt } }`
   for the conversations the app is holding. It is written by the bridge as the extension pushes
-  its change frames, and by the service as a read answers; a conversation whose work finished and
-  was seen leaves it, and a released bridge drops it. It stores no commands, no ids, no rows.
+  its change frames, and by the `subscribe` answer that takes the bridge's lease; a conversation
+  whose work finished and was seen leaves it, and a released bridge drops it. It stores no
+  commands, no ids, no rows.
 - `app/api/background-tasks/running/route.ts` and `.../running/events/route.ts` publish it (a
   snapshot and an SSE of the whole map per change).
 - `hooks/useBackgroundTasksRunning.ts` is the client: one shared stream per browser
@@ -185,7 +188,18 @@ sidebar's running mark. They read an index of the extension's counts, not a task
 Because the frames come from the extensions themselves, a task started with `/bg` in pi's own CLI
 moves the disc and the sidebar mark within a frame, with no polling.
 
-## The finished task is announced by the card, not by the chat
+**The bridge takes its lease at once, and that is not an optimisation.** The service's `invalidate`
+returns before publishing a frame while it holds no lease (`leases.size === 0`), so a client that
+leases lazily — as the panel does, leasing on its first read — is a listener that never hears
+anything. That was the bug: the header's chip sat at `0` until the card was opened, because
+opening the card was the first read, and the first read was the first lease. `onChanges` therefore
+leases (client `ensureLease`, never throwing), a `ready` frame retries a lease the activation
+refused, and the `subscribe` answer — which carries the registry's counts — is handed to
+`onCounts` listeners so the chip's first paint is what is running now, not zero until the next
+change. A lease dies (a `closed` frame, a `LEASE_INVALID`) and the client drops its cached facts,
+so the next lease reports the state as it is, and `dispose()` releases the lease.
+
+## The finished task is announced by the card, not by the chat or a burst
 
 `pi-background-tasks` appends a custom message when a task finishes (`customType:
 "background-task-notification"`), aimed at a terminal's status line. In this app that news is
@@ -195,31 +209,48 @@ it, and `components/MessageView.tsx` returns nothing for it. Every other custom 
 subagent's report, an extension's own card) renders as it always did. The extension's task record
 is untouched; nothing in the registry, the logs, `mark_seen` or the dock changes.
 
-The same finished task ends a second way: by its default the extension **asks the agent for a
-follow-up turn** about the result, and pi-desk announces a finished run on the desktop, over web
-push and over ntfy (`lib/task-completion-server.ts`) with the sentence "The task lasted …, started
-…, and ended …". Said for every machine-woken turn, that is a burst of notifications for one shell
-command the user started minutes ago, from a card that already lists the task, its status, its exit
-code and its output. So the run a completion woke is announced by the card and by nothing else:
-`lib/background-tasks/completion-gate.ts` keeps, per conversation, the moment the extension's own
-frames said a task left `running` and settled, and the session asks it at `agent_start` whether the
-run is that news arriving. The rules there are the load-bearing ones:
+A finished task also ends runs, and a run is what the app announces: on the desktop, over web push
+and over ntfy (`lib/task-completion-server.ts`), in the sentence "The task lasted …, started …, and
+ended …". A prompt that starts three shell tasks answers in fifteen seconds while the tasks run for
+two minutes, and the task manager then starts a turn of its own for a task that finished. Announced
+naively that is four rows in Notification Center about one job the user asked for once, some of
+them quoting a fifteen-second run for work that took two minutes. The rule, in three places:
 
-- A run this conversation asked for is announced, always. `RUN_STARTING_COMMANDS` in
-  `lib/rpc-manager.ts` stamps `localRunRequestedAt` (prompt, queue, steering, compact, fork,
-  navigation); a request at or after the settlement is the user's task, and its finish is news.
-  The status reads are **not** in that set — the chat polls `get_state` every few seconds, and a
-  poll is nobody's task, so marking it would silence the announcement the user is owed.
-- The note expires (a window of 30 s). A completion never silences a later task, and a completion
-  that woke nothing leaves nothing behind.
-- A second `agent_start` while a run is already owed is that run continuing (an auto-retry) and
-  keeps the first verdict, so a task settling mid-run cannot mute the user's own run end.
-- The bridge releases with the conversation, and the note goes with it, as the running index does.
+1. **Nothing is said while the conversation's work is running.** The announcer asks
+   `backgroundTasksRunning(sessionId)` — the running index, so the extension's own counts — and a
+   run that ends with tasks of this conversation still running is *kept* (`deferRunEnd`) and
+   announced when the bridge reports the last one settled, with **the settlement as the run's end**:
+   the number the user is waiting for, in one notice. A conversation whose tasks outlast the wait is
+   announced at the cap (`DEFERRED_NOTICE_MAX_WAIT_MS`) rather than never, and a bridge released
+   with its conversation drops the notice it was keeping.
+2. **A turn the extension woke to hand in a result says nothing at all.** By its default the task
+   manager asks the agent for a follow-up turn about a finished task; that turn is the news
+   arriving, not the user's task ending, and the card already shows the task, its status, its exit
+   code and its output. `lib/background-tasks/completion-gate.ts` keeps, per conversation, the
+   moment the extension's own frames said a task left `running` and settled, and the session asks
+   it at `agent_start` whether the run is that news arriving:
+   - A run this conversation asked for is announced, always. `RUN_STARTING_COMMANDS` in
+     `lib/rpc-manager.ts` stamps `localRunRequestedAt` (prompt, queue, steering, compact, fork,
+     navigation); a request at or after the settlement is the user's task. The status reads are
+     **not** in that set — the chat polls `get_state` every few seconds, and a poll is nobody's
+     task, so marking it would silence the announcement the user is owed.
+   - The note expires (30 s). A completion never silences a later task, and a completion that woke
+     nothing leaves nothing behind.
+   - A second `agent_start` while a run is already owed is that run continuing (an auto-retry) and
+     keeps the first verdict, so a task settling mid-run cannot mute the user's own run end.
+   - The bridge releases with the conversation and the note goes with it, as the running index does.
+3. **One notice per session per window, where a task manager is producing the runs.**
+   `COMPLETION_NOTICE_COOLDOWN_MS` applies only to a conversation the extensions have something to
+   say about (`backgroundTasksObserved`): three tasks settling is one finished task to the user.
+   A conversation with no background work keeps the older rule — every finished task is news,
+   however quickly they follow — and the per-run key still answers a run that is settled twice
+   through two paths (the key is claimed first, so a replay never spends the window).
 
-The flag is per run and restored as the run settles, so the next task is announced again. Nothing
-here touches the extension's own terminal notification: the plugin has no global switch for it
-(only `PI_BG_FEATURES` and `PI_BG_DOCK_SHORTCUT`), and the per-task `notifyOnCompletion` /
-`triggerOnCompletion` are the model's arguments, not the host's.
+The card is the announcer in every one of these cases: the row moves, a failure wears its mark
+until the card is opened, and the log is there to read. Nothing here touches the extension's own
+terminal notification: the plugin has no global switch for it (only `PI_BG_FEATURES` and
+`PI_BG_DOCK_SHORTCUT`), and the per-task `notifyOnCompletion` / `triggerOnCompletion` are the
+model's arguments, not the host's.
 
 - `PI_WEB_DISABLE_BACKGROUND_TASKS=1` keeps the extension out of every session (the panel says so).
 - `PI_WEB_BACKGROUND_TASKS_PATH=/abs/path/to/dist/extensions/background-tasks.js` loads a checkout
@@ -244,7 +275,7 @@ is present, so a checkout without the package reports a skip rather than a failu
 | File | Pins |
 | --- | --- |
 | `lib/background-tasks/protocol.test.mjs` | channels, schemas, frames, task views, the documented result shapes, the error-code set |
-| `lib/background-tasks/host-client.test.mjs` | lease and sequence rules, the single retry, timeouts, change de-duplication, the closed activation, dispose, bounds |
+| `lib/background-tasks/host-client.test.mjs` | lease and sequence rules, **the lease a change listener takes at once and the `subscribe` counts it hands to `onCounts`**, the single retry, timeouts, change de-duplication, the closed activation, dispose, bounds |
 | `lib/background-tasks/integration.test.mjs` | the real extension on a real session: capabilities, an empty registry, a task the conversation started, the live feed, logs, stop, seen, `NOT_FOUND`, shutdown, no-extension; skips when no copy is installed |
 | `lib/background-tasks/extension.test.mjs` | which copy loads (the user's plugin under the agent dir, the copy the checkout ships), the manifest resource rule, source matching, the per-cwd cache, the switches, the dedupe, the loader options |
 | `lib/background-tasks/bridges.test.mjs` | the per-session registry: keying, project grouping, replacement, release, listeners |
@@ -252,6 +283,7 @@ is present, so a checkout without the package reports a skip rather than a failu
 | `lib/background-tasks/running-index.test.mjs` | what the index keeps and drops, the edges it pushes, a released conversation's mark, an unacknowledged failure that stays |
 | `lib/background-tasks/notification.test.mjs` | the completion notice is named exactly, and only it; the chat leaves it out and keeps every other custom message |
 | `lib/background-tasks/completion-gate.test.mjs` | the baseline frame, the settlement that wakes a run, a prompt of the conversation winning, the window expiring, a frame that settles nothing, a released conversation, no news lent between conversations |
+| `lib/task-completion-server.test.mjs` | the announcer: every channel of one finished run, nothing for an aborted, failed, stale or unnameable run, **nothing while the conversation's background tasks run and the settlement as the announced end**, the kept notice dropped with a released conversation, one notice per window only where background work is producing the runs, every finished task of a plain session still announced |
 | `app/api/background-tasks/route.test.mjs` | the HTTP gate: required ids, the four actions, the byte window, 409 with the extension's code |
 | `app/api/background-tasks/running/route.test.mjs` | the running snapshot is the index and nothing more; the stream's frames are the whole map, and an aborted request stops receiving |
 | `components/BackgroundTasksPanel.test.mjs` | the rendered chip and card: the row's pill and its states (a glyph and a number, no word), the dialog and its names, the head's Stop-all icon in front of Refresh and its confirm strip, the two pages and the back control, the pages clipping to their boxes, the failed row's warning triangle, the CSS classes and the Agents-card height, the header wiring, the composer and sidebar running wiring, the notification gate, the hook's cleanup |

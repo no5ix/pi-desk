@@ -1,4 +1,5 @@
 import { COMPLETION_NOTICE_MAX_AGE_MS } from "./notification-tags";
+import { backgroundTasksRunningCount, listBackgroundTasksRunning } from "./background-tasks/running-index";
 import { raiseMacNotification, readLocalNotificationSettings } from "./local-notification";
 import { publishNtfyMessage, type NtfyPublishResult } from "./ntfy-publish";
 import { resolveSessionPath } from "./session-reader";
@@ -68,7 +69,16 @@ export interface AttentionAnnounceRequest {
   requestId?: string;
 }
 
-export type AnnounceSkip = "aborted" | "failed" | "stale" | "announced" | "cooldown" | "unnamed" | "no-span";
+export type AnnounceSkip =
+  | "aborted"
+  | "failed"
+  | "stale"
+  | "announced"
+  | "cooldown"
+  /** The run ended while the conversation's background work was still going. */
+  | "background-tasks"
+  | "unnamed"
+  | "no-span";
 
 export interface AnnounceOutcome {
   skipped?: AnnounceSkip;
@@ -98,10 +108,42 @@ export interface CompletionAnnounceEnv {
    * no prompt in it, which leaves the run with no title and therefore no announcement.
    */
   sessionTitle: (sessionId: string) => Promise<string | null>;
+  /**
+   * How many of this conversation's background tasks the extensions say are running. A run that
+   * ends while one is running is not the end of what the user asked for, so it announces nothing;
+   * the run that ends with the last task finished is the one that says so.
+   */
+  backgroundTasksRunning: (sessionId: string) => number;
+  /**
+   * Whether the extensions have anything to say about this conversation at all (an entry in the
+   * running index: tasks running, or finished work nobody has acknowledged). The per-session
+   * cooldown applies to that conversation only — a session whose background work is producing a
+   * run per finished task is the burst; a session with no such work is owed a notice for every
+   * task it finishes, however quickly they follow.
+   */
+  backgroundTasksObserved: (sessionId: string) => boolean;
 }
 
 /** At most one "waiting for you" push per session in this window. */
 export const ATTENTION_COOLDOWN_MS = 10 * 60_000;
+
+/**
+ * At most one finished-task notice per session in this window.
+ *
+ * A task manager that finishes three tasks settles three runs, and a long answer followed by a
+ * queued prompt settles two. To the user that is one finished task, and Notification Center shows
+ * three rows of the same sentence about it; a desktop that announced one finished run has nothing
+ * new to say about the next one a moment later.
+ */
+export const COMPLETION_NOTICE_COOLDOWN_MS = 30_000;
+
+/**
+ * How long a finished run may wait for the conversation's background work to settle before the app
+ * says so anyway. A task that never settles (a server a task started and left running) must not
+ * swallow the notice for the task the user asked for; ten minutes is longer than any shell command
+ * a conversation starts on purpose and shorter than anyone will wait.
+ */
+export const DEFERRED_NOTICE_MAX_WAIT_MS = 10 * 60_000;
 
 /** The ntfy priority of a finished task: it is the message the user is waiting for. */
 const NTFY_PRIORITY = 4;
@@ -111,6 +153,38 @@ interface NoticeLedger {
   announced: Map<string, number>;
   /** Last attention push per session. */
   attention: Map<string, number>;
+  /** Last finished-task announcement per session, for the cooldown window. */
+  completed: Map<string, number>;
+}
+
+/**
+ * A finished run whose conversation still has background tasks running.
+ *
+ * The run that started the tasks ends first, and its end is the end of what the user asked for
+ * only once the tasks are done. So the announcement waits for the last task to settle, and the
+ * sentence carries the settlement as the run's end — "The task lasted 0h2m4s, started at 19:34:02,
+ * and ended at 19:36:06" — which is the number the user is waiting for. One notice, at the real
+ * end, on every channel at once.
+ */
+interface DeferredCompletion {
+  request: CompletionAnnounceRequest;
+  deferredAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+
+interface DeferredStore {
+  pending: Map<string, DeferredCompletion>;
+}
+
+const DEFERRED_KEY = Symbol.for("pi-web:completion-notices-deferred");
+
+function deferred(): DeferredStore {
+  const store = globalThis as unknown as Record<symbol, DeferredStore | undefined>;
+  const existing = store[DEFERRED_KEY];
+  if (existing) return existing;
+  const created: DeferredStore = { pending: new Map() };
+  store[DEFERRED_KEY] = created;
+  return created;
 }
 
 const LEDGER_LIMIT = 500;
@@ -120,7 +194,7 @@ function ledger(): NoticeLedger {
   const store = globalThis as unknown as Record<symbol, NoticeLedger | undefined>;
   const existing = store[LEDGER_KEY];
   if (existing) return existing;
-  const created: NoticeLedger = { announced: new Map(), attention: new Map() };
+  const created: NoticeLedger = { announced: new Map(), attention: new Map(), completed: new Map() };
   store[LEDGER_KEY] = created;
   return created;
 }
@@ -130,6 +204,8 @@ export function resetCompletionAnnouncements(): void {
   const book = ledger();
   book.announced.clear();
   book.attention.clear();
+  book.completed.clear();
+  for (const sessionId of [...deferred().pending.keys()]) clearDeferredRunEnd(sessionId);
 }
 
 function claim(book: NoticeLedger, key: string, now: number): boolean {
@@ -204,6 +280,8 @@ const ENV_DEFAULTS: CompletionAnnounceEnv = {
     if (!filePath) return null;
     return readPromptTitle(filePath).catch(() => null);
   },
+  backgroundTasksRunning: (sessionId) => backgroundTasksRunningCount(sessionId),
+  backgroundTasksObserved: (sessionId) => listBackgroundTasksRunning()[sessionId] !== undefined,
 };
 
 /**
@@ -237,6 +315,20 @@ export async function announceRunEnd(
   // the chat, and it stays in the session file. Only a run that finished is announced.
   if (request.outcome.status === "failed") return { skipped: "failed", key: `${sessionId}|failed`, sent };
 
+  // Nothing is announced while the conversation's own work is still going.
+  //
+  // A background task changes what "the task finished" means. The run that started the tasks ends
+  // in fifteen seconds while the tasks run for two more minutes; the task manager then starts a
+  // turn of its own for a task that finished, and that settles a second run. Announcing any of
+  // them is a notice about a task that has not finished, in the words "The task lasted 0h0m15s",
+  // which is not the user's task at all. The card is where the running tasks are read. The run
+  // that ends with the last task settled is the end of what the user asked for, and it is the one
+  // that announces.
+  if (env.backgroundTasksRunning(sessionId) > 0) {
+    deferRunEnd(request, env);
+    return { skipped: "background-tasks", key: `${sessionId}|background-tasks`, sent };
+  }
+
   // A run this process has no numbers for asks the session's own file, so the phone and
   // the Mac read "the task lasted 0h18m13s …" instead of the short sentence. Best effort:
   // a run with no span anywhere is still announced.
@@ -269,6 +361,16 @@ export async function announceRunEnd(
   }
   const book = ledger();
   if (!claim(book, key, now)) return { skipped: "announced", key, sent };
+  // One notice per session per window, where a window of background work is producing the runs.
+  // A task manager that finishes three tasks settles a run for each of them, and Notification
+  // Center gets three rows of the same sentence about one job the user asked for once. A session
+  // with no background work is not in that situation, and every finished task of it is news.
+  if (env.backgroundTasksObserved(sessionId)) {
+    const lastCompletion = book.completed.get(sessionId);
+    if (typeof lastCompletion === "number" && now - lastCompletion < COMPLETION_NOTICE_COOLDOWN_MS) {
+      return { skipped: "cooldown", key, sent };
+    }
+  }
 
   const event = runEndEvent(outcome);
   const settings = env.localSettings();
@@ -289,7 +391,65 @@ export async function announceRunEnd(
   sent.push = push === true;
   sent.ntfy = ntfy === true;
   sent.local = local === true;
+  if (env.backgroundTasksObserved(sessionId)) book.completed.set(sessionId, now);
   return { sent, key, title: message.title, body: message.body };
+}
+
+/**
+ * Announce a finished run the moment the conversation's background work settles.
+ *
+ * The bridge calls it (the extension's own frames are the only thing that knows a task stopped),
+ * and the deferral's timer calls it when a conversation's tasks outlast the wait. While a task of
+ * this conversation runs, nothing is said; when the last one settles, the run that started it is
+ * announced, with the settlement as its end. One notice, at the real end, on every channel.
+ */
+export async function announceDeferredRunEnd(
+  sessionId: string,
+  overrides: Partial<CompletionAnnounceEnv> = {},
+): Promise<AnnounceOutcome | null> {
+  const env = resolveEnv(overrides);
+  const store = deferred();
+  const pending = store.pending.get(sessionId);
+  if (!pending) return null;
+  const now = env.now();
+  if (env.backgroundTasksRunning(sessionId) > 0 && now - pending.deferredAt < DEFERRED_NOTICE_MAX_WAIT_MS) {
+    return null;
+  }
+  store.pending.delete(sessionId);
+  if (pending.timer) clearTimeout(pending.timer);
+  // The run's own end is when its answer landed; the user's task ended when the last of the work
+  // it started ended, and that is the number the sentence carries.
+  return announceRunEnd(
+    { ...pending.request, outcome: { ...pending.request.outcome, endedAt: now } },
+    overrides,
+  );
+}
+
+/** The run the conversation finished while its background work went on, kept for that settlement. */
+function deferRunEnd(request: CompletionAnnounceRequest, env: Required<CompletionAnnounceEnv>): void {
+  const store = deferred();
+  const existing = store.pending.get(request.sessionId);
+  if (existing?.timer) clearTimeout(existing.timer);
+  const entry: DeferredCompletion = {
+    request,
+    deferredAt: env.now(),
+    timer: setTimeout(() => {
+      // The tasks are still running at the cap: the task the user asked for is over, and the
+      // notice is owed. A conversation that stops existing is dropped with its bridge.
+      void announceDeferredRunEnd(request.sessionId).catch((error: unknown) => {
+        console.error("[pi-web] a deferred completion notice failed:", error instanceof Error ? error.message : String(error));
+      });
+    }, DEFERRED_NOTICE_MAX_WAIT_MS),
+  };
+  entry.timer?.unref?.();
+  store.pending.set(request.sessionId, entry);
+}
+
+/** A conversation whose wrapper is gone has nobody to announce: its bridge releases this. */
+export function clearDeferredRunEnd(sessionId: string): void {
+  const pending = deferred().pending.get(sessionId);
+  if (pending?.timer) clearTimeout(pending.timer);
+  deferred().pending.delete(sessionId);
 }
 
 /**

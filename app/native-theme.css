@@ -15167,34 +15167,43 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   min-height: 0;
 }
 
-/* Two pages, slid sideways in one track: the list, and the task's detail. A row opens the
-   detail, which comes in from the right with a back control in its upper-left corner, and the
-   list keeps its place for the way back — the Settings dialog's navigation, on the card's own
-   surface. */
-.bg-tasks-track {
+/* Two pages, stacked in one box that clips: the list, and the task's detail. A row opens the
+   detail, which comes in from the right with a back control in its upper-left corner, and the list
+   keeps its place for the way back — the Settings dialog's navigation, on the card's own surface.
+
+   Each page is exactly the box (`inset: 0`), and the slide is the page's own transform. It used to
+   be one 200%-wide track of two 50% pages translated by the panel's `data-page`, and that leaked:
+   overflow clips at the panel's *padding box*, so the slid-out page's last few pixels — the row's
+   Stop control, the tail of a pid — were drawn inside the panel's padding, a strip of the hidden
+   page beside the visible one. A page that is the box cannot do that. */
+.bg-tasks-pages {
+  position: relative;
   display: flex;
-  width: 200%;
   flex: 1 1 auto;
   min-height: 0;
-  transition: transform var(--dur-base) var(--ease-native);
+  overflow: hidden;
 }
 
-.bg-tasks-panel[data-page="detail"] .bg-tasks-track {
-  transform: translateX(-50%);
+.bg-tasks-pages[data-page="list"] .bg-tasks-page.is-detail {
+  transform: translateX(100%);
+}
+
+.bg-tasks-pages[data-page="detail"] .bg-tasks-page.is-list {
+  transform: translateX(-100%);
 }
 
 .bg-tasks-page {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 50%;
   min-width: 0;
   min-height: 0;
-  /* Every page clips to its own box. The two pages ride one wide track, and the list page's rows
-     carry long single-token text (a path, a pid); a row wider than the page would draw past its
-     edge and appear as a sliver of the hidden page at the card's side. The rows already ellipsize;
-     this is the boundary that keeps the slide honest. */
+  /* The rows carry long single-token text (a path, a pid) and ellipsize inside this box. */
   overflow: hidden;
+  transform: translateX(0);
+  transition: transform var(--dur-base) var(--ease-native);
 }
 
 .bg-tasks-head {
@@ -15850,7 +15859,7 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   .bg-tasks-filter,
   .bg-tasks-row,
   .bg-tasks-back,
-  .bg-tasks-track {
+  .bg-tasks-page {
     transition: none;
   }
   /* The head that breathes stops breathing; it stays green, and says nothing by pulsing. */

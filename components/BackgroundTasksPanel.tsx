@@ -300,8 +300,12 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
       onMouseDown={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
-      <div className="bg-tasks-track">
-      <section className="bg-tasks-page is-list">
+      {/* Two pages stacked in one clipping box, each exactly its size: the list slid out is the
+          same box the detail page is, so nothing of it can appear at the card's edge. A wide
+          track with a percentage transform put the hidden page's rows beside the visible page,
+          and long row text (a path, a pid) drew outside the page's own box. */}
+      <div className="bg-tasks-pages" data-page={page}>
+      <section className="bg-tasks-page is-list" inert={page !== "list"}>
       <div className="bg-tasks-head">
         <span className="bg-tasks-head-icon"><BackgroundTasksIcon size={14} strokeWidth={1.9} /></span>
         <strong className="bg-tasks-title">{translate("backgroundTasks.title")}</strong>

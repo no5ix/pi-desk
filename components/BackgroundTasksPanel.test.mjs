@@ -136,9 +136,9 @@ test("the card is a dialog of the app's menu surface, and its controls are named
 
 test("a task opens as its own page, with the back control in the card's upper-left corner", () => {
   const html = renderPanel();
-  // The card carries its page, and the two pages live in one track that slides.
+  // The card carries its page, and the two pages are stacked in one box that clips.
   assert.match(html, /class="bg-tasks-panel app-menu"[^>]*data-page="list"/);
-  assert.match(html, /class="bg-tasks-track"/);
+  assert.match(html, /class="bg-tasks-pages"[^>]*data-page="list"/);
   assert.match(html, /class="bg-tasks-page is-list"/);
   assert.match(html, /class="bg-tasks-page is-detail"[^>]*inert=""/);
   // The detail page's head is the Settings dialog's navigation on this card's surface: back to
@@ -158,8 +158,10 @@ test("a task opens as its own page, with the back control in the card's upper-le
   const source = readFileSync(new URL("./BackgroundTasksPanel.tsx", import.meta.url), "utf8");
   assert.ok(!source.includes("backgroundTasks.detail.startedIn"), "no 'Started in' row");
   assert.match(source, /listenForStackedDialogEscape/, "Escape goes back to the list first");
+  assert.match(source, /inert=\{page !== "list"\}/, "the slid-out list is out of the tab order");
   const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8");
-  assert.match(css, /\.bg-tasks-panel\[data-page="detail"\] \.bg-tasks-track\s*\{\s*transform: translateX\(-50%\);/);
+  assert.match(css, /\.bg-tasks-pages\[data-page="detail"\] \.bg-tasks-page\.is-list\s*\{\s*transform: translateX\(-100%\);/);
+  assert.match(css, /\.bg-tasks-pages\[data-page="list"\] \.bg-tasks-page\.is-detail\s*\{\s*transform: translateX\(100%\);/);
   assert.match(css, /max-height: var\(--top-panel-max-height, 100%\);/, "the card is as tall as the Agents card's box, handed down by the shell");
 });
 
@@ -231,7 +233,7 @@ test("a row opens the task's own page, with a back control in its upper-left cor
   const source = read("./BackgroundTasksPanel.tsx");
   // One track, two pages, slid sideways: the list keeps its place and the detail comes in from
   // the right. An inline detail under a row is what this replaced.
-  assert.match(source, /className="bg-tasks-track"/);
+  assert.match(source, /className="bg-tasks-pages"/);
   assert.match(source, /className="bg-tasks-page is-list"/);
   assert.match(source, /className="bg-tasks-page is-detail"/);
   assert.match(source, /data-page=\{page\}/);
@@ -349,7 +351,7 @@ test("the chip is a glyph and a number in every locale, and the word is gone fro
   assert.ok(!css.includes(".bg-tasks-chip-label"), "the sheet has no dead chip-word rule");
 });
 
-test("a failed task's row wears a warning triangle, and the two pages clip to their own boxes", () => {
+test("a failed task's row wears a warning triangle, and each page is the box that clips", () => {
   const source = read("./BackgroundTasksPanel.tsx");
   const css = read("../app/native-theme.css");
   // A bare exclamation at 11px is a line and a dot of unknown weight. This is the one mark in the
@@ -357,26 +359,45 @@ test("a failed task's row wears a warning triangle, and the two pages clip to th
   const failed = /if \(status === "failed"\) \{([\s\S]*?)\n  \}/.exec(source)?.[1] ?? "";
   assert.match(failed, /M10\.3 4\.1/, "the failed glyph is a triangle");
   assert.ok(!/bg-tasks-status[\s\S]{0,400}<path d="M12 7v6" \/>/.test(source), "no bare exclamation mark");
-  // The two pages ride one wide track; each clips to its own box, so a row of the page that is
-  // slid out cannot appear as a sliver at the card's edge.
+  // The pages are stacked in a box that clips, each page exactly the box. One wide track of two
+  // pages translated by half its own width left the slid-out page's last pixels inside the card's
+  // padding — a strip of the list beside the detail, with a row's Stop control in it — because
+  // overflow clips at the padding box, not at the content box.
+  const pages = /\.bg-tasks-pages \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(pages, /position: relative/);
+  assert.match(pages, /overflow: hidden/);
   const page = /\.bg-tasks-page \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(page, /position: absolute/);
+  assert.match(page, /inset: 0/);
   assert.match(page, /overflow: hidden/);
-  assert.match(page, /width: 50%/);
-  const track = /\.bg-tasks-track \{([^}]*)\}/.exec(css)?.[1] ?? "";
-  assert.match(track, /width: 200%/);
+  assert.ok(!css.includes("bg-tasks-track"), "no wide track to leak from");
 });
 
-test("a finished background task is announced by the card, and by no notification channel", () => {
+test("a finished background task is announced by the card, and the notice waits for the tasks", () => {
   const gate = read("../lib/background-tasks/completion-gate.ts");
   const rpc = read("../lib/rpc-manager.ts");
   const bridges = read("../lib/background-tasks/bridges.ts");
-  // The extension's own frames say a task stopped and settled; the session is told at the start
-  // of a run, and the announcer obeys it for that run alone.
-  assert.match(bridges, /noteBackgroundTaskSettlement\(\{[\s\S]*running: frame\.counts\.running,[\s\S]*settled: frame\.counts\.completed \+ frame\.counts\.failed \+ frame\.counts\.killed,/);
-  assert.match(bridges, /clearBackgroundTaskCompletions\(sessionId\)/);
+  const announcer = read("../lib/task-completion-server.ts");
+  // A bridge leases at once: the extension publishes a change frame only while a lease is live, so
+  // a lazily leased listener never hears anything and the header's chip sits at zero until the card
+  // is opened. The subscribe response's counts are the chip's first paint.
+  assert.match(bridges, /client\.onCounts\(\(facts\) => applyCounts\(facts\.counts, facts\.observedAt\)\)/);
+  assert.match(bridges, /client\.onChanges\(\(frame\) =>/);
+  // A run that ends while the conversation's tasks are running is kept, and said when the last one
+  // settles: one notice, carrying the real end of the work.
+  assert.match(bridges, /if \(counts\.running === 0\) \{[\s\S]*?announceDeferredRunEnd\(sessionId\)/);
+  assert.match(bridges, /clearDeferredRunEnd\(sessionId\)/);
+  // The turn the extension woke to hand in a result says nothing on any channel; a run the
+  // conversation asked for is announced, always.
   assert.match(rpc, /this\.agentRunAnnouncesCompletion = !runWokeByBackgroundTask\(this\.sessionId, this\.localRunRequestedAt\)/);
   assert.match(rpc, /if \(!this\.agentRunAnnouncesCompletion\) \{/);
-  // A request of this conversation wins: the user's own task is announced, always.
   assert.match(rpc, /if \(RUN_STARTING_COMMANDS\.has\(type\)\) this\.localRunRequestedAt = Date\.now\(\);/);
   assert.match(gate, /export const COMPLETION_WINDOW_MS/);
+  // The announcer refuses a run whose conversation is still working, and gives one notice per
+  // session per window: three tasks settling is one finished task to the user, not three rows in
+  // Notification Center of the same sentence.
+  assert.match(announcer, /if \(env\.backgroundTasksRunning\(sessionId\) > 0\) \{\s*\n\s*deferRunEnd\(request, env\);/);
+  assert.match(announcer, /export const COMPLETION_NOTICE_COOLDOWN_MS/);
+  assert.match(announcer, /export async function announceDeferredRunEnd/);
+  assert.match(announcer, /outcome: \{ \.\.\.pending\.request\.outcome, endedAt: now \}/);
 });
