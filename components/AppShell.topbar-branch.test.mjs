@@ -21,7 +21,7 @@ test("the title and the project line keep their positions in the title block", (
   assert.ok(block, "topbar title block found");
   assert.match(block[0], /<span>\{topBarTitle\}<\/span>/, "the title stays the first span child");
   assert.match(block[0], /className="app-topbar-subtitle-row"/, "the project line is a row inside the title block");
-  assert.match(block[0], /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} isWorktree=\{headerProjectIsWorktree\} \/>/,
+  assert.match(block[0], /<TopbarProjectChip\s*\n\s*name=\{topBarSubtitle\}\s*\n\s*path=\{visibleProjectCwd \?\? ""\}\s*\n\s*isWorktree=\{headerProjectIsWorktree\}/,
     "the project name is a chip, its path is the folder the session works in, and its glyph is asked of that folder");
   assert.match(projectChip, /<small className="app-topbar-project app-topbar-project--chip">[\s\S]*<span>\{name\}<\/span>/,
     "it stays a <small>, so the narrow-screen rule that hid the row still hides it");
