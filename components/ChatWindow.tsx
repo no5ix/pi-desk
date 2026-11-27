@@ -55,7 +55,7 @@ import { sessionVisibleCounts } from "@/lib/scroll-memory";
 import { isImeComposing } from "@/lib/ime";
 import { useChatAccess } from "@/hooks/useChatAccess";
 import { ChatShellPrompt } from "./ChatShellPrompt";
-import { lastTurnHitChatShellBlock } from "@/lib/chat-shell-block";
+import { lastTurnHitChatShellBlock, lastTurnNamesUnavailableTool } from "@/lib/chat-shell-block";
 import { SideChatIcon } from "./SideChatIcon";
 import { assignMessageKeys, createMessageKeyTracker } from "@/lib/message-keys";
 
@@ -458,6 +458,21 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   const chatNeedsShell = Boolean(
     chatAccess?.state.available && !chatAccess.state.unlocked && !sessionBusy && lastTurnHitChatShellBlock(messages),
   );
+  // The other way a chat withholds the computer: an extension the project has installed — the task
+  // manager's `bg_run`, say — is not declared to a locked chat's model, so the model cannot call
+  // it and answers in a developer's words about tool schemas, which leaves the user reading about
+  // function lists instead of being asked. The reply that names a withheld tool is the need, and
+  // the answer is the switch the chat already has: let it use this computer, and ask again. The
+  // coding tools are not measured this way — a chat refuses one by name when the model calls it,
+  // and that refusal is the `chatNeedsShell` case above.
+  const chatUnavailableToolName = chatAccess
+    && chatAccess.state.available
+    && !chatAccess.state.unlocked
+    && !sessionBusy
+    && !chatNeedsShell
+    ? lastTurnNamesUnavailableTool(messages, chatAccess.state.unavailableTools)
+    : null;
+  const chatNeedsComputer = chatNeedsShell || chatUnavailableToolName !== null;
   // The desktop window stays hidden until the conversation it opens on is
   // loaded (or its load failed and the error is what the user will see).
   useReportDesktopReady(!loading, "chat");
@@ -2183,8 +2198,9 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
             </div>
           </div>
         )}
-        {chatNeedsShell && chatAccess && (
+        {chatNeedsComputer && chatAccess && (
           <ChatShellPrompt
+            toolName={chatUnavailableToolName}
             busy={chatAccess.busy}
             error={chatAccess.error}
             onAllow={() => {

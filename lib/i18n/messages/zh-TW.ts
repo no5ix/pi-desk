@@ -1967,6 +1967,5 @@ export const zhTWLocale: LocalePlugin = {
     "backgroundTasks.stopRunning": "停止 {count} 個背景工作",
     "backgroundTasks.stopFailed": "無法停止背景工作。",
     "backgroundTasks.rowRunning": "{count} 個背景工作正在執行",
-    "backgroundTasks.chipLabel": "任務",
   },
 };

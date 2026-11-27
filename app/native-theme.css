@@ -15190,6 +15190,11 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   width: 50%;
   min-width: 0;
   min-height: 0;
+  /* Every page clips to its own box. The two pages ride one wide track, and the list page's rows
+     carry long single-token text (a path, a pid); a row wider than the page would draw past its
+     edge and appear as a sliver of the hidden page at the card's side. The rows already ellipsize;
+     this is the boundary that keeps the slide honest. */
+  overflow: hidden;
 }
 
 .bg-tasks-head {
@@ -15262,6 +15267,17 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 .bg-tasks-icon-button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* The head's Stop all: the same 24px glyph button as Refresh and Close, in the colour of what it
+   does. It carries no word — a text button there was the widest control in a row of glyphs. */
+.bg-tasks-icon-button.is-danger {
+  color: var(--danger);
+}
+
+.bg-tasks-icon-button.is-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 14%, var(--bg-hover));
+  color: var(--danger);
 }
 
 .bg-tasks-notice {
@@ -15360,14 +15376,6 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   color: var(--danger);
 }
 
-.bg-tasks-filters-tail {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-}
-
-.bg-tasks-stop-all,
 .bg-tasks-confirm-button,
 .bg-tasks-action {
   display: inline-flex;
@@ -15385,14 +15393,12 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
     background var(--dur-fast) var(--ease-native);
 }
 
-.bg-tasks-stop-all:hover,
 .bg-tasks-confirm-button:hover,
 .bg-tasks-action:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.bg-tasks-stop-all:focus-visible,
 .bg-tasks-confirm-button:focus-visible,
 .bg-tasks-action:focus-visible {
   outline: 2px solid var(--menu-focus-ring);
@@ -15414,12 +15420,30 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   color: var(--danger);
 }
 
+/* The head's Stop all icon asks here: the count of what is about to be stopped, washed in the
+   colour of the act, with the two answers at the end of the line the eye has just read. */
 .bg-tasks-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--menu-row-radius);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-confirm-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.bg-tasks-confirm-actions {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--text-muted);
-  font-size: var(--fs-micro);
+  flex-shrink: 0;
 }
 
 .bg-tasks-list {
@@ -15874,10 +15898,6 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 }
 .bg-tasks-chip-count {
   font-weight: 600;
-}
-.bg-tasks-chip-label {
-  color: var(--text);
-  font-weight: 500;
 }
 .bg-tasks-detail-title {
   min-width: 0;

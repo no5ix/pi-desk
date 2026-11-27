@@ -1967,6 +1967,5 @@ export const enLocale: LocalePlugin = {
     "backgroundTasks.stopRunning": "Stop {count} background task(s)",
     "backgroundTasks.stopFailed": "The background tasks could not be stopped.",
     "backgroundTasks.rowRunning": "{count} background task(s) running",
-    "backgroundTasks.chipLabel": "Tasks",
   },
 };

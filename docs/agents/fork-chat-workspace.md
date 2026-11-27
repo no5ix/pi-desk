@@ -160,6 +160,26 @@ the client then re-attaches like after a tool-preset change (`handleChatAccessRe
   `CHAT_SHELL_BLOCK_MARKER` (`lib/chat-shell-block.ts`). If that happened in the latest turn
   and the chat can be unlocked, `ChatShellPrompt` shows above the composer; "Allow and
   continue" unlocks the chat and sends a short message asking the model to carry on.
+- The other way a locked chat withholds the computer is silent, and it was the bug: an extension
+  the project installed — `pi-background-tasks` and its `bg_run`, say — is loaded for the chat, so
+  its tools are in the session's registry, but the chat policy does not declare them to the model.
+  A request that needs one gets a developer's answer ("`bg_run` is not exposed as a callable tool;
+  only `get_module_plan` is available"), and the user reads about function lists with no way to act.
+  Three parts close it, in the app's words and with no second policy:
+  - `chatWorkspacePrompt(...)` is told the tool exists (`backgroundTasks: true` in the prompt
+    scope, from the resolved extension source in `lib/rpc-manager.ts`), so the model answers with
+    the switch the user can reach and not a schema lecture — this is a prompt section through the
+    one existing path, not a new instructions channel.
+  - `GET /api/sessions/[id]/chat-access` answers `unavailableTools`, the withheld extension tools
+    of a running locked chat (`AgentSessionWrapper.chatWithheldToolNames()` over
+    `chatWithheldExtensionToolNames`: extension tools only — the coding tools are refused by name
+    when called, which is the shell case above, and MCP tools have their own read-only policy).
+  - `lastTurnNamesUnavailableTool` (`lib/chat-shell-block.ts`) notices the **latest reply** naming
+    one of those tools (whole names only, the reply's own words only: it stops at the user's
+    message and ignores tool results), and `ChatWindow` shows the same `ChatShellPrompt` card with
+    the tool named in it. One click, same as the shell case: allow, and ask again.
+  Nothing calls the tool for the model, no tool is added to a chat behind the user's back, and a
+  chat the user unlocked is not measured at all.
 
 ## Files on this computer: the chat folder, naming a path
 

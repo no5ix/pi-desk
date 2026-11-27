@@ -2743,7 +2743,6 @@ export function AppShell() {
                     ref={topbarTasksRef}
                     running={bgTasksRunning.runningIn(selectedSession?.id)}
                     unseenFailed={bgTasksRunning.unseenFailedIn(selectedSession?.id)}
-                    label={translate("backgroundTasks.chipLabel")}
                     title={translate("backgroundTasks.title")}
                     tasksOpen={activeTopPanel === "tasks"}
                     onToggle={() => toggleTopPanel("tasks")}

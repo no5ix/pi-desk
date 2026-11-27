@@ -103,6 +103,8 @@ const CHAT_PROMPT_TOOLS = `You may use the tools and skills made available to yo
 
 const CHAT_PROMPT_UNLOCKED_TOOLS = `You may use the tools and skills made available to you. Tools from MCP servers the user has set up can do more than read: some write files or run commands, so use those only for what the user asked and say what you did.`;
 
+const CHAT_PROMPT_BACKGROUND_TASKS = ` Background shell tasks (the \`bg_run\` tool of the task manager) are not available in a chat: a chat starts no processes. If the user asks for one, say in one sentence that this chat cannot run shell commands, and tell them the way in \u2014 the chat's menu lets it use their computer, or they can open a project. Do not describe tool schemas, and do not list the tools you do have.`;
+
 /** A legacy chat: no folder, `read` for named files, `save_to_downloads` as the one write. */
 const CHAT_PROMPT_FILES = `This is a general chat, not a project. You have no shell and no file editing of your own. The user can attach images and files to a message; what they attach is included in the message itself. You can read a file only when the user writes its full path in their own message, and you can save a file they ask for into their Downloads folder with save_to_downloads (a file name only, never overwriting). ${CHAT_PROMPT_TOOLS} When the task needs a shell or editing a project, tell the user to open a project instead.`;
 
@@ -116,22 +118,71 @@ const CHAT_PROMPT_FOLDER_END = ` When the task needs a shell or to change files 
 
 const CHAT_PROMPT_UNLOCKED = `This is a general chat, not a project, and the user has let it use their computer: you have a shell and can read and change files anywhere their account can. This chat's working folder is where new files go by default. Do only what the user asked, say what you changed, and ask before anything destructive or outside the working folder. The user can attach images and files to a message; what they attach is included in the message itself.`;
 
+/**
+ * The extension tools a chat is not given, by name.
+ *
+ * A chat withholds an installed extension's tools by default (the tool list is a known read-only
+ * set, plus what the user added in Settings \u203a Chats), so the model simply does not see them. That
+ * is the right policy, and it has a rough edge: a model asked to "start three background tasks"
+ * finds no such tool, spends a turn reasoning about it, and answers with words aimed at a
+ * developer ("re-expose the tool") instead of doing the thing or naming the switch the app has.
+ * The conversation page uses this list to notice that the reply is about a tool the chat
+ * withheld, and to offer that switch where the need came up.
+ *
+ * The coding tools are left out: a chat refuses them by name when the model calls one, and that
+ * refusal already raises the same offer. MCP tools are left out too \u2014 they answer under their own
+ * read-only policy, with their own reason.
+ */
+export function chatWithheldExtensionToolNames(
+  tools: readonly { name: string; exposure?: string; sourceInfo?: unknown }[],
+  extraAllowed: ReadonlySet<string> = NO_EXTRA_TOOLS,
+  hasFolder = false,
+): string[] {
+  return tools
+    .filter((tool) => (
+      tool.exposure !== "hidden"
+      && !CHAT_CODING_TOOL_NAMES.has(tool.name)
+      && !isMcpTool({ name: tool.name, sourceInfo: tool.sourceInfo as never })
+      && !isChatToolAllowed(tool, extraAllowed, hasFolder)
+    ))
+    .map((tool) => tool.name);
+}
+
+/** The coding tools, named: a chat's own refusals cover them, so they are not in the list above. */
+const CHAT_CODING_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "read",
+  "bash",
+  "powershell",
+  "edit",
+  "write",
+  "grep",
+  "find",
+  "ls",
+]);
+
 export interface ChatPromptScope {
   /** The chat owns a folder (chats made after chats got folders). */
   folder?: boolean;
   /** The user let this chat use their computer. */
   unlocked?: boolean;
+  /**
+   * The session registers `bg_run` (the background-task extension), which a locked chat withholds.
+   * Said once in the preamble, so a request for a background task is answered in the app's own
+   * words \u2014 the switch exists, and the user can reach it \u2014 instead of a paragraph about tool schemas.
+   */
+  backgroundTasks?: boolean;
 }
 
 /** The chat preamble; the file lines apply only where the server may touch the user's files. */
 export function chatWorkspacePrompt(filesEnabled: boolean, scope: ChatPromptScope = {}): string {
+  const backgroundTasks = scope.backgroundTasks && !scope.unlocked ? CHAT_PROMPT_BACKGROUND_TASKS : "";
   if (scope.folder && scope.unlocked) {
     return `${CHAT_PROMPT_INTRO}\n\n${CHAT_PROMPT_UNLOCKED} ${CHAT_PROMPT_UNLOCKED_TOOLS}`;
   }
   if (scope.folder) {
-    return `${CHAT_PROMPT_INTRO}\n\n${CHAT_PROMPT_FOLDER}${filesEnabled ? CHAT_PROMPT_FOLDER_NAMED : ""} ${CHAT_PROMPT_TOOLS}${CHAT_PROMPT_FOLDER_END}`;
+    return `${CHAT_PROMPT_INTRO}\n\n${CHAT_PROMPT_FOLDER}${filesEnabled ? CHAT_PROMPT_FOLDER_NAMED : ""} ${CHAT_PROMPT_TOOLS}${CHAT_PROMPT_FOLDER_END}${backgroundTasks}`;
   }
-  return `${CHAT_PROMPT_INTRO}\n\n${filesEnabled ? CHAT_PROMPT_FILES : CHAT_PROMPT_NO_FILES}`;
+  return `${CHAT_PROMPT_INTRO}\n\n${filesEnabled ? CHAT_PROMPT_FILES : CHAT_PROMPT_NO_FILES}${backgroundTasks}`;
 }
 
 export const CHAT_WORKSPACE_PROMPT = chatWorkspacePrompt(true);

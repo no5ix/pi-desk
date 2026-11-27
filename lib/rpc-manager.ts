@@ -114,6 +114,7 @@ import {
   CHAT_FOLDER_TOOL_NAMES,
   CHAT_READ_TOOL_NAME,
   chatBlockedToolNames,
+  chatWithheldExtensionToolNames,
   chatWorkspacePrompt,
   createChatWorkspaceExtension,
   isChatToolAllowed,
@@ -127,6 +128,7 @@ import {
   withBackgroundTasksDedupe,
 } from "./background-tasks/extension";
 import { attachBackgroundTasksBridge, releaseBackgroundTasksBridge } from "./background-tasks/bridges";
+import { runWokeByBackgroundTask } from "./background-tasks/completion-gate";
 
 // ============================================================================
 // Types
@@ -377,6 +379,23 @@ const COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT = new Set([
   "extension_ui_input",
 ]);
 
+/**
+ * The commands that ask this conversation for work. A run that follows one is the user's task, and
+ * its finish is announced — on the desktop, over push, over ntfy — whatever the background task
+ * card reported a moment before. The status reads are not here: the chat polls them every few
+ * seconds while it runs, and a poll is nobody's task.
+ */
+const RUN_STARTING_COMMANDS = new Set([
+  "prompt",
+  "steer",
+  "follow_up",
+  "queue_composer",
+  "compact",
+  "fork",
+  "clone",
+  "navigate_tree",
+]);
+
 export interface RpcSessionStartOptions {
   toolNames?: string[];
   initialModel?: { provider: string; modelId: string };
@@ -473,6 +492,21 @@ export class AgentSessionWrapper {
   private activeMutatingCommands = 0;
   private sessionReplacement: "fork" | "clone" | null = null;
   private agentRunNeedsCompletion = false;
+  /**
+   * Whether the run that set `agentRunNeedsCompletion` is the app's own work, whose finish is
+   * announced. A background task that finishes asks the agent for a turn about its result (the
+   * task manager's default), and that turn is the extension's news arriving, not a task of the
+   * user's ending: the Background Tasks card reports it, and saying it again on the desktop, over
+   * push and over ntfy is a burst of notices for one shell command. Set at `agent_start` from the
+   * extension's own frames (background-tasks/completion-gate.ts).
+   */
+  private agentRunAnnouncesCompletion = true;
+  /**
+   * When this conversation last asked the server for work — a prompt, a queue, steering, a retry,
+   * a command, a fork, a navigation. A request at or after a task's completion means the run that
+   * follows is the user's, and its finish is announced like any other.
+   */
+  private localRunRequestedAt = 0;
   /**
    * Whether the run that set `agentRunNeedsCompletion` has settled. `agent_settled` is the
    * SDK's word for "this run is over" (it clears `isStreaming` before emitting it), so it —
@@ -704,6 +738,27 @@ export class AgentSessionWrapper {
     return this.chatUnlocked;
   }
 
+  /**
+   * The extension tools this chat withholds, by name; empty for a chat the user let use the
+   * computer, and for a project session.
+   *
+   * A chat withholds an installed extension's tools by default, which leaves the model without
+   * them and the user without an explanation: asked to "start three background tasks" in a chat,
+   * a model spends a turn discovering that `bg_run` is not in its function list and answers with
+   * words about tool schemas. The conversation page reads this list, notices a reply that is
+   * about one of those tools, and offers the switch that exists (let this chat use the computer,
+   * or open a project) right where the need came up. The coding tools and MCP tools are not here:
+   * a chat refuses those by name when the model calls one, and that refusal raises the offer.
+   */
+  chatWithheldToolNames(): string[] {
+    if (!this.chatWorkspace) return [];
+    return chatWithheldExtensionToolNames(
+      this.inner.getAllTools(),
+      new Set(readChatSettings().allowedTools),
+      this.chatFolder,
+    );
+  }
+
   hasSuppressedCompletionNotifications(): boolean {
     return this.suppressCompletionNotifications;
   }
@@ -775,6 +830,13 @@ export class AgentSessionWrapper {
       this.lastEventType = typeof event.type === "string" ? event.type : null;
       this.lastEventAt = Date.now();
       if (event.type === "agent_start") {
+        // A run that starts in the moment after the extension reported a task settling, with no
+        // request of this conversation behind it, is the extension handing in its result: the card
+        // says it. A run the app asked for keeps its announcement. A second `agent_start` while a
+        // run is already owed is that run continuing (an auto-retry), and keeps its verdict.
+        if (!this.agentRunNeedsCompletion) {
+          this.agentRunAnnouncesCompletion = !runWokeByBackgroundTask(this.sessionId, this.localRunRequestedAt);
+        }
         this.agentRunNeedsCompletion = true;
         this.agentRunSettled = false;
         this.runStartedAt ??= Date.now();
@@ -918,6 +980,14 @@ export class AgentSessionWrapper {
       console.error("[pi-web] could not settle the subagent turn:", error instanceof Error ? error.message : error);
     }
     if (this.suppressCompletionNotifications) return;
+    // A finished background task's follow-up turn: the card is the announcer (a task that failed
+    // wears its mark there until it is opened), so this run says nothing on the desktop, over
+    // push, or over ntfy. The flag is set per run at `agent_start` and restored here, so the run
+    // after it — the user's next task — is announced again.
+    if (!this.agentRunAnnouncesCompletion) {
+      this.agentRunAnnouncesCompletion = true;
+      return;
+    }
     // A subagent of this session is still at work: each report starts a run here, and the run
     // after the last one is the end of the task (#1434).
     if (hasUnsettledSubagentRun(this.sessionId)) return;
@@ -1510,6 +1580,9 @@ export class AgentSessionWrapper {
       this.lastCommandType = typeof type === "string" ? type : null;
       this.lastCommandAt = Date.now();
     }
+    // The commands that ask this conversation for work. A run that follows one of them is the
+    // user's task and its finish is announced, whatever the background task card has to say.
+    if (RUN_STARTING_COMMANDS.has(type)) this.localRunRequestedAt = Date.now();
     const allowedDuringReplacement = COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT.has(type);
     if (this.sessionReplacement && !allowedDuringReplacement) {
       throw new Error("Session is being copied to a new session");
@@ -1530,6 +1603,8 @@ export class AgentSessionWrapper {
       }
 
       if (type === "prompt" || type === "steer" || type === "follow_up" || type === "queue_composer") {
+        // This conversation asked for the work: whatever the run does, its finish is news.
+        this.localRunRequestedAt = Date.now();
         const imageError = validateAgentImages(command.images);
         if (imageError) throw new Error(imageError);
       }
@@ -3966,7 +4041,14 @@ export async function startRpcSession(
               // Extensions, skills, prompt templates and MCP load as in a project, but no
               // global, ancestor or project instructions may leak into a chat's prompt.
               noContextFiles: true,
-              systemPrompt: chatWorkspacePrompt(chatFilesEnabled, { folder: chatFolder, unlocked: chatUnlocked }),
+              systemPrompt: chatWorkspacePrompt(chatFilesEnabled, {
+                folder: chatFolder,
+                unlocked: chatUnlocked,
+                // The task manager's tool is loaded for this folder, and a locked chat withholds
+                // it: say so once, in the app's words, so a request for a background task is
+                // answered with the switch the user can reach and not a lecture about schemas.
+                backgroundTasks: Boolean(backgroundTasksSource.entryPath),
+              }),
               extensionFactories: [
                 ...(builtins?.extensions ?? []),
                 createArtifactGuideExtension(),

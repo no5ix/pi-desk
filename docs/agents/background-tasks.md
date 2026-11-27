@@ -113,16 +113,26 @@ title, behind the subagent counts. It wears that row's own pill class (`.app-top
 the class the counts wear), so it is one control of the same shape and size as its neighbours,
 and the card it opens hangs under it for the same reason the Agents card hangs under the counts.
 Its head glyph breathes green while a task runs, turns warning when the newest news is a task that
-failed and is unread, and lies dim when nothing runs. The numbers are the extension's own,
+failed and is unread, and lies dim when nothing runs. It is a glyph and a number, never a word:
+the row's other counts (the subagents) carry no word of their own, and a word is the first thing
+that runs out of width at a narrow window — the card's name lives in the tooltip and the accessible
+label, in every language. The numbers are the extension's own,
 streamed (see the running feed below): a chip with no entry in the index shows a plain zero and
 wears no marks, because a badge the app cannot back up is a claim.
 
 `components/BackgroundTasksPanel.tsx` is the card, in **two pages in one track**: the list (counts,
-the five status filters, one row per task, stop / stop-all with a confirmation), and the task's
+the five status filters, one row per task, a stop on every running row), and the task's
 own page, which slides in from the right with a back control in its upper-left corner —
 the Settings dialog's navigation, on the card's surface. A row opens the page; Escape on the page
 goes back to the list first (`lib/stacked-dialog.ts`), and the second Escape closes the card;
-the hidden page is `inert`, so its controls are not in the tab order behind the visible one. The
+the hidden page is `inert`, so its controls are not in the tab order behind the visible one.
+**Stop all is one of the head's three glyph buttons, in front of Refresh** (`StopAllIcon`, in the
+danger colour); clicking it asks first, in a strip under the head that names the count of what is
+about to be stopped (`role="alert"`) — it stops every running task of this conversation at once,
+and a text button in the head was the widest control in a row of 13px glyphs. **Each page clips to
+its own box** (`.bg-tasks-page { overflow: hidden }`): the list's rows carry long single-token text
+(a path, a pid), and a row wider than its page would draw past the edge and show up as a sliver of
+the slid-out page beside the detail page. The
 detail page carries the task's rows, its command, its exit and the bounded log tail that follows
 while its bottom is in view, with the task's own actions (stop, rerun) in its bar. The card shows
 one conversation's tasks, so it says nothing about the project's other conversations: no
@@ -185,6 +195,32 @@ it, and `components/MessageView.tsx` returns nothing for it. Every other custom 
 subagent's report, an extension's own card) renders as it always did. The extension's task record
 is untouched; nothing in the registry, the logs, `mark_seen` or the dock changes.
 
+The same finished task ends a second way: by its default the extension **asks the agent for a
+follow-up turn** about the result, and pi-desk announces a finished run on the desktop, over web
+push and over ntfy (`lib/task-completion-server.ts`) with the sentence "The task lasted …, started
+…, and ended …". Said for every machine-woken turn, that is a burst of notifications for one shell
+command the user started minutes ago, from a card that already lists the task, its status, its exit
+code and its output. So the run a completion woke is announced by the card and by nothing else:
+`lib/background-tasks/completion-gate.ts` keeps, per conversation, the moment the extension's own
+frames said a task left `running` and settled, and the session asks it at `agent_start` whether the
+run is that news arriving. The rules there are the load-bearing ones:
+
+- A run this conversation asked for is announced, always. `RUN_STARTING_COMMANDS` in
+  `lib/rpc-manager.ts` stamps `localRunRequestedAt` (prompt, queue, steering, compact, fork,
+  navigation); a request at or after the settlement is the user's task, and its finish is news.
+  The status reads are **not** in that set — the chat polls `get_state` every few seconds, and a
+  poll is nobody's task, so marking it would silence the announcement the user is owed.
+- The note expires (a window of 30 s). A completion never silences a later task, and a completion
+  that woke nothing leaves nothing behind.
+- A second `agent_start` while a run is already owed is that run continuing (an auto-retry) and
+  keeps the first verdict, so a task settling mid-run cannot mute the user's own run end.
+- The bridge releases with the conversation, and the note goes with it, as the running index does.
+
+The flag is per run and restored as the run settles, so the next task is announced again. Nothing
+here touches the extension's own terminal notification: the plugin has no global switch for it
+(only `PI_BG_FEATURES` and `PI_BG_DOCK_SHORTCUT`), and the per-task `notifyOnCompletion` /
+`triggerOnCompletion` are the model's arguments, not the host's.
+
 - `PI_WEB_DISABLE_BACKGROUND_TASKS=1` keeps the extension out of every session (the panel says so).
 - `PI_WEB_BACKGROUND_TASKS_PATH=/abs/path/to/dist/extensions/background-tasks.js` loads a checkout
   instead of the installed package. A path that does not exist is reported as `not-installed`.
@@ -215,6 +251,7 @@ is present, so a checkout without the package reports a skip rather than a failu
 | `lib/background-tasks/service.test.mjs` | the per-conversation registry, partial failures, the owner answer, the frozen `stop_all` (including `allRunning`), the ranked `mark_seen`, the log window, the unavailable states |
 | `lib/background-tasks/running-index.test.mjs` | what the index keeps and drops, the edges it pushes, a released conversation's mark, an unacknowledged failure that stays |
 | `lib/background-tasks/notification.test.mjs` | the completion notice is named exactly, and only it; the chat leaves it out and keeps every other custom message |
+| `lib/background-tasks/completion-gate.test.mjs` | the baseline frame, the settlement that wakes a run, a prompt of the conversation winning, the window expiring, a frame that settles nothing, a released conversation, no news lent between conversations |
 | `app/api/background-tasks/route.test.mjs` | the HTTP gate: required ids, the four actions, the byte window, 409 with the extension's code |
 | `app/api/background-tasks/running/route.test.mjs` | the running snapshot is the index and nothing more; the stream's frames are the whole map, and an aborted request stops receiving |
-| `components/BackgroundTasksPanel.test.mjs` | the rendered chip and card: the row's pill and its states, the dialog and its names, the two pages and the back control, the CSS classes and the Agents-card height, the header wiring, the composer and sidebar running wiring, the hook's cleanup |
+| `components/BackgroundTasksPanel.test.mjs` | the rendered chip and card: the row's pill and its states (a glyph and a number, no word), the dialog and its names, the head's Stop-all icon in front of Refresh and its confirm strip, the two pages and the back control, the pages clipping to their boxes, the failed row's warning triangle, the CSS classes and the Agents-card height, the header wiring, the composer and sidebar running wiring, the notification gate, the hook's cleanup |

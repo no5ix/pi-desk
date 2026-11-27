@@ -16,6 +16,7 @@
  */
 
 import { BackgroundTaskHostClient, type EventBusLike } from "./host-client";
+import { clearBackgroundTaskCompletions, noteBackgroundTaskSettlement } from "./completion-gate";
 import { clearBackgroundTasksRunning, recordBackgroundTasksRunning } from "./running-index";
 
 export interface BackgroundTasksBridge {
@@ -80,9 +81,21 @@ export function attachBackgroundTasksBridge(
   client.onChanges((frame) => {
     if (frame.kind === "closed") {
       clearBackgroundTasksRunning(sessionId);
+      clearBackgroundTaskCompletions(sessionId);
       return;
     }
     recordBackgroundTasksRunning(sessionId, { ...frame.counts, observedAt: frame.observedAt });
+    // A task that left `running` and settled is news the extension is about to tell: its notice
+    // lands in the conversation and, by its default, it asks the agent for a turn about the
+    // result. That turn is not the user's task ending, and the app announces a finished run on
+    // the desktop, over push and over ntfy — so the session is told which run this is, and the
+    // card is left as the one place that says it (background-tasks/completion-gate.ts).
+    noteBackgroundTaskSettlement({
+      sessionId,
+      running: frame.counts.running,
+      settled: frame.counts.completed + frame.counts.failed + frame.counts.killed,
+      at: frame.observedAt,
+    });
   });
   notify();
   return bridge;
@@ -101,6 +114,7 @@ export function releaseBackgroundTasksBridge(sessionId: string): boolean {
   // A conversation the server is not holding has no running tasks: its mark goes with it, so a
   // sidebar row cannot keep wearing a spinner for a conversation that ended.
   clearBackgroundTasksRunning(sessionId);
+  clearBackgroundTaskCompletions(sessionId);
   notify();
   return true;
 }

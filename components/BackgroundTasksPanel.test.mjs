@@ -30,7 +30,6 @@ function renderButton(props) {
     return React.createElement(TopbarBackgroundTasksButton, {
       running: 0,
       unseenFailed: 0,
-      label: translate("backgroundTasks.chipLabel"),
       title: translate("backgroundTasks.title"),
       tasksOpen: false,
       onToggle() {},
@@ -76,7 +75,11 @@ test("the chip wears the extension's numbers, and nothing is worn when there is 
   // The count is always the number the extension reported for this conversation; a conversation
   // with nothing running reports zero, and the chip shows zero with no busy tint and no warning.
   assert.match(bare, /class="bg-tasks-chip-count">0</);
-  assert.match(bare, /class="bg-tasks-chip-label">Tasks</);
+  // The chip is a glyph and a number, never a sentence. Its row carries the project, the branch,
+  // the subagent counts and the clock, and the counts there wear no word of their own; the word is
+  // what runs out first at a narrow window. The card's name is in the tooltip and the label.
+  assert.ok(!bare.includes("bg-tasks-chip-label"), "the chip wears no word");
+  assert.ok(!/>Tasks</.test(bare), "no 'Tasks' text in the chip");
   assert.ok(!bare.includes("is-running"), "an idle chip is not tinted as busy");
   assert.ok(!bare.includes("has-failed"), "no unseen failure: no mark");
   assert.ok(!bare.includes("bg-tasks-chip-mark"), "no unseen failure: no glyph");
@@ -313,4 +316,67 @@ test("a finished background task leaves no card in the chat", () => {
   const view = read("./MessageView.tsx");
   assert.match(view, /isBackgroundTaskNotification/);
   assert.match(view, /if \(isBackgroundTaskNotification\(\(message as CustomMessage\)\.customType\)\) return null;/);
+});
+
+test("Stop all is the head's icon in front of Refresh, and it asks in a strip under the head", () => {
+  const source = read("./BackgroundTasksPanel.tsx");
+  const css = read("../app/native-theme.css");
+  // The head's action row is glyphs. A text button there was the widest control in a row of 13px
+  // icons and it pushed Refresh off the card at a narrow width.
+  const stopAll = source.indexOf('aria-label={translate("backgroundTasks.stopAll")}');
+  const refresh = source.indexOf("<RefreshIcon />");
+  assert.ok(stopAll > 0, "the head names its Stop all icon");
+  assert.ok(stopAll < refresh, "Stop all sits before Refresh");
+  assert.match(source, /className="bg-tasks-icon-button is-danger"/);
+  // One task, one click; running tasks, a row of them, and a word first.
+  assert.match(source, /page === "list" && runningIds\.length > 0/);
+  // The ask carries the count and the alert role: what is about to be stopped is said, in words.
+  assert.match(source, /className="bg-tasks-confirm" role="alert"/);
+  assert.match(source, /translate\("backgroundTasks\.stopAllConfirm", \{ count: runningIds\.length \}\)/);
+  assert.ok(!source.includes("bg-tasks-stop-all"), "no text Stop-all is left in the filters row");
+  for (const selector of [".bg-tasks-icon-button.is-danger", ".bg-tasks-confirm-text", ".bg-tasks-confirm-actions"]) {
+    assert.ok(css.includes(selector), `the card's sheet is missing ${selector}`);
+  }
+  assert.ok(!css.includes(".bg-tasks-stop-all"), "the sheet has no dead Stop-all text button");
+});
+
+test("the chip is a glyph and a number in every locale, and the word is gone from the catalog", () => {
+  for (const locale of ["en", "zh-CN", "zh-TW"]) {
+    const catalog = read(`../lib/i18n/messages/${locale}.ts`);
+    assert.ok(!catalog.includes('"backgroundTasks.chipLabel"'), `${locale} has no chip word to wear`);
+  }
+  const css = read("../app/native-theme.css");
+  assert.ok(!css.includes(".bg-tasks-chip-label"), "the sheet has no dead chip-word rule");
+});
+
+test("a failed task's row wears a warning triangle, and the two pages clip to their own boxes", () => {
+  const source = read("./BackgroundTasksPanel.tsx");
+  const css = read("../app/native-theme.css");
+  // A bare exclamation at 11px is a line and a dot of unknown weight. This is the one mark in the
+  // row that says "look at this one", and it is the same ⚠ the chip's mark and the header's row use.
+  const failed = /if \(status === "failed"\) \{([\s\S]*?)\n  \}/.exec(source)?.[1] ?? "";
+  assert.match(failed, /M10\.3 4\.1/, "the failed glyph is a triangle");
+  assert.ok(!/bg-tasks-status[\s\S]{0,400}<path d="M12 7v6" \/>/.test(source), "no bare exclamation mark");
+  // The two pages ride one wide track; each clips to its own box, so a row of the page that is
+  // slid out cannot appear as a sliver at the card's edge.
+  const page = /\.bg-tasks-page \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(page, /overflow: hidden/);
+  assert.match(page, /width: 50%/);
+  const track = /\.bg-tasks-track \{([^}]*)\}/.exec(css)?.[1] ?? "";
+  assert.match(track, /width: 200%/);
+});
+
+test("a finished background task is announced by the card, and by no notification channel", () => {
+  const gate = read("../lib/background-tasks/completion-gate.ts");
+  const rpc = read("../lib/rpc-manager.ts");
+  const bridges = read("../lib/background-tasks/bridges.ts");
+  // The extension's own frames say a task stopped and settled; the session is told at the start
+  // of a run, and the announcer obeys it for that run alone.
+  assert.match(bridges, /noteBackgroundTaskSettlement\(\{[\s\S]*running: frame\.counts\.running,[\s\S]*settled: frame\.counts\.completed \+ frame\.counts\.failed \+ frame\.counts\.killed,/);
+  assert.match(bridges, /clearBackgroundTaskCompletions\(sessionId\)/);
+  assert.match(rpc, /this\.agentRunAnnouncesCompletion = !runWokeByBackgroundTask\(this\.sessionId, this\.localRunRequestedAt\)/);
+  assert.match(rpc, /if \(!this\.agentRunAnnouncesCompletion\) \{/);
+  // A request of this conversation wins: the user's own task is announced, always.
+  assert.match(rpc, /if \(RUN_STARTING_COMMANDS\.has\(type\)\) this\.localRunRequestedAt = Date\.now\(\);/);
+  assert.match(gate, /export const COMPLETION_WINDOW_MS/);
 });

@@ -81,9 +81,13 @@ function statusGlyph(status: BgTaskStatus) {
     );
   }
   if (status === "failed") {
+    /* A task that failed is a warning triangle, not a bare exclamation: at 11px a vertical line
+       and a dot read as a mark of unknown weight, and this is the one glyph in the row that says
+       "look at this one". */
     return (
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
-        <path d="M12 7v6" /><path d="M12 17h.01" />
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M10.3 4.1 1.9 18.1a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 4.1a2 2 0 0 0-3.4 0Z" />
+        <path d="M12 9.5v4" /><path d="M12 17h.01" />
       </svg>
     );
   }
@@ -106,6 +110,17 @@ function RefreshIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 4v5h-5" />
+    </svg>
+  );
+}
+
+/** Stop, with the corner brackets of the set it acts on: the head's icon for Stop all. */
+function StopAllIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="8.5" y="8.5" width="7" height="7" rx="1.4" fill="currentColor" stroke="none" />
+      <path d="M4 9.5V6.4A2.4 2.4 0 0 1 6.4 4h3.1" />
+      <path d="M20 14.5v3.1a2.4 2.4 0 0 1-2.4 2.4h-3.1" />
     </svg>
   );
 }
@@ -312,6 +327,21 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
           </span>
         )}
         <span className="bg-tasks-head-actions">
+          {/* Stop all of this conversation's running tasks, as an icon in the head's action row,
+              in front of Refresh. A text button there was the widest control in a row of 13px
+              glyphs; the click asks first, in a strip under the head, because it stops every
+              command at once. Only the list page wears it: the detail page is one task. */}
+          {page === "list" && runningIds.length > 0 && (
+            <button
+              type="button"
+              className="bg-tasks-icon-button is-danger"
+              onClick={() => setConfirmStopAll(true)}
+              title={translate("backgroundTasks.stopAllHint")}
+              aria-label={translate("backgroundTasks.stopAll")}
+            >
+              <StopAllIcon />
+            </button>
+          )}
           <button
             type="button"
             className="bg-tasks-icon-button"
@@ -333,6 +363,24 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
           </button>
         </span>
       </div>
+
+      {/* The ask the head's icon raises, under the head where the eye already is: the count of
+          what is about to be stopped, said before it is stopped. */}
+      {page === "list" && confirmStopAll && runningIds.length > 0 && (
+        <div className="bg-tasks-confirm" role="alert">
+          <span className="bg-tasks-confirm-text">
+            {translate("backgroundTasks.stopAllConfirm", { count: runningIds.length })}
+          </span>
+          <span className="bg-tasks-confirm-actions">
+            <button type="button" className="bg-tasks-confirm-button is-danger" onClick={stopRunning}>
+              {translate("backgroundTasks.stopAll")}
+            </button>
+            <button type="button" className="bg-tasks-confirm-button" onClick={() => setConfirmStopAll(false)}>
+              {translate("backgroundTasks.cancel")}
+            </button>
+          </span>
+        </div>
+      )}
 
       {notice}
 
@@ -359,30 +407,6 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
                 <span className="bg-tasks-filter-count">{filterCounts[key]}</span>
               </button>
             ))}
-            {runningIds.length > 0 && (
-              <span className="bg-tasks-filters-tail">
-                {confirmStopAll ? (
-                  <span className="bg-tasks-confirm">
-                    <span>{translate("backgroundTasks.stopAllConfirm", { count: runningIds.length })}</span>
-                    <button type="button" className="bg-tasks-confirm-button is-danger" onClick={stopRunning}>
-                      {translate("backgroundTasks.stopAll")}
-                    </button>
-                    <button type="button" className="bg-tasks-confirm-button" onClick={() => setConfirmStopAll(false)}>
-                      {translate("backgroundTasks.cancel")}
-                    </button>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    className="bg-tasks-stop-all"
-                    onClick={() => setConfirmStopAll(true)}
-                    title={translate("backgroundTasks.stopAllHint")}
-                  >
-                    {translate("backgroundTasks.stopAll")}
-                  </button>
-                )}
-              </span>
-            )}
           </div>
 
           <div className="bg-tasks-list" role="list" aria-label={translate("backgroundTasks.list")}>
