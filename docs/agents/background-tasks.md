@@ -113,7 +113,12 @@ title, behind the subagent counts. It wears that row's own pill class (`.app-top
 the class the counts wear), so it is one control of the same shape and size as its neighbours,
 and the card it opens hangs under it for the same reason the Agents card hangs under the counts.
 Its head glyph breathes green while a task runs, turns warning when the newest news is a task that
-failed and is unread, and lies dim when nothing runs. It is a glyph and a number, never a word:
+failed and is unread, and lies dim when nothing runs. **The plate is the card's, not the state's:**
+the chip fills itself (`.is-open`) only while its card is up, like the row's other chips, and only
+the pointer washes it (the shared pill's hover). A chip that filled itself because work was running
+read as pressed — highlighted — before it was ever clicked, and the number is the row's own ink:
+the state lives in the head, in the number, and in the warning triangle of an unread failure.
+It is a glyph and a number, never a word:
 the row's other counts (the subagents) carry no word of their own, and a word is the first thing
 that runs out of width at a narrow window — the card's name lives in the tooltip and the accessible
 label, in every language. The numbers are the extension's own,
@@ -130,11 +135,17 @@ the hidden page is `inert`, so its controls are not in the tab order behind the 
 danger colour); clicking it asks first, in a strip under the head that names the count of what is
 about to be stopped (`role="alert"`) — it stops every running task of this conversation at once,
 and a text button in the head was the widest control in a row of 13px glyphs. **Each page is the
-box that clips** (`.bg-tasks-pages` is relative and `overflow: hidden`, each `.bg-tasks-page` is
-`inset: 0`): the list's rows carry long single-token text (a path, a pid), and the old
-one-wide-track-of-two-pages slide left the slid-out page's last pixels drawn inside the card's
-padding — overflow clips at the *padding box*, not the content box — a strip of the list beside the
-detail page. The
+box that clips** (`.bg-tasks-pages` is relative and `overflow: hidden`), and **the list page is the
+box's content** (`position: relative`, in flow) while the detail page covers it (`inset: 0`): the
+card's height is the task list's height, floored at 224px and capped by the shell's box, and the
+list page keeps that height for the way back. Two absolutely positioned pages left the box with
+nothing in flow, and a box with nothing in flow has no height: the card opened as a 500px strip of
+menu surface about 18px tall, with its head, filters, rows and log all invisible — the empty
+rectangle the user reported. The old
+one-wide-track-of-two-pages slide is the other half of the history: the list's rows carry long
+single-token text (a path, a pid), and that slide left the slid-out page's last pixels drawn inside
+the card's padding — overflow clips at the *padding box*, not the content box — a strip of the list
+beside the detail page. The
 detail page carries the task's rows, its command, its exit and the bounded log tail that follows
 while its bottom is in view, with the task's own actions (stop, rerun) in its bar. The card shows
 one conversation's tasks, so it says nothing about the project's other conversations: no
@@ -143,12 +154,24 @@ conversation list, no "Started in" row.
 Geometry is shared with the Agents card, exactly: `AppShell`'s `activeTopPanel` mechanism
 (`"tasks"`) places it with `placeAgentsPanel(...)` at `BACKGROUND_TASKS_PANEL_WIDTH`
 (`lib/top-panel-placement.ts`), and the shell hands the wrapper's limit down as
-`--top-panel-max-height` so the card is **as tall as the Agents card's box**; its list, its detail
+`--top-panel-max-height` so the card is **as tall as the Agents card's box**: the card fills that
+box up to its cap, and is floored at its own 224px so a conversation with no tasks is a box that
+says so, never a strip; its list, its detail
 page and its log scroll in their own layers. It is a header card, not a side panel, and closes
 with the shared Escape / outside-click rules. Its surface is `.app-menu`; every rule is in
 `app/native-theme.css` under `.bg-tasks-*`. The name the extension gives a task (built from the
 prompt that started it, and sometimes a paragraph long) is one clipped line in the row and in the
 detail head; the bar's title is the section's word, never the wall of text.
+
+Both reports about this card are geometry, and `e2e/background-tasks-card.mjs` measures them in a
+browser with the app's real CSS, the real chip, the real card, the shell's own placement and the
+panel's own client (the harness serves `/api/background-tasks*`): a closed chip has no wash at all
+with two tasks running and a failure unread; an open one wears the plate; the card is a box with
+its head, its filters and real rows inside it, capped to the viewport and floored at the monitor's
+height; a task's page keeps that box with its rows and log tail inside; the same box is centred
+under the header on a phone and stays on the screen; and with the two rules that caused the empty
+rectangle put back (the floor at zero, both pages absolute), the measurement sees the collapse to
+an 18px strip — so the assertions are not blind.
 
 `hooks/useBackgroundTasks.ts` is the client: a snapshot on open, the change stream
 (`/api/background-tasks/events`) while open, a slow poll as the safety net, a running task's log
@@ -286,4 +309,5 @@ is present, so a checkout without the package reports a skip rather than a failu
 | `lib/task-completion-server.test.mjs` | the announcer: every channel of one finished run, nothing for an aborted, failed, stale or unnameable run, **nothing while the conversation's background tasks run and the settlement as the announced end**, the kept notice dropped with a released conversation, one notice per window only where background work is producing the runs, every finished task of a plain session still announced |
 | `app/api/background-tasks/route.test.mjs` | the HTTP gate: required ids, the four actions, the byte window, 409 with the extension's code |
 | `app/api/background-tasks/running/route.test.mjs` | the running snapshot is the index and nothing more; the stream's frames are the whole map, and an aborted request stops receiving |
-| `components/BackgroundTasksPanel.test.mjs` | the rendered chip and card: the row's pill and its states (a glyph and a number, no word), the dialog and its names, the head's Stop-all icon in front of Refresh and its confirm strip, the two pages and the back control, the pages clipping to their boxes, the failed row's warning triangle, the CSS classes and the Agents-card height, the header wiring, the composer and sidebar running wiring, the notification gate, the hook's cleanup |
+| `components/BackgroundTasksPanel.test.mjs` | the rendered chip and card: the row's pill and its states (a glyph and a number, no word; a plate only while the card is open, and no accent wash for running work), the dialog and its names, the head's Stop-all icon in front of Refresh and its confirm strip, the two pages and the back control, the pages clipping to their boxes (the list page in flow, the detail page covering), the floor the card keeps, the failed row's warning triangle, the CSS classes and the Agents-card height, the header wiring, the composer and sidebar running wiring, the notification gate, the hook's cleanup |
+| `e2e/background-tasks-card.mjs` | the chip and the card measured in a browser, in dark: no plate on a closed chip, the plate on the open one; the card a box (floor, viewport cap, the shell's width) with its head, filters, rows, detail rows and log tail inside; a task's page at the same height with the back control in the corner; the box centred on a phone; the empty conversation a box that says so; and the old rules put back, collapsing to a strip |

@@ -288,6 +288,29 @@ test("the card is as tall as the Agents card's box, and the task title is one cl
   assert.match(css, /\.bg-tasks-detail-title \{[^}]*text-overflow: ellipsis/);
 });
 
+test("the chip's plate is the card's, and the card's box is built by the page in flow", () => {
+  const css = read("../app/native-theme.css");
+  // Comments are prose about the bug, so the rules are read with them stripped.
+  const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  // The pill: a plate only while its card is open (and the shared pill's hover). A running task
+  // is said by the head, and a chip that filled itself read as highlighted before the click.
+  assert.match(rules, /\.bg-tasks-chip\.is-open \{[^}]*background: var\(--bg-selected\);/);
+  assert.ok(!/\.bg-tasks-chip\.is-running[^{]*\{[^}]*background/.test(rules),
+    "a running task paints no plate on the chip");
+  assert.ok(!/\.bg-tasks-chip\.is-running[^{]*\{[^}]*color: var\(--accent\)/.test(rules),
+    "a running task paints no accent ink on the chip");
+  assert.match(rules, /\.bg-tasks-chip-mark \{[^}]*color: var\(--warning\);/, "the unread failure is warning ink");
+  // The box: the list page is the only page in flow, so the card's height is the task list's, and
+  // the floor is the card's own. Both pages out of flow and the floor at zero left an empty
+  // rectangle — a 500px strip of menu surface.
+  assert.match(rules, /\.bg-tasks-page\.is-list \{[^}]*position: relative;[^}]*flex: 1 1 auto;/);
+  assert.match(rules, /\.bg-tasks-pages \{[^}]*position: relative;/);
+  assert.match(rules, /\.bg-tasks-panel \{[^}]*min-height: 224px;/, "the card keeps a floor");
+  assert.ok(!/\.bg-tasks-panel \{[^}]*min-height: 0[;}]/.test(rules), "no rule cancels the floor");
+  // The detail page stays out of flow, so the list page keeps the height for the way back.
+  assert.match(rules, /\.bg-tasks-page \{[^}]*position: absolute;[^}]*inset: 0;/);
+});
+
 test("the extension's running counts drive the composer's disc and the sidebar's row", () => {
   const shell = read("./AppShell.tsx");
   const chatInput = read("./ChatInput.tsx");

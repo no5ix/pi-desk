@@ -1163,3 +1163,83 @@ allowed), `docs/agents/sessions.md` (the Fork bullet).
   (`app/css-variables`, `scripts/upstream-css-baseline`, `SessionSidebar` pinned S2,
   `AgentsConfig`, two `ChatInput`, `MobilePwaLayout`), the same seven a clean `HEAD`
   worktree fails. None is this change.
+
+# PROGRESS — the task chip stops wearing a plate it was never clicked, and the task card stops being an empty rectangle
+
+Branch `feat/background-tasks-header-popover`. The report (one screenshot of the
+title row): (1) the Background Tasks chip was highlighted without being clicked;
+(2) clicking it opened an empty rounded rectangle — a 500px strip of menu surface
+with nothing in it.
+
+**Implemented. `e2e/background-tasks-card.mjs` 29 checks pass; targeted unit set
+111 pass / 0 fail (`lib/background-tasks/*`, `app/api/background-tasks/*`,
+`components/BackgroundTasksPanel.test.mjs`, `scripts/ui-menu-consistency`,
+`app/css-variables`); `e2e/agents-panel-card.mjs` and `e2e/panel-hover-wash.mjs`
+pass; `eslint` clean on the touched files; `tsc --noEmit` reports only the three
+stale `.next-desktop/types/**/composer-draft` errors left by an old desktop build
+of a route this tree deleted.**
+
+## The two causes
+
+**The chip's plate.** `.bg-tasks-chip.is-running` filled the pill with
+`color-mix(--accent 12%)` and painted the number in `--accent`, so a conversation
+with a task running looked pressed before anything was touched (the report's
+orange chip). The plate is the open state's: `.is-open` alone fills the pill, and
+the pointer washes it, exactly as the row's subagent chip does. The state stays in
+the head — green breathing glyph, warning glyph and warning triangle for an unread
+failure, dim when idle — and the number is the row's own ink. `.is-running` and
+`.is-running:hover` are gone.
+
+**The card's box.** `.bg-tasks-page` is `position: absolute; inset: 0` (that is
+the rule that stopped the slid-out page's long row text drawing inside the card's
+padding), so `.bg-tasks-pages` has nothing in flow. The rule added with the
+flex-column wrapper (`.top-panel-card:has(> .bg-tasks-panel)`) also set
+`min-height: 0`, cancelling the card's own 224px floor. A box with nothing in flow
+in a wrapper whose height is content-driven has no height: the surface painted a
+500px strip about 18px tall. Fixed by making the **list page the box's content**
+(`.bg-tasks-page.is-list { position: relative; flex: 1 1 auto; }`) while the detail
+page keeps covering the box (`inset: 0`), and by taking the `min-height: 0` back,
+so the card's height is the task list's height, floored at 224px and capped by the
+shell's `--top-panel-max-height`. The clip rule is untouched: the pages box is
+still `position: relative` + `overflow: hidden`, and the detail page is still the
+absolute one, so the list page keeps its place — and its height — for the way back.
+
+**Bonus, in scope.** `.bg-tasks-chip-mark` read `var(--font-sm)`, a token that has
+never existed in the fork's scale (the tree's `app/css-variables.test.mjs` failed
+on it at HEAD); it is `var(--fs-micro)`, the badge tier, and that test passes now.
+
+## Files
+
+- `app/native-theme.css` — the chip's plate rules, the list page in flow, the
+  floor, the mark's token (all in the `.bg-tasks-*` block and its chip block).
+- `components/BackgroundTasksPanel.test.mjs` — new test
+  "the chip's plate is the card's, and the card's box is built by the page in
+  flow": no `background`/accent ink on `.is-running`, plate on `.is-open`, warning
+  mark, `.bg-tasks-page.is-list` relative + flex, the 224px floor, no rule that
+  cancels it, the base page still `absolute; inset: 0`. Rules are read with CSS
+  comments stripped, because the comments name the bug.
+- `e2e/background-tasks-card.mjs` + `.fixture.jsx` — the real chip, the real card,
+  the app's real CSS, `placeAgentsPanel(..., BACKGROUND_TASKS_PANEL_WIDTH)` and the
+  panel's own client (the harness serves `/api/background-tasks*`: snapshot,
+  detail, logs, the SSE hello; `?session=session-idle` answers an empty
+  conversation). Measures in dark: no plate on a closed chip (with 2 running and 1
+  unseen failure), plate on the open one, the card a box (floor, viewport cap, the
+  shell's 500px width) with head, filters and real rows inside, a task's page at
+  the same height with rows, log tail and the back control in the corner, the box
+  centred under the header on a phone, the empty conversation a box that says so,
+  closing takes the plate and the card away. Then it puts the two causing rules
+  back and expects the box to collapse to an 18px strip — the assertion is not
+  blind. Screenshots: `test-results/background-tasks-card/*.png`.
+- `package.json` — `node e2e/background-tasks-card.mjs` in `test:e2e`, after the
+  Agents card.
+- `docs/agents/background-tasks.md` — the chip's plate rule, the pages' geometry
+  (the list page in flow, the detail page covering, the floor), and the measured
+  rows in the test table.
+
+## Notes for the next session
+
+- `scripts/upstream-css-baseline.test.mjs` still fails in this worktree (the
+  globals/settings hashes are not re-baselined after the last upstream merge). Not
+  this change; `node scripts/upstream-css-baseline.mjs update <upstream-ref>` is
+  the documented repair, and it belongs to a merge, not to a CSS fix.
+- `e2e/tmp-pop-check.mjs` is an untracked scratch file that lint warns about.

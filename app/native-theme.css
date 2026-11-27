@@ -15164,7 +15164,11 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 }
 .bg-tasks-panel {
   flex: 1 1 auto;
-  min-height: 0;
+  /* Not `min-height: 0`: the shell's box is a ceiling, not a height, and the card's height is
+     its own content (the list page, in flow below). A floor of zero and pages out of flow leave
+     a box with nothing in it, and the menu's surface painted a 500px strip 18px tall — the empty
+     rectangle the user reported. The floor above is what keeps the filter row and a few rows on
+     the page; it is the card's own, not the shell's. */
 }
 
 /* Two pages, stacked in one box that clips: the list, and the task's detail. A row opens the
@@ -15186,6 +15190,16 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 
 .bg-tasks-pages[data-page="list"] .bg-tasks-page.is-detail {
   transform: translateX(100%);
+}
+
+/* The list page is the box's content: it is the only page in flow, so the card's height is the
+   task list's height, capped by the shell's box and floored at the monitor's own. With both pages
+   out of flow the box has nothing in it and the card has no height at all — the surface painted a
+   strip. The detail page stays out of flow and covers the box, so the list keeps its place, and
+   its height, for the way back. */
+.bg-tasks-page.is-list {
+  position: relative;
+  flex: 1 1 auto;
 }
 
 .bg-tasks-pages[data-page="detail"] .bg-tasks-page.is-list {
@@ -15869,10 +15883,16 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   }
 }
 
-/* The chip is a title-row pill: the subagents chip's shape, its plate while work runs, and its
-   breathing head while a task runs (the app's one running-head motion, shared with
+/* The chip is a title-row pill: the subagents chip's shape, and its states in the head — which
+   breathes green while a task runs, turns warning when the newest news is a task that failed, and
+   lies dim when nothing runs and all is seen (the app's one running-head motion, shared with
    components/AgentRunningIcon.tsx). Green is "working", warning is "the newest news is a task
-   that failed", dim is "nothing is running and all is seen". */
+   that failed", dim is "nothing is running and all is seen".
+
+   The plate is the card's, not the state's: only the open chip fills itself (`.is-open`), as the
+   row's other chips do while their card is up, and only the pointer washes it (the shared pill's
+   hover). A chip that filled itself because work was running read as pressed, and the user read a
+   highlight they had never asked for. */
 .bg-tasks-chip {
   justify-content: center;
 }
@@ -15880,13 +15900,6 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   /* The card is open: the chip reads as the surface it owns, as the row's other chips do. */
   background: var(--bg-selected);
   color: var(--text);
-}
-.bg-tasks-chip.is-running {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
-}
-.bg-tasks-chip.is-running:hover {
-  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .bg-tasks-chip .bg-tasks-head-mark {
   flex-shrink: 0;
@@ -15902,8 +15915,10 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   animation: subagents-breathe 2s ease-in-out infinite;
 }
 .bg-tasks-chip-mark {
-  font-size: var(--font-sm);
+  font-size: var(--fs-micro);
   line-height: 1;
+  /* The unread failure is its own warning, whatever the head is doing. */
+  color: var(--warning);
 }
 .bg-tasks-chip-count {
   font-weight: 600;
