@@ -1,4 +1,52 @@
-# PLAN — memory release for the pi-desk server and page
+# PLAN — search prompts, one session mention, attachments across a reload
+
+Branch `fix/new-session-attachments-prompt-search-session-mention`, from
+`test-merge/test-merge-pi-desk-main` (`742ae86e`).
+
+The ask, in the user's words (with screenshots):
+
+1. On a new session page, refreshing the page makes the attachment disappear; it
+   should survive the reload.
+2. The sidebar's `Search titles…` box becomes `Search titles/prompts…`, and typing
+   finds a session by its title **or by a prompt inside any session**.
+3. A session row's "Insert into chat" inserts a title that is not the one the
+   composer's own `#` autocomplete inserts; the menu must insert the same text.
+
+## Phases
+
+1. **One mention label** — `sessionMentionTitle` (`lib/session-reference.ts`) is the rule
+   the composer's `#` palette already used: name, else the first prompt in full
+   (newlines → spaces, `"` → `'`), else the id. The palette calls it; the row menu
+   inserts through `ChatInput.insertSessionMention`, which registers the label → id
+   target so the send path expands it. Done.
+2. **The search box** — label in three locales; a query the tree cannot answer settles
+   into `scope=prompts` (`lib/session-prompt-search.ts` on `cachedSessionPrompts`,
+   `GET /api/sessions/search?scope=prompts`, `SessionSearch scope`); Enter keeps the
+   transcript scan; Escape returns to the tree. Done.
+3. **Attachments across a reload** — `lib/draft-attachment-store.ts` (IndexedDB,
+   caps, eviction, write-skip by signature) wired into `lib/draft-store.ts`
+   (`setDraft`/`clearDraft`/`clearSentDraft`/`clearStoredDrafts`,
+   `loadStoredDraftAttachments`) and into the composer's mount effect. Done.
+4. **Guards and docs** — unit tests for the byte store, the reload, the label rule and
+   the sidebar pins; `e2e/search-draft-insert.mjs` for the three behaviours;
+   `docs/agents/fork-ui.md`, `AGENTS.md` (file map, `SessionSearch` is mounted UI).
+   Done.
+
+## Guard rails (do not cross)
+
+- localStorage stays **text only**; nothing about the byte store may make the prompt's
+  survival depend on IndexedDB.
+- An attachment list is never applied over a composer that already has attachments
+  (the same rule that killed the composer-copy mirror: a late write must not repaint
+  what the user is doing).
+- A send, a cleared box and a sign-out remove the durable record; a composer that
+  merely unmounted leaves the project's parked draft alone.
+- The mention insert sends nothing: the prompt stays the user's.
+- No per-keystroke transcript scan; no per-keystroke screenshot write.
+
+---
+
+# PLAN (carried) — memory release for the pi-desk server and page
 
 Branch `fix/memory-release`, from `pi-desk-main` (`38d99e1a`).
 

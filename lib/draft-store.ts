@@ -4,6 +4,13 @@ import {
 } from "./image-attachments";
 import { CHAT_ATTACHMENT_MAX_FILES, splitMessageForComposer } from "./chat-attachments";
 import { getBrowserStorage } from "./browser-storage";
+import {
+  clearDraftAttachments,
+  loadDraftAttachments,
+  removeDraftAttachments,
+  saveDraftAttachments,
+  type DraftAttachments,
+} from "./draft-attachment-store";
 
 export interface ChatDraftImage {
   data: string;
@@ -22,9 +29,9 @@ export interface ChatDraft {
   value: string;
   images: ChatDraftImage[];
   /**
-   * Attached text files. Kept for the life of the page only, like the images: a
-   * file can be 256 KB, which would not fit the localStorage budget the drafts
-   * share, so they never reach storage.
+   * Attached text files. Never in localStorage — a file can be 256 KB, which the budget the
+   * drafts share cannot hold. Within the byte store's caps they are kept there with the images,
+   * so a reload brings them back (lib/draft-attachment-store.ts).
    */
   files?: ChatDraftFile[];
 }
@@ -42,7 +49,9 @@ export function parkedNewSessionDraftKey(cwd: string): string {
 
 // A session's draft text outlives a reload (#1718). Memory stays the source of
 // truth while the page lives; localStorage is a write-through copy, read once
-// per key the first time this page asks for that key. Images are never stored.
+// per key the first time this page asks for that key. Attachments are never in
+// that copy — a pasted screenshot is not a few kilobytes — they go to the byte
+// store and are read back on request (loadStoredDraftAttachments).
 // One storage key per draft, so a write rewrites only the draft that changed.
 const STORAGE_PREFIX = "pi-web:draft:";
 /** Stored drafts kept, the most recently written first. */
@@ -116,6 +125,142 @@ export function registerDraftMirror(key: string, mirrorKey: string): () => void 
 function mirrorKeyFor(key: string): string | null {
   const mirror = draftMirrors.get(key);
   return mirror && mirror !== key ? mirror : null;
+}
+
+/**
+ * The parked key a fresh composer's key belongs to. `new:<draftId>:<cwd>` names the draft of one
+ * composer, and a page owns a new id each time it opens, so the durable copy is the project's
+ * parked draft.
+ *
+ * The cwd is matched by suffix against the parked keys this page knows — the drafts it holds and
+ * the mirrors the shell registered — because a draft id is not always one colon-free segment (a
+ * restored composer's id carries a cwd), and a Windows cwd carries a colon of its own. Splitting
+ * the key on a colon gets both cases wrong; matching a known parked key's cwd cannot.
+ */
+function parkedKeyForFreshComposerKey(key: string): string | null {
+  if (!key.startsWith(NEW_SESSION_PREFIX)) return null;
+  let best: string | null = null;
+  for (const candidate of knownParkedKeys()) {
+    const cwd = candidate.slice(PARKED_NEW_SESSION_PREFIX.length);
+    if (!cwd) continue;
+    if (key.endsWith(`:${cwd}`) && (best === null || candidate.length > best.length)) best = candidate;
+  }
+  return best;
+}
+
+function knownParkedKeys(): Iterable<string> {
+  const keys = new Set<string>();
+  for (const key of drafts.keys()) if (key.startsWith(PARKED_NEW_SESSION_PREFIX)) keys.add(key);
+  for (const key of seededKeys) if (key.startsWith(PARKED_NEW_SESSION_PREFIX)) keys.add(key);
+  for (const mirror of draftMirrors.values()) {
+    if (mirror.startsWith(PARKED_NEW_SESSION_PREFIX)) keys.add(mirror);
+  }
+  const storage = getBrowserStorage();
+  if (storage) {
+    for (let index = 0; index < storage.length; index += 1) {
+      const stored = storage.key(index);
+      const key = stored?.slice(STORAGE_PREFIX.length) ?? "";
+      if (key.startsWith(PARKED_NEW_SESSION_PREFIX)) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+/**
+ * Where a key's attachments are kept on disk: its durable key. A fresh composer (`new:<id>:<cwd>`)
+ * has none of its own, so its screenshots belong to the project's parked draft it mirrors — the
+ * mirror is registered by the app shell, whose effect runs after this component's, so the parked
+ * key is also derived from the composer's own key. A session's composer has no mirror and keeps
+ * its own. A key with none of these is page-only, and so are its attachments.
+ */
+function durableAttachmentsKey(key: string): string | null {
+  const mirror = mirrorKeyFor(key);
+  if (mirror) return mirror;
+  return isStoredDraftKey(key) ? key : null;
+}
+
+/**
+ * The same key for a read, which may not know the mirror yet.
+ *
+ * The composer asks for its attachments as it mounts, and the shell registers the parked key in
+ * an effect of its own that can land a bit later. A read that misses the mirror finds the
+ * project's parked record by the composer key's own shape. A write may take that shape only once
+ * this page has the record in hand (see ownedDurableKeys): a stale composer key must not delete,
+ * and must not write over, the record its successor owns.
+ */
+function durableAttachmentsKeyForRead(key: string): string | null {
+  const durable = durableAttachmentsKey(key);
+  if (durable) return durable;
+  return parkedKeyForFreshComposerKey(key);
+}
+
+/** The durable key for a write or a removal: the mirror, the key's own record, or a parked record this page has opened. */
+function durableAttachmentsKeyForWrite(key: string): string | null {
+  const durable = durableAttachmentsKey(key);
+  if (durable) return durable;
+  const parked = parkedKeyForFreshComposerKey(key);
+  return parked && ownedDurableKeys.has(parked) ? parked : null;
+}
+
+/**
+ * The attachments a reload brings back. The draft's text is in localStorage and comes with the
+ * first read; the bytes are in IndexedDB and arrive a moment later, so the composer asks for
+ * them and takes them only while its own attachments are still empty — a screenshot pasted while
+ * the store was opening is the user's, not something to overwrite.
+ */
+export async function loadStoredDraftAttachments(key: string): Promise<ChatDraft | null> {
+  const durable = durableAttachmentsKeyForRead(key);
+  if (!durable) return null;
+  const stored = await loadDraftAttachments(durable);
+  if (!stored || (stored.images.length === 0 && stored.files.length === 0)) return null;
+  // The page has the bytes in hand now: from here it may throw them away, and only from here.
+  ownedDurableKeys.add(durable);
+  const current = drafts.get(key) ?? readStoredDraft(key) ?? { value: "", images: [] };
+  if (current.images.length > 0 || (current.files?.length ?? 0) > 0) {
+    // The composer has attachments of its own — a paste that landed while the store was opening,
+    // or the answer of an earlier ask (a dev double mount). They win, and the caller gets the
+    // draft it already holds rather than nothing, so a second ask cannot read as "nothing to
+    // restore" and leave the pictures off the box.
+    const owner = durable === key ? current : getDraft(durable);
+    return cloneDraft({ ...current, value: current.value || owner?.value || "" });
+  }
+  // The durable key owns the prompt too (a fresh composer's parked draft). A composer that has no
+  // text of its own takes it with the attachments: the bytes and the words they belong to are one
+  // draft, and a page that rekeys the parked draft to its own composer key gets the text from
+  // there, so this is the fallback for a page that asks for the bytes first.
+  const durableDraft = durable === key ? current : getDraft(durable);
+  const merged: ChatDraft = {
+    value: current.value || durableDraft?.value || "",
+    images: stored.images,
+    ...(stored.files.length ? { files: stored.files } : {}),
+  };
+  drafts.set(key, cloneDraft(merged));
+  return cloneDraft(merged);
+}
+
+/**
+ * The durable attachment keys this page has written bytes to, or opened bytes from. Only such a
+ * page may delete a record; see dropDurableRecord.
+ */
+const ownedDurableKeys = new Set<string>();
+
+function persistDraftAttachments(
+  key: string,
+  draft: ChatDraft,
+  options: DraftWriteOptions = {},
+): void {
+  const durable = durableAttachmentsKeyForWrite(key);
+  if (!durable) return;
+  const attachments: DraftAttachments = { images: draft.images, files: draft.files ?? [] };
+  if (attachments.images.length === 0 && attachments.files.length === 0) {
+    // A draft of text only writes no bytes: the composer's keystrokes are text, and a text-only
+    // draft of a page that has not opened the record says nothing about it.
+    if (options.keepDurableAttachmentsWhenEmpty) return;
+    dropDurableRecord(durable);
+    return;
+  }
+  ownedDurableKeys.add(durable);
+  void saveDraftAttachments(durable, attachments);
 }
 
 /** The mirror write, with the guard that matters: a durable key never mirrors anything. */
@@ -261,6 +406,7 @@ export function holdStoredDraft(key: string): () => void {
 /** Removes every stored draft (signing out); drafts in this page's memory stay. */
 export function clearStoredDrafts(): void {
   pendingStores.clear();
+  void clearDraftAttachments();
   const storage = getBrowserStorage();
   if (!storage) return;
   try {
@@ -288,11 +434,20 @@ export function getDraft(key: string): ChatDraft | null {
   return draft ? cloneDraft(draft) : null;
 }
 
-export function setDraft(key: string, draft: ChatDraft): void {
+/**
+ * A draft write's options. Only a page moving a draft between two of its own keys asks for this:
+ * a parked draft's bytes live under the durable key the composer inherits, and the page doing the
+ * move has not read them (that read is async), so its text-only draft must not answer for them.
+ */
+export interface DraftWriteOptions {
+  keepDurableAttachmentsWhenEmpty?: boolean;
+}
+
+export function setDraft(key: string, draft: ChatDraft, options: DraftWriteOptions = {}): void {
   if (isEmptyDraft(draft)) {
-    // Deleting the last character is the user clearing the box: the durable copy goes with it,
-    // so a reload never offers back a prompt that was typed away.
-    clearDraftWithMirror(key);
+    // Deleting the last character is the user clearing the box: the durable copy goes with it, so
+    // a reload never offers back a prompt that was typed away.
+    clearDraftWithMirror(key, { keepDurableAttachments: options.keepDurableAttachmentsWhenEmpty });
     return;
   }
   seededKeys.add(key);
@@ -302,12 +457,37 @@ export function setDraft(key: string, draft: ChatDraft): void {
   else if (previous?.value !== draft.value) scheduleStoredDraft(key);
   const mirror = mirrorKeyFor(key);
   if (mirror) writeMirroredDraft(mirror, draft);
+  persistDraftAttachments(key, draft, options);
 }
 
-export function clearDraft(key: string): void {
+interface ClearOptions {
+  /** A send: the prompt and its pictures are gone, and the page clearing has them in hand. */
+  sent?: boolean;
+  /** A draft that is only moving between keys of one page: it says nothing about the bytes. */
+  keepDurableAttachments?: boolean;
+}
+
+export function clearDraft(key: string, options: ClearOptions = {}): void {
   seededKeys.add(key);
   drafts.delete(key);
   removeStoredDraft(key);
+  dropDurableRecord(durableAttachmentsKeyForWrite(key), options);
+}
+
+/**
+ * A durable record leaves with a key, for one of three reasons.
+ *
+ * A send says the prompt and its pictures are gone. The user taking a picture out, or clearing the
+ * box, says it through ownership: the page that wrote the bytes, or opened them into its composer,
+ * is the page allowed to delete them. A page that is only moving a draft between two of its keys —
+ * a reload's restore, the handover from the project's parked draft — has not read them and says
+ * nothing: a delete from one of those writes is the screenshot lost on refresh.
+ */
+function dropDurableRecord(durable: string | null, mode: ClearOptions = {}): void {
+  if (!durable || mode.keepDurableAttachments) return;
+  if (!mode.sent && !ownedDurableKeys.delete(durable)) return;
+  ownedDurableKeys.delete(durable);
+  void removeDraftAttachments(durable);
 }
 
 /**
@@ -317,15 +497,19 @@ export function clearDraft(key: string): void {
  * project's parked prompt alone, which is the whole point of parking it.
  */
 export function clearSentDraft(key: string): void {
-  clearDraftWithMirror(key);
+  clearDraftWithMirror(key, { sent: true });
 }
 
-function clearDraftWithMirror(key: string): void {
-  clearDraft(key);
+function clearDraftWithMirror(key: string, mode: ClearOptions = {}): void {
+  clearDraft(key, { ...mode, keepDurableAttachments: true });
+  dropDurableRecord(durableAttachmentsKeyForWrite(key), mode);
   const mirror = mirrorKeyFor(key);
   if (!mirror) return;
   drafts.delete(mirror);
   removeStoredDraft(mirror);
+  // The project's parked copy of a New Session draft holds the composer's pictures, and the
+  // composer's key no longer points at it once the mirror is released, so this is where they go.
+  dropDurableRecord(mirror, mode);
 }
 
 export function mergeRestoredSubmissionText(submitted: string, current: string): string {
@@ -391,12 +575,48 @@ export function rekeyDraft(
     ? cloneDraft(currentDraft)
     : (storedPrevious ?? (currentDraft ? cloneDraft(currentDraft) : null));
   const next = getDraft(nextKey);
-  clearDraft(previousKey);
+  // Moving a draft never throws its attachments away: the bytes live under the durable key that
+  // both of these keys share, and the page that rekeys has not read them yet.
+  clearDraft(previousKey, { keepDurableAttachments: true });
   if (!previous) return next;
 
-  const merged = next
-    ? mergeRestoredSubmissionDraft(next.value, next.images, previous.value, previous.images)
-    : previous;
-  setDraft(nextKey, merged);
+  const merged = next ? mergeRekeyedDraft(next, previous) : previous;
+  setDraft(nextKey, merged, { keepDurableAttachmentsWhenEmpty: true });
   return cloneDraft(merged);
+}
+
+/**
+ * Two keys of one composer, merged.
+ *
+ * A reload moves the project's parked draft onto the composer's own key, and the composer has
+ * usually been seeded from that same draft — so both keys carry the same prompt and the same
+ * screenshot. Joining them as a submission merge repeats the words and shows the picture twice.
+ * Only text that genuinely differs (two composers, one project) is worth joining.
+ */
+function mergeRekeyedDraft(next: ChatDraft, previous: ChatDraft): ChatDraft {
+  const oneText =
+    !next.value.trim() || !previous.value.trim() || next.value.trim() === previous.value.trim();
+  const value = oneText
+    ? (previous.value.trim() ? previous.value : next.value)
+    : `${previous.value}\n\n${next.value}`;
+  const files = [...(previous.files ?? []), ...(next.files ?? [])]
+    .filter((file, index, all) => all.findIndex((other) => other.id === file.id) === index)
+    .slice(0, CHAT_ATTACHMENT_MAX_FILES)
+    .map((file) => ({ ...file }));
+  return {
+    value,
+    images: dedupeDraftImages([...previous.images, ...next.images]),
+    ...(files.length > 0 ? { files } : {}),
+  };
+}
+
+/** The same picture by data, once. A 400 KB base64 string is a heavy Set key, so a fingerprint is. */
+function dedupeDraftImages(images: ChatDraftImage[]): ChatDraftImage[] {
+  const seen = new Set<string>();
+  return images.filter((image) => {
+    const fingerprint = `${image.mimeType}:${image.data.length}:${image.data.slice(0, 64)}`;
+    if (seen.has(fingerprint)) return false;
+    seen.add(fingerprint);
+    return true;
+  });
 }

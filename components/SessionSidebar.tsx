@@ -162,6 +162,11 @@ const FILE_MANAGER_ERROR_KEYS: Record<string, string> = {
 const SESSION_DETAILS_HYDRATION_DELAY_MS = 750;
 // How long the running stream leaves an unknown list version to the first summary (a cold disk).
 const INITIAL_SUMMARY_WAIT_MS = 15_000;
+// Typing in the search box settles into a search of every session's text (SessionSearch,
+// lib/session-search.ts): the beat the tree is given to answer on its own first, and the shortest
+// query worth that scan. One character would trade a tree of matching rows for 30 arbitrary ones.
+const AUTO_CONTENT_SEARCH_DELAY_MS = 500;
+const AUTO_CONTENT_SEARCH_MIN_CHARS = 2;
 
 function loadUnreadSessionIds(): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -380,9 +385,15 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const windowDrag = useWindowDrag();
   const [sessionQuery, setSessionQuery] = useState("");
   // Content search (server-side, across every session) vs. the default title
-  // filter over the loaded project tree. Enter engages it; clearing the box
-  // (Escape or the clear button) drops back to the title filter.
+  // filter over the loaded project tree. Typing engages it once the query settles —
+  // the tree can only see a session's title and its first prompt, while a prompt
+  // typed in the box is meant to find the session that said it three turns ago.
+  // Enter engages it at once; clearing the box (Escape or the clear button) drops
+  // back to the title filter.
   const [contentSearch, setContentSearch] = useState(false);
+  // Which question the open list answers: the prompts the user asked (`prompts`, cheap: the
+  // calendar's cached reader), or every message of every session (`text`, what Enter asks).
+  const [contentScope, setContentScope] = useState<"text" | "prompts">("text");
   // Worktree switcher state
   const [worktreeState, setWorktreeState] = useState<WorktreeState | null>(null);
   const lastNotifiedProjectRef = useRef<{
@@ -1377,6 +1388,27 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const treeSessions = allSessions.filter((session) => session.relation?.kind !== "scheduled");
   const trimmedSessionQuery = normalizeSessionQuery(sessionQuery);
   const filteredSessions = filterSessionsByQuery(treeSessions, sessionQuery);
+  // The tree answers a title and a first prompt instantly. A phrase from the middle of a session
+  // is invisible to it, so a query that leaves the tree with no rows settles into the prompt
+  // search (`scope=prompts`, the calendar's cached prompt reader): the box's label promises
+  // prompts, and this is the half of that promise the tree cannot keep. Enter skips the wait and
+  // asks the heavier question — every message of every session — and Escape comes back here.
+  // `filteredSessions.length`, not the array: agent activity rebuilds the list every few seconds
+  // and a timer reset by each of those refreshes would never fire.
+  useEffect(() => {
+    if (normalizeSessionQuery(sessionQuery).length < AUTO_CONTENT_SEARCH_MIN_CHARS) return;
+    // The tree answers this query again, so the tree comes back: a results list the user has
+    // out-typed is worse than no results list.
+    if (filteredSessions.length > 0) {
+      setContentSearch(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setContentScope("prompts");
+      setContentSearch(true);
+    }, AUTO_CONTENT_SEARCH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [sessionQuery, filteredSessions.length]);
   const chatSessions = filteredSessions
     .filter((session) => session.workspaceKind === "chat" || isChatCwd(session.cwd))
     .sort((a, b) => b.modified.localeCompare(a.modified));
@@ -2022,6 +2054,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               // Committing an IME candidate must not fire the search.
               if (isImeComposing(e) || !sessionQuery.trim()) return;
               e.preventDefault();
+              setContentScope("text");
               setContentSearch(true);
               return;
             }
@@ -2060,6 +2093,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       <SessionSearch
         open={contentSearch}
         query={sessionQuery}
+        scope={contentScope}
         selectedSessionId={selectedSessionId}
         onSelectSession={handleSelectSessionFromList}
       >
