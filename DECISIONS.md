@@ -558,3 +558,17 @@ strokes reference them. One palette, in the fork's stylesheet, per both themes.
 - **A card with only statuses is openable.** The More menu's row used to be
   disabled with no stats and no context; `sessionPanelHasContent` adds "has
   statuses", because an extension reports state before the session has usage.
+
+## A fixture's answer comes from the server, never from the component (2026-07)
+
+`e2e/git-panel.fixture.jsx` answered `getRemoteBranches` from the shape the
+component asked for, and the panel passed at five viewports while the real server
+answer crashed it in the browser. A harness whose fixture and component were
+written from the same assumption tests the assumption, not the seam.
+
+Rule for this panel: every fixture answer is read off the service (`lib/git/**`)
+or off a real repository, and where a shape is load-bearing a test pins the
+server side too (`app/api/git/flow.test.mjs` asserts that a remote group has no
+`name` key). A `useGitQuery<T>` whose `T` was typed by the caller, not copied
+from the command's return, is the same bug in the other direction — the compiler
+is told a lie and stops helping.
