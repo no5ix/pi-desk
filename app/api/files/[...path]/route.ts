@@ -1137,9 +1137,19 @@ export async function GET(
       return NextResponse.json({ error: "Not a directory" }, { status: 400 });
     }
 
-    // `hidden=1` (the explorer's "show hidden" switch) also lists what Git
-    // ignores and what the name list hides, marked with the reason; `.git`
-    // and `.DS_Store` stay out either way.
+    // Three kinds of hidden, and they are not the same question.
+    //
+    // `.git` and `.DS_Store` are never listed, in any mode.
+    //
+    // A name on the convention list — `node_modules`, `dist`, `.next`, the
+    // generated trees — is left out until the explorer's switch asks for it. It
+    // is a folder the user does not read, and it is often enormous.
+    //
+    // What Git ignores is listed by default, marked with the reason, and the
+    // explorer dims it with the "Git excluded" note. A folder is opened to see
+    // what is in it: `.ruff_cache` is not ignored, and the `.gitignore` that
+    // ruff writes inside it ignores every entry there — dropping the ignored
+    // entries would open the folder the user just clicked on an empty panel.
     const showHidden = request.nextUrl.searchParams.get("hidden") === "1";
     // Avoid per-entry stat calls for normal files and directories. Symlinks and
     // filesystems without directory type information use the stat fallback.
@@ -1148,7 +1158,8 @@ export async function GET(
     const entries = dirents
       .flatMap((d) => {
         const hidden = hiddenReason(d.name);
-        if (hidden === "always" || (hidden && !showHidden)) return [];
+        if (hidden === "always") return [];
+        if (hidden === "excluded" && !showHidden) return [];
         const isDir = resolveDirentIsDirectory(d, path.join(filePath, d.name));
         if (isDir === null) return [];
         const entry = { name: d.name, isDir, size: 0, modified: "" };

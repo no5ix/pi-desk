@@ -743,6 +743,8 @@ export const enLocale: LocalePlugin = {
     "files.newlyUploaded": "Newly uploaded",
     "files.containsChangedFiles": "Contains changed files",
     "files.hiddenIgnored": "Ignored by Git",
+    "files.showGenerated": "Show generated folders (node_modules, dist)",
+    "files.gitExcluded": "Git excluded",
     "files.hiddenExcluded": "Hidden by default (generated or dependency folder)",
     "files.insertPath": "Insert path into chat",
     "files.mention": "mention",

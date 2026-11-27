@@ -434,3 +434,33 @@ suites: `components/FileViewer.toc.test.mjs` 5/5 (new), `FileViewer.editor` 12,
 `AppShell.git-panel` 12 (the strip's button now carries the badge),
 `panel-reports` 8, `panel-reports-2` 7, `inline-style-tokens` 2, i18n 3 (the new
 `files.editorAutoSave` and `files.toc*` keys in en, zh-CN, zh-TW).
+
+## The file tree opens an ignored folder (2026-07-29)
+
+Report: clicking `.ruff_cache` in the file tree showed nothing, and the reference
+explorer (pic) shows the folder's contents, dimmed.
+
+`tab-to-find/.ruff_cache` is not ignored — its `.gitignore` (ruff writes `*`)
+ignores everything **inside** it. A rule that drops ignored entries therefore
+emptied the folder the user had just opened.
+
+- `app/api/files/[...path]/route.ts` separates the three kinds of hidden: `.git`
+  and `.DS_Store` never; the convention list (`node_modules`, `dist`, …) behind
+  the tree's switch; **what Git ignores listed by default, marked**, so the row
+  dims with the "Git excluded" note.
+- The switch the tree's prop promised existed is now real: `AppShell` owns
+  `fileTreeShowGenerated` (pref `pi-web:file-tree-show-generated`), a toolbar
+  button states it with `aria-pressed`, and `FileExplorer` gets `showHidden`.
+- New strings in `en`, `zh-CN`, `zh-TW`: `files.showGenerated`, `files.gitExcluded`.
+
+Verified: `node --experimental-strip-types --test app/api/files/list-route.test.mjs
+components/FileExplorer.hidden-tree.test.mjs components/FileViewer.toc.test.mjs
+components/AppShell.git-panel.test.mjs scripts/inline-style-tokens.test.mjs
+scripts/ui-menu-consistency.test.mjs lib/i18n/*.test.mjs
+app/native-theme-chat-flat.test.mjs` → 46/46; `tsc --noEmit` clean.
+Live measurement against the dev server (Playwright, session URL, the tree's own
+rows): clicking `.ruff_cache` lists `0.17.4`, `.gitignore`, `CACHEDIR.TAG`, and
+the list request is `GET /api/files/<…>/.ruff_cache?type=list`. The running
+app's tree was already right at this commit — the packaged build the report came
+from predates `readGitIgnoredNames`' "Git has no view" fallback, and with the
+route's three-kind rule the folder opens whatever git answers.

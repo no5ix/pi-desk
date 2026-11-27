@@ -743,6 +743,8 @@ export const zhCNLocale: LocalePlugin = {
     "files.newlyUploaded": "刚上传",
     "files.containsChangedFiles": "包含已更改文件",
     "files.hiddenIgnored": "已被 Git 忽略",
+    "files.showGenerated": "显示生成的文件夹（node_modules、dist）",
+    "files.gitExcluded": "Git 排除",
     "files.hiddenExcluded": "默认隐藏（生成或依赖目录）",
     "files.insertPath": "将路径插入聊天",
     "files.mention": "提及",

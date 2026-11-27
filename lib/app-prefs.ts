@@ -22,6 +22,8 @@ export const APP_PREF_KEYS = {
   archiveExpanded: "pi-web:archive-expanded",
   /** Sidebar Projects pane layout: grouped project tree or chronological sessions. */
   projectViewMode: "pi-web:project-view-mode",
+  /** "1" while the file tree also lists the folders the app hides by convention (node_modules, dist). */
+  fileTreeShowGenerated: "pi-web:file-tree-show-generated",
   /** Project roots whose session list is folded in the sidebar tree. */
   collapsedProjects: "pi-web:collapsed-projects",
   /** Project root -> additional five-session pages shown past the preview cap. */

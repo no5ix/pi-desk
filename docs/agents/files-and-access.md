@@ -1,5 +1,36 @@
 # File access, worktrees and web auth
 
+## Three kinds of hidden in the file tree
+
+The tree's list route answers for one directory and sorts every entry into three
+kinds, in `lib/file-tree-visibility.ts`:
+
+- `always` — `.git` and `.DS_Store`. Never listed, in any mode.
+- `excluded` — the convention list (`node_modules`, `dist`, `.next`, …). Left out
+  until the tree's toolbar switch asks for them (`?type=list&hidden=1`), because
+  they are folders nobody reads and often enormous. The switch is
+  `APP_PREF_KEYS.fileTreeShowGenerated`, owned by `AppShell`, passed to
+  `FileExplorer` as `showHidden`; every listing of the tree, root or an opened
+  folder, asks with the same mode.
+- `ignored` — what Git ignores. **Listed by default, marked with the reason, and
+  the row dims with a "Git excluded" note** (`.file-tree-hidden-tag`).
+
+The last rule is the load-bearing one. A folder is opened to see what is inside
+it: `.ruff_cache` is not ignored, and the `.gitignore` ruff writes inside it
+ignores every entry there. Dropping the ignored entries opened the folder the
+user had just clicked on an empty panel, which is the report this rule answers.
+`lib/file-tree-visibility.ts`'s `readGitIgnoredNames` also treats a directory
+that ignores `*` with nothing tracked below it as "Git has no view", so the same
+folder lists as plain rows there; a folder's contents are listed either way, and
+`app/api/files/list-route.test.mjs` asserts both.
+
+Visibility is visibility. A hidden entry is still readable and writable through
+`/api/files`, which authorizes by allowed root and never consults this module.
+
+`components/FileExplorer.hidden-tree.test.mjs` asserts the client's half: the
+note's markup, the inheritance of a reason inside an ignored folder, the switch's
+pref and its `aria-pressed`, and that the route's filter is the three-kind rule.
+
 ## Worktrees and project grouping
 - `lib/worktree.ts` resolves linked worktree top-levels to the main repo `projectRoot`; `listAllSessions()` attaches it to each `SessionInfo`, so a repo's worktrees group together in the sidebar. A session whose cwd is a removed worktree is inferred back into the main project, never a phantom project row. `/api/models` resolves a cwd that is gone the same way (a finished sub-agent run removes its worktree, and its session still names it) and re-checks the repo it falls back to against the allowed roots, so the fallback only ever answers for a project that was already allowed. `/api/project-trust` does not fall back: trust is per path, the repo's decision is not the removed folder's, and trusting a folder that is gone is refused, so a GET answering for the repo would only offer a Trust button that fails.
 - `resolveProject()` caches each cwd's identity for a minute, then serves it stale while git runs again. A git run that never answered (a spawn out of fds, processes or memory, or git killed by the timeout) is never cached: that request alone gets the cwd as its own project, the next one asks again, and a background refresh keeps the stale identity. Whatever git itself exits with (outside a repository, at a mount point, dubious ownership, a broken `.git`), and a missing git, is the cwd's answer and cached, so a broken cwd does not spawn git and log on every session list. Classify by spawn error code and kill, never by git's message text.

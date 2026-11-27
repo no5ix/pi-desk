@@ -268,6 +268,12 @@ export function AppShell() {
   // panel crosses the threshold, so widening and narrowing again re-collapses.
   const [fileTreeNarrowOverride, setFileTreeNarrowOverride] = useState(false);
   const [fileExplorerQuery, setFileExplorerQuery] = useState("");
+  /** The tree's switch for the convention-hidden folders (node_modules, dist, …). */
+  const [fileTreeShowGenerated, setFileTreeShowGenerated] = useState(() =>
+    getPrefBool(APP_PREF_KEYS.fileTreeShowGenerated, false));
+  useEffect(() => {
+    setPref(APP_PREF_KEYS.fileTreeShowGenerated, fileTreeShowGenerated ? "1" : "0");
+  }, [fileTreeShowGenerated]);
   const [changesCount, setChangesCount] = useState(0);
   const [changesCollapsed, setChangesCollapsed] = useState(true);
   const [sessionCatalog, setSessionCatalog] = useState<SessionInfo[]>([]);
@@ -3953,6 +3959,19 @@ export function AppShell() {
                 )}
                 <button
                   type="button"
+                  onClick={() => setFileTreeShowGenerated((value) => !value)}
+                  title={translate("files.showGenerated")}
+                  aria-label={translate("files.showGenerated")}
+                  aria-pressed={fileTreeShowGenerated}
+                  className={`context-panel-files-action${fileTreeShowGenerated ? " is-active" : ""}`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" />
+                    <circle cx="12" cy="12" r="2.6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
                   onClick={() => fileExplorerRef.current?.openUploadPicker()}
                   disabled={explorerUploadBusy}
                   title={translate("sidebar.uploadFilesTitle")}
@@ -3981,6 +4000,7 @@ export function AppShell() {
                   onAtMention={isChatWorkspaceActive ? undefined : handleAtMention}
                   onAtMentions={isChatWorkspaceActive ? undefined : handleAtMentions}
                   onUploadBusyChange={setExplorerUploadBusy}
+                  showHidden={fileTreeShowGenerated}
                   changesCollapsed={changesCollapsed}
                   onChangesCountChange={setChangesCount}
                 />

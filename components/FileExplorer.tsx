@@ -435,6 +435,9 @@ export function TreeNode({
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#3b82f6" }} />
           </span>
         )}
+        {hidden === "ignored" ? (
+          <span className="file-tree-hidden-tag" title={t("files.hiddenIgnored")}>{t("files.gitExcluded")}</span>
+        ) : null}
         {!hovered && !node.isDir && gitStatus && (
           <GitStatusBadge status={gitStatus} t={t} />
         )}

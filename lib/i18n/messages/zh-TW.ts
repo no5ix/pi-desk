@@ -743,6 +743,8 @@ export const zhTWLocale: LocalePlugin = {
     "files.newlyUploaded": "剛上傳",
     "files.containsChangedFiles": "包含已變更的檔案",
     "files.hiddenIgnored": "已被 Git 忽略",
+    "files.showGenerated": "顯示產生的資料夾（node_modules、dist）",
+    "files.gitExcluded": "Git 排除",
     "files.hiddenExcluded": "預設隱藏（產生或相依目錄）",
     "files.insertPath": "將路徑插入聊天",
     "files.mention": "提及",

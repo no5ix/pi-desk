@@ -16755,6 +16755,44 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   }
 }
 
+/* The tree's toolbar action (the switch for the convention-hidden folders). */
+.context-panel-files-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.context-panel-files-action:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.context-panel-files-action.is-active {
+  background: var(--bg-selected);
+  color: var(--accent);
+}
+
+/* The note on a row Git ignores, at the row's right edge, like the reference
+   explorer's "Git excluded". */
+.file-tree-hidden-tag {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
 /* The Markdown outline: a bar on the right of the file, opened from the toolbar's
    corner and dismissed from its own. The document keeps its width — an outline
    that reflows the text it points at is a bad way to read one. */
