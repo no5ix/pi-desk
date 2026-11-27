@@ -87,6 +87,7 @@
     "mammoth": "^1.12.0",
     "next": "16.4.6",
     "node-pty": "1.2.0-beta.15",
+    "pi-background-tasks": "2.6.10",
     "proper-lockfile": "4.1.2",
     "qrcode-generator": "2.0.4",
     "react": "^19.2.4",
@@ -137,6 +138,11 @@
     "katex": "$katex",
     "mammoth": {
       "argparse": "^2.0.1"
+    },
+    "pi-background-tasks": {
+      "@earendil-works/pi-ai": "$@earendil-works/pi-ai",
+      "@earendil-works/pi-coding-agent": "$@earendil-works/pi-coding-agent",
+      "@earendil-works/pi-tui": "$@earendil-works/pi-tui"
     }
   },
   "allowScripts": {

@@ -37,6 +37,8 @@ import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDial
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { TopbarElapsed } from "./TopbarElapsed";
 import { TopbarSubagents, countSubagents, countSideChats } from "./TopbarSubagents";
+import { TopbarBackgroundTasksButton } from "./TopbarBackgroundTasksButton";
+import { BackgroundTasksPanel } from "./BackgroundTasksPanel";
 import { TopbarBranchChip } from "./TopbarBranchChip";
 import { TopbarProjectChip } from "./TopbarProjectChip";
 import { TopbarContextChip } from "./TopbarContextChip";
@@ -134,6 +136,7 @@ import {
   TOOLS_PANEL_WIDTH,
   placeAgentsPanel,
   placeHeaderCard,
+  BACKGROUND_TASKS_PANEL_WIDTH,
 } from "@/lib/top-panel-placement";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
@@ -550,6 +553,8 @@ export function AppShell() {
   // this chip, so the shell has to know where it is; it is null when the family is empty
   // (the chip renders nothing) and the placement falls back to centring under the header.
   const topbarSubagentsRef = useRef<HTMLElement | null>(null);
+  // The Background Tasks card hangs under this button (lib/top-panel-placement.ts).
+  const topbarTasksRef = useRef<HTMLElement | null>(null);
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
   const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
@@ -634,7 +639,7 @@ export function AppShell() {
   }, []);
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | "tasks" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number; floating?: boolean } | null>(null);
   // The header's cards (Agents, System prompt, Tools, Session stats) are mounted by the
   // chip that opens them. The wrapper is held for the shared exit animation, and keeps the
@@ -683,7 +688,7 @@ export function AppShell() {
   }, [rightPanelFullWidth]);
 
   const toggleTopPanel = useCallback((
-    panel: "agents" | "branches" | "system" | "tools" | "session",
+    panel: "agents" | "branches" | "system" | "tools" | "session" | "tasks",
   ) => {
     if (isMobile) setSidebarOpen(false);
     setTopMoreOpen(false);
@@ -848,6 +853,13 @@ export function AppShell() {
         setTopPanelPos(placeAgentsPanel(topBarRect, topbarSubagentsRef.current?.getBoundingClientRect() ?? null, isMobile));
         return;
       }
+      if (activeTopPanel === "tasks") {
+        // The Background Tasks card is opened from the header's task button, which sits at the
+        // row's right end, so it opens as a compact card under it: the same rule as the More
+        // button's read-only cards, and its own width — it is a monitor, not a document.
+        setTopPanelPos(placeHeaderCard(topBarRect, isMobile, BACKGROUND_TASKS_PANEL_WIDTH));
+        return;
+      }
       if (activeTopPanel === "system" || activeTopPanel === "tools" || activeTopPanel === "session") {
         // The three read-only panels are opened from the More button at the header's right
         // end, so they open as cards under it — the same card the Agents panel wears, and
@@ -871,7 +883,14 @@ export function AppShell() {
     update();
     const ro = new ResizeObserver(update);
     ro.observe(topBarRef.current);
-    return () => ro.disconnect();
+    // A viewport change that leaves the bar's box the same size (a window that only grows
+    // shorter, a phone keyboard) does not fire the observer, and a card placed by the old
+    // height now hangs past the page. The card's own max-height keeps it inside the viewport.
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
   }, [activeTopPanel, isMobile]);
 
   // Files unmount when inactive; workspace terminals stay mounted until closed.
@@ -2764,6 +2783,17 @@ export function AppShell() {
           )}
           {showChat && !pageOpen && (
             <div className="app-topbar-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
+              {/* The project's background tasks: one button that opens a compact card under the
+                  header, wearing the running count and the unacknowledged failures the
+                  extension reports for this project's live conversations. It is a header control
+                  because the card hangs under it — not in a sidebar, not in Settings. */}
+              <TopbarBackgroundTasksButton
+                sessionId={selectedSession?.id ?? null}
+                open={activeTopPanel === "tasks"}
+                onToggle={() => toggleTopPanel("tasks")}
+                translate={translate}
+                anchorRef={topbarTasksRef}
+              />
               {/* Branches opens from the More menu; this instance only hosts its dropdown. */}
               {!isChatWorkspaceActive && sessionHasBranches && (
                 <BranchNavigator
@@ -3094,6 +3124,14 @@ export function AppShell() {
                   onToggleSideTab={handleToggleSideTab}
                   onNewSideChat={isChatWorkspaceActive ? undefined : handleNewSideChat}
                   onDeleteSideChat={handleDeleteSideChat}
+                />
+              )}
+              {shownTopPanel === "tasks" && (
+                <BackgroundTasksPanel
+                  sessionId={selectedSession?.id ?? null}
+                  open={activeTopPanel === "tasks"}
+                  onClose={() => setActiveTopPanel(null)}
+                  translate={translate}
                 />
               )}
               {shownTopPanel === "system" && (

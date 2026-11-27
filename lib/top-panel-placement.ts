@@ -31,6 +31,13 @@ export const TOOLS_PANEL_WIDTH = 780;
  *  columns' content, the gaps and the card's padding — and the caller stacks them
  *  (AppShell). */
 export const SESSION_STATS_STACK_WIDTH = 760;
+/**
+ * The Background Tasks card's own width. A monitor, so a band rather than a document: a task
+ * row carries a name, a command, a state and a clock, and below this the clock wraps out of
+ * the row. The column caps it, and `placeHeaderCard` keeps the gutters, so a narrow window
+ * narrows the card instead of pushing it off the conversation.
+ */
+export const BACKGROUND_TASKS_PANEL_WIDTH = 500;
 /** How far the card hangs below the header, so its top edge and shadow are on the page. */
 export const AGENT_PANEL_DROP_GAP = 8;
 /** The clear space kept from the column's (and the window's) edges. */

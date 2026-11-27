@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, type ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, createEventBus, type EventBus, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, statSync, writeFileSync } from "fs";
@@ -121,6 +121,12 @@ import {
 } from "./chat-workspace-policy";
 import { ComposerQueue } from "./composer-queue";
 import type { PendingComposerMessage } from "./composer-queue-types";
+import {
+  backgroundTasksLoaderOptions,
+  resolveBackgroundTasksExtension,
+  withBackgroundTasksDedupe,
+} from "./background-tasks/extension";
+import { attachBackgroundTasksBridge, releaseBackgroundTasksBridge } from "./background-tasks/bridges";
 
 // ============================================================================
 // Types
@@ -273,6 +279,13 @@ type AgentSessionWrapperOptions = {
   onDirectTurnSettled?: (aborted: boolean) => void;
   /** Connects the session's MCP servers before a prompt starts a run, and lets go of them when it closes (lib/mcp-host.ts). */
   mcpHost?: WrapperMcpHost;
+  /**
+   * The EventBus this session's extensions were handed. `pi-background-tasks` publishes its
+   * host interface on it, and the header's Background Tasks panel reads that bus
+   * (lib/background-tasks/). Attached as a bridge when the session starts and released when
+   * it closes.
+   */
+  backgroundTasksEventBus?: EventBus;
   /** Chat only: the extension-provided model the session wanted, named when a prompt finds no model. */
   chatOnlyExtensionModel?: { provider: string; id: string };
   sideChat?: boolean;
@@ -490,9 +503,11 @@ export class AgentSessionWrapper {
   private retrying = false;
   private lastFinishedRun: AgentTaskSnapshot["lastRun"] = null;
   private readonly mcpHost?: WrapperMcpHost;
+  private readonly backgroundTasksEventBus?: EventBus;
   private readonly chatOnlyExtensionModel?: { provider: string; id: string };
   private readonly sideChat: boolean;
   private mcpHostDisposed = false;
+  private backgroundTasksReleased = false;
   // The MCP wait of the prompt being admitted; Stop ends it.
   private mcpPromptWait: { controller: AbortController; done: Promise<void> } | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -556,6 +571,14 @@ export class AgentSessionWrapper {
     });
     this.chatOnlyExtensionModel = options.chatOnlyExtensionModel;
     this.sideChat = options.sideChat === true;
+    this.backgroundTasksEventBus = options.backgroundTasksEventBus;
+    // The panel's way in: a host client on the bus this session's extensions were handed.
+    // It costs two listeners and no lease — the extension arms no timers and builds no
+    // snapshot while nothing is subscribed — so attaching it for every live session is cheap,
+    // and the header's badge can count running tasks without the panel ever being opened.
+    if (this.backgroundTasksEventBus) {
+      attachBackgroundTasksBridge(this.sessionId, this.cwd, this.backgroundTasksEventBus);
+    }
   }
 
   get sessionId(): string {
@@ -2182,12 +2205,30 @@ export class AgentSessionWrapper {
     }
   }
 
+  /**
+   * Releases the background-task host client: it unsubscribes from the session's EventBus and
+   * releases its lease. Nothing is kept — the task registry belongs to the extension's
+   * activation, and it is gone with this session (lib/background-tasks/bridges.ts), so a panel
+   * that outlives the conversation is told so rather than shown a task that no longer exists.
+   */
+  private releaseBackgroundTasks(): void {
+    if (this.backgroundTasksReleased) return;
+    this.backgroundTasksReleased = true;
+    if (!this.backgroundTasksEventBus) return;
+    try {
+      releaseBackgroundTasksBridge(this.sessionId);
+    } catch (error) {
+      console.error("[pi-web] background-task bridge release failed:", error instanceof Error ? error.message : error);
+    }
+  }
+
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
     this.composerQueue.dispose();
     this.closingAt ??= Date.now();
     this.disposeMcpHost();
+    this.releaseBackgroundTasks();
     // Tell attached SSE listeners to drop this instance so the browser
     // EventSource errors and reconnects instead of staying OPEN on a dead wrapper.
     this.emit({ type: "session_shutdown" });
@@ -3890,6 +3931,16 @@ export async function startRpcSession(
         : []),
       ...(skillsBinding?.loaderOptions.extensionFactories ?? []),
     ];
+    // pi-background-tasks: the header's Background Tasks panel reads the extension's host
+    // interface over the session's own EventBus (lib/background-tasks/). For the app to read
+    // that bus it has to own the instance, so the session gets a bus from here and the
+    // extension's entrypoint as an extra loader path. A subagent run and a Chat-only session
+    // load no extensions at all, so they get neither.
+    const backgroundTasksSource = subagentResources || chatOnly
+      ? { entryPath: null as string | null, reason: null as "disabled" | "not-installed" | null }
+      : resolveBackgroundTasksExtension();
+    const backgroundTasksEventBus = backgroundTasksSource.entryPath ? createEventBus() : undefined;
+    const backgroundTasksOptions = backgroundTasksLoaderOptions(backgroundTasksSource);
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
       agentDir,
@@ -3936,7 +3987,11 @@ export async function startRpcSession(
               // An unlocked chat has every tool, so extensions that hand work to an agent may load too.
               ...(chatUnlocked
                 ? {}
-                : { extensionsOverride: (base: LoadExtensionsResult) => withoutAgentDelegation(base, CHAT_DELEGATION_TOOL_NAMES) }),
+                : { extensionsOverride: withBackgroundTasksDedupe((base: LoadExtensionsResult) => withoutAgentDelegation(base, CHAT_DELEGATION_TOOL_NAMES)) }),
+              ...(backgroundTasksOptions.additionalExtensionPaths
+                ? { additionalExtensionPaths: backgroundTasksOptions.additionalExtensionPaths }
+                : {}),
+              ...(backgroundTasksEventBus ? { eventBus: backgroundTasksEventBus } : {}),
             }
         : chatOnly
           ? {
@@ -3960,7 +4015,11 @@ export async function startRpcSession(
                 isBuiltInSubagentsEnabled,
               ),
             ],
-            extensionsOverride: (base) => preferUserBashExtension(preferPiWebSubagentExtension(base)),
+            extensionsOverride: withBackgroundTasksDedupe((base) => preferUserBashExtension(preferPiWebSubagentExtension(base))),
+            ...(backgroundTasksOptions.additionalExtensionPaths
+              ? { additionalExtensionPaths: backgroundTasksOptions.additionalExtensionPaths }
+              : {}),
+            ...(backgroundTasksEventBus ? { eventBus: backgroundTasksEventBus } : {}),
           },
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });
@@ -4138,6 +4197,7 @@ export async function startRpcSession(
         ? { onDirectTurnSettled: (aborted: boolean) => SUBAGENT_CONTROLLER.settleDirectTurn(inner.sessionId, aborted) }
         : {}),
       ...(mcpHost ? { mcpHost } : {}),
+      ...(backgroundTasksEventBus ? { backgroundTasksEventBus } : {}),
       ...(chatOnlyExtensionModel ? { chatOnlyExtensionModel } : {}),
       sideChat: isSideChat,
     });

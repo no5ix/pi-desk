@@ -15122,3 +15122,695 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
     transform: none;
   }
 }
+
+/* ==========================================================================
+   Background Tasks — the header's task monitor
+   ==========================================================================
+   The header's task button wears the toolbar's own hover and focus, and carries two marks
+   the extension reports: how much work is running, and finished work nobody has read. The
+   card it opens is `.app-menu` (the app's one elevated surface), hung under the button by
+   AppShell's header placement, so the surface, the radii and the shadow are not re-declared
+   here — only the monitor's own geometry.
+
+   The card is a band, not a document: a row per task (glyph, name, command, state, clock), a
+   detail block for the selected task, and a bounded tail of its output. Status colours are
+   the app's semantic tokens, at the weight of a label, not a poster: running is `--success`,
+   a failure is `--danger`, a stopped task is muted ink, and a finished task is ink — a log
+   full of colour is a log nobody scans. */
+
+.app-topbar-tasks {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+}
+
+.app-topbar-tasks.is-open {
+  /* The card is open: the button reads as the surface it owns, like the More trigger. */
+  background: var(--bg-selected) !important;
+  color: var(--text) !important;
+}
+
+.app-topbar-tasks.is-running {
+  color: var(--success);
+}
+
+.app-topbar-tasks-count {
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  min-width: 9px;
+  text-align: center;
+}
+
+.app-topbar-tasks-failed {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+  /* The panel's own ink, so the dot reads as sitting on the bar, not in it. */
+  box-shadow: 0 0 0 2px var(--bg-panel);
+}
+
+.bg-tasks-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  /* A monitor with room to read: a head, five filters, a list of rows, and a log that is
+     tall enough to see the end of a build in. The wrapper AppShell places caps this to the
+     viewport; the floor keeps the filter row and a few rows on the page. */
+  min-height: 224px;
+  max-height: min(620px, calc(100dvh - 96px));
+}
+
+.bg-tasks-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 4px 0;
+}
+
+.bg-tasks-head-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.bg-tasks-title {
+  color: var(--text);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+}
+
+.bg-tasks-head-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-head-running {
+  color: var(--success);
+}
+
+.bg-tasks-head-total {
+  color: var(--text-dim);
+}
+
+.bg-tasks-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.bg-tasks-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--menu-row-radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native);
+}
+
+.bg-tasks-icon-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.bg-tasks-icon-button:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+
+.bg-tasks-icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.bg-tasks-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: var(--menu-row-radius);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  color: var(--danger);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+}
+
+.bg-tasks-notice-close {
+  display: inline-flex;
+  margin: -2px -2px 0 auto;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--menu-row-radius);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.bg-tasks-state {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 8px;
+  border-radius: var(--menu-row-radius);
+  background: var(--surface-muted);
+}
+
+.bg-tasks-state-line {
+  color: var(--text);
+  font-size: var(--fs-caption);
+}
+
+.bg-tasks-state-reason {
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.bg-tasks-filters {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 2px;
+}
+
+.bg-tasks-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--menu-row-radius);
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native);
+}
+
+.bg-tasks-filter:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.bg-tasks-filter.is-active {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.bg-tasks-filter:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+
+.bg-tasks-filter-count {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.bg-tasks-filter.is-running .bg-tasks-filter-count {
+  color: var(--success);
+}
+
+.bg-tasks-filter.is-failed .bg-tasks-filter-count {
+  color: var(--danger);
+}
+
+.bg-tasks-filters-tail {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.bg-tasks-stop-all,
+.bg-tasks-confirm-button,
+.bg-tasks-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--menu-row-radius);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native);
+}
+
+.bg-tasks-stop-all:hover,
+.bg-tasks-confirm-button:hover,
+.bg-tasks-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.bg-tasks-stop-all:focus-visible,
+.bg-tasks-confirm-button:focus-visible,
+.bg-tasks-action:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+
+.bg-tasks-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.bg-tasks-action.is-active {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.bg-tasks-action.is-danger,
+.bg-tasks-confirm-button.is-danger {
+  color: var(--danger);
+}
+
+.bg-tasks-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.bg-tasks-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  text-align: center;
+}
+
+.bg-tasks-empty-hint {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+}
+
+.bg-tasks-row {
+  --bg-tasks-state-column: 92px;
+  --bg-tasks-action-column: 56px;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) var(--bg-tasks-state-column) var(--bg-tasks-action-column);
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 46px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--menu-row-radius);
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-native);
+}
+
+.bg-tasks-row:hover {
+  background: var(--bg-hover);
+}
+
+.bg-tasks-row:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+
+.bg-tasks-row.is-selected {
+  background: var(--bg-selected);
+}
+
+.bg-tasks-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+}
+
+.bg-tasks-status.is-running {
+  color: var(--success);
+}
+
+.bg-tasks-status.is-failed {
+  color: var(--danger);
+}
+
+.bg-tasks-status.is-killed {
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+
+.bg-tasks-row.is-running .bg-tasks-row-status-label {
+  color: var(--success);
+}
+
+.bg-tasks-row.is-failed .bg-tasks-row-status-label {
+  color: var(--danger);
+}
+
+.bg-tasks-row.is-killed .bg-tasks-row-status-label {
+  color: var(--text-dim);
+}
+
+.bg-tasks-row.is-unseen .bg-tasks-row-title::after {
+  /* The unacknowledged mark: the extension's own unseen set, cleared by opening the task. */
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--danger);
+  vertical-align: middle;
+}
+
+.bg-tasks-row-text {
+  display: block;
+  min-width: 0;
+}
+
+.bg-tasks-row-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+}
+
+.bg-tasks-row-command {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-row-state {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: right;
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+.bg-tasks-row-status-label {
+  color: var(--text-muted);
+  font-weight: var(--fw-medium);
+}
+
+.bg-tasks-row-clock,
+.bg-tasks-row-activity {
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bg-tasks-row-busy,
+.bg-tasks-row-actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-row-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: var(--menu-row-radius);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--danger);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+
+.bg-tasks-row-stop:hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.bg-tasks-row-stop:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+
+.bg-tasks-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 8px;
+  border-radius: var(--menu-row-radius);
+  background: var(--surface-muted);
+}
+
+.bg-tasks-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bg-tasks-detail-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+}
+
+.bg-tasks-detail-state {
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+}
+
+.bg-tasks-detail-state.is-running {
+  color: var(--success);
+}
+
+.bg-tasks-detail-state.is-failed {
+  color: var(--danger);
+}
+
+.bg-tasks-detail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.bg-tasks-detail-note {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-detail-command {
+  padding: 6px 8px;
+  border-radius: var(--menu-row-radius);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.bg-tasks-detail-command code {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.bg-tasks-detail-description {
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+}
+
+.bg-tasks-detail-error {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: var(--menu-row-radius);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  color: var(--danger);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.bg-tasks-detail-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 2px 12px;
+  margin: 0;
+}
+
+.bg-tasks-detail-row {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-detail-row dt {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.bg-tasks-detail-row dd {
+  margin: 0;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.bg-tasks-detail-row dd.is-mono {
+  font-family: var(--font-mono);
+}
+
+.bg-tasks-log-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-log-meta {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.bg-tasks-log-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.bg-tasks-log {
+  height: 156px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: var(--menu-row-radius);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.bg-tasks-log:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+
+.bg-tasks-log-text {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text);
+  /* A build log is mostly long lines; the monitor shows the end of them, and the horizontal
+     rule is the honest answer. The Wrap button is the other half. */
+  white-space: pre;
+}
+
+.bg-tasks-log.is-wrapped .bg-tasks-log-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.bg-tasks-log-empty {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-log-following {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-log-following.is-paused {
+  color: var(--warning);
+}
+
+.bg-tasks-sessions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 0 2px;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.bg-tasks-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bg-tasks-session.is-primary {
+  color: var(--text-muted);
+}
+
+.bg-tasks-session.is-closed {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.bg-tasks-session-count {
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-topbar-tasks,
+  .bg-tasks-icon-button,
+  .bg-tasks-filter,
+  .bg-tasks-row {
+    transition: none;
+  }
+}

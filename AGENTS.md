@@ -188,6 +188,10 @@ Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
 ### Upgrading pi
 
 pi's packages up to 1.2.0 depend on each other with `^` ranges (1.3.0 pins them exactly), and the published pi-web's dependencies resolve afresh on install (no lockfile ships). Install every `@earendil-works/*` package the tree holds, the SDK's own dependencies included (`pi-codemode`, `pi-mcp`, `pi-telemetry`, …), with `npm install --save-exact`, so npm reuses those exact versions for the SDK's ranges. `lib/pi-packages.test.mjs` fails on any pi package that is not pinned that way; pi-web 0.12.0 pinned four, and installs after pi 1.2.0 paired pi-coding-agent 1.1.0 with pi-codemode 1.2.0.
+`package.json`'s `overrides` rebind `pi-background-tasks`' published peer range
+(pi `^0.81 … ^0.84`) to this app's own pi packages with `"$@earendil-works/pi-*"` references, so a
+bump needs nothing there and a plain `npm ci` (every workflow uses it) keeps resolving; the seam is
+pinned by `lib/background-tasks/integration.test.mjs`.
 
 ---
 
@@ -224,6 +228,9 @@ app/api/
   relay/route.ts                  GET/PUT encrypted relay status and config (PUT local-only)
   relay/pairing/**                POST pairing QR ticket, POST [id] approve/deny (local-only)
   relay/devices/[id]/route.ts     DELETE revoke a paired phone (local-only)
+  background-tasks/route.ts           GET merged task snapshot | POST stop | stop-all | rerun | mark-seen
+  background-tasks/task/route.ts      GET ?type=detail|logs — one task, a bounded log window
+  background-tasks/events/route.ts    GET SSE — the extension's change frames and bridge changes
   auth/all-providers/route.ts     GET API-key provider list
   auth/api-key/[provider]/route.ts GET/POST/DELETE provider API key status/storage
   auth/login/[provider]/route.ts  GET OAuth/device-code SSE | POST manual code
@@ -280,6 +287,12 @@ lib/
   file-watch-channel.ts  the client's leader-elected file-watch stream, per-file dispatch (the browser's six connections per host)
   running-sessions-stream.ts  the name of the shared running-sessions stream the sidebar leads
   file-paths.ts        client/server path encoding helpers
+  background-tasks/protocol.ts  the host contract: channels, schemas, frames, parsers, error codes
+  background-tasks/host-client.ts  the session's host client: lease, sequence, retry, de-duped changes
+  background-tasks/extension.ts  the installed entrypoint, the dev switches, the one-activation dedupe
+  background-tasks/bridges.ts  one host client per live conversation, keyed by session, grouped by cwd
+  background-tasks/service.ts  the merged snapshot, the owner-resolved actions, the log window
+  background-tasks/session-view.ts  filters, counts, badges, durations, the follow rule, the detail rows
   enabled-models.ts    pure minimal-edit engine for the `enabledModels` pattern list
   enabled-models-runtime.ts  SDK adapter: per-pattern resolution, provider kinds, settings IO
   markdown.ts          shared markdown helpers
@@ -312,6 +325,9 @@ components/
   AppShell.tsx        layout + URL state + tab management
   SessionSidebar.tsx  session tree + FileExplorer
   ChatWindow.tsx      chat composition + completion sound wrapper
+  TopbarBackgroundTasks.tsx  the header's task button: the running count and the unseen-failure mark
+  TopbarBackgroundTasksButton.tsx  the button's badge data (the merged counts of the project's live conversations)
+  BackgroundTasksPanel.tsx  the header's card: filters, rows, details, the log tail, stop-all, the unavailable states
   TopbarElapsed.tsx   the header's live clock since the last prompt; its own component so a 1s tick re-renders the chip, not the shell
   ClockIcon.tsx       the clock glyph every duration label shares
   ChatInput.tsx       the composer card: the `+`, the prompt, Send (every control lives in the `+`'s menu); the compact quote box
@@ -350,6 +366,7 @@ hooks/
   useKeyboardShortcuts.ts  Esc stops the running agent unless a field or nearer handler took it; Ctrl+Alt+N
   useResizablePanel.ts     drag/keyboard panel size kept per key; persistClamp: false never saves a short window's clamp
   useTheme.ts              theme state
+  useBackgroundTasks.ts    the card's state: snapshot, change stream, actions, detail/logs, stale-reply guards
   useElapsedSince.ts       milliseconds since a timestamp, re-read every second; null on the first render so hydration matches
 ```
 
@@ -369,6 +386,7 @@ Read the doc for the area you touch before changing it. Upstream docs (no prefix
 - [files-and-access.md](docs/agents/files-and-access.md): worktrees and project grouping, the file access allow-list (the `/api/files` security boundary), file tree visibility, the app's folder window (its places rail, filter, name/date order, hidden switch, keyboard), uploads and chat file drops, web password throttling. Files: `app/api/files/**`, `app/api/cwd/**`, `app/api/worktrees/**`, `app/api/file-index/**`, `app/api/web-auth/**`, `proxy.ts`, `lib/path-security.ts`, `lib/file-access.ts`, `lib/linked-directory.ts`, `lib/session-file-references*.ts`, `lib/file-tree-visibility.ts`, `lib/file-upload-client.ts`, `lib/worktree.ts`, `lib/paths.ts`, `lib/directory-browser.ts`, `lib/directory-places.ts`, `lib/auth-throttle.ts`, `components/ProjectWorktreePicker.tsx`, `components/DirectoryPicker.tsx`, `components/NewSessionContextBar.tsx`, `components/FileExplorer.tsx`, `hooks/useDragDrop.ts`.
 - [settings-ui.md](docs/agents/settings-ui.md): Plugins and Skills routes, sidebar group switches, project-level skills (`.pi/skills`), the shared `SettingsUi` blocks every settings panel and add pane uses. Files: `app/api/plugins/**`, `app/api/skills/**`, `lib/project-skills.ts`, `lib/skill-roots.ts`, `lib/skill-shadowing.ts`, `components/SettingsUi.tsx`, `components/settings-ui-helpers.ts`, `components/SkillsConfig.tsx`, `components/PluginsConfig.tsx`; also before adding a settings section or add pane.
 - [subagents.md](docs/agents/subagents.md): the built-in subagent setting, profiles and their files, run status, completion notifications, the report card that opens collapsed. Files: `lib/subagent*.ts`, `app/api/subagents/**`, `components/AgentsConfig.tsx`, `CustomMessageView` in `components/MessageView.tsx`.
+- [background-tasks.md](docs/agents/background-tasks.md): the header's task monitor — the extension's host interface (channels, leases, sequences, the `closed` frame), the per-session bridge and its lifecycle, the merged project snapshot, the panel's states and controls, the one-activation dedupe, the development switches. Files: `lib/background-tasks/**`, `app/api/background-tasks/**`, `components/BackgroundTasksPanel.tsx`, `components/TopbarBackgroundTasks.tsx`, `components/TopbarBackgroundTasksButton.tsx`, `hooks/useBackgroundTasks.ts`, the bridge wiring in `lib/rpc-manager.ts`, the header card in `components/AppShell.tsx`, `.bg-tasks-*` in `app/native-theme.css`.
 - [scheduled-tasks.md](docs/agents/scheduled-tasks.md): scheduled tasks (the Scheduled page): server-side scheduler and its lease, catch-up and overlap rules, read-only default, the run index that hides runs from the project tree, why shared state is on `globalThis`. Files: `lib/scheduled-tasks/**`, `app/api/scheduled-tasks/**`, `instrumentation-node.ts`, `hooks/useScheduledTasks.ts`, `components/scheduled/**`, the Scheduled row in `components/SessionSidebar.tsx`, the page overlay in `components/AppShell.tsx`.
 - [artifacts.md](docs/agents/artifacts.md): inline HTML/SVG/React previews and `:::artifact` blocks, output vs process files on the Artifacts page: what renders where, the sandbox rules and the desktop `about:srcdoc` allowance, the auto-run rule for scripted pages, the bundled React runtime (inlined, because sandboxed frames cannot reach localhost; `npm run preview-runtime` regenerates it), the fix flow and the prompt switch, the cross-session Artifacts page. Files: `lib/artifacts.ts`, `lib/artifact-store.ts`, `lib/artifact-index.ts`, `lib/file-output-role.ts`, `lib/artifact-file-roles.ts`, `lib/artifact-favorites.ts`, `components/artifacts/**`, `lib/html-preview.ts`, `lib/html-preview-stream.ts`, `lib/preview-theme-kit.ts`, `lib/artifact-settings.ts`, `lib/artifact-guide-extension.ts`, `hooks/useArtifactPublisher.ts`, `hooks/useHtmlPreviewFrame.ts`, `lib/preview-runtime.ts`, `scripts/build-preview-runtime.mjs`, `public/preview-runtime/`, `components/Artifact*.tsx`, `components/HtmlPreview*.tsx`, `components/artifact-tabs.ts`, `app/api/artifacts/**`, `is_inline_frame_document` in `src-tauri/src/lib.rs`.
 - [remote-relay.md](docs/remote-relay.md): the end-to-end encrypted relay (Noise IK over a dumb relay, phone shell + tunnel service worker, pairing, request mark). Files: `lib/relay/**`, `relay/` (server, Docker), `relay-shell/` (`npm run relay:shell`), `app/api/relay/**`, `components/RelaySection.tsx`, `e2e/relay.mjs`; deploying: [remote-relay-deploy.md](docs/remote-relay-deploy.md). A request carrying the relay mark comes from a paired phone: it is never local (`isLocalRequest`), and local-only routes must ask `isLocalRequest()`, never a loopback Host.
