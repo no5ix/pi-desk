@@ -15944,7 +15944,11 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 }
 
 .git-log-date {
-  width: 40px;
+  /* The whole moment, never a cut-off one: a 40px column showed `2026-11-13 2`.
+     The date is the column that keeps its room; the subject is the one that
+     shrinks, and it ellipsizes. */
+  width: auto;
+  min-width: 104px;
   text-align: right;
 }
 

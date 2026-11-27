@@ -174,6 +174,29 @@ export class GitService {
     }
   }
 
+  /**
+   * The commits whose hash starts with `prefix`, from git's own object store.
+   *
+   * The Log's page is a window over the history, so a hash that lives deeper
+   * than the window is not in it and the box would answer "nothing matches".
+   * `git rev-parse --disambiguate=<prefix>` is git's own prefix lookup: every
+   * object that starts with the prefix, one per line. A prefix shorter than
+   * four digits is not disambiguable, and an ambiguous prefix names more than
+   * one commit, which is what the list then shows.
+   */
+  private async resolveHashPrefix(prefix: string): Promise<CommitNode[]> {
+    if (prefix.length < 4) return [];
+    const found = await this.execGit(["rev-parse", `--disambiguate=${prefix}`]).catch(() => "");
+    const oids = found.split("\n").filter((line) => /^[0-9a-f]{40}$/.test(line.trim())).map((line) => line.trim());
+    const commits: CommitNode[] = [];
+    for (const oid of oids.slice(0, 10)) {
+      const text = await this.execGit(["log", "-1", `--format=${LOG_FORMAT}${FMT_RECORD_SEP}`, oid]).catch(() => "");
+      const parsed = parseLogOutput(text);
+      if (parsed[0]) commits.push(parsed[0]);
+    }
+    return commits;
+  }
+
   async getLog(options: LogOptions = {}): Promise<CommitNode[]> {
     const cacheKey = `log:${JSON.stringify(options)}`;
     const cached = this.cache.get<CommitNode[]>(cacheKey);
@@ -193,7 +216,10 @@ export class GitService {
     // reads a wider page and the rows are picked here (message substring, case
     // insensitive, or the hash starting with the word) and cut back to the page.
     const pageMax = options.maxCount ?? 200;
-    const hashQuery = /^[0-9a-f]{4,40}$/i.test(options.search?.trim() ?? "") ? options.search!.trim().toLowerCase() : null;
+    const searchWord = options.search?.trim() ?? "";
+    // Three is the shortest word a reader copies from a row: the row shows the
+    // short hash, and a hand stops typing when the list has narrowed to one.
+    const hashQuery = /^[0-9a-f]{3,40}$/i.test(searchWord) ? searchWord.toLowerCase() : null;
     args.push(`--max-count=${hashQuery ? Math.min(pageMax * 4, 2000) : pageMax}`);
     if (options.skip) {
       args.push(`--skip=${options.skip}`);
@@ -220,13 +246,20 @@ export class GitService {
     const output = await this.execGit(args);
     let commits = parseLogOutput(output);
     if (hashQuery) {
+      // A hash-shaped word names a commit, not a sentence: matching the subject
+      // and the body as well turned `8ab2` into a full-text search and surfaced
+      // commits whose message happened to contain it. Only the hash prefix is
+      // matched, and the page is widened because the commit is usually deeper
+      // in the history than the page.
       const word = hashQuery;
-      commits = commits.filter((commit) =>
-        commit.hash.startsWith(word)
-        || commit.shortHash.startsWith(word)
-        || commit.subject.toLowerCase().includes(word)
-        || commit.body.toLowerCase().includes(word),
+      const byHash = commits.filter((commit) =>
+        commit.hash.startsWith(word) || commit.shortHash.startsWith(word),
       );
+      commits = byHash.length > 0
+        ? byHash
+        : [...(await this.resolveHashPrefix(word)), ...commits.filter((commit) =>
+          commit.subject.toLowerCase().includes(word) || commit.body.toLowerCase().includes(word),
+        )];
     }
     commits = commits.slice(0, pageMax);
     this.cache.set(cacheKey, commits);

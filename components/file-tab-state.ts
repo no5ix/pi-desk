@@ -9,6 +9,8 @@ interface OpenFileTabInput {
   sourceSessionId?: string | null;
   /** Show the diff this session recorded, not the working tree's. */
   diffSessionId?: string | null;
+  /** The commit whose file the Diff mode reads, for a commit panel file row. */
+  diffCommitSha?: string | null;
   tabId: string;
 }
 
@@ -21,6 +23,7 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
       filePath: input.filePath,
       sourceSessionId: input.sourceSessionId,
       diffSessionId: input.diffSessionId,
+      diffCommitSha: input.diffCommitSha,
       initialDisplayMode: input.modeHint,
       page: input.page,
       viewerState: input.modeHint ? {
@@ -38,7 +41,9 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
   );
   const sourceUnchanged = !sourceChanged;
   const pageChanged = existing.page !== input.page;
-  const diffSourceChanged = input.diffSessionId !== undefined && existing.diffSessionId !== input.diffSessionId;
+  const diffSourceChanged =
+    (input.diffSessionId !== undefined && existing.diffSessionId !== input.diffSessionId)
+    || (input.diffCommitSha !== undefined && existing.diffCommitSha !== input.diffCommitSha);
   if (sourceUnchanged && !input.modeHint && !pageChanged && !diffSourceChanged) return tabs;
 
   return tabs.map((tab) => {
@@ -51,6 +56,9 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
     }
     if (input.diffSessionId !== undefined && tab.diffSessionId !== input.diffSessionId) {
       next.diffSessionId = input.diffSessionId;
+    }
+    if (input.diffCommitSha !== undefined && tab.diffCommitSha !== input.diffCommitSha) {
+      next.diffCommitSha = input.diffCommitSha;
       bumpRevision = true;
     }
     if (pageChanged) {

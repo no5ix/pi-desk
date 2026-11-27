@@ -1876,12 +1876,13 @@ export function AppShell() {
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
-    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number; diffSessionId?: string | null },
+    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number; diffSessionId?: string | null; diffCommitSha?: string | null },
   ) => {
     if (isChatWorkspaceActive && !(chatFolderCwd && isPathInside(filePath, chatFolderCwd))) return;
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
     const diffSessionId = options?.diffSessionId;
+    const diffCommitSha = options?.diffCommitSha;
     const page = options?.page;
     const tabId = `file:${filePath}`;
     setFileTabs((prev) => openFileTab(prev, {
@@ -1891,6 +1892,7 @@ export function AppShell() {
       page,
       sourceSessionId,
       diffSessionId,
+      diffCommitSha,
       tabId,
     }));
     setActiveFileTabId(tabId);
@@ -2290,9 +2292,12 @@ export function AppShell() {
   }, [handleOpenFile]);
   // The same tab, in the Diff mode: a file the working tree changed is read as its
   // diff, which is what a tap on a row of the Commit panel asks for.
-  const handleGitPanelOpenFileDiff = useCallback((filePath: string, fileName: string) => {
+  // A file row of the Git panel opens its diff, not the file. A row of a commit
+  // carries the commit, and the diff is that commit's change to the file; a row
+  // of the working tree is answered by the working tree.
+  const handleGitPanelOpenFileDiff = useCallback((filePath: string, fileName: string, commitSha?: string) => {
     setGitPanelOpen(false);
-    handleOpenFile(filePath, fileName, { modeHint: "diff" });
+    handleOpenFile(filePath, fileName, { modeHint: "diff", diffCommitSha: commitSha ?? null });
   }, [handleOpenFile]);
   const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
   // Which project the header's folder belongs to. A linked worktree is not a new
@@ -3861,6 +3866,7 @@ export function AppShell() {
               cwd={workbenchCwd ?? undefined}
               sourceSessionId={activeFileTab.sourceSessionId}
               diffSessionId={activeFileTab.diffSessionId}
+              diffCommitSha={activeFileTab.diffCommitSha}
               gitRefreshKey={explorerRefreshKey}
               initialDisplayMode={activeFileTab.initialDisplayMode}
               initialPage={activeFileTab.page}

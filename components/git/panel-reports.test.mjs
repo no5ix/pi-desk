@@ -95,7 +95,13 @@ await test("9. the search box answers Enter, and sends the word to git", async (
   assert.match(server, /args\.push\("-i",\s*`--grep=\$\{options\.search\}`\)/, "git filters on the message (--grep), case-insensitively");
   // A word of hex digits is a hash the reader just read in the row, and git's
   // --grep says nothing about hashes: the rows are picked here.
-  assert.match(server, /const hashQuery = \/\^\[0-9a-f\]\{4,40\}\$\/i\.test\(options\.search/, "a hex word is read as a hash query");
+  assert.match(server, /const hashQuery = \/\^\[0-9a-f\]\{3,40\}\$\/i\.test\(searchWord\)/,
+    "a hex word of three or more digits is read as a hash query: a hand stops typing when the list narrows to one");
+  assert.match(server, /commit\.hash\.startsWith\(word\) \|\| commit\.shortHash\.startsWith\(word\)/,
+    "and it matches the hash, not the prose: 8ab2 must not turn into a full-text search");
+  assert.match(server, /this\.resolveHashPrefix\(word\)/,
+    "a prefix deeper than the page is resolved by git, so the row is found wherever it lies");
+  assert.match(server, /--disambiguate=\$\{prefix\}/, "by git's own prefix lookup");
   assert.match(server, /commit\.hash\.startsWith\(word\)/, "and the hash itself matches the word");
 });
 

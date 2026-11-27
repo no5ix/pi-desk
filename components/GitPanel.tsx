@@ -154,10 +154,10 @@ export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepositor
     onOpenFile(absolute, label ?? absolute.split("/").pop() ?? absolute);
   }, [toAbsolutePath, onOpenFile]);
 
-  const openFileDiff = useCallback((repoPath: string, label?: string) => {
+  const openFileDiff = useCallback((repoPath: string, label?: string, commitSha?: string) => {
     const absolute = toAbsolutePath(repoPath);
     const name = label ?? absolute.split("/").pop() ?? absolute;
-    if (onOpenFileGitDiff) onOpenFileGitDiff(absolute, name);
+    if (onOpenFileGitDiff) onOpenFileGitDiff(absolute, name, commitSha);
     else onOpenFile(absolute, name);
   }, [toAbsolutePath, onOpenFile, onOpenFileGitDiff]);
 
@@ -345,7 +345,7 @@ export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepositor
                     currentBranch={current?.name ?? null}
                     onBusy={setBusy}
                     onChanged={refresh}
-                    onOpenFileDiff={({ label }) => openFileDiff(label)}
+                    onOpenFileDiff={({ label, to }) => openFileDiff(label, undefined, to)}
                     onOpenFileAtRevision={(hash, filePath) => void openFileAtRevision(hash, filePath)}
                     onOpenFileHistory={(filePath) => openFile(filePath)}
                     onOpenBlame={(filePath) => setDialog({ kind: "blame", filePath })}

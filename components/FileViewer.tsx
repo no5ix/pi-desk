@@ -55,6 +55,8 @@ interface Props {
    * card's counts are the session's own.
    */
   diffSessionId?: string | null;
+  /** The commit whose change to this file the Diff mode shows. */
+  diffCommitSha?: string | null;
   onOpenFile?: (filePath: string, page?: number) => void;
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   /** Insert this file's relative path into the chat input (@ mention). */
@@ -1379,6 +1381,7 @@ function TextFileViewer({
 
     try {
       const params = new URLSearchParams({ cwd, path: targetPath });
+      if (diffCommitSha) params.set("ref", diffCommitSha);
       const response = await fetch(`/api/git/diff?${params.toString()}`);
       const next = await response.json() as GitFileDiffResponse & { error?: string };
       if (requestId !== gitDiffRequestRef.current) return;

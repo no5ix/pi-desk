@@ -464,3 +464,34 @@ the list request is `GET /api/files/<…>/.ruff_cache?type=list`. The running
 app's tree was already right at this commit — the packaged build the report came
 from predates `readGitIgnoredNames`' "Git has no view" fallback, and with the
 route's three-kind rule the folder opens whatever git answers.
+
+## The fourth batch: the hash box, the date column, a commit's file diff (2026-07-29)
+
+- **`8ab2` / `8ab` found the wrong commits.** The box read a hex word of **four or
+  more** digits as a hash; `8ab` fell through to `git log --grep=8ab`, a
+  full-text search, and commits whose message contains `8ab` surfaced. And a hex
+  word matched the subject and the body as well as the hash, so `8ab2` was a
+  full-text search too. Now: three is the shortest hash word (a hand stops
+  typing when the list narrows to one), a hash-shaped word matches **only** the
+  hash, and a prefix deeper than the page is resolved by git's own
+  `rev-parse --disambiguate=<prefix>` (`resolveHashPrefix` in
+  `lib/git/git-service.ts`). A word that is hex-shaped and matches no hash falls
+  back to the message, so `beef` still searches prose.
+- **The date was cut off** (`2026-11-13 2`): `.git-log-date` was 40px wide. It
+  keeps its room now (`min-width: 104px`, `width: auto`); the subject is the
+  column that shrinks.
+- **A commit's file row opened the file, not its diff.** The Diff mode read the
+  working tree, and a committed clean file has no working-tree diff, so the mode
+  fell back to the source. `getGitFileDiff` takes a `ref` (the commit against its
+  first parent, `git show` for a root commit), `/api/git/diff` accepts and
+  validates `ref`, the tab carries `diffCommitSha`, and the Commit panel's file
+  rows pass the commit through `openFileDiff(path, label, to)`.
+
+Verified: `app/api/git/flow.test.mjs` 13/13 (the hex case included),
+`components/git/panel-reports.test.mjs` 8/8 (extended: three-digit hash words, the
+hash-only match, the git-side prefix resolution), with `panel-reports-2` 7,
+`FileExplorer.hidden-tree` 4, `app/api/git/diff/route.test.mjs`,
+`AppShell.git-panel` 12, `inline-style-tokens`, i18n suites: 57/57 then 8/8.
+`tsc --noEmit` clean. Not re-measured this batch: the phone expand button and the
+phone project list, which landed in `a91c873e` and are on the dev server, not on
+the packaged build the screenshots came from.

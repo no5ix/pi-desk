@@ -219,9 +219,27 @@ async function findFileRepositoryRoot(cwd: string, filePath: string): Promise<st
   return (await findRepositoryRoot(directory)) ?? (await findRepositoryRoot(cwd));
 }
 
-export async function getGitFileDiff(cwd: string, filePath: string): Promise<GitFileDiffResponse> {
+export async function getGitFileDiff(cwd: string, filePath: string, ref?: string): Promise<GitFileDiffResponse> {
   const repositoryRoot = await findFileRepositoryRoot(cwd, filePath);
   if (!repositoryRoot) return { supported: false };
+  if (ref) {
+    // The commit's own change to this file: `ref` against its first parent, the
+    // way a hosting site shows one file of one commit. A root commit has no
+    // parent, and `git show` answers that case with the same patch shape.
+    const relative = toGitPath(path.relative(resolveExistingPath(repositoryRoot), resolveExistingPath(filePath)));
+    if (!relative || relative.startsWith("..")) return { supported: false };
+    const run = async (range: string[]) => {
+      try {
+        const { stdout } = await execGitFile(repositoryRoot, ["--no-pager", "diff", "--no-color", "--no-ext-diff", "--unified=3", ...range, "--", relative]);
+        return stdout.includes("@@") ? stdout : null;
+      } catch {
+        return null;
+      }
+    };
+    const change = (await run([ref + "^", ref])) ?? (await run(["show", "--format=", ref]));
+    if (!change) return { supported: false };
+    return { supported: true, status: "modified", patch: change };
+  }
   // Git names the repository by its real path, while the file and the cwd may be named
   // through a link: compare real paths. A file whose real path leaves the repository
   // stays out; the route has already checked that real path against the allowed roots.
