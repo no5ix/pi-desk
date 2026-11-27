@@ -572,3 +572,59 @@ server side too (`app/api/git/flow.test.mjs` asserts that a remote group has no
 `name` key). A `useGitQuery<T>` whose `T` was typed by the caller, not copied
 from the command's return, is the same bug in the other direction — the compiler
 is told a lie and stops helping.
+
+## The row owns its menu, and the menu opens under the row (2026-07)
+
+The file tree's hover buttons (`@ mention`, download) took width from the name at
+a narrow panel and offered two actions out of ten. Every row now has a menu
+button, and the menu opens under the **row's** left edge — for the tree
+(`components/FileTreeMenu.tsx`) and for the Git panel (`anchorTo` in
+`components/git/git-ui.tsx`, walking `closest(".git-branch-row, .git-log-row,
+.git-shelf-row, .git-change-row, [data-git-menu-row]")`). A menu anchored to a
+16px button at the far right of a wide row reads as a menu about the button, and
+in a narrow panel it lands off the row it describes.
+
+**Delete goes to the system Trash** (`lib/trash.ts`, the rule that removed chats
+follow). A taken name is refused, never silently overwritten; an explicit
+overwrite is the only path that removes what is there. A project root is not the
+tree's to delete.
+
+**A compare tab is a separate view**, keyed `compare:<a>:<b>`, not a mode of the
+file tab. The same file opened plainly is a different question, and one tab id
+cannot carry both.
+
+## The Git panel lives as long as the right sidebar, not as long as its toggle (2026-07)
+
+`GitPanel` is mounted while `rightPanelOpen`, and hidden when its own toggle is
+off. Reopening the Git view is a look at the same repository; the panel refetches
+on its refresh buttons, on the `GET /api/git/events` stream, and when the sidebar
+itself closes and opens again. A panel that re-reads git on every tab switch
+flickers, and on a big repository it is a second of blank list for a glance.
+
+The consequence is written down because it is a real cost: while the sidebar is
+open the panel's queries and its SSE stream stay alive, so a hidden panel keeps
+watching the repository. That is the same liveness the panel has when it is
+visible, and it has no timer.
+
+## A completion's kind decides whether Monaco keeps it (2026-07)
+
+`SuggestModel` builds a disabled-kinds set from `editor.suggest.show*` and drops
+every item whose kind is in it — no log, no notice, a popup that says "No
+suggestions". The document's own words are `CompletionItemKind.Text`, so
+`suggest.showWords: true` is not "turn Monaco's word list on" (`wordBasedSuggestions`
+stays `"off"`, our provider owns the vocabulary); it is the switch that keeps our
+own items. `Keyword` — the kind this editor used first — is filtered out by
+`showKeywords: false`.
+
+## A guard follows the code it guards (2026-07)
+
+Three source-shape guards failed because the code they name moved, not because
+the behaviour went: the composer's model picker is a row of the `+`'s menu
+(`AgentsConfig.test.mjs` now reads `ComposerPlusMenu.tsx` and ChatInput's
+`model={modelOptions…}` handoff), the tree's mention/download actions live in the
+row menu (`SessionSidebar.file-search.test.mjs` asserts the menu items and the
+shared `actions={actions}`), and the selector's filtered call takes `options`
+where the guard expected `sortedOptions`. Each assertion was rewritten to the
+file and shape that carries the behaviour, with the reason beside it. Deleting an
+assertion is not the move: every one of these three still fails if the behaviour
+goes.

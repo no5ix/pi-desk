@@ -214,6 +214,16 @@ full diff, commit and push. See PLAN.md.
 Known failures that are not this branch's: 34 component tests fail on
 `pi-desk-main` in this environment (ChatInput card geometry) and
 `scripts/upstream-css-baseline.test.mjs` fails at the base commit 38d99e1a too.
+Measured again on 2026-07-29 for the fifth batch: the suite at this branch's HEAD
+(stashed) is 5121 tests / 39 failures, and with this batch's work 5131 / 37 —
+**zero new failures**, two fixed (`AgentsConfig.test.mjs`'s model-selector guard,
+the upstream CSS baseline). The remaining 37 are the composer's source-shape
+guards that were never moved when its controls went into the `+`'s menu
+(ChatInput.*, ModelSelector, composer-panel-placement, usePopTransition,
+SideChatIcon, SessionSidebar.project-row, MobilePwaLayout, CostRouting.wiring,
+useAgentSession's compaction control): they fail identically with and without
+this batch, so they are listed under the fifth batch below and left for the pass
+that moves them.
 
 Rebase coverage, recorded honestly: the flow suite's rebase case was removed. In
 a real checkout it needed a fixture where the replayed commit applies cleanly,
@@ -495,3 +505,74 @@ hash-only match, the git-side prefix resolution), with `panel-reports-2` 7,
 `tsc --noEmit` clean. Not re-measured this batch: the phone expand button and the
 phone project list, which landed in `a91c873e` and are on the dev server, not on
 the packaged build the screenshots came from.
+
+## The fifth batch: the tree's menu, the Git panel's keep-alive, the completion kinds (2026-07-29)
+
+**The file tree's own menu.** The hover `@ mention` and download buttons are gone
+from every row; each row carries a menu button (`components/FileTreeMenu.tsx`,
+the `.app-menu` surface, opened from the **row's** left edge). A file is asked:
+Reveal, Select for Compare, Copy Path, Copy Relative Path, Rename, Delete, Show
+File Git History, Git Blame, @ Mention, Download. A folder is asked: New File…,
+New Folder…, Reveal, Find in Folder…, Cut, Copy, Copy Path, Copy Relative Path,
+Rename…, Delete — with Paste in the folder that is the paste target, and Show Git
+Changes for the project root.
+
+- `lib/file-ops.ts` is the server side: rename, create, mkdir, delete (to the
+  system Trash), copy, move. Both ends are resolved through symlinks inside the
+  browsable roots, a protected path (`.git`, a credential store) is never a
+  target, a name is one segment, a taken name is refused, a folder over the caps
+  is refused rather than frozen. `app/api/files/[...path]/route.ts` answers it as
+  `POST ?type=fsop`.
+- `lib/file-compare.ts` + `GET /api/files/compare?a=&b=` answer "Select for
+  Compare": `git diff --no-index` between two files as they sit on disk, with the
+  same authorization, a size cap, and a binary refusal. The tab is
+  `compare:<a>:<b>` — a distinct view from the plain file tab — opens in the Diff
+  mode, and `components/FileViewer.tsx` reads the compare route into the same
+  diff slot the working tree uses.
+- Show File Git History / Git Blame open the Git panel: the log gains a file
+  filter (`LogPanel` `fileFilter`, its chip names the file, `×` clears it), the
+  blame dialog opens for the path. The request is consumed the moment the panel
+  takes it, so clearing the filter is not undone by a tab switch.
+- Find in Folder… restricts the tree's own search to that folder, and the search
+  row says so (`in <folder> ×`). A search that quietly answers for one folder is
+  a search that lies.
+- `lib/file-ops.test.mjs` (9 tests) found a real bug on the way in:
+  `validateOperationName` trimmed the name *before* the trailing dot/space rule,
+  which made the rule unreachable for exactly the name it exists for.
+
+**The Git panel.** The branch, commit and file menus open under their **row**
+(`anchorTo` walks `closest(MENU_ROW_SELECTOR)`), not under the small button at
+the row's right — the same rule the tree's menu uses. The commit panel's file row
+now names its commit (`{ from, to, file, label }` → `?ref=` on `/api/git/diff`),
+so a row opens the commit's diff for that file; the working tree has no diff for
+a file that is committed clean, which is what made the row look broken. The
+panel's header gained its own expand button (the mobile panel's upper-right).
+
+**No reload when the Git view is closed and reopened.** `components/AppShell.tsx`
+keeps `GitPanel` mounted for as long as the right sidebar is open
+(`.git-panel-keepalive`, `hidden={!gitPanelOpen}`). Closing the Git view is a look
+away; closing the sidebar is the boundary, and the next open reads git again. The
+panel's refresh buttons and the `GET /api/git/events` stream stay the ways its
+data moves.
+
+**The editor's completion, and the branch's broken compile.** The document's
+words are `CompletionItemKind.Text` with `suggest.showWords: true`, because
+Monaco's suggest model builds a disabled-kinds set from `editor.suggest.show*`
+and drops matching items in silence. Six compile errors that the branch was
+carrying are fixed: `isCommitSha` (the diff route's `ref`), `execGitFile` →
+`runGit` in `lib/git-changes.ts`, `diffCommitSha` never destructured in
+`FileViewer`, `diffCommitSha`/`compareWith` missing from `Tab`, the `fsop`
+payload's `name`, and the `modeHint: "edit"` union. `tsc --noEmit` is clean.
+
+**The upstream stylesheets are upstream's.** `app/globals.css` carried two fork
+declarations with hardcoded colours; the same rules already live in
+`app/native-theme.css`, which is imported last, so restoring the upstream bytes
+changes nothing on screen and `scripts/upstream-css-baseline.test.mjs` passes
+again. The fork's two hardcoded values stay where they belong — the fork sheet.
+
+**Verification (2026-07-29).** `tsc --noEmit` clean. `npm run lint` clean of
+errors (48 warnings, upstream's and the git port's). Unit suite: 5131 tests,
+37 failures — measured against the same suite at HEAD with this work stashed
+(5121 / 39): **zero new failures, two fixed**. `e2e/git-panel.mjs` passes.
+`e2e/file-editor.mjs` passes every assertion except the completion popup, which
+stays an open blocker (BLOCKERS.md).
