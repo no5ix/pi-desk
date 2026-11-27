@@ -66,7 +66,6 @@ test("the switch that keeps the extension out of every session is reported, not 
       state: "disabled",
       tasks: [],
       sessions: [],
-      sessionNames: {},
     });
     assert.match(snapshot.reason, /PI_WEB_DISABLE_BACKGROUND_TASKS/);
   } finally {

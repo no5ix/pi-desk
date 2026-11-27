@@ -1,63 +1,65 @@
 "use client";
 
-// The header's Background Tasks control, with its own copy of the counts.
-//
-// The badge's numbers come from the same host interface as the panel, read in this small
-// component on purpose: a snapshot that lands in the shell's state would re-render the whole
-// application every tick, and the shell is the heaviest tree in the app. Here a new count
-// re-renders one button.
-//
-// While the card is closed the read is the cheapest one the host interface offers — one task
-// per activation, because the counts ride every list response — on a slow tick, and it is
-// skipped while the tab is hidden. Opening the card is what starts the change stream.
+// The Background Tasks control in the title row, beside the subagent counts
+// (components/AppShell.tsx). It wears the row's own pill — the class the subagent counts wear —
+// because it is the same kind of control in the same row: a count of work that opens a card under
+// itself, at the same size. Its states add only what the row's pill does not say: the head glyph
+// breathes green while a task runs, turns warning when the newest news is a task that failed, and
+// lies dim when nothing runs and all is seen. The numbers are the extension's own counts, streamed
+// by the extensions themselves (hooks/useBackgroundTasksRunning.ts); the control adds nothing.
 
-import { useMemo } from "react";
-import type { Ref } from "react";
-import { TopbarBackgroundTasks } from "./TopbarBackgroundTasks";
-import { useBackgroundTasks } from "@/hooks/useBackgroundTasks";
-import { backgroundTasksBadge } from "@/lib/background-tasks/session-view";
-import type { TranslationParams } from "@/lib/i18n/types";
+import { forwardRef } from "react";
+import { BackgroundTasksIcon } from "./BackgroundTasksIcon";
 
-export interface TopbarBackgroundTasksButtonProps {
-  sessionId: string | null;
-  open: boolean;
+interface Props {
+  running: number;
+  unseenFailed: number;
+  /** The word for the work, from the catalog (`sidebar.backgroundTasks`). */
+  label: string;
+  tasksOpen: boolean;
   onToggle: () => void;
-  translate: (key: string, params?: TranslationParams) => string;
-  anchorRef?: Ref<HTMLElement>;
+  title: string;
 }
 
-export function TopbarBackgroundTasksButton({
-  sessionId,
-  open,
-  onToggle,
-  translate,
-  anchorRef,
-}: TopbarBackgroundTasksButtonProps) {
-  const { snapshot } = useBackgroundTasks({ sessionId, open });
-  const badge = useMemo(
-    () => backgroundTasksBadge(snapshot?.counts ?? {
-      running: 0,
-      completed: 0,
-      failed: 0,
-      killed: 0,
-      unseenCompleted: 0,
-      unseenFailed: 0,
-      unseenKilled: 0,
-      total: 0,
-    }),
-    [snapshot?.counts],
-  );
-  return (
-    <TopbarBackgroundTasks
-      running={badge.running}
-      unseenFailed={badge.unseenFailed}
-      unseenKilled={badge.unseenKilled}
-      unseenCompleted={badge.unseenCompleted}
-      available={snapshot?.available === true}
-      open={open}
-      onToggle={onToggle}
-      translate={translate}
-      anchorRef={anchorRef}
-    />
-  );
-}
+export const TopbarBackgroundTasksButton = forwardRef<HTMLButtonElement, Props>(
+  ({ running, unseenFailed, label, tasksOpen, onToggle, title }, ref) => {
+    return (
+      <button
+        ref={ref}
+        type="button"
+        className={[
+          // The row's own pill, the class the subagent counts wear: the chip is the same control
+          // in the same row, so it takes the pill, the hover wash, the focus ring and the glyph
+          // sizing from that rule (app/native-theme.css) and adds only its states below.
+          "app-topbar-subagents",
+          "bg-tasks-chip",
+          running > 0 ? "is-running" : "is-idle",
+          unseenFailed > 0 ? "has-failed" : "",
+          tasksOpen ? "is-open" : "",
+        ].filter(Boolean).join(" ")}
+        onClick={onToggle}
+        onKeyDown={(event) => {
+          // Enter and Space open the card, the same as a click. Escape is the shell's.
+          if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+        data-background-tasks-button=""
+        title={title}
+        aria-label={title}
+        aria-haspopup="dialog"
+        aria-expanded={tasksOpen}
+      >
+        <span className="bg-tasks-head-mark">
+          <BackgroundTasksIcon size={13.5} strokeWidth={2.1} />
+        </span>
+        <span className="bg-tasks-chip-count">{running}</span>
+        <span className="bg-tasks-chip-label">{label}</span>
+        {unseenFailed > 0 && <span className="bg-tasks-chip-mark" aria-hidden="true">⚠</span>}
+      </button>
+    );
+  },
+);
+
+TopbarBackgroundTasksButton.displayName = "TopbarBackgroundTasksButton";

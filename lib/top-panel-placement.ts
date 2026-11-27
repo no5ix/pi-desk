@@ -60,31 +60,34 @@ export interface PanelBox {
 }
 
 /**
- * Places the Agents panel.
+ * Places the Agents panel, and any card that follows its rule (the Background Tasks card is
+ * one): a card that opens under the chip which opens it.
  *
  * `topBar` is the header's box: it spans exactly the conversation column, because the
  * sidebar and the file panel are full-height siblings of that column. `chip` is the
- * subagent count that opens the panel, or null when there is none to anchor to (an
- * empty family renders no chip) — then the card centres, as on a phone.
+ * control that opens the panel, or null when there is none to anchor to (an
+ * empty family renders no chip) — then the card centres, as on a phone. `width` is the card's
+ * own width; the Agents card and the task monitor are not the same shape.
  */
 export function placeAgentsPanel(
   topBar: PanelBox,
   chip: { left: number } | null,
   isMobile: boolean,
+  width = AGENT_PANEL_WIDTH,
 ): TopPanelPlacement {
   const gutter = AGENT_PANEL_EDGE_GUTTER;
-  const width = Math.min(AGENT_PANEL_WIDTH, topBar.width - gutter * 2);
+  const cardWidth = Math.min(width, topBar.width - gutter * 2);
   const anchor = isMobile || !chip
-    ? (topBar.left + topBar.right) / 2 - width / 2
+    ? (topBar.left + topBar.right) / 2 - cardWidth / 2
     : chip.left;
   // Keep the card inside the column: a count near the row's end moves the card left so
   // its right edge stays off the window, never off the conversation. The inner max is a
   // column narrower than the card plus both gutters: the left gutter wins there.
   const left = Math.min(
     Math.max(anchor, topBar.left + gutter),
-    Math.max(topBar.left + gutter, topBar.right - width - gutter),
+    Math.max(topBar.left + gutter, topBar.right - cardWidth - gutter),
   );
-  return { top: topBar.bottom + AGENT_PANEL_DROP_GAP, left, width, floating: true };
+  return { top: topBar.bottom + AGENT_PANEL_DROP_GAP, left, width: cardWidth, floating: true };
 }
 
 /**

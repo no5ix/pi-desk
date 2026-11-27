@@ -92,6 +92,12 @@ interface Props {
   subagentsRunning?: boolean;
   /** Stop the conversation's live subagent runs (the Agents panel's Stop, per run). */
   onAbortSubagents?: () => void;
+  /** How many of this conversation's background shell tasks are running, by the extension's own
+   *  count. While one runs the disc is Stop, not the send arrow: an idle arrow on a conversation
+   *  whose tasks are running asked for a prompt, and the work had no control on the composer. */
+  backgroundTasksRunning?: number;
+  /** Stop this conversation's running background tasks: the frozen running set, in the extension. */
+  onAbortBackgroundTasks?: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   /** C1: while a run streams, send the draft to a new side chat instead (no images, as `/side`). */
   onSideChat?: (message: string) => void;
@@ -792,7 +798,7 @@ export function ModelScopeWarningBanner({
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAttachFiles, onAbort, subagentsRunning, onAbortSubagents, onSteer, onSideChat, onFollowUp, isStreaming, model, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange,
+  onSend, onAttachFiles, onAbort, subagentsRunning, onAbortSubagents, backgroundTasksRunning = 0, onAbortBackgroundTasks, onSteer, onSideChat, onFollowUp, isStreaming, model, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange,
   defaultModel, onSetDefaultModel,
   onCompact, onAbortCompaction, isCompacting, compactError, compactNotice, compactResult, summarizationRetry, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
@@ -1669,13 +1675,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // subagent leaves the main session idle, and an idle composer answered an empty card
   // with a send arrow while a run was going. With a draft in the card the arrow keeps
   // its meaning (queue into a run, send into an idle session).
-  const showStop = (isStreaming || Boolean(subagentsRunning)) && !canQueueStreamingMessage;
+  const showStop = (isStreaming || Boolean(subagentsRunning) || backgroundTasksRunning > 0) && !canQueueStreamingMessage;
+  // What the Stop is stopping, in its own words: a turn, a subagent run, or the conversation's
+  // background tasks. The disc is one button; the name says which work it acts on.
+  const stopLabel = backgroundTasksRunning > 0 && !isStreaming && !subagentsRunning
+    ? t("backgroundTasks.stopRunning", { count: backgroundTasksRunning })
+    : t("chat.stopAgent");
   const stopRuns = () => {
     // A running turn owns the disc and its Stop cascades to the children it waits on
     // (lib/subagent-runtime.ts aborts the wait with the parent). Only an idle session
     // needs the per-run route.
     if (isStreaming) onAbort();
-    else onAbortSubagents?.();
+    // A session idle with background tasks running stops those: they are the only work the
+    // composer can act on at that moment, and the disc that appeared for them means them.
+    else if (subagentsRunning) onAbortSubagents?.();
+    else onAbortBackgroundTasks?.();
   };
   // Warn when images are attached but the selected model is known not to accept
   // image input (#584), including a resolved default. Unknown models stay silent.
@@ -3244,8 +3258,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             data-action={showStop ? "stop" : isStreaming ? "queue" : "send"}
             onClick={showStop ? stopRuns : isStreaming ? () => void sendQueued(onFollowUp ? "followup" : "steer") : handleSend}
             disabled={!showStop && (!canSend || (isStreaming && !onFollowUp && !onSteer))}
-            title={t(showStop ? "chat.stopAgent" : isStreaming ? "chat.queueMessage" : "chat.send")}
-            aria-label={t(showStop ? "chat.stopAgent" : isStreaming ? "chat.queueMessage" : "chat.send")}
+            title={showStop ? stopLabel : isStreaming ? t("chat.queueMessage") : t("chat.send")}
+            aria-label={showStop ? stopLabel : isStreaming ? t("chat.queueMessage") : t("chat.send")}
             style={{ flexShrink: 0, alignSelf: "flex-end", ...(compact ? { display: "flex", alignItems: "center", gap: 6 } : null) }}
           >
             {showStop ? (

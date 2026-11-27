@@ -3917,7 +3917,6 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
-/* (The side-chat group's lit colour is the hover rule below, which covers both.) */
 
 .app-topbar-subagents svg {
   flex: 0 0 auto;
@@ -15138,47 +15137,6 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
    a failure is `--danger`, a stopped task is muted ink, and a finished task is ink — a log
    full of colour is a log nobody scans. */
 
-.app-topbar-tasks {
-  position: relative;
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 0 6px;
-  border-radius: var(--radius-sm);
-}
-
-.app-topbar-tasks.is-open {
-  /* The card is open: the button reads as the surface it owns, like the More trigger. */
-  background: var(--bg-selected) !important;
-  color: var(--text) !important;
-}
-
-.app-topbar-tasks.is-running {
-  color: var(--success);
-}
-
-.app-topbar-tasks-count {
-  font-size: var(--fs-micro);
-  font-weight: var(--fw-semibold);
-  line-height: 1;
-  min-width: 9px;
-  text-align: center;
-}
-
-.app-topbar-tasks-failed {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--danger);
-  /* The panel's own ink, so the dot reads as sitting on the bar, not in it. */
-  box-shadow: 0 0 0 2px var(--bg-panel);
-}
-
 .bg-tasks-panel {
   display: flex;
   flex-direction: column;
@@ -15189,7 +15147,49 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
      tall enough to see the end of a build in. The wrapper AppShell places caps this to the
      viewport; the floor keeps the filter row and a few rows on the page. */
   min-height: 224px;
-  max-height: min(620px, calc(100dvh - 96px));
+  /* The same box the Agents card is placed in: the shell hands the wrapper's limit down as
+     `--top-panel-max-height` (components/AppShell.tsx) and the card fills it, so a task monitor
+     is as tall as the card beside it. A card of its own smaller cap made a monitor of three rows
+     read like a tooltip. */
+  max-height: var(--top-panel-max-height, 100%);
+  overflow: hidden;
+}
+
+/* The wrapper becomes a column for this card, so the card grows into the box the shell sized and
+   its pages shrink to it; each page scrolls in its own layer (`.bg-tasks-list`, `.bg-tasks-detail`,
+   `.bg-tasks-log`) while the card's frame, its head and the filter row stay. */
+.top-panel-card:has(> .bg-tasks-panel) {
+  display: flex;
+  flex-direction: column;
+}
+.bg-tasks-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Two pages, slid sideways in one track: the list, and the task's detail. A row opens the
+   detail, which comes in from the right with a back control in its upper-left corner, and the
+   list keeps its place for the way back — the Settings dialog's navigation, on the card's own
+   surface. */
+.bg-tasks-track {
+  display: flex;
+  width: 200%;
+  flex: 1 1 auto;
+  min-height: 0;
+  transition: transform var(--dur-base) var(--ease-native);
+}
+
+.bg-tasks-panel[data-page="detail"] .bg-tasks-track {
+  transform: translateX(-50%);
+}
+
+.bg-tasks-page {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 50%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .bg-tasks-head {
@@ -15639,11 +15639,54 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   color: var(--danger);
 }
 
-.bg-tasks-detail-actions {
+/* The detail page: the page's own head carries the back control, the task's name in the
+   middle and its actions at the right, in the row's chip ink. */
+.bg-tasks-detail-bar .bg-tasks-page-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bg-tasks-back {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-left: auto;
+  gap: 3px;
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: none;
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease-native),
+    background var(--dur-fast) var(--ease-native);
+}
+
+.bg-tasks-back:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.bg-tasks-back:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* On the detail page the body and the log take the height the card has, so a long build log is
+   read in the card, not in a 156px window with the rest of the card empty. */
+.bg-tasks-page.is-detail .bg-tasks-detail {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.bg-tasks-page.is-detail .bg-tasks-log {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 156px;
 }
 
 .bg-tasks-detail-note {
@@ -15777,40 +15820,78 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   color: var(--warning);
 }
 
-.bg-tasks-sessions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  padding: 0 2px;
-  color: var(--text-dim);
-  font-size: var(--fs-micro);
-}
-
-.bg-tasks-session {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.bg-tasks-session.is-primary {
-  color: var(--text-muted);
-}
-
-.bg-tasks-session.is-closed {
-  opacity: 0.6;
-  text-decoration: line-through;
-}
-
-.bg-tasks-session-count {
-  color: var(--success);
-  font-variant-numeric: tabular-nums;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .app-topbar-tasks,
+  .bg-tasks-chip,
   .bg-tasks-icon-button,
   .bg-tasks-filter,
-  .bg-tasks-row {
+  .bg-tasks-row,
+  .bg-tasks-back,
+  .bg-tasks-track {
     transition: none;
   }
+  /* The head that breathes stops breathing; it stays green, and says nothing by pulsing. */
+  .bg-tasks-chip .bg-tasks-head-mark,
+  .bg-tasks-chip.has-failed .bg-tasks-head-mark {
+    animation: none;
+  }
+}
+
+/* The chip is a title-row pill: the subagents chip's shape, its plate while work runs, and its
+   breathing head while a task runs (the app's one running-head motion, shared with
+   components/AgentRunningIcon.tsx). Green is "working", warning is "the newest news is a task
+   that failed", dim is "nothing is running and all is seen". */
+.bg-tasks-chip {
+  justify-content: center;
+}
+.bg-tasks-chip.is-open {
+  /* The card is open: the chip reads as the surface it owns, as the row's other chips do. */
+  background: var(--bg-selected);
+  color: var(--text);
+}
+.bg-tasks-chip.is-running {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.bg-tasks-chip.is-running:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.bg-tasks-chip .bg-tasks-head-mark {
+  flex-shrink: 0;
+  color: var(--success);
+  animation: subagents-breathe 2s ease-in-out infinite;
+}
+.bg-tasks-chip.is-idle .bg-tasks-head-mark {
+  color: var(--text-muted);
+  animation: none;
+}
+.bg-tasks-chip.has-failed .bg-tasks-head-mark {
+  color: var(--warning);
+  animation: subagents-breathe 2s ease-in-out infinite;
+}
+.bg-tasks-chip-mark {
+  font-size: var(--font-sm);
+  line-height: 1;
+}
+.bg-tasks-chip-count {
+  font-weight: 600;
+}
+.bg-tasks-chip-label {
+  color: var(--text);
+  font-weight: 500;
+}
+.bg-tasks-detail-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* A conversation with shell work going in the background, marked in its sidebar row: the task
+   list glyph in the running green, where a live run wears its spinner. */
+.session-item-bg-tasks {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--success);
 }

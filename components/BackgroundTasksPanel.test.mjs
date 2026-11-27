@@ -21,21 +21,19 @@ const jiti = createJiti(import.meta.url, {
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
 const { I18nProvider, useI18n } = await jiti.import("@/hooks/useI18n");
-const { TopbarBackgroundTasks } = await jiti.import("./TopbarBackgroundTasks.tsx");
+const { TopbarBackgroundTasksButton } = await jiti.import("./TopbarBackgroundTasksButton.tsx");
 const { BackgroundTasksPanel } = await jiti.import("./BackgroundTasksPanel.tsx");
 
 function renderButton(props) {
   const Host = () => {
     const { t: translate } = useI18n();
-    return React.createElement(TopbarBackgroundTasks, {
+    return React.createElement(TopbarBackgroundTasksButton, {
       running: 0,
       unseenFailed: 0,
-      unseenKilled: 0,
-      unseenCompleted: 0,
-      available: true,
-      open: false,
+      label: translate("backgroundTasks.chipLabel"),
+      title: translate("backgroundTasks.title"),
+      tasksOpen: false,
       onToggle() {},
-      translate,
       ...props,
     });
   };
@@ -61,44 +59,52 @@ test("the header's button is one control that names what it opens, and says it i
   assert.match(html, /<button[^>]*data-background-tasks-button=""/);
   assert.match(html, /aria-haspopup="dialog"/);
   assert.match(html, /aria-expanded="false"/);
-  assert.match(html, /class="native-toolbar-button app-topbar-tasks is-running"/);
-  // The tooltip and the accessible name are the same sentence: the state, in the card's order.
+  // A chip of the row under the title (project, branch, subagents, clock), wearing that row's
+  // pill class — the subagent counts' own — so it is the same control at the same size, and not
+  // a box control of the actions row.
+  assert.match(html, /class="app-topbar-subagents bg-tasks-chip is-running has-failed"/);
+  assert.ok(!html.includes("native-toolbar-button"), "the chip is not a toolbar box");
+  // The tooltip and the accessible name name the card the chip opens. The numbers are in the
+  // chip itself (the running count, the failure mark), read at a glance; the name is stable.
   const label = /aria-label="([^"]*)"/.exec(html)?.[1] ?? "";
   assert.match(label, /Background Tasks/);
-  assert.match(label, /2 running/);
-  assert.match(label, /1 failed/);
   assert.equal(/title="([^"]*)"/.exec(html)?.[1], label);
 });
 
-test("the badge is the extension's number, and nothing is worn when there is nothing to report", () => {
+test("the chip wears the extension's numbers, and nothing is worn when there is nothing to report", () => {
   const bare = renderButton({});
-  assert.ok(!bare.includes("app-topbar-tasks-count"), "no running tasks: no number");
-  assert.ok(!bare.includes("app-topbar-tasks-failed"), "no unseen failure: no dot");
-  assert.ok(!bare.includes("is-running"), "an idle header is not tinted as busy");
+  // The count is always the number the extension reported for this conversation; a conversation
+  // with nothing running reports zero, and the chip shows zero with no busy tint and no warning.
+  assert.match(bare, /class="bg-tasks-chip-count">0</);
+  assert.match(bare, /class="bg-tasks-chip-label">Tasks</);
+  assert.ok(!bare.includes("is-running"), "an idle chip is not tinted as busy");
+  assert.ok(!bare.includes("has-failed"), "no unseen failure: no mark");
+  assert.ok(!bare.includes("bg-tasks-chip-mark"), "no unseen failure: no glyph");
+  assert.ok(bare.includes("is-idle"), "the idle chip is the dim one");
 
   const running = renderButton({ running: 7 });
-  assert.match(running, /class="app-topbar-tasks-count"[^>]*>7</);
+  assert.match(running, /class="bg-tasks-chip-count">7</);
+  assert.match(running, /is-running/);
 
-  // A count that does not fit is a wall of digits on a 16px glyph: the cap is the app's rule.
-  assert.match(renderButton({ running: 99 }), />99</);
-  assert.match(renderButton({ running: 150 }), />99\+</);
-
-  // A killed task is unseen failure too, and its dot shares the mark with a failed one.
-  assert.match(renderButton({ unseenKilled: 1 }), /app-topbar-tasks-failed/);
-  assert.match(renderButton({ unseenCompleted: 2 }), /2 done/);
+  // A task that failed and was never read keeps its mark, in warning, until it is opened.
+  const failed = renderButton({ unseenFailed: 2 });
+  assert.match(failed, /has-failed/);
+  assert.match(failed, /class="bg-tasks-chip-mark"/);
 });
 
-test("a badge on a panel that can read nothing is a claim, so it is not worn", () => {
-  const html = renderButton({ available: false, running: 5, unseenFailed: 3 });
-  assert.ok(!html.includes("app-topbar-tasks-count"));
-  assert.ok(!html.includes("app-topbar-tasks-failed"));
-  // The tooltip is the bare title: no numbers the panel cannot back up.
+test("a chip with nothing to report says nothing: no entry in the index, no marks", () => {
+  // The numbers come from the extensions' own frames, per conversation. A conversation the
+  // extension is not answering for has no entry, so the chip shows the plain zero and no marks:
+  // a badge the app cannot back up is a claim, and the app never makes one.
+  const html = renderButton({ running: 0, unseenFailed: 0 });
+  assert.ok(!html.includes("has-failed"));
+  assert.ok(!html.includes("is-running"));
   assert.match(/aria-label="([^"]*)"/.exec(html)?.[1] ?? "", /^Background Tasks$/);
 });
 
-test("the open button reads as the card it owns", () => {
-  const html = renderButton({ open: true, running: 1 });
-  assert.match(html, /app-topbar-tasks is-open is-running/);
+test("the open chip reads as the card it owns", () => {
+  const html = renderButton({ tasksOpen: true, running: 1 });
+  assert.match(html, /app-topbar-subagents bg-tasks-chip is-running is-open/);
   assert.match(html, /aria-expanded="true"/);
 });
 
@@ -119,9 +125,39 @@ test("the card is a dialog of the app's menu surface, and its controls are named
   const source = readFileSync(new URL("./BackgroundTasksPanel.tsx", import.meta.url), "utf8");
   for (const key of ["backgroundTasks.loading", "backgroundTasks.empty", "backgroundTasks.notInstalled",
     "backgroundTasks.disabled", "backgroundTasks.noSession", "backgroundTasks.notReady",
-    "backgroundTasks.stopAllConfirm", "backgroundTasks.logFollowing"]) {
+    "backgroundTasks.stopAllConfirm", "backgroundTasks.logFollowing",
+    "backgroundTasks.detail", "backgroundTasks.detailPick"]) {
     assert.ok(source.includes(`"${key}"`), `the card renders ${key}`);
   }
+});
+
+test("a task opens as its own page, with the back control in the card's upper-left corner", () => {
+  const html = renderPanel();
+  // The card carries its page, and the two pages live in one track that slides.
+  assert.match(html, /class="bg-tasks-panel app-menu"[^>]*data-page="list"/);
+  assert.match(html, /class="bg-tasks-track"/);
+  assert.match(html, /class="bg-tasks-page is-list"/);
+  assert.match(html, /class="bg-tasks-page is-detail"[^>]*inert=""/);
+  // The detail page's head is the Settings dialog's navigation on this card's surface: back to
+  // the list in the upper-left corner, the task's name in the middle, the card's close at the
+  // right end. A row that opened a block *below* the list pushed the list out of the card.
+  assert.match(html, /class="bg-tasks-head bg-tasks-detail-bar"/);
+  assert.match(html, /class="bg-tasks-back"/);
+  assert.match(html, /class="bg-tasks-title bg-tasks-page-title"/);
+  // The back control names where it goes, and shows it: a chevron and the card's own name, in
+  // the upper-left corner, where the Settings dialog's back control is.
+  assert.match(html, /class="bg-tasks-back"><svg[\s\S]*?<path d="m15 18-6-6 6-6"/);
+  assert.match(html, /class="bg-tasks-back"[\s\S]*?<span>Background Tasks<\/span>/);
+  // The panel shows one conversation's tasks, so a conversation label inside it is the row's
+  // own name repeated: the session list and the "Started in" row are gone.
+  assert.ok(!html.includes("bg-tasks-sessions"), "no conversation list in the card");
+  assert.ok(!html.includes("bg-tasks-session"), "no conversation labels in the card");
+  const source = readFileSync(new URL("./BackgroundTasksPanel.tsx", import.meta.url), "utf8");
+  assert.ok(!source.includes("backgroundTasks.detail.startedIn"), "no 'Started in' row");
+  assert.match(source, /listenForStackedDialogEscape/, "Escape goes back to the list first");
+  const css = readFileSync(new URL("../app/native-theme.css", import.meta.url), "utf8");
+  assert.match(css, /\.bg-tasks-panel\[data-page="detail"\] \.bg-tasks-track\s*\{\s*transform: translateX\(-50%\);/);
+  assert.match(css, /max-height: var\(--top-panel-max-height, 100%\);/, "the card is as tall as the Agents card's box, handed down by the shell");
 });
 
 test("the card's parts are styled by the theme sheet, not by values written in the component", () => {
@@ -184,4 +220,97 @@ test("the client stops listening when the card is closed, and drops a reply that
   // conversation must not paint the previous one's tasks.
   assert.match(hook, /snapshotRequestRef|detailRequestRef|logsRequestRef/);
   assert.match(hook, /mountedRef/);
+});
+
+const read = (rel) => readFileSync(new URL(rel, import.meta.url), "utf8");
+
+test("a row opens the task's own page, with a back control in its upper-left corner", () => {
+  const source = read("./BackgroundTasksPanel.tsx");
+  // One track, two pages, slid sideways: the list keeps its place and the detail comes in from
+  // the right. An inline detail under a row is what this replaced.
+  assert.match(source, /className="bg-tasks-track"/);
+  assert.match(source, /className="bg-tasks-page is-list"/);
+  assert.match(source, /className="bg-tasks-page is-detail"/);
+  assert.match(source, /data-page=\{page\}/);
+  // The row opens the page; the back control returns, and the hidden page is inert so its
+  // controls are not in the tab order behind the visible one.
+  assert.match(source, /onClick=\{\(\) => openTask\(id\)\}/);
+  assert.match(source, /className="bg-tasks-back"/);
+  assert.match(source, /inert=\{page !== "detail"\}/);
+  // Escape goes back to the list before it closes the card, through the app's stacked rule.
+  assert.match(source, /listenForStackedDialogEscape\(document, \(\) => setPage\("list"\)\)/);
+  // The detail page's bar carries the task's actions; the bar's title is the section's word, so
+  // a name the extension built from a long prompt is clipped in its own head, not in the bar.
+  const detailBar = source.slice(source.indexOf('className="bg-tasks-head bg-tasks-detail-bar"'), source.indexOf('className="bg-tasks-head bg-tasks-detail-bar"') + 1800);
+  assert.match(detailBar, /translate\("backgroundTasks\.detail"\)/);
+  assert.ok(!detailBar.includes("backgroundTaskTitle"), "the bar does not print the task's long name");
+  assert.match(detailBar, /translate\("backgroundTasks\.stop"\)/);
+  assert.match(detailBar, /translate\("backgroundTasks\.rerun"\)/);
+});
+
+test("the card lists one conversation's tasks, and says nothing about the project's other conversations", () => {
+  const source = read("./BackgroundTasksPanel.tsx");
+  // The card is a monitor of this conversation's registry. A "Started in" footer, a session list
+  // or a "this project" switcher would make it a project dashboard again.
+  assert.ok(!source.includes("detail.startedIn"));
+  assert.ok(!source.includes("bg-tasks-sessions"));
+  assert.ok(!source.includes("otherSessions"));
+  for (const locale of ["en", "zh-CN", "zh-TW"]) {
+    const catalog = read(`../lib/i18n/messages/${locale}.ts`);
+    assert.ok(!catalog.includes('"backgroundTasks.detail.startedIn"'), `${locale} keeps the sibling-conversation label`);
+    assert.ok(!catalog.includes('"backgroundTasks.otherSessions"'), `${locale} keeps the sibling-conversation count`);
+  }
+  // Stop-all names the conversation's running set, in every language.
+  for (const locale of ["en", "zh-CN", "zh-TW"]) {
+    const catalog = read(`../lib/i18n/messages/${locale}.ts`);
+    for (const key of ["stopAllConfirm", "stopAllHint", "detail", "detail.back", "stopRunning", "stopFailed", "rowRunning"]) {
+      assert.ok(catalog.includes(`"backgroundTasks.${key}"`), `${locale} is missing backgroundTasks.${key}`);
+    }
+  }
+});
+
+test("the card is as tall as the Agents card's box, and the task title is one clipped line", () => {
+  const css = read("../app/native-theme.css");
+  const shell = read("./AppShell.tsx");
+  // The shell hands the wrapper's limit down; the card fills that box, as the Agents card does.
+  assert.match(shell, /"--top-panel-max-height"/);
+  assert.match(css, /\.bg-tasks-panel \{[\s\S]{0,1200}?max-height: var\(--top-panel-max-height, 100%\);/);
+  // No height of the card's own: a list capped at 60vh made a monitor of three rows a tooltip.
+  assert.ok(!/\.bg-tasks-list \{[^}]*max-height: min\(60vh/.test(css), "the list carries its own cap again");
+  // The name the extension built from a long prompt is one line, clipped with an ellipsis, in
+  // the row and in the detail head alike.
+  assert.match(css, /\.bg-tasks-row-title \{[^}]*text-overflow: ellipsis/);
+  assert.match(css, /\.bg-tasks-detail-title \{[^}]*text-overflow: ellipsis/);
+});
+
+test("the extension's running counts drive the composer's disc and the sidebar's row", () => {
+  const shell = read("./AppShell.tsx");
+  const chatInput = read("./ChatInput.tsx");
+  const chatWindow = read("./ChatWindow.tsx");
+  const sidebar = read("./SessionSidebar.tsx");
+  const hook = read("../hooks/useBackgroundTasksRunning.ts");
+  // The shell reads the app-wide index and hands the conversation's number to the composer, and
+  // the whole map to the sidebar's rows through the context.
+  assert.match(shell, /useBackgroundTasksRunning\(\)/);
+  assert.match(shell, /backgroundTasksRunning=\{bgTasksRunning\.runningIn\(selectedSessionId\)\}/);
+  assert.match(shell, /<BackgroundTasksRunningProvider running=\{bgTasksRunning\.runningBySession\}>/);
+  // An idle session with running tasks is a stop, not a send arrow, and Escape stops the same
+  // work the disc stops.
+  assert.match(chatInput, /showStop = \(isStreaming \|\| Boolean\(subagentsRunning\) \|\| backgroundTasksRunning > 0\)/);
+  assert.match(chatInput, /else if \(subagentsRunning\) onAbortSubagents\?\.\(\);\s*\n\s*else onAbortBackgroundTasks\?\.\(\);/);
+  assert.match(chatWindow, /action: "stop-all", allRunning: true/);
+  assert.match(chatWindow, /backgroundTasksRunning > 0 \? handleAbortBackgroundTasks : null/);
+  // The row's mark asks for its own conversation only.
+  assert.match(sidebar, /useBackgroundTasksRunningFor\(session\.id\)/);
+  assert.match(sidebar, /className="session-item-bg-tasks"/);
+  // The feed is one shared stream per browser plus a first paint, and it is closed on unmount.
+  assert.match(hook, /openSharedEventStreamHandle/);
+  assert.match(hook, /name: BACKGROUND_TASKS_RUNNING_STREAM_NAME/);
+  assert.match(hook, /stream\.stop\(\)/);
+});
+
+test("a finished background task leaves no card in the chat", () => {
+  const view = read("./MessageView.tsx");
+  assert.match(view, /isBackgroundTaskNotification/);
+  assert.match(view, /if \(isBackgroundTaskNotification\(\(message as CustomMessage\)\.customType\)\) return null;/);
 });

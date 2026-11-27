@@ -1,7 +1,7 @@
 # Background Tasks — the header's task monitor
 
-The header's task button opens one compact card under itself: the background tasks of this
-project's live conversations, read from the `pi-background-tasks` extension. The extension is
+A chip in the title row, right behind the subagent counts, opens one card under itself: this
+conversation's background tasks, read from the `pi-background-tasks` extension. The extension is
 the only task registry. Nothing in pi-desk keeps a task list, starts a task, kills a process or
 decides what "finished" means; the panel reads, watches, and asks. A second registry is the
 failure mode this whole design exists to avoid: a task in the panel that the conversation cannot
@@ -89,30 +89,54 @@ with two listeners on a bus whose extension is gone. The bridge is created on th
 `EventBus` instance** the session's extensions were handed, before the session binds, which is
 why the activation's `ready` frame is heard and not missed.
 
-`lib/background-tasks/service.ts` reads: every live conversation of the same project is asked,
-and the answers are merged into one list (one row per task id; a terminal state is never undone
-by a later running snapshot of the same id). An activation that does not answer is reported in
-`sessions[].state` and contributes no tasks and no counts — a partial answer is not "nothing is
-running". Actions resolve the owning activation by `detail`, including when the owner is a
-*different* conversation of the same project.
+`lib/background-tasks/service.ts` reads **one conversation's registry**: the card shows the tasks
+of the conversation the user is looking at, and its actions go to that conversation's activation
+only. A task id belonging to a sibling conversation is answered with the extension's own
+`NOT_FOUND` — that is the true news, and truer than a pi-desk index of task ids (a second
+registry) or a probe of the project's other conversations, whose tasks the card does not show. An
+activation that does not answer is reported in `sessions[].state` and contributes no tasks and no
+counts — a partial answer is not "nothing is running".
+
+`stop_all` acts on the frozen selection it is handed. The card hands it the running ids it is
+showing; the composer's stop control has a count and no list, so it sends `allRunning: true` and
+the service reads this conversation's registry once, freezes the running set at that instant, and
+stops that. An empty selection never reaches the extension (`INVALID_REQUEST`).
 
 `errorOf` reads the code off the error instead of using `instanceof`: Next can instantiate the
 host client's module twice in the server, and a `NOT_FOUND` from the other copy would come back
 as our `OPERATION_FAILED` — the panel would lie about who refused.
 
-## The panel
+## The chip and the card
 
-`components/TopbarBackgroundTasks.tsx` is the header button: the running count and the *unseen*
-failure mark, both the extension's own numbers, both worn only when the extension answers. A
-badge on a panel that can read nothing is a claim. `components/BackgroundTasksPanel.tsx` is the
-card: counts, the five status filters, one row per task, the selected task's details, a bounded
-log tail that follows while its bottom is in view, stop / stop-all (confirmed) / rerun, and the
-unavailable states (disabled, not installed, not loaded, no session, closed).
+`components/TopbarBackgroundTasksButton.tsx` is the chip in the title row, under the session
+title, behind the subagent counts. It wears that row's own pill class (`.app-topbar-subagents`,
+the class the counts wear), so it is one control of the same shape and size as its neighbours,
+and the card it opens hangs under it for the same reason the Agents card hangs under the counts.
+Its head glyph breathes green while a task runs, turns warning when the newest news is a task that
+failed and is unread, and lies dim when nothing runs. The numbers are the extension's own,
+streamed (see the running feed below): a chip with no entry in the index shows a plain zero and
+wears no marks, because a badge the app cannot back up is a claim.
 
-It is a header card, not a side panel: `AppShell`'s `activeTopPanel` mechanism (`"tasks"`) places
-it with `placeHeaderCard(...)` at `BACKGROUND_TASKS_PANEL_WIDTH` (`lib/top-panel-placement.ts`)
-and closes it with the shared Escape / outside-click rules, the same as the Agents card. Its
-surface is `.app-menu`; every rule is in `app/native-theme.css` under `.bg-tasks-*`.
+`components/BackgroundTasksPanel.tsx` is the card, in **two pages in one track**: the list (counts,
+the five status filters, one row per task, stop / stop-all with a confirmation), and the task's
+own page, which slides in from the right with a back control in its upper-left corner —
+the Settings dialog's navigation, on the card's surface. A row opens the page; Escape on the page
+goes back to the list first (`lib/stacked-dialog.ts`), and the second Escape closes the card;
+the hidden page is `inert`, so its controls are not in the tab order behind the visible one. The
+detail page carries the task's rows, its command, its exit and the bounded log tail that follows
+while its bottom is in view, with the task's own actions (stop, rerun) in its bar. The card shows
+one conversation's tasks, so it says nothing about the project's other conversations: no
+conversation list, no "Started in" row.
+
+Geometry is shared with the Agents card, exactly: `AppShell`'s `activeTopPanel` mechanism
+(`"tasks"`) places it with `placeAgentsPanel(...)` at `BACKGROUND_TASKS_PANEL_WIDTH`
+(`lib/top-panel-placement.ts`), and the shell hands the wrapper's limit down as
+`--top-panel-max-height` so the card is **as tall as the Agents card's box**; its list, its detail
+page and its log scroll in their own layers. It is a header card, not a side panel, and closes
+with the shared Escape / outside-click rules. Its surface is `.app-menu`; every rule is in
+`app/native-theme.css` under `.bg-tasks-*`. The name the extension gives a task (built from the
+prompt that started it, and sometimes a paragraph long) is one clipped line in the row and in the
+detail head; the bar's title is the section's word, never the wall of text.
 
 `hooks/useBackgroundTasks.ts` is the client: a snapshot on open, the change stream
 (`/api/background-tasks/events`) while open, a slow poll as the safety net, a running task's log
@@ -125,7 +149,41 @@ this conversation's directory, and the card names `pi install npm:pi-background-
 to fix it. A session started before the package was installed keeps working and shows `not-ready`,
 and the panel says so; the extension is never injected into a running session.
 
-## Development switches
+## The running feed (what is not the card)
+
+Two controls need the running state without opening the card: the composer's send disc and the
+sidebar's running mark. They read an index of the extension's counts, not a task list:
+
+- `lib/background-tasks/running-index.ts` keeps `{ sessionId: { running, unseenFailed, observedAt } }`
+  for the conversations the app is holding. It is written by the bridge as the extension pushes
+  its change frames, and by the service as a read answers; a conversation whose work finished and
+  was seen leaves it, and a released bridge drops it. It stores no commands, no ids, no rows.
+- `app/api/background-tasks/running/route.ts` and `.../running/events/route.ts` publish it (a
+  snapshot and an SSE of the whole map per change).
+- `hooks/useBackgroundTasksRunning.ts` is the client: one shared stream per browser
+  (`openSharedEventStreamHandle`, `pi-web:background-tasks-running`), a fetch for the first paint,
+  a reconnect on return to the tab or to the network.
+- `components/BackgroundTasksRunningContext.tsx` hands the map to the sidebar's rows — the row is
+  five layers under the sidebar, and a row asks for its own conversation. A row with running tasks
+  and no live run wears the task glyph in the running green; a live run keeps its spinner.
+- `components/ChatInput.tsx` / `components/ChatWindow.tsx`: a session idle with running tasks shows
+  the **stop** disc (the square), not the send arrow, and its Stop and Escape stop the
+  conversation's running set (`allRunning: true`), the same work the disc names. A running turn
+  keeps its own Stop, and a running subagent keeps the breathing head: the glyph names what is
+  working, and the disc is one button.
+
+Because the frames come from the extensions themselves, a task started with `/bg` in pi's own CLI
+moves the disc and the sidebar mark within a frame, with no polling.
+
+## The finished task is announced by the card, not by the chat
+
+`pi-background-tasks` appends a custom message when a task finishes (`customType:
+"background-task-notification"`), aimed at a terminal's status line. In this app that news is
+already in the card — the row moves, the exit and the log are there, the chip keeps an unread
+failure — so the chat leaves that one message out: `lib/background-tasks/notification.ts` names
+it, and `components/MessageView.tsx` returns nothing for it. Every other custom message (a
+subagent's report, an extension's own card) renders as it always did. The extension's task record
+is untouched; nothing in the registry, the logs, `mark_seen` or the dock changes.
 
 - `PI_WEB_DISABLE_BACKGROUND_TASKS=1` keeps the extension out of every session (the panel says so).
 - `PI_WEB_BACKGROUND_TASKS_PATH=/abs/path/to/dist/extensions/background-tasks.js` loads a checkout
@@ -154,6 +212,9 @@ is present, so a checkout without the package reports a skip rather than a failu
 | `lib/background-tasks/integration.test.mjs` | the real extension on a real session: capabilities, an empty registry, a task the conversation started, the live feed, logs, stop, seen, `NOT_FOUND`, shutdown, no-extension; skips when no copy is installed |
 | `lib/background-tasks/extension.test.mjs` | which copy loads (the user's plugin under the agent dir, the copy the checkout ships), the manifest resource rule, source matching, the per-cwd cache, the switches, the dedupe, the loader options |
 | `lib/background-tasks/bridges.test.mjs` | the per-session registry: keying, project grouping, replacement, release, listeners |
-| `lib/background-tasks/service.test.mjs` | the merged snapshot, partial failures, owner resolution, the merged `stop_all`, the ranked `mark_seen`, the log window, the unavailable states |
+| `lib/background-tasks/service.test.mjs` | the per-conversation registry, partial failures, the owner answer, the frozen `stop_all` (including `allRunning`), the ranked `mark_seen`, the log window, the unavailable states |
+| `lib/background-tasks/running-index.test.mjs` | what the index keeps and drops, the edges it pushes, a released conversation's mark, an unacknowledged failure that stays |
+| `lib/background-tasks/notification.test.mjs` | the completion notice is named exactly, and only it; the chat leaves it out and keeps every other custom message |
 | `app/api/background-tasks/route.test.mjs` | the HTTP gate: required ids, the four actions, the byte window, 409 with the extension's code |
-| `components/BackgroundTasksPanel.test.mjs` | the rendered button and card: badge rules, the dialog and its names, the CSS classes, the header wiring, the hook's cleanup |
+| `app/api/background-tasks/running/route.test.mjs` | the running snapshot is the index and nothing more; the stream's frames are the whole map, and an aborted request stops receiving |
+| `components/BackgroundTasksPanel.test.mjs` | the rendered chip and card: the row's pill and its states, the dialog and its names, the two pages and the back control, the CSS classes and the Agents-card height, the header wiring, the composer and sidebar running wiring, the hook's cleanup |

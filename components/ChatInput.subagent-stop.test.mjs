@@ -71,10 +71,15 @@ test("Stop stops the turn when there is one, and the runs when the session is id
   // A running turn's Stop already cascades to the children it waits on
   // (lib/subagent-runtime.ts aborts the wait with the parent's signal); only an idle
   // session needs the per-run route the Agents panel uses.
-  assert.match(chatInput, /const showStop = \(isStreaming \|\| Boolean\(subagentsRunning\)\) && !canQueueStreamingMessage;/,
+  assert.match(chatInput, /const showStop = \(isStreaming \|\| Boolean\(subagentsRunning\) \|\| backgroundTasksRunning > 0\) && !canQueueStreamingMessage;/,
     "a draft in the card keeps the arrow (queue into a run, send into an idle session)");
-  assert.match(chatInput, /if \(isStreaming\) onAbort\(\);\n\s*else onAbortSubagents\?\.\(\);/);
+  // The order is the meaning: a running turn owns the disc, its Stop cascades to the runs it
+  // waits on; a session idle with subagent runs stops those; a session idle with background
+  // shell tasks stops the tasks, which is the only work the composer can act on then.
+  assert.match(chatInput, /if \(isStreaming\) onAbort\(\);[\s\S]*?else if \(subagentsRunning\) onAbortSubagents\?\.\(\);\n\s*else onAbortBackgroundTasks\?\.\(\);/);
   assert.match(chatInput, /onClick=\{showStop \? stopRuns :/, "the disc routes by state");
+  assert.match(chatInput, /backgroundTasksRunning > 0 && !isStreaming && !subagentsRunning\s*\?\s*t\("backgroundTasks\.stopRunning"/,
+    "the disc says what it is stopping");
 });
 
 test("the shell hands the family's live runs to the main composer, and Stop uses the panel's route", () => {

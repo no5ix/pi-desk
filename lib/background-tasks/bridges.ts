@@ -16,6 +16,7 @@
  */
 
 import { BackgroundTaskHostClient, type EventBusLike } from "./host-client";
+import { clearBackgroundTasksRunning, recordBackgroundTasksRunning } from "./running-index";
 
 export interface BackgroundTasksBridge {
   sessionId: string;
@@ -72,6 +73,17 @@ export function attachBackgroundTasksBridge(
   });
   const bridge: BackgroundTasksBridge = { sessionId, cwd, client, createdAt: Date.now() };
   bridges.set(sessionId, bridge);
+  // The composer's stop control and the sidebar's running mark read the running index, and they
+  // are on screen for conversations whose card is closed. So every frame this conversation's own
+  // activation pushes is recorded here, listener or no listener: the extension is the source, and
+  // pi-desk keeps only the count of what it said is running.
+  client.onChanges((frame) => {
+    if (frame.kind === "closed") {
+      clearBackgroundTasksRunning(sessionId);
+      return;
+    }
+    recordBackgroundTasksRunning(sessionId, { ...frame.counts, observedAt: frame.observedAt });
+  });
   notify();
   return bridge;
 }
@@ -86,6 +98,9 @@ export function releaseBackgroundTasksBridge(sessionId: string): boolean {
   if (!bridge) return false;
   bridges.delete(sessionId);
   bridge.client.dispose();
+  // A conversation the server is not holding has no running tasks: its mark goes with it, so a
+  // sidebar row cannot keep wearing a spinner for a conversation that ended.
+  clearBackgroundTasksRunning(sessionId);
   notify();
   return true;
 }

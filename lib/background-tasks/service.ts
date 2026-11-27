@@ -29,7 +29,6 @@ import {
   isBgHostErrorCode,
   type BgStopAllRow,
   isBgTerminalStatus,
-  parseBgTaskView,
   parseBgTaskViews,
   type BgChangedFrame,
   type BgHostErrorCode,
@@ -38,10 +37,11 @@ import {
 } from "./protocol";
 import { type BackgroundTaskHostClient } from "./host-client";
 import {
-  listBackgroundTasksBridgesForCwd,
+  getBackgroundTasksBridge,
   subscribeBackgroundTasksBridgeRegistry,
   type BackgroundTasksBridge,
 } from "./bridges";
+import { clearBackgroundTasksRunning, recordBackgroundTasksRunning } from "./running-index";
 import { resolveBackgroundTasksExtension } from "./extension";
 
 export type BackgroundTasksState =
@@ -87,6 +87,12 @@ export interface BackgroundTasksActionPayload {
   kind: "stop" | "stop-all" | "rerun" | "mark-seen";
   taskId?: string;
   taskIds?: string[];
+  /**
+   * `stop-all` without an explicit selection: the running ids are read from this conversation's
+   * registry at that instant and frozen, which is what the documented `stop_all` acts on. The
+   * composer's stop control uses it — it has the count, not the ids.
+   */
+  allRunning?: boolean;
 }
 
 export interface BackgroundTasksActionOutcome {
@@ -97,8 +103,18 @@ export interface BackgroundTasksActionOutcome {
 }
 
 /** The conversations whose registries the panel reads: the live ones of the same project. */
-function projectBridges(cwd: string): BackgroundTasksBridge[] {
-  return listBackgroundTasksBridgesForCwd(cwd);
+/**
+ * The registries the panel reads: this conversation's own activation, asked by id.
+ *
+ * One conversation, one registry. The project's other conversations run their own extension
+ * activation with their own tasks, and folding them in made the card show tasks the user never
+ * started here — nine rows for a conversation that ran none — while the commands that belong to
+ * this conversation (`/bg`, the dock, `/bg-clear`) talk to its own registry. A task of another
+ * conversation is that conversation's monitor's business.
+ */
+function sessionBridges(sessionId: string): BackgroundTasksBridge[] {
+  const bridge = getBackgroundTasksBridge(sessionId);
+  return bridge ? [bridge] : [];
 }
 
 function errorOf(error: unknown): { code: BgHostErrorCode; message: string } {
@@ -141,10 +157,9 @@ export async function readBackgroundTasksSnapshot(
   if (!wrapper || !wrapper.isAlive()) {
     return emptySnapshot("no-session", "This conversation is not running, so its background tasks are gone with it.", observedAt);
   }
-  const cwd = wrapper.cwd;
-  const bridges = projectBridges(cwd);
+  const bridges = sessionBridges(sessionId);
   if (bridges.length === 0) {
-    // No bridge for this project at all: the session is live but the extension is not in it
+    // No bridge for this conversation at all: it is live but the extension is not in it
     // (it was started before the package was installed, or a loader error kept it out).
     return emptySnapshot("not-ready", "The extension is not loaded in this conversation.", observedAt);
   }
@@ -176,6 +191,9 @@ export async function readBackgroundTasksSnapshot(
         primary: bridge.sessionId === sessionId,
       });
       counts.push(result.counts);
+      // The composer's stop control and the sidebar's running mark read this index, so a card
+      // that is open keeps the app's own numbers honest, not only its own rows.
+      recordBackgroundTasksRunning(bridge.sessionId, { ...result.counts, observedAt });
       revision = Math.max(revision, result.revision);
       if (bridge.sessionId === sessionId) {
         activationId = result.activationId;
@@ -189,6 +207,7 @@ export async function readBackgroundTasksSnapshot(
     failures.push(failure);
     const bridge = bridges[index];
     if (!bridge) return;
+    if (failure.code === "CLOSED") clearBackgroundTasksRunning(bridge.sessionId);
     reports.push({
       sessionId: bridge.sessionId,
       cwd: bridge.cwd,
@@ -234,25 +253,13 @@ function emptySnapshot(state: BackgroundTasksState, reason: string, observedAt: 
 }
 
 /**
- * Finds the activation that owns a task, by asking each of them for its `detail`. The host
- * interface takes exact ids and has no "who owns this" call, and a `detail` read is an
- * in-memory lookup — cheaper and truer than keeping a pi-desk index of task ids, which would
- * be a second registry.
+ * The client for a task: this conversation's activation. The host interface takes exact ids and
+ * has no "who owns this" call, so an id the extension does not know is answered with its own
+ * `NOT_FOUND` — which is the true news, and truer than a pi-desk index of task ids (a second
+ * registry) or a probe of the project's other conversations, whose tasks this card does not show.
  */
-async function resolveOwner(sessionId: string, taskId: string): Promise<BackgroundTaskHostClient | null> {
-  const wrapper = getRpcSession(sessionId);
-  if (!wrapper || !wrapper.isAlive()) return null;
-  const bridges = projectBridges(wrapper.cwd);
-  const ordered: BackgroundTasksBridge[] = [];
-  const primary = bridges.find((bridge) => bridge.sessionId === sessionId);
-  if (primary) ordered.push(primary);
-  for (const bridge of bridges) if (bridge !== primary) ordered.push(bridge);
-  const answers = await Promise.allSettled(ordered.map(async (bridge) => ({ bridge, detail: await bridge.client.detail(taskId) })));
-  for (const answer of answers) {
-    if (answer.status === "fulfilled" && parseBgTaskView(answer.value.detail.task)) return answer.value.bridge.client;
-  }
-  // Nobody has it: ask the primary, so the user reads the extension's own `NOT_FOUND`.
-  return primary?.client ?? null;
+async function resolveOwner(sessionId: string): Promise<BackgroundTaskHostClient | null> {
+  return sessionBridges(sessionId)[0]?.client ?? null;
 }
 
 /**
@@ -271,23 +278,37 @@ export async function runBackgroundTasksAction(
       if (typeof taskId !== "string" || taskId.length === 0) {
         return { ok: false, code: "INVALID_REQUEST", message: "taskId must be a non-empty string" };
       }
-      const client = await resolveOwner(sessionId, taskId);
-      if (!client) return { ok: false, code: "UNAVAILABLE", message: "No running conversation of this project has a background-task registry." };
+      const client = await resolveOwner(sessionId);
+      if (!client) return { ok: false, code: "UNAVAILABLE", message: "This conversation has no background-task registry." };
       const result = payload.kind === "stop" ? await client.stop(taskId) : await client.rerun(taskId);
       return { ok: true, result };
     }
-    const taskIds = Array.isArray(payload.taskIds) ? payload.taskIds.filter((id) => typeof id === "string" && id.length > 0) : [];
+    let taskIds = Array.isArray(payload.taskIds) ? payload.taskIds.filter((id) => typeof id === "string" && id.length > 0) : [];
+    if (payload.kind === "stop-all" && payload.allRunning === true && taskIds.length === 0) {
+      // No selection was sent, because the control that asked has a count and not a list. Read
+      // this conversation's registry once, take what is running at that instant, and stop that
+      // frozen set — the same contract the panel's "Stop all" follows.
+      const bridge = sessionBridges(sessionId)[0];
+      if (!bridge) return { ok: false, code: "UNAVAILABLE", message: "This conversation has no background-task registry." };
+      const live = await bridge.client.list({});
+      taskIds = parseBgTaskViews(live.tasks)
+        .filter((view) => view.task.status === "running")
+        .map((view) => view.task.id);
+      if (taskIds.length === 0) {
+        return { ok: true, result: { results: [], stopped: 0, alreadyTerminal: 0, notFound: 0, failed: 0 } };
+      }
+    }
     if (taskIds.length === 0) {
       return { ok: false, code: "INVALID_REQUEST", message: "taskIds must be a non-empty array of exact task ids" };
     }
     if (payload.kind === "mark-seen") {
-      // The seen set is per activation and shared with its dock, so every activation of the
-      // project that has the task is asked. The answer the panel sees is the most informative
-      // one: a task marked in the activation that owns it is "marked", and one activation
-      // reporting `not_found` must not hide the activation that owns it saying "not_terminal".
+      // The seen set is per activation and shared with its dock, so this conversation's
+      // activation is asked. The answer the panel sees is the most informative one: a task
+      // marked is "marked", and a `not_terminal` (the task is still running) is not hidden by
+      // a `not_found` from somewhere else.
       const wrapper = getRpcSession(sessionId);
       if (!wrapper || !wrapper.isAlive()) return { ok: false, code: "UNAVAILABLE", message: "This conversation is not running." };
-      const bridges = projectBridges(wrapper.cwd);
+      const bridges = sessionBridges(sessionId);
       const answers = await Promise.allSettled(bridges.map((bridge) => bridge.client.markSeen(taskIds)));
       const outcomes = answers.flatMap((entry) => (entry.status === "fulfilled" ? entry.value.results : []));
       const rank: Record<string, number> = { marked: 3, already_seen: 2, not_terminal: 1, not_found: 0 };
@@ -312,7 +333,7 @@ export async function runBackgroundTasksAction(
     }
     const owners = new Map<string, BackgroundTaskHostClient>();
     for (const taskId of taskIds) {
-      const client = await resolveOwner(sessionId, taskId);
+      const client = await resolveOwner(sessionId);
       if (client) owners.set(taskId, client);
     }
     const groups = new Map<BackgroundTaskHostClient, string[]>();
@@ -358,8 +379,8 @@ export async function readBackgroundTaskLogs(
   options: { maxBytes?: number; tail?: boolean } = {},
 ): Promise<{ ok: true; result: Awaited<ReturnType<BackgroundTaskHostClient["logs"]>> } | { ok: false; code: BgHostErrorCode; message: string }> {
   try {
-    const client = await resolveOwner(sessionId, taskId);
-    if (!client) return { ok: false, code: "NOT_FOUND", message: "No running conversation of this project has that task." };
+    const client = await resolveOwner(sessionId);
+    if (!client) return { ok: false, code: "NOT_FOUND", message: "This conversation has no task with that id." };
     return { ok: true, result: await client.logs(taskId, options) };
   } catch (error) {
     const failure = errorOf(error);
@@ -370,8 +391,8 @@ export async function readBackgroundTaskLogs(
 /** The task the panel has selected, from the activation that owns it. */
 export async function readBackgroundTaskDetail(sessionId: string, taskId: string) {
   try {
-    const client = await resolveOwner(sessionId, taskId);
-    if (!client) return { ok: false as const, code: "NOT_FOUND" as const, message: "No running conversation of this project has that task." };
+    const client = await resolveOwner(sessionId);
+    if (!client) return { ok: false as const, code: "NOT_FOUND" as const, message: "This conversation has no task with that id." };
     return { ok: true as const, result: await client.detail(taskId) };
   } catch (error) {
     return { ok: false as const, ...errorOf(error) };
@@ -385,21 +406,18 @@ export interface BackgroundTasksChange {
 }
 
 /**
- * Fans the project group's change frames out to one listener, and tells the listener when a
- * bridge joins or leaves (opening another conversation of the same project). Frames reach the
- * client through the SSE route; the client refetches and never trusts a frame's counts as the
- * list.
+ * Fans this conversation's change frames out to one listener, and tells the listener when its
+ * bridge joins or leaves (a conversation re-created, a plugin reloaded). Frames reach the client
+ * through the SSE route; the client refetches and never trusts a frame's counts as the list.
  */
 export function subscribeBackgroundTasksChanges(
   sessionId: string,
   listener: (change: BackgroundTasksChange) => void,
 ): () => void {
-  const wrapper = getRpcSession(sessionId);
-  const cwd = wrapper && wrapper.isAlive() ? wrapper.cwd : null;
   const unsubscribers = new Set<() => void>();
   const attached = new Set<string>();
   const attach = () => {
-    const bridges = cwd ? listBackgroundTasksBridgesForCwd(cwd) : [];
+    const bridges = sessionBridges(sessionId);
     for (const bridge of bridges) {
       if (attached.has(bridge.sessionId)) continue;
       attached.add(bridge.sessionId);
@@ -408,9 +426,9 @@ export function subscribeBackgroundTasksChanges(
       });
       unsubscribers.add(unsubscribe);
     }
-    for (const sessionId of [...attached]) {
-      if (bridges.some((bridge) => bridge.sessionId === sessionId)) continue;
-      attached.delete(sessionId);
+    for (const attachedId of [...attached]) {
+      if (bridges.some((bridge) => bridge.sessionId === attachedId)) continue;
+      attached.delete(attachedId);
     }
   };
   attach();

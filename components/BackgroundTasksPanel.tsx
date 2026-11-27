@@ -20,8 +20,9 @@
 // acts on — never a fresh scan of the registry behind the user's back.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackgroundTasksIcon } from "./TopbarBackgroundTasks";
+import { BackgroundTasksIcon } from "./BackgroundTasksIcon";
 import { useBackgroundTasks } from "@/hooks/useBackgroundTasks";
+import { listenForStackedDialogEscape } from "@/lib/stacked-dialog";
 import type { TranslationParams } from "@/lib/i18n/types";
 import {
   BACKGROUND_TASK_FILTERS,
@@ -109,6 +110,15 @@ function RefreshIcon() {
   );
 }
 
+/** The detail page's back chevron, the same glyph the Settings dialog's back control wears. */
+function BackChevron() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+}
+
 /** A row's clock: a running task's live duration, a finished one's end time and length. */
 function rowClock(view: BgTaskView, now: number): string {
   const duration = formatBackgroundTaskDuration(backgroundTaskDurationMs(view, now));
@@ -150,6 +160,10 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
   const [wrapLogs, setWrapLogs] = useState(false);
   const [followLogs, setFollowLogs] = useState(true);
   const [confirmStopAll, setConfirmStopAll] = useState(false);
+  // Two pages, like every list-and-detail menu in the app: a row opens its detail page, which
+  // slides in from the right with a back control in its upper-left corner. The card never grows
+  // a second column for a detail, and the list keeps its place for the way back.
+  const [page, setPage] = useState<"list" | "detail">("list");
   const [now, setNow] = useState(() => Date.now());
   const logRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -167,8 +181,17 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
     if (!open) {
       setConfirmStopAll(false);
       setFollowLogs(true);
+      setPage("list");
+      selectTask(null);
     }
-  }, [open]);
+  }, [open, selectTask]);
+
+  // The detail page takes Escape first: one Escape goes back to the list, and the second (the
+  // shell's) closes the card. `lib/stacked-dialog.ts` is the app's rule for that.
+  useEffect(() => {
+    if (!open || page !== "detail") return;
+    return listenForStackedDialogEscape(document, () => setPage("list"));
+  }, [open, page]);
 
   // The card is opened by a click on the header; focus follows it, so the keyboard user is
   // inside the panel they asked for and Escape (the shell's handler) closes the right thing.
@@ -220,12 +243,33 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
     }));
   }, []);
 
+  const openTask = useCallback((id: string) => {
+    selectTask(id);
+    setPage("detail");
+  }, [selectTask]);
+
+  const backToList = useCallback(() => {
+    setPage("list");
+    selectTask(null);
+  }, [selectTask]);
+
   if (!open) return null;
 
   const stopRunning = () => {
     void stopAll(runningIds);
     setConfirmStopAll(false);
   };
+
+  // One notice, shown on whichever page is in view: a Stop or a Re-run that failed is answered
+  // in the extension's own terms, and the news belongs where the user is standing.
+  const notice = (actionError || error) ? (
+    <div className="bg-tasks-notice" role="alert">
+      <span>{actionError ? `${translate("backgroundTasks.actionFailed")}: ${actionError}` : error}</span>
+      <button type="button" className="bg-tasks-notice-close" onClick={clearActionError} aria-label={translate("backgroundTasks.dismiss")}>
+        <CloseIcon />
+      </button>
+    </div>
+  ) : null;
 
   return (
     <div
@@ -236,10 +280,13 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
       tabIndex={-1}
       ref={panelRef}
       data-background-tasks-panel=""
+      data-page={page}
       onClick={(event) => event.stopPropagation()}
       onMouseDown={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
     >
+      <div className="bg-tasks-track">
+      <section className="bg-tasks-page is-list">
       <div className="bg-tasks-head">
         <span className="bg-tasks-head-icon"><BackgroundTasksIcon size={14} strokeWidth={1.9} /></span>
         <strong className="bg-tasks-title">{translate("backgroundTasks.title")}</strong>
@@ -287,14 +334,7 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
         </span>
       </div>
 
-      {(actionError || error) && (
-        <div className="bg-tasks-notice" role="alert">
-          <span>{actionError ? `${translate("backgroundTasks.actionFailed")}: ${actionError}` : error}</span>
-          <button type="button" className="bg-tasks-notice-close" onClick={clearActionError} aria-label={translate("backgroundTasks.dismiss")}>
-            <CloseIcon />
-          </button>
-        </div>
-      )}
+      {notice}
 
       {unavailable && (
         <div className="bg-tasks-state">
@@ -359,15 +399,13 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
             {visible.map((view) => {
               const id = view.task.id;
               const isBusy = busy[id] === "stop" || busy[id] === "rerun";
-              const otherSessions = (snapshot?.sessions.length ?? 0) > 1;
-              const owner = snapshot?.sessions.find((session) => session.primary);
               return (
                 <button
                   key={id}
                   type="button"
                   role="listitem"
                   className={`bg-tasks-row is-${view.task.status}${selectedTaskId === id ? " is-selected" : ""}${isUnseenFailure(view) ? " is-unseen" : ""}`}
-                  onClick={() => selectTask(selectedTaskId === id ? null : id)}
+                  onClick={() => openTask(id)}
                   aria-current={selectedTaskId === id ? "true" : undefined}
                   title={`${backgroundTaskTitle(view)} · ${shortenBackgroundTaskCommand(view.task.command)}`}
                 >
@@ -407,53 +445,70 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
                       </span>
                     </span>
                   )}
-                  {otherSessions && owner && view.kind !== "shell" && null}
                 </button>
               );
             })}
           </div>
+        </>
+      )}
+      </section>
 
-          {selected && (
+      <section className="bg-tasks-page is-detail" aria-label={translate("backgroundTasks.detail")} inert={page !== "detail"}>
+        <div className="bg-tasks-head bg-tasks-detail-bar">
+          <button type="button" className="bg-tasks-back" onClick={backToList}>
+            <BackChevron />
+            <span>{translate("backgroundTasks.title")}</span>
+          </button>
+          <strong className="bg-tasks-title bg-tasks-page-title">{translate("backgroundTasks.detail")}</strong>
+          <span className="bg-tasks-head-actions">
+            {selected && (
+              <>
+                {selected.canRerun && (
+                  <button
+                    type="button"
+                    className="bg-tasks-action"
+                    onClick={() => void rerunTask(selected.task.id)}
+                    disabled={busy[selected.task.id] === "rerun"}
+                    title={translate("backgroundTasks.rerunHint")}
+                  >
+                    {translate("backgroundTasks.rerun")}
+                  </button>
+                )}
+                {selected.task.status === "running" && (
+                  <button
+                    type="button"
+                    className="bg-tasks-action is-danger"
+                    onClick={() => void stopTask(selected.task.id)}
+                    disabled={busy[selected.task.id] === "stop"}
+                  >
+                    {busy[selected.task.id] === "stop" ? translate("backgroundTasks.stopping") : translate("backgroundTasks.stop")}
+                  </button>
+                )}
+              </>
+            )}
+            <button
+              type="button"
+              className="bg-tasks-icon-button"
+              onClick={onClose}
+              title={translate("backgroundTasks.close")}
+              aria-label={translate("backgroundTasks.close")}
+            >
+              <CloseIcon />
+            </button>
+          </span>
+        </div>
+
+        {notice}
+
+        {selected && (
             <div className="bg-tasks-detail">
               <div className="bg-tasks-detail-head">
                 <span className={`bg-tasks-status is-${selected.task.status}`}>{statusGlyph(selected.task.status)}</span>
                 <strong className="bg-tasks-detail-title">{backgroundTaskTitle(selected)}</strong>
                 <span className={`bg-tasks-detail-state is-${selected.task.status}`}>{translate(STATUS_KEYS[selected.task.status])}</span>
-                <span className="bg-tasks-detail-actions">
-                  {selected.canRerun && (
-                    <button
-                      type="button"
-                      className="bg-tasks-action"
-                      onClick={() => void rerunTask(selected.task.id)}
-                      disabled={busy[selected.task.id] === "rerun"}
-                      title={translate("backgroundTasks.rerunHint")}
-                    >
-                      {translate("backgroundTasks.rerun")}
-                    </button>
-                  )}
-                  {!selected.canRerun && selected.task.status !== "running" && (
-                    <span className="bg-tasks-detail-note">{translate("backgroundTasks.rerunOnlyShell")}</span>
-                  )}
-                  {selected.task.status === "running" && (
-                    <button
-                      type="button"
-                      className="bg-tasks-action is-danger"
-                      onClick={() => void stopTask(selected.task.id)}
-                      disabled={busy[selected.task.id] === "stop"}
-                    >
-                      {busy[selected.task.id] === "stop" ? translate("backgroundTasks.stopping") : translate("backgroundTasks.stop")}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="bg-tasks-icon-button"
-                    onClick={() => selectTask(null)}
-                    title={translate("backgroundTasks.closeTask")}
-                    aria-label={translate("backgroundTasks.closeTask")}
-                  >
-                    <CloseIcon />
-                  </button>
-                </span>
+                {!selected.canRerun && selected.task.status !== "running" && (
+                  <span className="bg-tasks-detail-note">{translate("backgroundTasks.rerunOnlyShell")}</span>
+                )}
               </div>
 
               <div className="bg-tasks-detail-command">
@@ -478,12 +533,6 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
                     <dd className={row.mono ? "is-mono" : undefined}>{row.value}</dd>
                   </div>
                 ))}
-                {snapshot?.sessionNames && (snapshot.sessions.length ?? 0) > 1 && (
-                  <div className="bg-tasks-detail-row">
-                    <dt>{translate("backgroundTasks.detail.startedIn")}</dt>
-                    <dd>{Object.values(snapshot.sessionNames)[0] ?? ""}</dd>
-                  </div>
-                )}
               </dl>
 
               <div className="bg-tasks-log-head">
@@ -560,19 +609,11 @@ export function BackgroundTasksPanel({ sessionId, open, onClose, translate }: Ba
               )}
             </div>
           )}
-
-          {(snapshot?.sessions.length ?? 0) > 1 && (
-            <div className="bg-tasks-sessions">
-              {snapshot!.sessions.map((session) => (
-                <span key={session.sessionId} className={`bg-tasks-session is-${session.state}${session.primary ? " is-primary" : ""}`}>
-                  {snapshot?.sessionNames?.[session.sessionId] ?? session.sessionId}
-                  {session.counts.running > 0 && <span className="bg-tasks-session-count">{session.counts.running}</span>}
-                </span>
-              ))}
-            </div>
+          {!selected && (
+            <div className="bg-tasks-empty">{translate("backgroundTasks.detailPick")}</div>
           )}
-        </>
-      )}
+      </section>
+      </div>
     </div>
   );
 }

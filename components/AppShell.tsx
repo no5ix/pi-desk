@@ -38,6 +38,8 @@ import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { TopbarElapsed } from "./TopbarElapsed";
 import { TopbarSubagents, countSubagents, countSideChats } from "./TopbarSubagents";
 import { TopbarBackgroundTasksButton } from "./TopbarBackgroundTasksButton";
+import { BackgroundTasksRunningProvider } from "./BackgroundTasksRunningContext";
+import { useBackgroundTasksRunning } from "../hooks/useBackgroundTasksRunning";
 import { BackgroundTasksPanel } from "./BackgroundTasksPanel";
 import { TopbarBranchChip } from "./TopbarBranchChip";
 import { TopbarProjectChip } from "./TopbarProjectChip";
@@ -554,7 +556,7 @@ export function AppShell() {
   // (the chip renders nothing) and the placement falls back to centring under the header.
   const topbarSubagentsRef = useRef<HTMLElement | null>(null);
   // The Background Tasks card hangs under this button (lib/top-panel-placement.ts).
-  const topbarTasksRef = useRef<HTMLElement | null>(null);
+  const topbarTasksRef = useRef<HTMLButtonElement | null>(null);
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
   const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
@@ -640,6 +642,9 @@ export function AppShell() {
 
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | "tasks" | null>(null);
+  // The running-task index for the controls that are not the card: the composer's disc and the
+  // sidebar's running mark (hooks/useBackgroundTasksRunning.ts).
+  const bgTasksRunning = useBackgroundTasksRunning();
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number; floating?: boolean } | null>(null);
   // The header's cards (Agents, System prompt, Tools, Session stats) are mounted by the
   // chip that opens them. The wrapper is held for the shared exit animation, and keeps the
@@ -854,10 +859,10 @@ export function AppShell() {
         return;
       }
       if (activeTopPanel === "tasks") {
-        // The Background Tasks card is opened from the header's task button, which sits at the
-        // row's right end, so it opens as a compact card under it: the same rule as the More
-        // button's read-only cards, and its own width — it is a monitor, not a document.
-        setTopPanelPos(placeHeaderCard(topBarRect, isMobile, BACKGROUND_TASKS_PANEL_WIDTH));
+        // The Background Tasks card opens where its control is: under the task chip in the row
+        // under the title, the same rule the Agents card follows (and centred under the header
+        // on a phone). It is a monitor, so it keeps its own width — not the column's.
+        setTopPanelPos(placeAgentsPanel(topBarRect, topbarTasksRef.current?.getBoundingClientRect() ?? null, isMobile, BACKGROUND_TASKS_PANEL_WIDTH));
         return;
       }
       if (activeTopPanel === "system" || activeTopPanel === "tools" || activeTopPanel === "session") {
@@ -2399,31 +2404,33 @@ export function AppShell() {
 
   const sidebarContent = (
     <>
-      <SessionSidebar
-        selectedSessionId={selectedSession?.id ?? null}
-        onSelectSession={handleSelectSession}
-        onNewSession={handleNewSession}
-        initialSessionId={initialSessionId}
-        skipInitialProjectSelection={initialNavigation.requestedCwd !== null}
-        onInitialRestoreDone={handleInitialRestoreDone}
-        refreshKey={refreshKey}
-        onSessionDeleted={handleSessionDeleted}
-        selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
-        onCwdChange={handleCwdChange}
-        onProjectsChange={handleProjectsChange}
-        headerControls={sidebarHeaderControls}
-        onOpenTerminal={handleOpenTerminal}
-        onBackgroundTaskDone={handleBackgroundTaskDone}
-        onRunningSessionIdsChange={handleRunningSessionIdsChange}
-        onSessionsChange={handleSessionsChange}
-        onOpenTasks={handleOpenTasks}
-        tasksOpen={tasksOpen}
-        onOpenScheduled={handleOpenScheduled}
-        scheduledOpen={scheduledOpen}
-        onOpenArtifacts={handleOpenArtifacts}
-        artifactsOpen={artifactsOpen}
-        onChatWorkspaceCwdChange={setChatWorkspaceCwd}
-      />
+      <BackgroundTasksRunningProvider running={bgTasksRunning.runningBySession}>
+        <SessionSidebar
+          selectedSessionId={selectedSession?.id ?? null}
+          onSelectSession={handleSelectSession}
+          onNewSession={handleNewSession}
+          initialSessionId={initialSessionId}
+          skipInitialProjectSelection={initialNavigation.requestedCwd !== null}
+          onInitialRestoreDone={handleInitialRestoreDone}
+          refreshKey={refreshKey}
+          onSessionDeleted={handleSessionDeleted}
+          selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
+          onCwdChange={handleCwdChange}
+          onProjectsChange={handleProjectsChange}
+          headerControls={sidebarHeaderControls}
+          onOpenTerminal={handleOpenTerminal}
+          onBackgroundTaskDone={handleBackgroundTaskDone}
+          onRunningSessionIdsChange={handleRunningSessionIdsChange}
+          onSessionsChange={handleSessionsChange}
+          onOpenTasks={handleOpenTasks}
+          tasksOpen={tasksOpen}
+          onOpenScheduled={handleOpenScheduled}
+          scheduledOpen={scheduledOpen}
+          onOpenArtifacts={handleOpenArtifacts}
+          artifactsOpen={artifactsOpen}
+          onChatWorkspaceCwdChange={setChatWorkspaceCwd}
+        />
+      </BackgroundTasksRunningProvider>
     </>
   );
 
@@ -2725,6 +2732,23 @@ export function AppShell() {
                     anchorRef={topbarSubagentsRef}
                   />
                 )}
+                {/* The conversation's background tasks, right behind the subagent counts: one
+                    chip that wears the running count and the unacknowledged failures the
+                    extension reports for THIS conversation, and opens the task card under the
+                    row. It is a chip of this row — and the same size as the subagents glyph —
+                    because the card hangs under it, exactly as the Agents card hangs under the
+                    counts. */}
+                {showChat && !pageOpen && (
+                  <TopbarBackgroundTasksButton
+                    ref={topbarTasksRef}
+                    running={bgTasksRunning.runningIn(selectedSession?.id)}
+                    unseenFailed={bgTasksRunning.unseenFailedIn(selectedSession?.id)}
+                    label={translate("backgroundTasks.chipLabel")}
+                    title={translate("backgroundTasks.title")}
+                    tasksOpen={activeTopPanel === "tasks"}
+                    onToggle={() => toggleTopPanel("tasks")}
+                  />
+                )}
                 {/* The live clock after the counts: how long the running task has
                     taken since its prompt. Only a running session has one — a count
                     that keeps ticking after its task ended is not a clock, it is a
@@ -2783,17 +2807,6 @@ export function AppShell() {
           )}
           {showChat && !pageOpen && (
             <div className="app-topbar-actions" style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
-              {/* The project's background tasks: one button that opens a compact card under the
-                  header, wearing the running count and the unacknowledged failures the
-                  extension reports for this project's live conversations. It is a header control
-                  because the card hangs under it — not in a sidebar, not in Settings. */}
-              <TopbarBackgroundTasksButton
-                sessionId={selectedSession?.id ?? null}
-                open={activeTopPanel === "tasks"}
-                onToggle={() => toggleTopPanel("tasks")}
-                translate={translate}
-                anchorRef={topbarTasksRef}
-              />
               {/* Branches opens from the More menu; this instance only hosts its dropdown. */}
               {!isChatWorkspaceActive && sessionHasBranches && (
                 <BranchNavigator
@@ -3107,12 +3120,17 @@ export function AppShell() {
               width: topPanelPos.width,
               // A card keeps its own gutter at the bottom; a sheet fills the column.
               maxHeight: `calc(100dvh - ${topPanelPos.top}px${topPanelPos.floating ? ` - ${AGENT_PANEL_EDGE_GUTTER}px` : ""})`,
+              // The same box, handed to the card as a number it can size itself by. The tasks
+              // card is the one card that scrolls to that limit (its list, its detail page and
+              // its log each scroll in their own layer), and a card of its own smaller cap made
+              // a task monitor of three rows read like a tooltip.
+              "--top-panel-max-height": `calc(100dvh - ${topPanelPos.top}px${topPanelPos.floating ? ` - ${AGENT_PANEL_EDGE_GUTTER}px` : ""})`,
               // The sheet scrolls in its own layer. A card does not: its list scrolls
               // inside the panel (AgentSessionPanel), and a scroll container here would
               // clip the shadow on the left, the right and the bottom.
               overflowY: topPanelPos.floating ? "visible" : "auto",
               zIndex: 500,
-            }}>
+            } as React.CSSProperties}>
               {shownTopPanel === "agents" && activeSessionFamily && selectedSession && (
                 <AgentSessionPanel
                   rootSession={activeSessionFamily.root}
@@ -3421,6 +3439,7 @@ export function AppShell() {
               onScrollPositionChange={handleSessionScrollPositionChange}
               sessionRunning={Boolean(selectedSession && runningSessionIds.has(selectedSession.id))}
               runningSubagentIds={runningSubagentIds}
+              backgroundTasksRunning={bgTasksRunning.runningIn(selectedSessionId)}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionDraftKey={newSessionDraftKey}
               onAgentEnd={handleAgentEnd}
