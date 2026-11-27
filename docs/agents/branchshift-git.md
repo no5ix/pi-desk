@@ -151,3 +151,31 @@ host, the browser does it here.
 - Menus use the shared `.app-menu` surface (see AGENTS.md's UI rule); a context
   menu on a branch, commit, shelf row or file row is a DOM menu, not a native one.
 - Every string goes through `useI18n`/`translate` with `en`, `zh-CN`, `zh-TW`.
+
+## The Log's commit row: one line, and a graph the width of its lanes
+
+`components/git/log/LogPanel.tsx` draws the graph as one absolutely placed SVG
+and the rows as absolutely placed rows in `.git-log-rows`, so a row is indented
+by the graph's width. Two rules keep that honest, and both came from a panel that
+shipped broken:
+
+- **The row's classes are the Log's own**: `.git-log-row`, `.git-log-refs`,
+  `.git-log-subject`, `.git-log-author`, `.git-log-hash`, `.git-log-date`.
+  `.git-commit-row` and `.git-commit-subject`/`-author` belong to the project
+  panel's commit list, which is a **two-line column** (`flex-direction: column`,
+  `align-items: flex-start`). Sharing the name made the Log's row a column: the
+  subject at zero height, the sha on top of the author, no message on screen.
+  `.git-log-row` writes `flex-direction: row` out for that reason.
+- **The graph is as wide as the page's lanes**: `GRAPH_PADDING * 2 + columns *
+  COLUMN_WIDTH`, capped at `GRAPH_MAX_WIDTH` and at 42% of the panel
+  (`GRAPH_PANEL_FRACTION`, measured with a `ResizeObserver` on the scroll box —
+  no timer). The same number is set on the scroll box as `--git-graph-width` and
+  read as the row's `padding-left`, so the drawing and the indent cannot drift.
+  A fixed 76px box drew eighteen lanes outside itself: lines arriving from
+  nowhere.
+
+`e2e/git-panel.mjs` measures both, on a `?wide=1&commits=200&lanes=18` page
+(`e2e/git-panel.fixture.jsx`): columns on one line (centres aligned), no
+overlap, the subject readable, the indent equal to the graph's width, the graph
+within its cap and budget, no sideways page scroll — before and after picking a
+branch, which is how the breakage was reported.

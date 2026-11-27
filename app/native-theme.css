@@ -15569,7 +15569,7 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 .git-change-row,
 .git-file-row,
 .git-shelf-row,
-.git-commit-row {
+.git-log-row {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -15586,13 +15586,13 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 .git-branch-row:hover,
 .git-change-row:hover,
 .git-file-row:hover,
-.git-commit-row:hover {
+.git-log-row:hover {
   background: var(--bg-hover);
 }
 
 .git-branch-row.is-selected,
 .git-file-row.is-selected,
-.git-commit-row.is-selected,
+.git-log-row.is-selected,
 .git-change-group.is-selected {
   background: var(--bg-selected);
 }
@@ -15668,7 +15668,7 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 .git-branch-row:hover .git-row-menu-button,
 .git-change-row:hover .git-row-menu-button,
 .git-file-row:hover .git-row-menu-button,
-.git-commit-row:hover .git-row-menu-button,
+.git-log-row:hover .git-row-menu-button,
 .git-shelf-head:hover .git-row-menu-button,
 .git-row-menu-button:focus-visible {
   opacity: 1;
@@ -15767,22 +15767,29 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   width: 100%;
 }
 
-.git-commit-row {
+/* One line: graph, refs, subject, author, sha, age. The graph's width is the
+   page's lane count (`--git-graph-width`, set on the scroll box by LogPanel), so
+   the indent is the same number the drawing used. `flex-direction: row` is
+   written out because a class shared with the project panel's commit list —
+   which is a two-line column — was inherited here once and put the subject at
+   zero height, the sha over the author, and no message on screen at all. */
+.git-log-row {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 28px;
-  padding-left: 80px;
+  flex-direction: row;
+  padding-left: var(--git-graph-width, 80px);
   padding-right: 6px;
   cursor: pointer;
 }
 
-.git-commit-row.is-multi {
+.git-log-row.is-multi {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.git-commit-refs {
+.git-log-refs {
   display: inline-flex;
   gap: 3px;
   flex: 0 1 auto;
@@ -15813,7 +15820,7 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   border-color: color-mix(in srgb, var(--text-warm, var(--accent)) 40%, var(--border));
 }
 
-.git-commit-subject {
+.git-log-subject {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -15821,28 +15828,28 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   white-space: nowrap;
 }
 
-.git-commit-author,
-.git-commit-hash,
-.git-commit-date {
+.git-log-author,
+.git-log-hash,
+.git-log-date {
   flex: 0 0 auto;
   color: var(--text-muted);
   font-size: var(--fs-micro);
   white-space: nowrap;
 }
 
-.git-commit-author {
+.git-log-author {
   max-width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.git-commit-hash,
+.git-log-hash,
 .git-blame-hash,
 .git-commit-detail-hash {
   font-family: var(--font-mono);
 }
 
-.git-commit-date {
+.git-log-date {
   width: 40px;
   text-align: right;
 }
@@ -16510,7 +16517,7 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
     min-height: 36px;
   }
 
-  .git-commit-row {
+  .git-log-row {
     height: 32px;
     min-height: 32px;
   }
@@ -16531,8 +16538,8 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
     max-width: 148px;
   }
 
-  .git-commit-author,
-  .git-commit-date {
+  .git-log-author,
+  .git-log-date {
     display: none;
   }
 

@@ -268,3 +268,40 @@ that crashed the panel — and that `feat/remote-only` is one entry.
 narrow and now asserts the remote section: rows named by the branch, `preview`
 listed, a `feat` folder with the `remote-only` leaf, and the remote prefix not
 painted into the row.
+
+## Crash fix 2: the commit rows were a column, not a line (reported from the app)
+
+Reported: clicking a branch left the commits panel "totally broken" — 148
+branches, 200 commits, and the text of each row piled on itself under the graph,
+with no subject visible.
+
+Two causes, both found by measuring a page sized like the report
+(`?wide=1&commits=200&lanes=18`, added to `e2e/git-panel.fixture.jsx`):
+
+1. **A class shared with another surface.** The Log's row used `.git-commit-row`
+   and `.git-commit-subject`/`-author`, which the project panel's commit list
+   already defines as a two-line column (`flex-direction: column`,
+   `align-items: flex-start`). The Log's row became a column in a 28-pixel-tall
+   absolutely positioned box: subject at height 0, sha over the author, the age
+   over the sha. The Log's classes are `.git-log-row` and `.git-log-refs /
+   -subject / -author / -hash / -date` now, and `.git-log-row` says
+   `flex-direction: row` out loud.
+2. **A graph whose width was a constant.** `GRAPH_WIDTH = 76` fits seven
+   ten-pixel lanes. The repository in the report has eighteen: the last eleven
+   were drawn outside the SVG, and the row's `padding-left: 80px` no longer
+   matched where the drawing ended. The width is now computed from the page's
+   lane count, capped at 206px and at 42% of the panel (a `ResizeObserver` on the
+   scroll box, not a timer), published as `--git-graph-width`, and read as the
+   row's indent, so the two cannot drift apart.
+
+The harness missed it because its fixture has four commits, two lanes and a short
+subject — the layout that only breaks when the history is wide was never on
+screen. `e2e/git-panel.mjs` now runs that page at desktop, desktop-dark, phone
+and narrow-window, before and after picking a branch: columns on one line
+(centres aligned, since a touch plate is 36 in a 28-pixel row), no overlap, the
+subject readable, the indent equal to the graph's width, the graph within its cap
+and its 42% budget, no sideways page scroll. The phone's rule that hides the
+author and the date is asserted as a rule, not as an accident.
+
+`tsc` clean, eslint 0 errors on the touched files, `AppShell.git-panel` 12,
+`FileViewer.editor` 12, `hook-order` 2, `inline-style-tokens` 2 pass.

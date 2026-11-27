@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useI18n } from "@/hooks/useI18n";
 import type { CommitNode, GraphData, GraphLayoutResult } from "@/lib/git/types";
@@ -35,7 +35,19 @@ import { GitMenu } from "../git-ui";
 const COLUMN_WIDTH = 10;
 const ROW_HEIGHT = 28;
 const GRAPH_PADDING = 6;
-const GRAPH_WIDTH = 76;
+/**
+ * The graph is as wide as the lanes the page has, up to a cap: a repository with
+ * eighteen of them must show eighteen, and one that never branches must not
+ * steal a hundred pixels from the subjects. Past the cap the graph is clipped
+ * (the lanes are colours, and the colours repeat every eight), which is the
+ * cheaper loss than a panel with no room left for a commit message.
+ */
+const GRAPH_MAX_WIDTH = 206;
+/** A graph narrower than this says nothing: it is one lane and a sliver. */
+const GRAPH_MIN_WIDTH = 36;
+/** How much of the panel the graph may take. The subject is the reason to read
+ *  the list, so on a phone the lanes give way to it and the drawing is clipped. */
+const GRAPH_PANEL_FRACTION = 0.42;
 const OVERSCAN_ROWS = 8;
 // The graph's lane hues are CSS variables, so the palette lives in
 // app/native-theme.css (with its light and dark sets) and this file draws with
@@ -285,6 +297,39 @@ export function LogPanel({
 
   const geometry = useMemo(() => buildGeometry(commits, lanes), [commits, lanes]);
 
+  // The lanes the page actually uses, so the graph is as wide as the history is
+  // deep. `lanes` is keyed by commit hash; a page of a wide repository reaches
+  // column 17, and a fixed 76-pixel box would draw the last ten of them outside
+  // it, where the reader sees a line that arrives from nowhere.
+  // The panel's own width, so the graph and the subject split a phone panel
+  // without a timer: a ResizeObserver is the panel telling the graph to resize.
+  const [panelWidth, setPanelWidth] = useState(0);
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    setPanelWidth(element.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      const width = entry?.contentRect.width ?? 0;
+      setPanelWidth((current) => (current === width ? current : width));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const graphWidth = useMemo(() => {
+    let columns = 1;
+    for (const lane of Object.values(lanes)) {
+      columns = Math.max(columns, (lane.column ?? 0) + 1);
+    }
+    const needed = GRAPH_PADDING * 2 + columns * COLUMN_WIDTH;
+    const budget = panelWidth > 0
+      ? Math.max(GRAPH_MIN_WIDTH, Math.floor(panelWidth * GRAPH_PANEL_FRACTION))
+      : GRAPH_MAX_WIDTH;
+    return Math.min(needed, GRAPH_MAX_WIDTH, budget);
+  }, [lanes, panelWidth]);
+
   const virtualizer = useVirtualizer({
     count: commits.length,
     getScrollElement: () => scrollRef.current,
@@ -470,11 +515,20 @@ export function LogPanel({
       {loading ? <GitState kind="loading" text={t("git.logLoading")} /> : null}
       {!loading && !commits.length && !unavailableRef ? <GitState kind="empty" text={t("git.logEmpty")} /> : null}
 
-      <div className="git-log-scroll" ref={scrollRef} role="grid" aria-label={t("git.logTitle")}>
+      <div
+        className="git-log-scroll"
+        ref={scrollRef}
+        role="grid"
+        aria-label={t("git.logTitle")}
+        // The rows are indented by the graph's width, so the two have to be told
+        // the same number; the sheet reads it from here.
+        style={{ "--git-graph-width": `${graphWidth}px` } as CSSProperties}
+      >
         <svg
           className="git-graph-layer"
-          width={GRAPH_WIDTH}
+          width={graphWidth}
           height={commits.length * ROW_HEIGHT}
+          viewBox={`0 0 ${graphWidth} ${commits.length * ROW_HEIGHT}`}
           aria-hidden="true"
         >
           {visibleLines.map((line) => (
@@ -514,7 +568,7 @@ export function LogPanel({
             return (
               <div
                 key={commit.hash}
-                className={`git-commit-row${isSelected ? " is-selected" : ""}${isMulti ? " is-multi" : ""}`}
+                className={`git-log-row${isSelected ? " is-selected" : ""}${isMulti ? " is-multi" : ""}`}
                 role="row"
                 aria-selected={isSelected}
                 tabIndex={-1}
@@ -527,7 +581,7 @@ export function LogPanel({
                   open(event.currentTarget, commitMenu(commit));
                 }}
               >
-                <span className="git-commit-refs">
+                <span className="git-log-refs">
                   {commit.refs.map((ref) => (
                     <span
                       key={`${ref.type}-${ref.name}`}
@@ -537,14 +591,14 @@ export function LogPanel({
                     </span>
                   ))}
                 </span>
-                <span className="git-commit-subject" title={commit.subject}>
+                <span className="git-log-subject" title={commit.subject}>
                   {commit.subject}
                 </span>
-                <span className="git-commit-author" title={commit.authorEmail}>
+                <span className="git-log-author" title={commit.authorEmail}>
                   {commit.authorName}
                 </span>
-                <span className="git-commit-hash">{commit.shortHash}</span>
-                <span className="git-commit-date" title={formatFullTime(commit.authorDate)}>
+                <span className="git-log-hash">{commit.shortHash}</span>
+                <span className="git-log-date" title={formatFullTime(commit.authorDate)}>
                   {formatCommitTime(commit.authorDate)}
                 </span>
                 <GitRowMenuButton

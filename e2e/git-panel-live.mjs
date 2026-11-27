@@ -78,10 +78,10 @@ async function run(label, browserType, viewport, touch) {
 
   // Level 2: the commits of a real branch.
   await page.locator('#git-panel .git-panel-row[aria-current="true"]').first().click();
-  await page.locator("#git-panel .git-commit-row").first().waitFor({ state: "visible", timeout: 90000 });
-  const commits = await page.locator("#git-panel .git-commit-row").count();
+  await page.locator("#git-panel .git-log-row").first().waitFor({ state: "visible", timeout: 90000 });
+  const commits = await page.locator("#git-panel .git-log-row").count();
   assert.ok(commits >= 2, `${label}: level 2 lists commits (${commits})`);
-  const subject = await page.locator("#git-panel .git-commit-subject").first().innerText();
+  const subject = await page.locator("#git-panel .git-log-subject").first().innerText();
   const sha = await page.locator("#git-panel .git-commit-sha").first().innerText();
   assert.ok(subject.length > 3, `${label}: a commit is named: ${subject.slice(0, 60)}`);
   assert.match(sha, /^[0-9a-f]{7,10}$/, `${label}: and by its short sha: ${sha}`);
@@ -90,7 +90,7 @@ async function run(label, browserType, viewport, touch) {
   await page.screenshot({ path: `${shots}/${label}-commits.png` });
 
   // Level 3: that commit's diff.
-  await page.locator("#git-panel .git-commit-row").first().click();
+  await page.locator("#git-panel .git-log-row").first().click();
   await page.locator("#git-panel .file-diff-view").first().waitFor({ state: "visible", timeout: 90000 });
   const files = await page.locator("#git-panel .git-file-row").count();
   const lines = await page.locator("#git-panel .file-diff-line").count();

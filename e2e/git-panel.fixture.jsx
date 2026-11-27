@@ -161,6 +161,49 @@ const PATCH = [
   "+}",
 ].join("\n");
 
+/*
+ * `?wide=1&commits=200&lanes=18` replaces the log with a repository the size of
+ * a real one: many lanes, long subjects, ref chips on the top row. The four
+ * commits of the small fixture hide the layouts that only appear when the graph
+ * is wide and the list is long — which is how the commit rows shipped broken
+ * (text laid out where the graph's padding is, columns overlapping, the subject
+ * not visible at all).
+ */
+const WIDE = (() => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("wide") !== "1") return null;
+  const lanes = Number(params.get("lanes") ?? 18);
+  const count = Number(params.get("commits") ?? 200);
+  const hex = (index) => index.toString(16).padStart(40, "0");
+  const commits = [];
+  const laneMap = {};
+  for (let index = 0; index < count; index += 1) {
+    const hash = hex(index);
+    const parent = hex(index + 1);
+    const column = index % lanes;
+    commits.push({
+      hash,
+      shortHash: hash.slice(0, 8),
+      parents: [parent],
+      authorName: index % 3 === 0 ? "Davy Massonetoto" : "no5ix",
+      authorEmail: "lynx@example.com",
+      authorDate: new Date(Date.UTC(2026, 10, 27) - index * 40 * 60 * 1000).toISOString(),
+      commitDate: new Date(Date.UTC(2026, 10, 27) - index * 40 * 60 * 1000).toISOString(),
+      subject: `commit ${index}: docs: a fixture's answer comes from the server, not the component`,
+      body: "",
+      refs: index === 0
+        ? [{ type: "branch", name: "pi-desk-main" }, { type: "remote-branch", name: "origin/pi-desk-main" }]
+        : [],
+    });
+    laneMap[hash] = {
+      column,
+      color: column % 8,
+      lines: [{ fromColumn: column, toColumn: column, toCommit: parent, type: "commit" }],
+    };
+  }
+  return { commits, lanes: laneMap };
+})();
+
 const COMMANDS = {
   getRepos: () => ({
     repos: [
@@ -173,7 +216,10 @@ const COMMANDS = {
   getRemoteBranches: () => REMOTE_BRANCHES,
   getTags: () => TAGS,
   getBranchDashboardPreferences: () => ({ preferences: { showTags: true, singleClickAction: "filter" }, favorites: {} }),
-  getGraphData: () => ({ graphData: { commits: COMMITS, lanes: LANES }, hasMore: false }),
+  getGraphData: () =>
+    WIDE
+      ? { graphData: { commits: WIDE.commits, lanes: WIDE.lanes }, hasMore: false }
+      : { graphData: { commits: COMMITS, lanes: LANES }, hasMore: false },
   loadMoreLog: () => ({ graphData: { commits: [], lanes: {} }, hasMore: false }),
   getLog: () => COMMITS,
   getCommitFiles: () => COMMIT_FILES,

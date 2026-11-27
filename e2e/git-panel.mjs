@@ -165,22 +165,22 @@ async function panel(label, { width, height, touch, theme = "light" }) {
   // The tree labels a row with the name minus its prefix, so the branch under
   // `feat/panel/` is the row named `git-view`.
   await page.locator('#git-panel .sidebar-project-context-menu-branch-name:text-is("git-view")').first().click();
-  await page.waitForSelector("#git-panel .git-commit-row");
-  const commits = page.locator("#git-panel .git-commit-row");
+  await page.waitForSelector("#git-panel .git-log-row");
+  const commits = page.locator("#git-panel .git-log-row");
   assert.ok(await commits.count() >= 2, `${label}: the commit list has rows (${await commits.count()})`);
-  assert.ok(await page.locator("#git-panel .git-commit-hash").first().innerText() !== "", `${label}: a row shows the short hash`);
+  assert.ok(await page.locator("#git-panel .git-log-hash").first().innerText() !== "", `${label}: a row shows the short hash`);
   assert.ok(await page.locator("#git-panel .git-graph-layer").count() === 1, `${label}: the graph is drawn behind the list`);
   await expectNoSidewaysScroll(page, label, "the commit list");
   if (touch) {
     // The commit row is the graph's grid (28-32px), not a thumb's plate; the
     // control inside it is. Measured as what it is.
-    const commitRow = await box(page, "#git-panel .git-commit-row");
+    const commitRow = await box(page, "#git-panel .git-log-row");
     assert.ok(commitRow.h >= 32, `${label}: a commit row is at least the grid's 32 (${commitRow.h})`);
     await touchPlates(page, label, ["#git-panel .git-row-menu-button", "#git-panel .git-icon-button"]);
   }
 
   // ─── level 3: one commit, its files and its diff ───
-  await page.locator('#git-panel .git-commit-row:has-text("draw the commit graph")').first().click();
+  await page.locator('#git-panel .git-log-row:has-text("draw the commit graph")').first().click();
   await page.waitForSelector("#git-panel .git-file-row");
   assert.equal(await page.locator("#git-panel .git-file-row").count(), 2, `${label}: the commit lists the files it touched`);
   await page.waitForSelector(".file-diff-view, .diff-view, .git-diff", { timeout: 5_000 }).catch(() => null);
@@ -214,6 +214,141 @@ await panel("desktop-dark", { width: 1440, height: 900, touch: false, theme: "da
 await panel("phone", { width: 390, height: 844, touch: true });
 await panel("phone-dark", { width: 390, height: 844, touch: true, theme: "dark" });
 await panel("narrow-window", { width: 900, height: 700, touch: false });
+
+/**
+ * A repository the size of a real one: eighteen lanes, two hundred commits.
+ *
+ * The four-commit fixture cannot show this layout, and that is how the commit
+ * rows shipped broken: the row class was shared with the project panel's
+ * two-line commit list, so the log row was a column — the subject at zero
+ * height, the sha on top of the author, no message on screen. A wide page also
+ * makes the graph's fixed width a lie: eighteen lanes need 192px, not 76.
+ */
+async function wideLog(label, { width, height, theme, touch }) {
+  const context = await browser.newContext({
+    viewport: { width, height },
+    deviceScaleFactor: 2,
+    hasTouch: touch,
+    isMobile: touch,
+    colorScheme: theme === "dark" ? "dark" : "light",
+  });
+  const page = await context.newPage();
+  page.on("pageerror", (error) => pageErrors.push(`${label} (wide): ${error.message}`));
+  await page.goto(`${url}?theme=${theme}&wide=1&commits=200&lanes=18`);
+  await page.waitForSelector("#git-panel", { timeout: 15_000 });
+  if (touch) {
+    // On a phone the panel is one column at a time, and it opens on the branches:
+    // picking one switches to the log and filters it in the same act.
+    await page.locator("#git-panel .git-branch-row:not(.is-group)").first().click();
+  }
+  await page.waitForSelector("#git-panel .git-log-row", { timeout: 15_000 });
+  await page.waitForTimeout(400);
+  if (!touch) {
+    // The reported action, on a desktop panel: pick a branch, read its commits.
+    await page.locator("#git-panel .git-branch-row:not(.is-group)").first().click();
+    await page.waitForTimeout(400);
+  }
+
+  const rows = await page.evaluate(() => {
+    const row = document.querySelector(".git-log-row");
+    const graph = document.querySelector(".git-graph-layer");
+    const scroll = document.querySelector(".git-log-scroll");
+    const children = [...row.children].map((el) => {
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      return { cls: el.className.toString(), display: cs.display, position: cs.position, top: el.offsetTop, left: el.offsetLeft, x: r.x, right: r.right, w: r.width, h: r.height, text: (el.textContent ?? "").trim().slice(0, 24) };
+    });
+    const indent = Number.parseFloat(getComputedStyle(row).paddingLeft);
+    return {
+      painted: document.querySelectorAll(".git-log-row").length,
+      rowWidth: Math.round(row.getBoundingClientRect().width),
+      indent,
+      graphWidth: graph ? Math.round(graph.getBoundingClientRect().width) : 0,
+      scrollWidth: Math.round(scroll.getBoundingClientRect().width),
+      subjectText: (document.querySelector(".git-log-subject")?.textContent ?? "").trim(),
+      children,
+    };
+  });
+
+  assert.ok(rows.painted >= 10, `${label} (wide): a long list is virtualised, ${rows.painted} rows painted of 200`);
+  assert.ok(rows.subjectText.startsWith("commit 0"), `${label} (wide): the subject is on screen — "${rows.subjectText.slice(0, 30)}"`);
+
+  // One line, no overlap: the columns of a commit row are one line of reading.
+  // A phone drops the author and the date on purpose (the subject is the row's
+  // reason); anything else that vanishes is a layout that lost a column.
+  const line = rows.children.filter((child) => child.cls.includes("git-log") || child.cls.includes("git-row-menu"));
+  const hidden = line.filter((child) => child.display === "none").map((child) => child.cls);
+  for (const cls of hidden) {
+    assert.ok(cls === "git-log-author" || cls === "git-log-date", `${label} (wide): ${cls} is hidden, and only the author and the date may be`);
+  }
+  const shown = line.filter((child) => child.display !== "none");
+  for (const child of shown) {
+    assert.ok(child.h >= 14, `${label} (wide): ${child.cls} has a height (${child.h}) — a column collapsed to nothing`);
+  }
+  // The row's menu button is pinned to the row's right edge (it is absolutely
+  // placed, so a row of thirty pixels can carry a control of thirty-six). It is
+  // not one of the reading columns.
+  const flow = shown.filter((child) => child.position !== "absolute");
+  // They share a line: the centres align. A touch control is 36 in a 28-pixel
+  // row (the plate rule), so `offsetTop` alone would call that a second line.
+  const subject = flow.find((child) => child.cls.includes("git-log-subject"));
+  const middle = subject.top + subject.h / 2;
+  for (const child of flow) {
+    const centre = child.top + child.h / 2;
+    assert.ok(Math.abs(centre - middle) <= 4,
+      `${label} (wide): ${child.cls} is on the subject's line (centre ${centre.toFixed(1)} against ${middle.toFixed(1)})`);
+  }
+  const ordered = [...flow].sort((a, b) => a.left - b.left);
+  for (let index = 1; index < ordered.length; index += 1) {
+    const previous = ordered[index - 1];
+    const current = ordered[index];
+    assert.ok(current.x >= previous.right - 1,
+      `${label} (wide): ${previous.cls} and ${current.cls} do not overlap (${previous.right} > ${current.x})`);
+  }
+
+  // The graph is as wide as the lanes, and the row is indented by the same number.
+  assert.ok(Math.abs(rows.indent - rows.graphWidth) < 1.5,
+    `${label} (wide): the row's indent (${rows.indent}) is the graph's width (${rows.graphWidth})`);
+  const budget = Math.max(36, Math.floor(rows.scrollWidth * 0.42));
+  assert.ok(rows.graphWidth <= Math.min(206, budget) + 1,
+    `${label} (wide): the graph takes at most its cap and 42% of the panel (${rows.graphWidth} of ${rows.scrollWidth})`);
+  const lanes = 18;
+  assert.ok(rows.graphWidth >= Math.min(lanes * 10 + 12, Math.min(206, budget)) - 1,
+    `${label} (wide): eighteen lanes are given their width, up to the budget (${rows.graphWidth})`);
+  assert.ok(subject.w >= 60, `${label} (wide): the subject keeps room beside the graph (${subject.w})`);
+
+  // The reported action: pick a branch, read its commits. The filter goes on the
+  // log, the graph is re-laid from that ref, and the rows must stay what they
+  // are — one line each, with the subject.
+  const afterBranch = await page.evaluate(() => {
+    const row = document.querySelector(".git-log-row");
+    if (!row) return null;
+    const chips = [...document.querySelectorAll(".git-filter-chips .git-chip")].map((el) => el.textContent.trim());
+    const children = [...row.children]
+      .map((el) => ({ cls: el.className.toString(), display: getComputedStyle(el).display, x: el.getBoundingClientRect().x, right: el.getBoundingClientRect().right }))
+      .filter((child) => child.display !== "none")
+      .sort((a, b) => a.x - b.x);
+    return {
+      chips,
+      rows: document.querySelectorAll(".git-log-row").length,
+      subject: (document.querySelector(".git-log-subject")?.textContent ?? "").trim(),
+      overlap: children.some((child, index) => index > 0 && child.x < children[index - 1].right - 1),
+    };
+  });
+  assert.ok(afterBranch, `${label} (wide): a branch's log still has rows after the branch is picked`);
+  assert.ok(afterBranch.chips.length >= 1, `${label} (wide): the picked branch shows as the log's filter (${afterBranch.chips.join(",")})`);
+  assert.ok(afterBranch.subject.startsWith("commit"), `${label} (wide): the subject is readable after the branch is picked ("${afterBranch.subject.slice(0, 24)}")`);
+  assert.ok(!afterBranch.overlap, `${label} (wide): the columns do not overlap after the branch is picked`);
+
+  await expectNoSidewaysScroll(page, `${label} (wide)`, "a wide repository");
+  await page.screenshot({ path: `${out}/${label.replace(/[^a-z0-9]+/gi, "-")}-wide.png`, fullPage: false });
+  await context.close();
+}
+
+await wideLog("desktop", { width: 1440, height: 900, touch: false, theme: "light" });
+await wideLog("desktop-dark", { width: 1440, height: 900, touch: false, theme: "dark" });
+await wideLog("phone", { width: 390, height: 844, touch: true, theme: "light" });
+await wideLog("narrow-window", { width: 900, height: 700, touch: false, theme: "light" });
 
 await browser.close();
 server.close();
