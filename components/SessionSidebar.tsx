@@ -115,6 +115,8 @@ interface Props {
    *  Lets the app play a cross-workspace completion tone. */
   onBackgroundTaskDone?: () => void;
   onRunningSessionIdsChange?: (ids: Set<string>) => void;
+  /** "Insert into chat": a session row's `#<title>` mention goes into the composer (the app owns it). */
+  onInsertMention?: (session: SessionInfo) => void;
   onSessionsChange?: (sessions: SessionInfo[]) => void;
   onProjectsChange?: (projectRoots: string[]) => void;
   headerControls?: ReactNode;
@@ -305,7 +307,7 @@ function readIdSetPref(key: Parameters<typeof getPrefJson>[0]): Set<string> {
     : new Set();
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onOpenArtifacts, artifactsOpen = false, onOpenTasks, tasksOpen = false }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onInsertMention, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onOpenArtifacts, artifactsOpen = false, onOpenTasks, tasksOpen = false }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
@@ -1702,6 +1704,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 sessionsById={sessionsById}
                 key={node.session.id}
                 node={node}
+                onInsertMention={onInsertMention}
                 familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
                 pinnedInk={pinnedSessions.has(node.session.id)}
                 selectedSessionId={selectedSessionId}
@@ -1754,6 +1757,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     <SessionFamilyItem
                       sessionsById={sessionsById}
                       node={node}
+                      onInsertMention={onInsertMention}
                       familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
                       pinnedInk={pinnedSessions.has(node.session.id)}
                       selectedSessionId={selectedSessionId}
@@ -1791,6 +1795,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             sessionsById={sessionsById}
             key={family.root.id}
             node={node}
+            onInsertMention={onInsertMention}
             familySessions={familySessions}
             pinnedInk={pinnedSessions.has(family.root.id)}
             subtitle={projectName}
@@ -2436,6 +2441,7 @@ function SessionFamilyItem({
   onRenamed,
   onSessionDeleted,
   onContinueInProject,
+  onInsertMention,
   chatActions,
   archiveActions,
   onFork,
@@ -2465,6 +2471,8 @@ function SessionFamilyItem({
   onSessionDeleted?: (id: string) => void;
   /** Chats only: copy the conversation into a project. */
   onContinueInProject?: (session: SessionInfo) => void;
+  /** The row menu's "Insert into chat": the session's `#` mention goes into the composer. */
+  onInsertMention?: (session: SessionInfo) => void;
   /** Chats only: pin and archive, which the row menu offers beside the other actions. */
   chatActions?: ChatRowActions;
   /** Project sessions: archive or restore this session (#200). */
@@ -2523,6 +2531,7 @@ function SessionFamilyItem({
           onRenamed={onRenamed}
           onDeleted={(id) => onSessionDeleted?.(id)}
           onContinueInProject={depth === 0 ? onContinueInProject : undefined}
+          onInsertMention={depth === 0 ? onInsertMention : undefined}
           chatActions={depth === 0 ? chatActions : undefined}
           archiveActions={depth === 0 ? archiveActions : undefined}
           onFork={depth === 0 ? onFork : undefined}
@@ -2544,6 +2553,7 @@ function SessionFamilyItem({
               key={child.session.id}
               node={child}
               depth={depth + 1}
+              onInsertMention={onInsertMention}
               selectedSessionId={selectedSessionId}
               runningSessionIds={runningSessionIds}
               unreadSessionIds={unreadSessionIds}
@@ -2676,6 +2686,7 @@ function SessionItem({
   onRenamed,
   onDeleted,
   onContinueInProject,
+  onInsertMention,
   chatActions,
   archiveActions,
   onFork,
@@ -2700,6 +2711,8 @@ function SessionItem({
   onRenamed?: () => void;
   onDeleted?: (id: string) => void;
   onContinueInProject?: (session: SessionInfo) => void;
+  /** "Insert into chat": `#<session title>` at the composer's caret, never sent. */
+  onInsertMention?: (session: SessionInfo) => void;
   chatActions?: ChatRowActions;
   archiveActions?: SessionArchiveActions;
   onFork?: (session: SessionInfo) => void;
@@ -2862,6 +2875,9 @@ function SessionItem({
       ...(onContinueInProject
         ? [{ label: t("sidebar.continueInProject"), onSelect: () => onContinueInProject(session) }]
         : []),
+      ...(onInsertMention
+        ? [{ label: t("sidebar.insertIntoChat"), onSelect: () => onInsertMention(session) }]
+        : []),
       ...(archive
         ? [{ label: t(archive.archived ? "sidebar.unarchiveChat" : "sidebar.archiveChat"), onSelect: archive.onToggleArchive }]
         : []),
@@ -2878,7 +2894,7 @@ function SessionItem({
     ], at);
     setMenuOpen(false);
     return shown;
-  }, [archive, beginDeleteConfirmation, onContinueInProject, onFork, pin, session, locale, startRename, t]);
+  }, [archive, beginDeleteConfirmation, onContinueInProject, onInsertMention, onFork, pin, session, locale, startRename, t]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const handled = dispatchSessionRowContextMenu({
@@ -3289,6 +3305,25 @@ function SessionItem({
                     <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
                   </svg>
                   {t("sidebar.continueInProject")}
+                </button>
+              )}
+              {onInsertMention && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); onInsertMention(session); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", height: 30, padding: "0 8px",
+                    background: "transparent", border: 0, borderRadius: "var(--radius-md)",
+                    color: "var(--text)", cursor: "pointer",
+                    fontSize: "var(--fs-body)", textAlign: "left",
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M4 4h16v12H5.5L4 17.5Z" />
+                    <path d="M9 10h6" />
+                  </svg>
+                  {t("sidebar.insertIntoChat")}
                 </button>
               )}
               {archive && (

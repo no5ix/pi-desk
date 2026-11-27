@@ -58,7 +58,8 @@ import { useNativeContextMenu } from "@/hooks/useNativeContextMenu";
 import { DomContextMenuHost } from "./DomContextMenuHost";
 import { getFileName } from "@/lib/file-paths";
 import { isPathInside } from "@/lib/file-links";
-import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
+import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText, buildSessionMentionText } from "@/lib/file-fuzzy";
+import { sessionMentionTitle } from "@/lib/session-reference";
 import { PRODUCT_NAME } from "@/lib/branding";
 import { isImeComposing } from "@/lib/ime";
 import {
@@ -969,6 +970,14 @@ export function AppShell() {
   const handleAtMention = useCallback((relativePath: string, isDir: boolean) => {
     chatInputRef.current?.insertText(buildAtMentionText(relativePath, isDir));
     if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
+  }, [isMobile]);
+
+  // "Insert into chat" from a session row's menu: the session's `#<title>` mention at the
+  // composer's caret, in the same shape the composer's own `#` autocomplete writes, so the send
+  // path resolves it (lib/session-reference.ts). Nothing is sent: the prompt stays the user's.
+  const handleInsertSessionMention = useCallback((session: SessionInfo) => {
+    chatInputRef.current?.insertText(buildSessionMentionText(sessionMentionTitle(session)));
+    if (isMobile) setSidebarOpen(false);
   }, [isMobile]);
 
   const handleAtMentions = useCallback((relativePaths: string[]) => {
@@ -2409,6 +2418,7 @@ export function AppShell() {
         onOpenTerminal={handleOpenTerminal}
         onBackgroundTaskDone={handleBackgroundTaskDone}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
+        onInsertMention={handleInsertSessionMention}
         onSessionsChange={handleSessionsChange}
         onOpenTasks={handleOpenTasks}
         tasksOpen={tasksOpen}

@@ -62,6 +62,17 @@ export function formatSessionReference(
   return `${result.slice(0, MAX_SESSION_REFERENCE_CHARS)}\n[referenced session truncated]\n</referenced-session>`;
 }
 
+/**
+ * The title a session's `#` mention carries: the name the user gave it, else the first prompt,
+ * cut the way the sidebar's row cuts it. `buildSessionMentionText` quotes what has spaces.
+ */
+export function sessionMentionTitle(session: { name?: string; firstMessage?: string; id: string }): string {
+  const name = session.name?.trim();
+  if (name) return name;
+  const prompt = (session.firstMessage ?? "").replace(/\s+/g, " ").trim();
+  return prompt.slice(0, 50) || session.id.slice(0, 12);
+}
+
 export function extractSessionReferenceLabels(text: string): string[] {
   const labels = new Set<string>();
   for (const match of text.matchAll(SESSION_REFERENCE_PATTERN)) labels.add(match[1] ?? match[2]);
