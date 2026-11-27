@@ -46,11 +46,12 @@ let configured = false;
 /**
  * Load Monaco and set it up once per page.
  *
- * Workers: `new URL(..., import.meta.url)` is the webpack 5 form, which is what
- * Next's client build is. A worker that fails to construct is not fatal —
- * Monaco falls back to running the language service on the main thread — so the
- * editor keeps working in a build where the worker chunks are unavailable, at
- * the cost of a busier main thread.
+ * Workers: `new Worker(new URL("./relative.js", import.meta.url))` is the form
+ * both bundlers here emit a worker asset for — Turbopack (`next dev`) and
+ * webpack (`next build --webpack`). A worker that fails to construct is not
+ * fatal — Monaco falls back to running the language service on the main
+ * thread — so the editor keeps working in a build where the worker chunks are
+ * unavailable, at the cost of a busier main thread.
  */
 /**
  * A worker that answers nothing. Monaco requires a Worker object; a language
@@ -79,11 +80,14 @@ function loadMonaco(): Promise<MonacoModule> {
           // word inspector, multi-cursor) run there. The language workers are
           // not — the plan is no language server, and the completion the panel
           // offers is the document's words — so those labels get the stub.
-          // The specifier is relative on purpose. `new URL` with a *module*
-          // specifier is not something webpack 5 or esbuild emits, so the
-          // request 404s and Monaco runs this on the main thread; the file
-          // beside this one (`./editor-worker.js`) is what both bundlers turn
-          // into a worker asset.
+          // The specifier is relative on purpose, and names the file exactly:
+          // `new URL` with a *module* specifier is not something Turbopack or
+          // webpack turns into an asset, and a `.ts` sibling is not what a
+          // `.js` request resolves to (the asset is emitted as JavaScript, so
+          // the request never reaches the TypeScript loader). The file beside
+          // this one is `./editor-worker.js` — a `.js` source the worker graph
+          // can resolve. Anything unresolved here is a build warning and an
+          // editor on the main thread.
           if (label !== "editorWorkerService") return silentWorker();
           try {
             return new Worker(

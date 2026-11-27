@@ -58,9 +58,12 @@ harness bundle:
 - the kind filter: the items are `CompletionItemKind.Text` and
   `suggest.showWords` is `true`, so `SuggestModel`'s disabled-kinds set does not
   drop them (this was a real defect and is fixed);
-- the worker: `components/editor-worker.ts` is reached through the literal
+- the worker: `components/editor-worker.js` is reached through the literal
   `new URL("./editor-worker.js", import.meta.url)`, and the harness serves the
-  whole output directory, so the chunk resolves.
+  whole output directory, so the chunk resolves. The file is `.js` because a
+  worker asset is emitted as JavaScript: neither Turbopack (`next dev`) nor
+  webpack maps a `.js` request onto a `.ts` sibling, so a `.ts` source there is
+  a "Module not found" build warning and an editor with no worker.
 
 The next step, in the harness and not in the app: log from inside the provider in
 `e2e/file-editor.fixture.jsx`, drive the manual command

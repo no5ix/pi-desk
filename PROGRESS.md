@@ -570,6 +570,18 @@ declarations with hardcoded colours; the same rules already live in
 changes nothing on screen and `scripts/upstream-css-baseline.test.mjs` passes
 again. The fork's two hardcoded values stay where they belong — the fork sheet.
 
+**Monaco's worker chunk is a `.js` file.** `next dev` (Turbopack) reported
+`Module not found: Can't resolve './editor-worker.js'` out of
+`components/CodeEditor.tsx`, so every page carrying the editor — the file panel,
+the Artifacts view, the whole shell — printed a build warning and the editor ran
+with no worker. `new Worker(new URL("./x.js", import.meta.url))` is resolved by
+name and emitted as a JavaScript asset, so the worker graph never goes through
+the TypeScript loader: a `components/editor-worker.ts` sibling is invisible to
+it. `components/editor-worker.js` is the same one side-effect import, in the
+extension the request asks for. Verified in a Turbopack dev compile of `/` (no
+module warning) and in a webpack compile of the same request (0 errors, the
+worker chunk emitted).
+
 **Verification (2026-07-29).** `tsc --noEmit` clean. `npm run lint` clean of
 errors (48 warnings, upstream's and the git port's). Unit suite: 5131 tests,
 37 failures — measured against the same suite at HEAD with this work stashed
