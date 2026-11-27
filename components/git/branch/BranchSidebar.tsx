@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { buildBranchTree, flattenBranchTree, type BranchRow } from "@/lib/branch-tree";
 import { filterBranchRows } from "../../ProjectContextMenu";
+import { remoteBranchRows } from "./remote-rows";
 import { BranchIcon, WorktreeIcon } from "../../GitIcons";
 import {
   GitCheckbox,
@@ -86,7 +87,10 @@ export function BranchSidebar({
   const [dialog, setDialog] = useState<null | { kind: "create"; from: string } | { kind: "rename"; name: string } | { kind: "tag"; from: string }>(null);
   const { run, busy, error, clearError } = useGitMutation(target);
   const branches = useGitQuery<import("@/lib/git/types").BranchInfo[]>(target, "getBranches", {}, { deps: [refreshToken] });
-  const remoteBranches = useGitQuery<import("@/lib/git/types").BranchInfo[]>(target, "getRemoteBranches", {}, { deps: [refreshToken] });
+  // The answer is per remote — `{ remote, branches }` — not a list of
+  // `BranchInfo`. `remoteBranchRows` is what turns it into rows; reading the
+  // groups directly leaves `name` undefined and the branch tree crashes on it.
+  const remoteBranches = useGitQuery<import("@/lib/git/types").RemoteBranchGroup[]>(target, "getRemoteBranches", {}, { deps: [refreshToken] });
   const tags = useGitQuery<import("@/lib/git/types").TagInfo[]>(target, "getTags", {}, { deps: [refreshToken] });
   const dashboard = useGitQuery<BranchDashboardState>(target, "getBranchDashboardPreferences", {}, { deps: [refreshToken] });
 
@@ -102,14 +106,7 @@ export function BranchSidebar({
     holderIsMain: false,
     info: branch,
   })), [branches.data]);
-  const remoteRows = useMemo(() => (remoteBranches.data ?? []).map((branch) => ({
-    name: branch.name,
-    remote: true,
-    kind: "branch" as const,
-    holderPath: null,
-    holderIsMain: false,
-    info: branch,
-  })), [remoteBranches.data]);
+  const remoteRows = useMemo(() => remoteBranchRows(remoteBranches.data ?? []), [remoteBranches.data]);
 
   const localItems = useMemo(() => flattenBranchTree(
     buildBranchTree(filterBranchRows(localRows, query)),

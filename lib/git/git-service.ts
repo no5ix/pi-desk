@@ -25,6 +25,7 @@ import type {
   LogRevision,
   MergeState,
   RefInfo,
+  RemoteBranchGroup,
   TagInfo,
 } from "./types";
 
@@ -323,7 +324,7 @@ export class GitService {
     return branches;
   }
 
-  async getRemoteBranches(): Promise<{ remote: string; branches: string[] }[]> {
+  async getRemoteBranches(): Promise<RemoteBranchGroup[]> {
     // Get the actual configured remotes (not inferred from tracking branches)
     const remoteOutput = await this.execGit(["remote"]).catch(() => "");
     const configuredRemotes = new Set(

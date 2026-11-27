@@ -132,6 +132,17 @@ async function panel(label, { width, height, touch, theme = "light" }) {
   assert.ok(await remoteRows.count() >= 2, `${label}: the remote-only branches are tagged (${await remoteRows.count()})`);
   assert.ok((await page.locator("#git-panel .git-branch-row").allInnerTexts()).some((text) => text.includes("preview")),
     `${label}: a remote branch is listed under the remote section`);
+  // The server answers per remote (`{ remote, branches: ["main"] }`), so the row
+  // is named by the short branch, and a `feat/…` remote is a folder like a local
+  // one. Asserted here because the fixture and the component once agreed with
+  // each other instead of with the server, and the panel crashed on the first
+  // click of the Git button.
+  const remoteSection = page.locator('.git-tree-section:has(.git-tree-section-title:text-is("Remote"))');
+  const remoteText = (await remoteSection.allInnerTexts()).join("\n");
+  assert.ok(remoteText.includes("preview"), `${label}: the remote rows are named by the branch, not by origin/preview`);
+  assert.ok(remoteText.includes("remote-only"), `${label}: a feat/… remote branch is a leaf inside the feat folder`);
+  assert.ok(remoteText.includes("feat"), `${label}: the remote tree has the feat folder`);
+  assert.ok(!remoteText.includes("origin/"), `${label}: the remote prefix is not painted into the row`);
   assert.ok(await page.locator("#git-panel .git-branch-current-mark").count() === 1, `${label}: the current branch is marked with the dot`);
   assert.ok(await page.locator("#git-panel .git-search-input").isVisible(), `${label}: a long branch list gets its filter box`);
 

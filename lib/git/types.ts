@@ -64,6 +64,17 @@ export interface BranchInfo {
   lastCommitHash: string;
 }
 
+/**
+ * `getRemoteBranches` answers per remote, because that is what the name carries:
+ * `origin/feature` is the branch `feature` under the remote `origin`. A client
+ * that reads this as a flat list of `BranchInfo` finds no `name` at all, and the
+ * branch tree crashes on it — which is why the shape is named here.
+ */
+export interface RemoteBranchGroup {
+  remote: string;
+  branches: string[];
+}
+
 export interface TagInfo {
   name: string;
   fullRef: string;

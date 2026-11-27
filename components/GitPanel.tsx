@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import type { BranchInfo, CherryPickState, MergeState } from "@/lib/git/types";
+import type { BranchInfo, CherryPickState, MergeState, RemoteBranchGroup } from "@/lib/git/types";
 import { BranchSidebar, type GitRefIdentity } from "./git/branch/BranchSidebar";
+import { remoteBranchNames } from "./git/branch/remote-rows";
 import { LogPanel } from "./git/log/LogPanel";
 import { CommitPanel } from "./git/commit/CommitPanel";
 import { BlameDialog, CompareDialog, ConflictDialog, PushDialog } from "./git/dialogs/GitDialogs";
@@ -70,7 +71,9 @@ export function GitPanel({ cwd, onOpenFile, onSwitchRepository, onBusyChange }: 
 
   const target: GitTarget = useMemo(() => ({ cwd: activeCwd }), [activeCwd]);
   const branches = useGitQuery<BranchInfo[]>(target, "getBranches", {}, { deps: [refreshToken] });
-  const remoteBranches = useGitQuery<BranchInfo[]>(target, "getRemoteBranches", {}, { deps: [refreshToken] });
+  // Per remote: `{ remote, branches: string[] }`. See
+  // `components/git/branch/remote-rows.ts`.
+  const remoteBranches = useGitQuery<RemoteBranchGroup[]>(target, "getRemoteBranches", {}, { deps: [refreshToken] });
   const mergeState = useGitQuery<MergeState>(target, "getMergeState", {}, { deps: [refreshToken] });
   const rebaseState = useGitQuery<{ isRebasing: boolean; branchName?: string; step?: number; totalSteps?: number }>(
     target,
@@ -137,7 +140,7 @@ export function GitPanel({ cwd, onOpenFile, onSwitchRepository, onBusyChange }: 
     onOpenFile(result.filePath, `${result.filePath.split("/").pop()}@${hash.slice(0, 7)}`);
   }, [target, onOpenFile]);
 
-  const branchList = remoteBranches.data?.map((branch) => branch.name) ?? [];
+  const branchList = remoteBranchNames(remoteBranches.data ?? []);
 
   return (
     <div className="git-panel" id="git-panel" role="region" aria-label={t("gitPanel.title")}>

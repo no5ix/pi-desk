@@ -285,3 +285,22 @@ await test("a linked worktree is its own repository, and the panel switches to i
   assert.deepEqual(await currentBranch(repo, byPath.get(linked).id), ["side"], "the panel reading that repository sees its branch");
 });
 
+await test("the remote branches are answered per remote, the shape the panel maps", async () => {
+  // `repository()` wires `origin` and pushes `main`; a second name with a slash
+  // is pushed straight to the bare remote, so the answer has both shapes.
+  const { repo } = repository("remotes");
+  git(repo, "push", "origin", "HEAD:refs/heads/feat/remote-only");
+
+  const groups = await run(repo, "getRemoteBranches", {});
+  assert.ok(Array.isArray(groups), "an array of groups");
+  assert.ok(groups.length >= 1, "the remote that was just pushed to is listed");
+  for (const group of groups) {
+    assert.equal(typeof group.remote, "string", "a group names its remote");
+    assert.ok(Array.isArray(group.branches), "and lists branch names under it");
+    assert.ok(group.branches.every((branch) => typeof branch === "string"));
+    assert.equal(group.name, undefined, "the group has no name: a client that reads one gets undefined, and the branch tree splits it");
+  }
+  const origin = groups.find((group) => group.remote === "origin");
+  assert.ok(origin.branches.includes("main"), "the pushed branch is there");
+  assert.ok(origin.branches.includes("feat/remote-only"), "and a name with a slash is one entry, not two");
+});

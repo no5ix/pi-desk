@@ -224,3 +224,47 @@ the ported backend test over the command builder (`GIT_EDITOR`,
 `GIT_SEQUENCE_EDITOR`, `GIT_MERGE_AUTOEDIT`), and the merge case in this suite
 exercises the same non-interactive rule with `--no-edit`. A rebase driven through
 the API in a real repository is listed in PLAN.md as open work.
+
+## Crash fix: the Git button took the page down (P2 regression)
+
+Reported from the running app (Safari, dev server): clicking the Git button
+threw `TypeError: undefined is not an object (evaluating 'name.split')` in
+`branchSegments` ← `buildBranchTree` ← `BranchSidebar.useMemo[remoteItems]`.
+
+Cause: `GitService.getRemoteBranches()` answers **per remote** —
+`{ remote: "origin", branches: ["main", "feat/x"] }` — while `GitPanel.tsx` and
+`components/git/branch/BranchSidebar.tsx` declared the query as
+`useGitQuery<BranchInfo[]>` and mapped `branch.name`. Every remote row's `name`
+was `undefined`; the branch tree splits a name into folders, so the first click
+on the Git button crashed the panel. The generic was the bug: it made a lie typecheck.
+
+Why the harness missed it: `e2e/git-panel.fixture.jsx` answered
+`getRemoteBranches` with `BranchInfo` objects too. Fixture and component agreed
+with each other and neither was read from the server, so the panel looked fine at
+five viewports.
+
+Fix:
+- `lib/git/types.ts` names the answer `RemoteBranchGroup`;
+  `lib/git/git-service.ts` is annotated with it.
+- `components/git/branch/remote-rows.ts` is the mapping, with the two facts the
+  consumers need: `remoteBranchNames()` returns `origin/feature` (PushDialog
+  reads the remote out of `name.split("/")[0]`) and `remoteBranchRows()` names a
+  row by the **short** branch, because `checkoutBranch { branch }` is git's DWIM
+  and creates the tracking branch, with `refs/remotes/origin/feature` in
+  `info.fullRef` for the log filter. A short name under two remotes is offered
+  once, the way git refuses an ambiguous checkout.
+- Both consumers read the groups. The fixture answers `{ remote, branches:
+  ["main", "preview", "feat/remote-only"] }`.
+
+Tests: `components/git/branch/remote-rows.test.mjs` (7) states the crash as an
+assertion (no row without a name; the tree path from the stack trace runs over
+the rows), pins the names, the full refs, the dedupe, the empty answer, the
+source of both consumers (no `BranchInfo` generic for this query again) and the
+fixture's shape. `app/api/git/flow.test.mjs` (11) pins the server's answer over a
+real repository, including that the group has **no** `name` key — the undefined
+that crashed the panel — and that `feat/remote-only` is one entry.
+
+`node e2e/git-panel.mjs` passes at desktop / desktop-dark / phone / phone-dark /
+narrow and now asserts the remote section: rows named by the branch, `preview`
+listed, a `feat` folder with the `remote-only` leaf, and the remote prefix not
+painted into the row.

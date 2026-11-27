@@ -42,9 +42,16 @@ const LOCAL_BRANCHES = [
   BRANCH("side/worktree", { checkedOutWorktreePath: "/repo/wt-side", lastCommitDate: "2026-11-13T10:00:00.000Z" }),
 ];
 
+/*
+ * The answer is per remote, exactly as `GitService.getRemoteBranches` answers:
+ * `{ remote, branches: string[] }`. It used to be a list of `BranchInfo`, which
+ * is what the panel assumed, and the two agreed with each other instead of with
+ * the server. The real answer has no `name` on the group at all, and the branch
+ * tree — which splits every row's name into folders — crashed on the first click
+ * of the Git button. Keep this faithful to `lib/git/git-service.ts`.
+ */
 const REMOTE_BRANCHES = [
-  { ...BRANCH(`${REMOTE}/main`, { isRemote: true, fullRef: `refs/remotes/${REMOTE}/main`, name: `${REMOTE}/main` }), lastCommitDate: "2026-11-20T09:00:00.000Z" },
-  { ...BRANCH(`${REMOTE}/preview`, { isRemote: true, fullRef: `refs/remotes/${REMOTE}/preview`, name: `${REMOTE}/preview` }), lastCommitDate: "2026-11-12T09:00:00.000Z" },
+  { remote: REMOTE, branches: ["main", "preview", "feat/remote-only"] },
 ];
 
 const TAGS = [
