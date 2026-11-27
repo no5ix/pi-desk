@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, type ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, createEventBus, type EventBus, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, statSync, writeFileSync } from "fs";
@@ -32,7 +32,7 @@ import { cacheSessionPath, getLatestModelChange, getLatestResponseModel, getSess
 import { computeLiveSessionTotalActiveMs } from "./session-timing";
 import { realPathOrResolved } from "./paths";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
-import { announceAttention, announceRunEnd } from "./task-completion-server";
+import { announceAttention, announceRunEnd, noteConversationRunSettled, noteConversationRunStart } from "./task-completion-server";
 import type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 import { errorMessage } from "./errors.ts";
 export type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
@@ -126,6 +126,7 @@ import {
   CHAT_FOLDER_TOOL_NAMES,
   CHAT_READ_TOOL_NAME,
   chatBlockedToolNames,
+  chatWithheldExtensionToolNames,
   chatWorkspacePrompt,
   createChatWorkspaceExtension,
   isChatToolAllowed,
@@ -134,6 +135,13 @@ import {
 import { ComposerQueue } from "./composer-queue";
 import type { PendingComposerMessage } from "./composer-queue-types";
 import { isThinkingLevel } from "./thinking-levels.ts";
+import {
+  backgroundTasksLoaderOptions,
+  resolveBackgroundTasksExtension,
+  withBackgroundTasksDedupe,
+} from "./background-tasks/extension";
+import { attachBackgroundTasksBridge, releaseBackgroundTasksBridge } from "./background-tasks/bridges";
+import { runWokeByBackgroundTask } from "./background-tasks/completion-gate";
 
 // ============================================================================
 // Types
@@ -145,7 +153,7 @@ export interface AgentEvent {
 }
 
 type EventListener = (event: AgentEvent) => void;
-type AgentRunCompleteListener = (sessionId: string, outcome: AgentRunOutcome) => void;
+type AgentRunCompleteListener = (sessionId: string, outcome: AgentRunOutcome, requestedAt: number, backgroundWorkStarted: boolean) => void;
 /**
  * A blocking extension dialog (select / confirm / input / editor / custom) is waiting for
  * the user. `requestId` is the dialog's own id: a dialog announces once, however often its
@@ -295,6 +303,13 @@ type AgentSessionWrapperOptions = {
   onDirectTurnSettled?: (aborted: boolean) => void;
   /** Connects the session's MCP servers before a prompt starts a run, and lets go of them when it closes (lib/mcp-host.ts). */
   mcpHost?: WrapperMcpHost;
+  /**
+   * The EventBus this session's extensions were handed. `pi-background-tasks` publishes its
+   * host interface on it, and the header's Background Tasks panel reads that bus
+   * (lib/background-tasks/). Attached as a bridge when the session starts and released when
+   * it closes.
+   */
+  backgroundTasksEventBus?: EventBus;
   /** Chat only: the extension-provided model the session wanted, named when a prompt finds no model. */
   chatOnlyExtensionModel?: { provider: string; id: string };
   sideChat?: boolean;
@@ -449,6 +464,34 @@ const COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT = new Set([
   "extension_ui_input",
 ]);
 
+/**
+ * The commands that ask this conversation for work. A run that follows one is the user's task, and
+ * its finish is announced — on the desktop, over push, over ntfy — whatever the background task
+ * card reported a moment before. The status reads are not here: the chat polls them every few
+ * seconds while it runs, and a poll is nobody's task.
+ */
+const RUN_STARTING_COMMANDS = new Set([
+  "prompt",
+  "steer",
+  "follow_up",
+  "queue_composer",
+  "compact",
+  "fork",
+  "clone",
+  "navigate_tree",
+]);
+
+/**
+ * The background task tool the `pi-background-tasks` extension puts on a session.
+ *
+ * A run that called it has work of its own in flight, whatever the app's running index says at the
+ * moment the answer lands: the index keeps only conversations with news, and the bridge's first
+ * frame is a subscribe answer with an empty registry, so both read as "no background work" for a
+ * prompt that starts a task and answers two seconds later. The tool call is the race-free signal,
+ * and it is the reason such a run is never announced on its own end (lib/task-completion-server.ts).
+ */
+const BACKGROUND_TASK_TOOLS = new Set(["bg_run"]);
+
 export interface RpcSessionStartOptions {
   toolNames?: string[];
   initialModel?: { provider: string; modelId: string };
@@ -545,6 +588,21 @@ export class AgentSessionWrapper {
   private sessionReplacement: "fork" | "clone" | null = null;
   private agentRunNeedsCompletion = false;
   /**
+   * Whether the run that set `agentRunNeedsCompletion` is the app's own work, whose finish is
+   * announced. A background task that finishes asks the agent for a turn about its result (the
+   * task manager's default), and that turn is the extension's news arriving, not a task of the
+   * user's ending: the Background Tasks card reports it, and saying it again on the desktop, over
+   * push and over ntfy is a burst of notices for one shell command. Set at `agent_start` from the
+   * extension's own frames (background-tasks/completion-gate.ts).
+   */
+  private agentRunAnnouncesCompletion = true;
+  /**
+   * When this conversation last asked the server for work — a prompt, a queue, steering, a retry,
+   * a command, a fork, a navigation. A request at or after a task's completion means the run that
+   * follows is the user's, and its finish is announced like any other.
+   */
+  private localRunRequestedAt = 0;
+  /**
    * Whether the run that set `agentRunNeedsCompletion` has settled. `agent_settled` is the
    * SDK's word for "this run is over" (it clears `isStreaming` before emitting it), so it —
    * not "the session went idle" — is the moment a finished task becomes news: a queued
@@ -582,14 +640,21 @@ export class AgentSessionWrapper {
   // Overwritten by every `agent_end`, so an auto-retry that recovers reports success.
   private lastRunOutcome: AgentRunOutcome = { status: "done" };
   private runStartedAt: number | null = null;
+  /**
+   * Whether the run in flight called the extension's task tool. Its work is then in flight whatever
+   * the app's frames have reported yet, and the run's own end is not the end of the job.
+   */
+  private runStartsBackgroundWork = false;
   // Set once this wrapper has named the session, or found it already named.
   private autoTitleSettled = false;
   private retrying = false;
   private lastFinishedRun: AgentTaskSnapshot["lastRun"] = null;
   private readonly mcpHost?: WrapperMcpHost;
+  private readonly backgroundTasksEventBus?: EventBus;
   private readonly chatOnlyExtensionModel?: { provider: string; id: string };
   private readonly sideChat: boolean;
   private mcpHostDisposed = false;
+  private backgroundTasksReleased = false;
   // The MCP wait of the prompt being admitted; Stop ends it.
   private mcpPromptWait: { controller: AbortController; done: Promise<void> } | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -678,6 +743,14 @@ export class AgentSessionWrapper {
     this.sideChat = options.sideChat === true;
     this.livenessNoticeMs = options.liveness?.noticeMs ?? RUN_STALL_NOTICE_MS;
     this.livenessAbortMs = options.liveness?.abortMs ?? RUN_STALL_ABORT_MS;
+    this.backgroundTasksEventBus = options.backgroundTasksEventBus;
+    // The panel's way in: a host client on the bus this session's extensions were handed.
+    // It costs two listeners and no lease — the extension arms no timers and builds no
+    // snapshot while nothing is subscribed — so attaching it for every live session is cheap,
+    // and the header's badge can count running tasks without the panel ever being opened.
+    if (this.backgroundTasksEventBus) {
+      attachBackgroundTasksBridge(this.sessionId, this.cwd, this.backgroundTasksEventBus);
+    }
 
     // An extension's ctx.compact() calls the public SDK method, and its onComplete may
     // start the next turn. Observe the call itself: agent_settled and the interrupted
@@ -993,6 +1066,27 @@ export class AgentSessionWrapper {
     return this.chatUnlocked;
   }
 
+  /**
+   * The extension tools this chat withholds, by name; empty for a chat the user let use the
+   * computer, and for a project session.
+   *
+   * A chat withholds an installed extension's tools by default, which leaves the model without
+   * them and the user without an explanation: asked to "start three background tasks" in a chat,
+   * a model spends a turn discovering that `bg_run` is not in its function list and answers with
+   * words about tool schemas. The conversation page reads this list, notices a reply that is
+   * about one of those tools, and offers the switch that exists (let this chat use the computer,
+   * or open a project) right where the need came up. The coding tools and MCP tools are not here:
+   * a chat refuses those by name when the model calls one, and that refusal raises the offer.
+   */
+  chatWithheldToolNames(): string[] {
+    if (!this.chatWorkspace) return [];
+    return chatWithheldExtensionToolNames(
+      this.inner.getAllTools(),
+      new Set(readChatSettings().allowedTools),
+      this.chatFolder,
+    );
+  }
+
   hasSuppressedCompletionNotifications(): boolean {
     return this.suppressCompletionNotifications;
   }
@@ -1076,16 +1170,27 @@ export class AgentSessionWrapper {
       // do, and only the ones that say work advanced count as progress.
       if (isAgentProgressEvent(event)) this.lastProgressAt = Date.now();
       if (event.type === "agent_start") {
+        // A run that starts in the moment after the extension reported a task settling, with no
+        // request of this conversation behind it, is the extension handing in its result: the card
+        // says it. A run the app asked for keeps its announcement. A second `agent_start` while a
+        // run is already owed is that run continuing (an auto-retry), and keeps its verdict.
+        if (!this.agentRunNeedsCompletion) {
+          this.agentRunAnnouncesCompletion = !runWokeByBackgroundTask(this.sessionId, this.localRunRequestedAt);
+        }
         this.agentRunNeedsCompletion = true;
         this.agentRunSettled = false;
         // A run is under way (and a continuation of the one that just settled, or the next
         // prompt's own pre-run compaction): its compaction is required, never cancel it.
         this.postRunCompactionGuard = false;
         this.runStartedAt ??= Date.now();
+        this.runStartsBackgroundWork = false;
         this.lastRunAborted = false;
         // A run starts its own silence clock and forgets the last run's stall, so a
         // recovered session can be noticed, and stopped, all over again.
         this.beginRunLiveness();
+        // The announcer keeps a finished run whose conversation is still at work; a run starting is
+        // that work going on, so a kept notice is not due until this one ends.
+        if (!this.suppressCompletionNotifications) noteConversationRunStart(this.sessionId);
         // Cross-window liveness: idle → running must reach other windows'
         // sidebars through the running-events stream, not just this one's SSE.
         notifyRunningChange();
@@ -1119,6 +1224,12 @@ export class AgentSessionWrapper {
       this.trackActiveToolEvent(event);
       // Cancel the compaction the guard predicted, before the page is told it started.
       if (event.type === "compaction_start") this.cancelPredictedPostRunCompaction(event);
+      // The run started a background task of its own: the announcer is told, because a run that
+      // starts a task and answers two seconds later must not be announced as a finished job.
+      const eventToolName = (event as { toolName?: unknown }).toolName;
+      if (typeof eventToolName === "string" && BACKGROUND_TASK_TOOLS.has(eventToolName)) {
+        this.runStartsBackgroundWork = true;
+      }
       if (IDLE_RESET_EVENT_TYPES.has(event.type)) this.resetIdleTimer();
       if (event.type === "compaction_end") {
         // Prompts parked while compaction ran go out now, FIFO, whatever its outcome (as the TUI).
@@ -1223,6 +1334,8 @@ export class AgentSessionWrapper {
     // "The task lasted 0h18m13s, started at 10:04:34, and ended at 10:22:47", and a run
     // this process never saw `agent_start` for has no span to say.
     const runStartedAt = this.runStartedAt;
+    const backgroundWorkStarted = this.runStartsBackgroundWork;
+    this.runStartsBackgroundWork = false;
     this.agentRunNeedsCompletion = false;
     this.agentRunSettled = false;
     // Cleared with the run: the run that follows it — a queued follow-up, a report, a
@@ -1237,6 +1350,25 @@ export class AgentSessionWrapper {
       console.error("[pi-web] could not settle the subagent turn:", error instanceof Error ? error.message : error);
     }
     if (this.suppressCompletionNotifications) return;
+    // A finished background task's follow-up turn: the card is the announcer (a task that failed
+    // wears its mark there until it is opened), so this run says nothing on the desktop, over
+    // push, or over ntfy. The flag is set per run at `agent_start` and restored here, so the run
+    // after it — the user's next task — is announced again.
+    if (!this.agentRunAnnouncesCompletion) {
+      this.agentRunAnnouncesCompletion = true;
+      // The turn a finished task woke says nothing about itself: no notification pops out when a
+      // background task finishes, and the card is where the task is read. This turn is very often
+      // the last of what the user's prompt set in motion, though, so the notice kept for that prompt
+      // is due now, with this turn's end closing the sentence (lib/task-completion-server.ts).
+      void noteConversationRunSettled(this.sessionId, {
+        startedAt: runStartedAt ?? undefined,
+        endedAt: finishedAt,
+        backgroundWorkStarted,
+      }).catch((error: unknown) => {
+        console.error("[pi-web] failed to announce the finished conversation:", error instanceof Error ? error.message : error);
+      });
+      return;
+    }
     // A subagent of this session is still at work: each report starts a run here, and the run
     // after the last one is the end of the task (#1434).
     if (hasUnsettledSubagentRun(this.sessionId)) return;
@@ -1244,7 +1376,12 @@ export class AgentSessionWrapper {
     recordRecentRunOutcome(this.sessionId, this.lastFinishedRun);
     // A stopped run still reports its "aborted" outcome; listeners decide what to announce.
     try {
-      this.onAgentRunComplete?.(this.sessionId, withRunSpan(this.lastRunOutcome, runStartedAt, finishedAt));
+      this.onAgentRunComplete?.(
+        this.sessionId,
+        withRunSpan(this.lastRunOutcome, runStartedAt, finishedAt),
+        this.localRunRequestedAt,
+        backgroundWorkStarted,
+      );
     } catch (error) {
       console.error("[pi-web] completion listener failed:", error instanceof Error ? error.message : error);
     }
@@ -1906,6 +2043,9 @@ export class AgentSessionWrapper {
       // A command means a page is here: a pending release no longer applies.
       this.idleReleaseGraceMs = null;
     }
+    // The commands that ask this conversation for work. A run that follows one of them is the
+    // user's task and its finish is announced, whatever the background task card has to say.
+    if (RUN_STARTING_COMMANDS.has(type)) this.localRunRequestedAt = Date.now();
     const allowedDuringReplacement = COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT.has(type);
     if (this.sessionReplacement && !allowedDuringReplacement) {
       throw new Error("Session is being copied to a new session");
@@ -1926,6 +2066,8 @@ export class AgentSessionWrapper {
       }
 
       if (type === "prompt" || type === "steer" || type === "follow_up" || type === "queue_composer") {
+        // This conversation asked for the work: whatever the run does, its finish is news.
+        this.localRunRequestedAt = Date.now();
         const imageError = validateAgentImages(command.images);
         if (imageError) throw new Error(imageError);
       }
@@ -2614,6 +2756,23 @@ export class AgentSessionWrapper {
     }
   }
 
+  /**
+   * Releases the background-task host client: it unsubscribes from the session's EventBus and
+   * releases its lease. Nothing is kept — the task registry belongs to the extension's
+   * activation, and it is gone with this session (lib/background-tasks/bridges.ts), so a panel
+   * that outlives the conversation is told so rather than shown a task that no longer exists.
+   */
+  private releaseBackgroundTasks(): void {
+    if (this.backgroundTasksReleased) return;
+    this.backgroundTasksReleased = true;
+    if (!this.backgroundTasksEventBus) return;
+    try {
+      releaseBackgroundTasksBridge(this.sessionId);
+    } catch (error) {
+      console.error("[pi-web] background-task bridge release failed:", error instanceof Error ? error.message : error);
+    }
+  }
+
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
@@ -2627,6 +2786,7 @@ export class AgentSessionWrapper {
     this.composerQueue.dispose();
     this.closingAt ??= Date.now();
     this.disposeMcpHost();
+    this.releaseBackgroundTasks();
     // Tell attached SSE listeners to drop this instance so the browser
     // EventSource errors and reconnects instead of staying OPEN on a dead wrapper.
     this.emit({ type: "session_shutdown" });
@@ -4340,6 +4500,16 @@ export async function startRpcSession(
         : []),
       ...(skillsBinding?.loaderOptions.extensionFactories ?? []),
     ];
+    // pi-background-tasks: the header's Background Tasks panel reads the extension's host
+    // interface over the session's own EventBus (lib/background-tasks/). For the app to read
+    // that bus it has to own the instance, so the session gets a bus from here and the
+    // extension's entrypoint as an extra loader path. A subagent run and a Chat-only session
+    // load no extensions at all, so they get neither.
+    const backgroundTasksSource = subagentResources || chatOnly
+      ? { entryPath: null as string | null, reason: null as "disabled" | "not-installed" | null }
+      : resolveBackgroundTasksExtension(process.env, sessionCwd);
+    const backgroundTasksEventBus = backgroundTasksSource.entryPath ? createEventBus() : undefined;
+    const backgroundTasksOptions = backgroundTasksLoaderOptions(backgroundTasksSource);
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
       agentDir,
@@ -4364,8 +4534,11 @@ export async function startRpcSession(
           ? {
               // Extensions, skills, prompt templates and MCP load as in a project, but no
               // global, ancestor or project instructions may leak into a chat's prompt.
+              // The task manager's tool is loaded for this folder, and a locked chat withholds
+              // it: say so once, in the app's words, so a request for a background task is
+              // answered with the switch the user can reach and not a lecture about schemas.
               noContextFiles: true,
-              systemPrompt: chatWorkspacePrompt(chatFilesEnabled, { folder: chatFolder, unlocked: chatUnlocked }),
+              systemPrompt: chatWorkspacePrompt(chatFilesEnabled, { folder: chatFolder, unlocked: chatUnlocked, backgroundTasks: Boolean(backgroundTasksSource.entryPath) }),
               extensionFactories: [
                 ...(builtins?.extensions ?? []),
                 createArtifactGuideExtension(),
@@ -4386,7 +4559,11 @@ export async function startRpcSession(
               // An unlocked chat has every tool, so extensions that hand work to an agent may load too.
               ...(chatUnlocked
                 ? {}
-                : { extensionsOverride: (base: LoadExtensionsResult) => withoutAgentDelegation(base, CHAT_DELEGATION_TOOL_NAMES) }),
+                : { extensionsOverride: withBackgroundTasksDedupe((base: LoadExtensionsResult) => withoutAgentDelegation(base, CHAT_DELEGATION_TOOL_NAMES)) }),
+              ...(backgroundTasksOptions.additionalExtensionPaths
+                ? { additionalExtensionPaths: backgroundTasksOptions.additionalExtensionPaths }
+                : {}),
+              ...(backgroundTasksEventBus ? { eventBus: backgroundTasksEventBus } : {}),
             }
         : chatOnly
           ? {
@@ -4410,7 +4587,11 @@ export async function startRpcSession(
                 isBuiltInSubagentsEnabled,
               ),
             ],
-            extensionsOverride: (base) => preferUserBashExtension(preferPiWebSubagentExtension(base)),
+            extensionsOverride: withBackgroundTasksDedupe((base) => preferUserBashExtension(preferPiWebSubagentExtension(base))),
+            ...(backgroundTasksOptions.additionalExtensionPaths
+              ? { additionalExtensionPaths: backgroundTasksOptions.additionalExtensionPaths }
+              : {}),
+            ...(backgroundTasksEventBus ? { eventBus: backgroundTasksEventBus } : {}),
           },
       ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
     });
@@ -4560,7 +4741,7 @@ export async function startRpcSession(
       chatWorkspace,
       chatFolder,
       chatUnlocked,
-      onAgentRunComplete: (completedSessionId, outcome) => {
+      onAgentRunComplete: (completedSessionId, outcome, requestedAt, backgroundWorkStarted) => {
         // The live session knows its own name, and a nameless session titles itself by its
         // first prompt, straight out of its own entries (the sidebar's rule).
         const sessionName = getRpcSessionNotificationTitle(inner);
@@ -4572,8 +4753,9 @@ export async function startRpcSession(
         // One sender for every channel that needs no page: the phone push, the ntfy
         // message, the Mac's Notification Center row. Announced once per run, and never
         // for a run this process is only catching up on, nor for a run the user stopped
-        // (lib/task-completion-server.ts).
-        void announceRunEnd({ sessionId: completedSessionId, sessionName, outcome }).catch((error) => {
+        // (lib/task-completion-server.ts). `requestedAt` lets that module be the one judge
+        // of which run a finished background task woke — the same test the session applies.
+        void announceRunEnd({ sessionId: completedSessionId, sessionName, outcome, requestedAt, backgroundWorkStarted }).catch((error) => {
           console.error("[pi-web] failed to announce the finished run:", error instanceof Error ? error.message : error);
         });
       },
@@ -4588,6 +4770,7 @@ export async function startRpcSession(
         ? { onDirectTurnSettled: (aborted: boolean) => SUBAGENT_CONTROLLER.settleDirectTurn(inner.sessionId, aborted) }
         : {}),
       ...(mcpHost ? { mcpHost } : {}),
+      ...(backgroundTasksEventBus ? { backgroundTasksEventBus } : {}),
       ...(chatOnlyExtensionModel ? { chatOnlyExtensionModel } : {}),
       sideChat: isSideChat,
     });

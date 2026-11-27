@@ -55,7 +55,7 @@ import { sessionVisibleCounts } from "@/lib/scroll-memory";
 import { isImeComposing } from "@/lib/ime";
 import { useChatAccess } from "@/hooks/useChatAccess";
 import { ChatShellPrompt } from "./ChatShellPrompt";
-import { lastTurnHitChatShellBlock } from "@/lib/chat-shell-block";
+import { lastTurnHitChatShellBlock, lastTurnNamesUnavailableTool } from "@/lib/chat-shell-block";
 import { SideChatIcon } from "./SideChatIcon";
 import { assignMessageKeys, createMessageKeyTracker } from "@/lib/message-keys";
 import { errorMessage } from "@/lib/errors";
@@ -72,6 +72,9 @@ interface Props {
    *  (`/api/agent/running/events`). A background run leaves the main session idle, and
    *  the composer's disc covers it: Stop, not the send arrow. */
   runningSubagentIds?: string[];
+  /** How many of this conversation's background shell tasks the extension says are running. The
+   *  composer's disc is Stop while one runs, and Escape stops them when nothing else is running. */
+  backgroundTasksRunning?: number;
   newSessionCwd: string | null;
   newSessionDraftKey: string | null;
   /** A run ended; `aborted` when it was stopped rather than finished. */
@@ -327,7 +330,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, defaultExpanded = fa
   );
 }
 
-export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, runningSubagentIds, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onExtensionStatusesChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onBranchChipCwd, composerProjectRoot, composerProjectIsWorktree, onBranchSwitched, onComposerWorktreeCreated, onComposerWorktreeSelected, onComposerWorktreeRemoved, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
+export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, runningSubagentIds, backgroundTasksRunning = 0, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, workspaceUnavailable, onRecheckWorkspace, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onOpenModelsConfig, onContextUsageChange, onExtensionStatusesChange, onLastPromptChange, onOpenFile, onOpenFileDiff, onOpenSession, panel = false, onSideSession, onSelectProject, projectOptions, onProjectChange, onBranchChipCwd, composerProjectRoot, composerProjectIsWorktree, onBranchSwitched, onComposerWorktreeCreated, onComposerWorktreeSelected, onComposerWorktreeRemoved, onProjectFilesImported, quoteSelectionEnabled = true, conversationNavigatorEnabled = true, initialPrompt, onInitialPromptConsumed, soundEnabled = true, playDoneSound = () => {}, unlockAudio }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatOnly = workspaceKind === "chat" || session?.workspaceKind === "chat";
@@ -422,6 +425,23 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       });
     }
   }, [addNotice, t]);
+  const handleAbortBackgroundTasks = useCallback(() => {
+    // The composer's Stop when only background tasks are running (components/ChatInput.tsx). No
+    // ids are sent: the server reads this conversation's registry once, freezes what is running
+    // at that instant and stops that set, in the extension. The card then shows the rows settle.
+    const sessionId = session?.id;
+    if (!sessionId) return;
+    void fetch("/api/background-tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: sessionId, action: "stop-all", allRunning: true }),
+    }).then((res) => {
+      if (res.ok) return;
+      addNotice({ type: "error", message: t("backgroundTasks.stopFailed") });
+    }).catch(() => {
+      addNotice({ type: "error", message: t("backgroundTasks.stopFailed") });
+    });
+  }, [addNotice, session?.id, t]);
   // A refused thinking level's error opens Settings › Models on that model.
   const openModelSettings = useCallback((provider: string, modelId: string) => {
     rememberModelSettingsFocus(provider, modelId);
@@ -440,6 +460,21 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   const chatNeedsShell = Boolean(
     chatAccess?.state.available && !chatAccess.state.unlocked && !sessionBusy && lastTurnHitChatShellBlock(messages),
   );
+  // The other way a chat withholds the computer: an extension the project has installed — the task
+  // manager's `bg_run`, say — is not declared to a locked chat's model, so the model cannot call
+  // it and answers in a developer's words about tool schemas, which leaves the user reading about
+  // function lists instead of being asked. The reply that names a withheld tool is the need, and
+  // the answer is the switch the chat already has: let it use this computer, and ask again. The
+  // coding tools are not measured this way — a chat refuses one by name when the model calls it,
+  // and that refusal is the `chatNeedsShell` case above.
+  const chatUnavailableToolName = chatAccess
+    && chatAccess.state.available
+    && !chatAccess.state.unlocked
+    && !sessionBusy
+    && !chatNeedsShell
+    ? lastTurnNamesUnavailableTool(messages, chatAccess.state.unavailableTools)
+    : null;
+  const chatNeedsComputer = chatNeedsShell || chatUnavailableToolName !== null;
   // The desktop window stays hidden until the conversation it opens on is
   // loaded (or its load failed and the error is what the user will see).
   useReportDesktopReady(!loading, "chat");
@@ -684,8 +719,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   // Register the abort handler for the global Esc shortcut
   // A side chat's tab leaves it to the main chat (C1).
   useEffect(() => {
-    if (!panel) registerAbortHandler(sessionBusy ? handleAbort : subagentsRunning ? handleAbortSubagents : null);
-  }, [panel, sessionBusy, subagentsRunning, handleAbort, handleAbortSubagents]);
+    if (!panel) registerAbortHandler(sessionBusy ? handleAbort : subagentsRunning ? handleAbortSubagents : backgroundTasksRunning > 0 ? handleAbortBackgroundTasks : null);
+  }, [panel, sessionBusy, subagentsRunning, backgroundTasksRunning, handleAbort, handleAbortSubagents, handleAbortBackgroundTasks]);
 
   // --- Lazy-load historical messages ---
   // Only render the last N messages initially. When the user scrolls to the
@@ -1490,6 +1525,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       onAbort={handleAbort}
       subagentsRunning={subagentsRunning}
       onAbortSubagents={handleAbortSubagents}
+      backgroundTasksRunning={backgroundTasksRunning}
+      onAbortBackgroundTasks={handleAbortBackgroundTasks}
       onSideChat={onSideSession && !isHiddenRelation(session?.relation) ? askInSideChat : undefined}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}
@@ -2163,8 +2200,9 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
             </div>
           </div>
         )}
-        {chatNeedsShell && chatAccess && (
+        {chatNeedsComputer && chatAccess && (
           <ChatShellPrompt
+            toolName={chatUnavailableToolName}
             busy={chatAccess.busy}
             error={chatAccess.error}
             onAllow={() => {

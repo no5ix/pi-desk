@@ -14,6 +14,7 @@ import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { formatDurationHms } from "@/lib/completion-notification";
 import { formatTurnDurationCompact } from "@/lib/turn-duration";
 import { UNPARSED_TOOL_CALL_CUSTOM_TYPE } from "@/lib/unparsed-tool-call";
+import { isBackgroundTaskNotification } from "@/lib/background-tasks/notification";
 import { ClockIcon } from "./ClockIcon";
 import { ProcessDetailsContext } from "./process-details-context";
 import { MessageBranchAction } from "./message-branch-action";
@@ -330,6 +331,14 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     return null;
   }
   if (message.role === "custom") {
+    // A finished background task is reported by the header's Background Tasks card: its row,
+    // its status, its exit code, its output, and the unacknowledged-failure mark the
+    // extension's own dock wears. The extension injects this message for a terminal, where a
+    // finished task has nowhere else to be shown; here it has somewhere else, so the chat
+    // leaves it out rather than raising a second notice for one event. The record itself is
+    // untouched: the session file, the transcript, the export and what the model was shown all
+    // keep it.
+    if (isBackgroundTaskNotification((message as CustomMessage).customType)) return null;
     if ((message as CustomMessage).customType === "compaction") {
       return <CompactionMessageView message={message as CustomMessage} onContentToggle={notifyContentToggle} />;
     }

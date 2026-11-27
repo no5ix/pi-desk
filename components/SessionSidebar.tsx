@@ -85,6 +85,8 @@ import {
 import { useMenuPlacement } from "@/hooks/useMenuPlacement";
 import { usePopTransition, useShownWhileClosing } from "@/hooks/usePopTransition";
 import { SideChatPlusIcon } from "./SideChatIcon";
+import { BackgroundTasksIcon } from "./BackgroundTasksIcon";
+import { useBackgroundTasksRunningFor } from "./BackgroundTasksRunningContext";
 import { scrollMovesAnchor, type MenuAnchor } from "@/lib/menu-placement";
 import { errorMessage } from "@/lib/errors";
 
@@ -2741,6 +2743,9 @@ function SessionItem({
   subtitle?: string;
 }) {
   const { locale, t } = useI18n();
+  // A background shell task of this conversation, running: the row says so, as it says a run is
+  // going. The number is the extension's own count for this conversation.
+  const backgroundTasksRunning = useBackgroundTasksRunningFor(session.id);
   const [hovered, setHovered] = useState(false);
   // Coarse pointers have no hover: the "…" action menu must be permanently
   // visible there, otherwise rename/delete are unreachable on touch.
@@ -3069,6 +3074,12 @@ function SessionItem({
               components/SideChatIcon.tsx. */}
           {isRunning ? (
             <RunningSessionIndicator />
+          ) : backgroundTasksRunning > 0 ? (
+            /* No run of the agent, but the conversation has shell work going in the background:
+               the task list glyph, in the running green, is the row's running mark for that. */
+            <span className="session-item-bg-tasks" title={t("backgroundTasks.rowRunning", { count: backgroundTasksRunning })}>
+              <BackgroundTasksIcon size={12} strokeWidth={2.1} />
+            </span>
           ) : isUnread ? (
             <UnreadSessionIndicator />
           ) : isSideChat ? (
@@ -3099,6 +3110,7 @@ function SessionItem({
               pin?.pinned ? t("sidebar.pinned") : null,
               isSideChat ? t("sideChat.title") : null,
               isFork ? (forkSourceTitle ? t("sidebar.forkedFrom", { title: forkSourceTitle }) : t("sidebar.forkRow")) : null,
+              backgroundTasksRunning > 0 ? t("backgroundTasks.rowRunning", { count: backgroundTasksRunning }) : null,
             ].filter(Boolean).join("\n")}
             style={{
               flex: 1,

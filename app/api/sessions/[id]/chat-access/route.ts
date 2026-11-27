@@ -22,6 +22,12 @@ interface ChatAccess {
   unlocked: boolean;
   /** Whether the chat can be unlocked: it has a folder and the server is local. */
   available: boolean;
+  /**
+   * The extension tools this locked chat withholds, by name (`bg_run` of the task manager, say).
+   * The page uses it to notice a reply that is about a tool the chat does not give and to offer
+   * the switch that exists; empty for an unlocked chat, a project, or a chat not running.
+   */
+  unavailableTools: string[];
 }
 
 async function describeChat(id: string, local = true): Promise<{ access: ChatAccess; filePath: string | undefined } | null> {
@@ -32,7 +38,10 @@ async function describeChat(id: string, local = true): Promise<{ access: ChatAcc
     : filePath && existsSync(filePath) ? readSessionHeader(filePath)?.cwd : undefined;
   if (!live?.isAlive() && !filePath) return null;
   if (!cwd || !isChatWorkspacePath(cwd)) {
-    return { access: { chat: false, folder: null, unlocked: false, available: false }, filePath };
+    return {
+      access: { chat: false, folder: null, unlocked: false, available: false, unavailableTools: [] },
+      filePath,
+    };
   }
   const folder = isChatFolderPath(cwd) ? cwd : null;
   let unlocked = false;
@@ -41,7 +50,15 @@ async function describeChat(id: string, local = true): Promise<{ access: ChatAcc
     unlocked = readChatUnlocked(openSessionManager(filePath).getEntries() as unknown as SessionEntry[]);
   }
   return {
-    access: { chat: true, folder, unlocked, available: Boolean(folder) && !isNetworkExposedServer() && local },
+    access: {
+      chat: true,
+      folder,
+      unlocked,
+      available: Boolean(folder) && !isNetworkExposedServer() && local,
+      // Only a running chat can answer which of its extensions' tools it withholds; a chat that
+      // is not running has asked for nothing.
+      unavailableTools: live?.isAlive() && !unlocked ? live.chatWithheldToolNames() : [],
+    },
     filePath,
   };
 }

@@ -12,6 +12,11 @@ export interface ChatAccessState {
   unlocked: boolean;
   /** The chat has a folder and the server is local, so it can be unlocked. */
   available: boolean;
+  /**
+   * The extension tools this locked chat withholds, by name — `bg_run` of the task manager, say.
+   * The page notices a reply that is about one of them and offers the chat's own switch there.
+   */
+  unavailableTools: string[];
 }
 
 export interface ChatAccessControls {

@@ -21,9 +21,10 @@ test("/side forks before any new session is created and is offered mid-run (C1)"
 test("side chats open in right-panel tabs that leave the global Esc to the main chat", () => {
   assert.match(panel, /<ChatWindow[\s\S]*?panel\n\s*\/>/);
   // Esc stops what the page is running: the session's own turn, else the family's live
-  // subagent runs (a background run leaves the main session idle). A side chat's tab
-  // leaves the handler to the main chat, and is never handed the family's runs.
-  assert.match(chat, /if \(!panel\) registerAbortHandler\(sessionBusy \? handleAbort : subagentsRunning \? handleAbortSubagents : null\);/);
+  // subagent runs (a background run leaves the main session idle), else the conversation's
+  // running background tasks. A side chat's tab leaves the handler to the main chat, and is
+  // never handed the family's runs.
+  assert.match(chat, /if \(!panel\) registerAbortHandler\(sessionBusy \? handleAbort : subagentsRunning \? handleAbortSubagents : backgroundTasksRunning > 0 \? handleAbortBackgroundTasks : null\);/);
   assert.match(shell, /\{activeSideTab \? \(\s*<div className="session-chat-panel" key=\{activeSideTab\.sessionId\}>\s*<SessionChatPanel/);
   // One session, one chat: the main chat showing a side chat closes its tab.
   assert.match(shell, /setSideTabs\(\(tabs\) => tabs\.filter\(\(tab\) => tab\.sessionId !== selectedSessionId\)\);/);

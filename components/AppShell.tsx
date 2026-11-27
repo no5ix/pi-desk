@@ -38,6 +38,10 @@ import { ProjectTrustDialog, type ProjectTrustFailure } from "./ProjectTrustDial
 import { BranchNavigator, hasSessionBranches } from "./BranchNavigator";
 import { TopbarElapsed } from "./TopbarElapsed";
 import { TopbarSubagents, countSubagents, countSideChats } from "./TopbarSubagents";
+import { TopbarBackgroundTasksButton } from "./TopbarBackgroundTasksButton";
+import { BackgroundTasksRunningProvider } from "./BackgroundTasksRunningContext";
+import { useBackgroundTasksRunning } from "../hooks/useBackgroundTasksRunning";
+import { BackgroundTasksPanel } from "./BackgroundTasksPanel";
 import { TopbarBranchChip } from "./TopbarBranchChip";
 import { TopbarProjectChip } from "./TopbarProjectChip";
 import { TopbarContextChip } from "./TopbarContextChip";
@@ -137,6 +141,7 @@ import {
   TOOLS_PANEL_WIDTH,
   placeAgentsPanel,
   placeHeaderCard,
+  BACKGROUND_TASKS_PANEL_WIDTH,
 } from "@/lib/top-panel-placement";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
@@ -553,6 +558,8 @@ export function AppShell() {
   // this chip, so the shell has to know where it is; it is null when the family is empty
   // (the chip renders nothing) and the placement falls back to centring under the header.
   const topbarSubagentsRef = useRef<HTMLElement | null>(null);
+  // The Background Tasks card hangs under this button (lib/top-panel-placement.ts).
+  const topbarTasksRef = useRef<HTMLButtonElement | null>(null);
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
   const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
@@ -637,7 +644,18 @@ export function AppShell() {
   }, []);
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"agents" | "branches" | "system" | "tools" | "session" | "tasks" | null>(null);
+  // The running-task index for the controls that are not the card: the composer's disc and the
+  // sidebar's running mark (hooks/useBackgroundTasksRunning.ts).
+  const bgTasksRunning = useBackgroundTasksRunning();
+  // The conversation's own numbers, read once: the chip wears them and the rule below uses them.
+  const bgTasksRunningCount = bgTasksRunning.runningIn(selectedSession?.id);
+  const bgTasksUnseenFailed = bgTasksRunning.unseenFailedIn(selectedSession?.id);
+  // Nothing running and no unacknowledged failure is a conversation with no background work to
+  // monitor, so the header wears no chip at all: a permanent `0` on every conversation is a badge
+  // that says "nothing" in the row that only carries news. The chip stays mounted while its card is
+  // open, so the card the user is reading never loses the control it hangs under.
+  const bgTasksHasNews = bgTasksRunningCount > 0 || bgTasksUnseenFailed > 0;
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number; floating?: boolean } | null>(null);
   // The header's cards (Agents, System prompt, Tools, Session stats) are mounted by the
   // chip that opens them. The wrapper is held for the shared exit animation, and keeps the
@@ -686,7 +704,7 @@ export function AppShell() {
   }, [rightPanelFullWidth]);
 
   const toggleTopPanel = useCallback((
-    panel: "agents" | "branches" | "system" | "tools" | "session",
+    panel: "agents" | "branches" | "system" | "tools" | "session" | "tasks",
   ) => {
     if (isMobile) setSidebarOpen(false);
     setTopMoreOpen(false);
@@ -851,6 +869,13 @@ export function AppShell() {
         setTopPanelPos(placeAgentsPanel(topBarRect, topbarSubagentsRef.current?.getBoundingClientRect() ?? null, isMobile));
         return;
       }
+      if (activeTopPanel === "tasks") {
+        // The Background Tasks card opens where its control is: under the task chip in the row
+        // under the title, the same rule the Agents card follows (and centred under the header
+        // on a phone). It is a monitor, so it keeps its own width — not the column's.
+        setTopPanelPos(placeAgentsPanel(topBarRect, topbarTasksRef.current?.getBoundingClientRect() ?? null, isMobile, BACKGROUND_TASKS_PANEL_WIDTH));
+        return;
+      }
       if (activeTopPanel === "system" || activeTopPanel === "tools" || activeTopPanel === "session") {
         // The three read-only panels are opened from the More button at the header's right
         // end, so they open as cards under it — the same card the Agents panel wears, and
@@ -874,7 +899,14 @@ export function AppShell() {
     update();
     const ro = new ResizeObserver(update);
     ro.observe(topBarRef.current);
-    return () => ro.disconnect();
+    // A viewport change that leaves the bar's box the same size (a window that only grows
+    // shorter, a phone keyboard) does not fire the observer, and a card placed by the old
+    // height now hangs past the page. The card's own max-height keeps it inside the viewport.
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
   }, [activeTopPanel, isMobile]);
 
   // Files unmount when inactive; workspace terminals stay mounted until closed.
@@ -2402,32 +2434,34 @@ export function AppShell() {
 
   const sidebarContent = (
     <>
-      <SessionSidebar
-        selectedSessionId={selectedSession?.id ?? null}
-        onSelectSession={handleSelectSession}
-        onNewSession={handleNewSession}
-        initialSessionId={initialSessionId}
-        skipInitialProjectSelection={initialNavigation.requestedCwd !== null}
-        onInitialRestoreDone={handleInitialRestoreDone}
-        refreshKey={refreshKey}
-        onSessionDeleted={handleSessionDeleted}
-        selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
-        onCwdChange={handleCwdChange}
-        onProjectsChange={handleProjectsChange}
-        headerControls={sidebarHeaderControls}
-        onOpenTerminal={handleOpenTerminal}
-        onBackgroundTaskDone={handleBackgroundTaskDone}
-        onRunningSessionIdsChange={handleRunningSessionIdsChange}
-        onInsertMention={handleInsertSessionMention}
-        onSessionsChange={handleSessionsChange}
-        onOpenTasks={handleOpenTasks}
-        tasksOpen={tasksOpen}
-        onOpenScheduled={handleOpenScheduled}
-        scheduledOpen={scheduledOpen}
-        onOpenArtifacts={handleOpenArtifacts}
-        artifactsOpen={artifactsOpen}
-        onChatWorkspaceCwdChange={setChatWorkspaceCwd}
-      />
+      <BackgroundTasksRunningProvider running={bgTasksRunning.runningBySession}>
+        <SessionSidebar
+          selectedSessionId={selectedSession?.id ?? null}
+          onSelectSession={handleSelectSession}
+          onNewSession={handleNewSession}
+          initialSessionId={initialSessionId}
+          skipInitialProjectSelection={initialNavigation.requestedCwd !== null}
+          onInitialRestoreDone={handleInitialRestoreDone}
+          refreshKey={refreshKey}
+          onSessionDeleted={handleSessionDeleted}
+          selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
+          onCwdChange={handleCwdChange}
+          onProjectsChange={handleProjectsChange}
+          headerControls={sidebarHeaderControls}
+          onOpenTerminal={handleOpenTerminal}
+          onBackgroundTaskDone={handleBackgroundTaskDone}
+          onRunningSessionIdsChange={handleRunningSessionIdsChange}
+          onInsertMention={handleInsertSessionMention}
+          onSessionsChange={handleSessionsChange}
+          onOpenTasks={handleOpenTasks}
+          tasksOpen={tasksOpen}
+          onOpenScheduled={handleOpenScheduled}
+          scheduledOpen={scheduledOpen}
+          onOpenArtifacts={handleOpenArtifacts}
+          artifactsOpen={artifactsOpen}
+          onChatWorkspaceCwdChange={setChatWorkspaceCwd}
+        />
+      </BackgroundTasksRunningProvider>
     </>
   );
 
@@ -2727,6 +2761,23 @@ export function AppShell() {
                     onOpenAgents={() => toggleTopPanel("agents")}
                     translate={translate}
                     anchorRef={topbarSubagentsRef}
+                  />
+                )}
+                {/* The conversation's background tasks, right behind the subagent counts: one
+                    chip that wears the running count and the unacknowledged failures the
+                    extension reports for THIS conversation, and opens the task card under the
+                    row. It is a chip of this row — and the same size as the subagents glyph —
+                    because the card hangs under it, exactly as the Agents card hangs under the
+                    counts. A conversation with no running task and no unread failure wears
+                    nothing (the chip stays only while its own card is open). */}
+                {showChat && !pageOpen && (bgTasksHasNews || activeTopPanel === "tasks") && (
+                  <TopbarBackgroundTasksButton
+                    ref={topbarTasksRef}
+                    running={bgTasksRunningCount}
+                    unseenFailed={bgTasksUnseenFailed}
+                    title={translate("backgroundTasks.title")}
+                    tasksOpen={activeTopPanel === "tasks"}
+                    onToggle={() => toggleTopPanel("tasks")}
                   />
                 )}
                 {/* The live clock after the counts: how long the running task has
@@ -3100,12 +3151,17 @@ export function AppShell() {
               width: topPanelPos.width,
               // A card keeps its own gutter at the bottom; a sheet fills the column.
               maxHeight: `calc(100dvh - ${topPanelPos.top}px${topPanelPos.floating ? ` - ${AGENT_PANEL_EDGE_GUTTER}px` : ""})`,
+              // The same box, handed to the card as a number it can size itself by. The tasks
+              // card is the one card that scrolls to that limit (its list, its detail page and
+              // its log each scroll in their own layer), and a card of its own smaller cap made
+              // a task monitor of three rows read like a tooltip.
+              "--top-panel-max-height": `calc(100dvh - ${topPanelPos.top}px${topPanelPos.floating ? ` - ${AGENT_PANEL_EDGE_GUTTER}px` : ""})`,
               // The sheet scrolls in its own layer. A card does not: its list scrolls
               // inside the panel (AgentSessionPanel), and a scroll container here would
               // clip the shadow on the left, the right and the bottom.
               overflowY: topPanelPos.floating ? "visible" : "auto",
               zIndex: 500,
-            }}>
+            } as React.CSSProperties}>
               {shownTopPanel === "agents" && activeSessionFamily && selectedSession && (
                 <AgentSessionPanel
                   rootSession={activeSessionFamily.root}
@@ -3117,6 +3173,14 @@ export function AppShell() {
                   onToggleSideTab={handleToggleSideTab}
                   onNewSideChat={isChatWorkspaceActive ? undefined : handleNewSideChat}
                   onDeleteSideChat={handleDeleteSideChat}
+                />
+              )}
+              {shownTopPanel === "tasks" && (
+                <BackgroundTasksPanel
+                  sessionId={selectedSession?.id ?? null}
+                  open={activeTopPanel === "tasks"}
+                  onClose={() => setActiveTopPanel(null)}
+                  translate={translate}
                 />
               )}
               {shownTopPanel === "system" && (
@@ -3406,6 +3470,7 @@ export function AppShell() {
               onScrollPositionChange={handleSessionScrollPositionChange}
               sessionRunning={Boolean(selectedSession && runningSessionIds.has(selectedSession.id))}
               runningSubagentIds={runningSubagentIds}
+              backgroundTasksRunning={bgTasksRunning.runningIn(selectedSessionId)}
               newSessionCwd={effectiveNewSessionCwd}
               newSessionDraftKey={newSessionDraftKey}
               onAgentEnd={handleAgentEnd}
