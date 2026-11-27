@@ -39,6 +39,33 @@ try {
   console.error("[Pi Agent] compile cache unavailable:", cacheError);
 }
 
+// The sidecar's heap ceiling, set before the server loads.
+//
+// This process IS the server (`require("./server.js")` at the end of the file),
+// so the ceiling cannot be an execArgv of a child and NODE_OPTIONS cannot be
+// set by the Rust shell after Node has started. `v8.setFlagsFromString` at the
+// top of the entry is the remaining way, and it is the same budget every other
+// entry point gets (bin/server-flags.js, whose production default this mirrors
+// and scripts/server-flags.test.mjs pins): the app keeps every loaded session's
+// full transcript in the heap, and an uncapped heap grows to the peak the
+// workload ever touched and never gives the pages back.
+{
+  const SIDE_CAR_MAX_OLD_SPACE_MB = 1536;
+  const hasMaxOldSpaceOption = (options) => /--max[-_]old[-_]space[-_]size(=|\s)/.test(options);
+  const raw = (process.env.PI_WEB_MAX_OLD_SPACE_SIZE ?? "").trim().toLowerCase();
+  const off = raw === "0" || raw === "off" || raw === "none" || raw === "default";
+  const parsed = Number(raw);
+  const ceilingMb = off
+    ? 0
+    : Number.isFinite(parsed) && parsed >= 512
+      ? Math.min(64 * 1024, Math.round(parsed))
+      : SIDE_CAR_MAX_OLD_SPACE_MB;
+  if (ceilingMb && !hasMaxOldSpaceOption(process.env.NODE_OPTIONS ?? "")) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require("node:v8").setFlagsFromString(`--max-old-space-size=${ceilingMb}`);
+  }
+}
+
 // Proxy-bypass guard. Next skips middleware (proxy.ts: the password gate and
 // the Host/Origin/Fetch-Metadata checks) for any request whose
 // `x-prerender-revalidate` header equals the build's `previewModeId`, which sits

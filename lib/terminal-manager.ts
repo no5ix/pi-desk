@@ -3,6 +3,7 @@ import { homedir } from "os";
 import type { IPty } from "node-pty";
 import { samePath } from "./paths";
 import { resolveTerminalShell } from "./terminal-settings";
+import { registerCachePruner } from "./cache-registry.ts";
 import type { DebugServerGlobal } from "./debug-types";
 
 export type TerminalEvent =
@@ -236,3 +237,48 @@ export function killTerminal(id: string, force = false): boolean {
   record.listeners.clear();
   return true;
 }
+
+// --- memory pressure (lib/server-memory.ts) --------------------------------
+// Every opened terminal keeps a 128 KB scrollback, and the record outlives the
+// shell: an exited terminal stays for TERMINAL_RECONNECT_MS so a reload can
+// replay it. Nothing adds up these records, so a long desktop session accumulates
+// shells that have all quit.
+
+/** Bytes of scrollback held across every terminal record. */
+export function terminalRegistryBytes(): number {
+  let bytes = 0;
+  for (const record of registry().values()) bytes += record.backlog.length;
+  return bytes;
+}
+
+/**
+ * Give scrollback back down to `targetBytes`. An exited shell's record goes
+ * entirely — the tab is told it closed and reopening a shell is cheap — and a
+ * live shell only loses its replay buffer: the shell, its process and its
+ * listeners stay, and what a reconnecting tab sees is the tail from now on.
+ */
+export function shrinkTerminalRegistry(targetBytes: number): number {
+  const records = registry();
+  const before = terminalRegistryBytes();
+  let total = before;
+  const target = Math.max(0, targetBytes);
+  for (const [id, record] of [...records.entries()]) {
+    if (total <= target) break;
+    if (!record.exited) continue;
+    total -= record.backlog.length;
+    killTerminal(id, true);
+  }
+  for (const record of records.values()) {
+    if (total <= target) break;
+    total -= record.backlog.length;
+    record.backlog = "";
+    record.offset = 0;
+  }
+  return Math.max(0, before - total);
+}
+
+registerCachePruner({
+  name: "terminals",
+  bytes: terminalRegistryBytes,
+  prune: shrinkTerminalRegistry,
+});

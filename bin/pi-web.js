@@ -29,6 +29,8 @@ const { attachReadyHandoff, shouldOpenBrowser } = require("../lib/browser-open")
 const { rotatePreviewSecrets, getRotationWarning } = require("./rotate-preview-secrets");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { keepAliveArgs } = require("./keep-alive");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { applyServerMemoryEnv } = require("./server-flags");
 
 let launchOptions;
 try {
@@ -96,7 +98,14 @@ nextArgs.push(...keepAliveArgs(process.env));
 const child = spawn(process.execPath, getNextNodeArgs(nextBin, nextArgs), {
   cwd: pkgDir,
   stdio: ["inherit", "pipe", "inherit"],
-  env: { ...process.env, PI_WEB_HOSTNAME: hostname, PI_WEB_VERBOSE: launchOptions.verbose ? "1" : "0" },
+  // The heap ceiling every entry point sets (bin/server-flags.js): the published
+  // app runs every session in this one process, and a ceiling is what makes the
+  // byte caps in lib/session-reader.ts and lib/idle-session-cap.ts mean
+  // "collect at a budget" instead of "grow until the machine says stop".
+  env: applyServerMemoryEnv(
+    { ...process.env, PI_WEB_HOSTNAME: hostname, PI_WEB_VERBOSE: launchOptions.verbose ? "1" : "0" },
+    "start",
+  ),
 });
 attachReadyHandoff(child.stdout, { port, wantOpen });
 wireChildProcessLifecycle(child);

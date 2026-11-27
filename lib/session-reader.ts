@@ -15,6 +15,7 @@ import { skillExpansionToCommand } from "./slash-display";
 import { MAX_TOOL_RESULT_IMAGE_BYTES, TOOL_RESULT_IMAGE_MIMES } from "./tool-result-images";
 import { projectToolResultDetails, slimToolResultMessage } from "./tool-result-details";
 import { openSlimSessionManager } from "./session-slim-load";
+import { registerCachePruner } from "./cache-registry.ts";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
 import { readSideRelation } from "./side-session";
@@ -530,11 +531,19 @@ declare global {
  */
 export const SM_CACHE_LIMITS = {
   /** Most sessions held at once. */
-  maxEntries: 12,
-  /** Summed on-disk size of cached sessions. */
-  maxTotalBytes: 256 * 1024 * 1024,
+  maxEntries: 8,
+  /**
+   * Summed on-disk size of cached sessions. The budget is a heap decision, not a
+   * count: at the measured 1.15–1.2x ratio this is ~115 MB of heap for the
+   * sessions a person is reading, on a server whose heap ceiling is
+   * bin/server-flags.js's, next to the loaded transcripts (lib/rpc-manager.ts)
+   * and the SSE backlogs. The old 256 MB was set before anything in the app
+   * measured a heap, and a measured browsing run pinned 158.9 MB here alone
+   * (scripts/memory-bench.mjs).
+   */
+  maxTotalBytes: 96 * 1024 * 1024,
   /** A session larger than this is never cached — it would evict everything else. */
-  maxFileBytes: 64 * 1024 * 1024,
+  maxFileBytes: 32 * 1024 * 1024,
 };
 
 function getSmCache(): Map<string, SmCacheEntry> {
@@ -562,6 +571,37 @@ function evictSmCache(cache: Map<string, SmCacheEntry>): void {
     cache.delete(oldestKey);
   }
 }
+
+/** What the read-only view cache holds, in session-file bytes. */
+export function sessionManagerCacheBytes(): number {
+  let total = 0;
+  for (const entry of getSmCache().values()) total += entry.bytes;
+  return total;
+}
+
+/**
+ * Give the read-only view cache back down to `targetBytes`, oldest file first.
+ * The pressure valve calls this (lib/server-memory.ts); nothing is lost that the
+ * next read cannot refetch from disk, which is what a cache is for.
+ */
+export function shrinkSessionManagerCache(targetBytes: number): number {
+  const cache = getSmCache();
+  const before = sessionManagerCacheBytes();
+  let total = before;
+  while (total > Math.max(0, targetBytes)) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    total -= cache.get(oldestKey)?.bytes ?? 0;
+    cache.delete(oldestKey);
+  }
+  return Math.max(0, before - total);
+}
+
+registerCachePruner({
+  name: "read-only session views",
+  bytes: sessionManagerCacheBytes,
+  prune: shrinkSessionManagerCache,
+});
 
 /**
  * Project every tool result's details in place (see lib/tool-result-details.ts).

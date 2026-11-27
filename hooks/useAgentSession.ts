@@ -16,6 +16,7 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { attachmentAwareTitle, splitAttachedFiles } from "@/lib/chat-attachments";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import { mergeComposerQueueSnapshot, type ComposerQueueActionResult, type PendingComposerMessage } from "@/lib/composer-queue-types";
+import { sampleClientMemory } from "@/lib/client-memory";
 import { fetchWithRetry } from "@/lib/fetch-timeout";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
 import { rememberScrollPosition, sessionScrollTops } from "@/lib/scroll-memory";
@@ -51,6 +52,7 @@ import {
   CHAT_SCROLL_REATTACH_TOLERANCE,
   CHAT_SCROLL_TAIL_TOLERANCE,
   getLiveFollowAttached,
+  hasEarlierAfterPrepend,
   isScrollAtTail,
   shouldShowScrollToLatest,
 } from "@/lib/chat-lazy-load";
@@ -558,6 +560,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // re-subscribing it. Assigned every render like sessionPropIdRef below.
   const dataRef = useRef<SessionData | null>(null);
   const messagesRef = useRef<AgentMessage[]>([]);
+  const queuedMessagesRef = useRef<QueuedMessages>({ steering: [], followUp: [] });
   const entryIdsRef = useRef<string[]>([]);
   const activeLeafIdRef = useRef<string | null>(null);
   const historyCursorRef = useRef<string | null>(null);
@@ -566,6 +569,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   sessionPropIdRef.current = session?.id ?? null;
   dataRef.current = data;
   messagesRef.current = messages;
+  queuedMessagesRef.current = queuedMessages;
   entryIdsRef.current = entryIds;
   activeLeafIdRef.current = activeLeafId;
   historyCursorRef.current = historyCursor;
@@ -1007,7 +1011,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // the bottom before the browser delivers its pending scroll event.
       if (before) isNearBottomRef.current = false;
       setHistoryCursor(d.context.oldestEntryId);
-      setHasEarlierMessages(d.context.hasMore);
+      // The page's own bound on history (lib/chat-lazy-load.ts): the rendered window
+      // follows the loaded count, so a loaded row is a kept row, and rows past the cap
+      // are rows the reader reaches by search, not by scrolling forever. The sentinel
+      // disappears at the cap; a spinner that loads pages the window will not show is
+      // the alternative.
+      setHasEarlierMessages(before
+        ? hasEarlierAfterPrepend(messagesRef.current.length + d.context.messages.length, d.context.hasMore)
+        : d.context.hasMore);
       setData((prev) => {
         if (!prev || prev.sessionId !== sid) return prev;
         const context = before ? {
@@ -1276,6 +1287,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const response = await fetch(`/api/agent/${encodeURIComponent(sid)}/lease`, {
           method: "POST",
           cache: "no-store",
+          // The page's own memory numbers ride on the renewal it already sends
+          // (lib/client-memory.ts): the server meters the heap, the page meters
+          // its DOM and loaded window. A body the server does not understand
+          // leaves the renewal exactly as it was.
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            memory: sampleClientMemory({
+              messages: messagesRef.current.length,
+              queuedPrompts: queuedMessagesRef.current.steering.length + queuedMessagesRef.current.followUp.length,
+            }),
+          }),
         });
         if (!response.ok || disposed) return;
         const result = await response.json() as { renewed?: number };
@@ -1304,6 +1326,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       disposed = true;
       clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
+      // The page is leaving this session — to another one, to a closed tab, to a
+      // closed side chat. Every renewal restarted the server's idle countdown, so
+      // the server learns about the leaving here and releases the transcript in
+      // seconds (POST /api/agent/[id]/release) instead of an idle timeout.
+      // `keepalive` so a tab that closes still delivers it; best effort, and the
+      // idle timeout is the backstop when the browser drops the request.
+      void fetch(`/api/agent/${encodeURIComponent(sid)}/release`, {
+        method: "POST",
+        cache: "no-store",
+        keepalive: true,
+      }).catch(() => {});
     };
   }, [closeEvents, maintainEventsConnected, session?.id]);
 

@@ -62,7 +62,12 @@ export { canonicalJson };
 
 export const MCP_HOST_EXTENSION_NAME = "pi-web-mcp-host";
 
-const DEFAULT_MCP_IDLE_MS = 10 * 60 * 1000;
+// Ten minutes of warm MCP left a headless browser per idle session: a stdio
+// server is a process, and `chrome-devtools-mcp` / `@playwright/mcp` each start
+// a Chrome that does nothing while the session is not prompting. The next prompt
+// registers the servers again, so the cost of a shorter window is one
+// reconnection, and the saving is a browser per session nobody is using.
+const DEFAULT_MCP_IDLE_MS = 3 * 60 * 1000;
 const PROMPT_WAIT_MS = 10_000;
 /**
  * How long an unregister waits for the extension to start a connection it can
@@ -76,14 +81,14 @@ const LIST_METHODS = new Set(["tools/list"]);
 
 /**
  * PI_WEB_MCP_IDLE_MS: how long a session's MCP servers stay connected after its
- * last run. Unset or blank is 10 minutes, `0` keeps them until the session
+ * last run. Unset or blank is 3 minutes, `0` keeps them until the session
  * closes, and invalid values fall back to the default with a warning.
  */
 export function resolveMcpIdleMs(rawValue: string | undefined = process.env.PI_WEB_MCP_IDLE_MS): number {
   if (rawValue !== undefined && rawValue.trim() !== "") {
     const parsed = Number(rawValue);
     if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 2_147_483_647) return parsed;
-    console.warn(`[pi-web] invalid PI_WEB_MCP_IDLE_MS "${rawValue}", falling back to 10 minutes`);
+    console.warn(`[pi-web] invalid PI_WEB_MCP_IDLE_MS "${rawValue}", falling back to 3 minutes`);
   }
   return DEFAULT_MCP_IDLE_MS;
 }

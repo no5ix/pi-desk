@@ -4,9 +4,20 @@ import { closeAllAgentEventStreams } from "@/lib/agent-event-stream";
 import { startScheduler } from "@/lib/scheduled-tasks";
 import { restartRelayFromConfig } from "@/lib/relay/runtime";
 import { applyCodemodeWorkerDefault } from "@/lib/codemode-workers";
+import { startServerMemorySampler } from "@/lib/server-memory";
 import { startTailscaleServeAtStartup } from "@/lib/tailscale-serve";
 
 export function registerNodeInstrumentation(): void {
+  // Meter the process from the start. The server holds a loaded session's whole
+  // transcript, every long-lived store is on globalThis by design, and until now
+  // nothing read the process at all: a report of "10 GB" named nothing.
+  // Unref'd, and it never throws out of here (lib/server-memory.ts).
+  try {
+    startServerMemorySampler();
+  } catch {
+    // Meters are optional; the server is not.
+  }
+
   // Before any session can run a codemode script (lib/codemode-workers.ts).
   applyCodemodeWorkerDefault();
 

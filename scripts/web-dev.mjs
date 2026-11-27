@@ -8,6 +8,7 @@ const { getHelpText, parseLaunchOptions } = require("../bin/pi-web-options.js");
 const { getNextNodeArgs } = require("../bin/pi-web-node-args.js");
 const { wireChildProcessLifecycle } = require("../bin/process-lifecycle.js");
 const { attachReadyHandoff, shouldOpenBrowser } = require("../lib/browser-open.js");
+const { applyDevEnvDefaults, applyServerMemoryEnv } = require("../bin/server-flags.js");
 
 const pkgDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const loopbackHosts = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
@@ -50,11 +51,14 @@ const child = spawn(
   {
     cwd: pkgDir,
     stdio: ["inherit", "pipe", "inherit"],
-    env: {
+    // The capped heap and the shorter dev session warm-keeping, the same as
+    // `npm run dev`: every dev entry point must run under one ceiling, so a
+    // measured number means the same thing in both. bin/server-flags.js.
+    env: applyDevEnvDefaults(applyServerMemoryEnv({
       ...process.env,
       PI_WEB_HOSTNAME: "127.0.0.1",
       PI_WEB_VERBOSE: launchOptions.verbose ? "1" : "0",
-    },
+    }, "dev")),
   },
 );
 
