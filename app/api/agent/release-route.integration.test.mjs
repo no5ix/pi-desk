@@ -108,14 +108,17 @@ test("a release with an event stream attached is not a release: another page is 
 
   const { startRpcSession, SESSION_IDLE_TIMEOUT_MS } = await jiti.import("../../../lib/rpc-manager.ts");
   const { POST } = await jiti.import("./[id]/release/route.ts");
+  // The idle deadline is the wrapper's own creation deadline (`idleLastResetAt + timeout`),
+  // so the clock is armed before the session starts: a start that lands in the millisecond
+  // before this `now` under load is what made the comparison below fail once in ~8 runs.
+  const now = Date.now();
+  t.mock.method(Date, "now", () => now);
   const started = await startRpcSession("__new__agent-release-watched", "", cwd, {});
   session = started.session;
   const id = started.realSessionId;
   const unsubscribe = session.onEvent(() => {});
   t.after(() => unsubscribe());
 
-  const now = Date.now();
-  t.mock.method(Date, "now", () => now);
   const response = await POST(
     new Request(`http://localhost/api/agent/${encodeURIComponent(id)}/release`, { method: "POST" }),
     { params: Promise.resolve({ id }) },
