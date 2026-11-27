@@ -535,3 +535,36 @@
 - **The read-only view cache is a heap budget now** (12/256/64 MB → 8/96/32 MB).
   The old numbers were chosen before anything measured a heap; a measured browsing
   run pinned 158.9 MB there alone. Re-reading a session from disk is the refetch.
+
+## Search prompts, one session mention, attachments across a reload
+
+- **The sidebar's search box answers prompts in two tiers, not one scan.** Typing filters the
+  tree through the existing rule (`lib/session-title-search.ts`: title + first prompt). A query
+  the tree cannot answer (≥2 chars, no rows) settles 500ms into `scope=prompts` — every session's
+  own prompts, read through the calendar's fingerprint-cached `cachedSessionPrompts`
+  (`lib/session-prompt-search.ts`, `GET /api/sessions/search?scope=prompts`). Auto-running the
+  whole-transcript scan on every keystroke was tried and measured on this machine: 500 files
+  against a 3s budget returned **zero** rows for a title fragment the tree had just matched, so
+  the box would have answered "no matches" to a query with matches. Enter keeps the transcript
+  scan as the explicit, wider question, and Escape returns to the tree.
+- **`SessionSearch` is mounted UI, not declined UI.** AGENTS.md listed it as declined upstream UI
+  while the fork's sidebar had been mounting it for the search box's results since the backport.
+  The line is corrected: a merge that deletes the import leaves a search box that searches only
+  titles, and `components/SessionSidebar.session-search.test.mjs` is the guard.
+- **One label rule for a session mention** (`sessionMentionTitle`): name, else the first prompt in
+  full (newlines → spaces, `"` → `'`), else the id. The 50-character cut is gone because the label
+  is a lookup key: the send path resolves `#"<label>"` through the label → id target the composer
+  registered, and a cut prompt matches no session, so the mention arrived as literal text. The
+  palette and the row menu both call the rule, and the menu's insert goes through
+  `ChatInput.insertSessionMention`, which registers the target. The id (not "Untitled session")
+  names a session with no name and no prompt, because labels are map keys and a shared
+  placeholder would collide across such sessions.
+- **A draft's attachments go to IndexedDB, not to localStorage.** localStorage is text-only by
+  design: ~5 MB per origin, shared with 50 drafts. The byte store (`lib/draft-attachment-store.ts`,
+  `pi-web:draft-attachments`) keeps one record per durable draft key — a session, or a project's
+  `parked-new:<cwd>` — capped at 10 images / 4 MB each / 8 MB per composer / 10 composers. A
+  signature per key skips the write when the attachments have not changed, which is what makes
+  per-keystroke draft writes cheap. Attachments are read back on request
+  (`loadStoredDraftAttachments`) and applied only to a composer with nothing attached; where the
+  browser has no IndexedDB (private mode, an embedded view that blocks it) everything behaves as
+  before, so the text draft never depends on the byte store.
