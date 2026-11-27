@@ -193,6 +193,9 @@ interface Props {
   onOpenFileHistory: (filePath: string) => void;
   onOpenBlame: (filePath: string) => void;
   onSelectedCommitChange?: (commit: CommitNode | null) => void;
+  /** The log's ref filter belongs to the panel above: × on the chip hands it
+   *  back, and the list goes back to every branch. */
+  onClearRef?: () => void;
 }
 
 type GraphPage =
@@ -211,6 +214,7 @@ export function LogPanel({
   onOpenFileHistory,
   onOpenBlame,
   onSelectedCommitChange,
+  onClearRef,
 }: Props) {
   const { t } = useI18n();
   const { menu, open, close } = useGitMenu();
@@ -237,7 +241,11 @@ export function LogPanel({
     if (filters.until.trim()) base.until = filters.until.trim();
     if (selectedRef) {
       base.currentRef = { type: selectedRef.type, name: selectedRef.name, fullRef: selectedRef.fullRef };
-      if (selectedRef.type === "local") base.branch = selectedRef.name;
+      // The log is *this ref's* commits, newest first — `git log <ref>`. The
+      // sidebar's row names are what git takes: `feat/x` for a local branch,
+      // `origin/feat/x` for a remote one. Without the branch argument the
+      // history came from `--all`, so "view this branch" listed every branch.
+      if (selectedRef.type === "local" || selectedRef.type === "remote") base.branch = selectedRef.name;
     }
     return base;
   }, [filters, selectedRef]);
@@ -467,6 +475,10 @@ export function LogPanel({
               aria-label={t("git.clearFilter")}
               onClick={() => {
                 setFilters({ search: "", author: "", since: "", until: "" });
+                // The chip is the branch. Clearing only the text filters left it
+                // on screen with the list still filtered, which reads as a button
+                // that does nothing.
+                onClearRef?.();
               }}
             >
               ×
@@ -484,6 +496,15 @@ export function LogPanel({
             placeholder={t("git.filterSearch")}
             aria-label={t("git.filterSearch")}
             onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))}
+            onKeyDown={(event) => {
+              // The filter applies as it is typed; Enter applies the trimmed
+              // text and keeps the caret out of the way, because a box that
+              // answers Enter is a search box.
+              if (event.key === "Enter") {
+                event.preventDefault();
+                setFilters((current) => ({ ...current, search: event.currentTarget.value.trim() }));
+              }
+            }}
           />
           <input
             className="git-search-input git-search-author"
@@ -575,19 +596,19 @@ export function LogPanel({
                 style={{ transform: `translateY(${item.start}px)` }}
                 onClick={(event) => selectRow(commit, event)}
                 onDoubleClick={() => onOpenFileAtRevision(commit.hash, "")}
+                // No git menu on right click: the browser's own menu belongs to
+                // the user (Safari: Back, Reload, Inspect…), and a panel that
+                // calls preventDefault takes it away. The row's ⋮ is the git
+                // menu, and that is where the git menu lives.
                 onContextMenu={(event) => {
-                  event.preventDefault();
+                  event.stopPropagation();
                   setSelectedHash(commit.hash);
-                  open(event.currentTarget, commitMenu(commit));
                 }}
               >
                 <span className="git-log-refs">
-                  {commit.refs.map((ref) => (
-                    <span
-                      key={`${ref.type}-${ref.name}`}
-                      className={`git-ref-chip git-ref-${ref.type === "remote-branch" ? "remote" : ref.type}`}
-                    >
-                      {ref.name}
+                  {refChips(commit.refs).map((chip) => (
+                    <span key={chip.key} className={`git-ref-chip ${chip.className}`}>
+                      {chip.label}
                     </span>
                   ))}
                 </span>
@@ -639,6 +660,7 @@ export function LogPanel({
 }
 
 import { CommitDetail } from "./CommitDetail";
+import { refChips } from "./ref-chips";
 
 function FilterIcon() {
   return (

@@ -254,6 +254,83 @@ export async function resolveRepoRuntime(
   }
 }
 
+/** A project the app knows, as the Git panel's switcher reads it. */
+export interface ProjectRepoEntry {
+  path: string;
+  name: string;
+  branch: string | null;
+  isWorktree: boolean;
+}
+
+/**
+ * The projects of the app's own list — the folders the sessions live in — as git
+ * repositories.
+ *
+ * Branchshift's repo switcher listed the IDE's open projects, and that was the
+ * point of it: the Git view switched between the same folders the editor was
+ * working in. pi-desk has no IDE: its project list is the session sidebar's, so
+ * the panel reads the same list. A folder that is not a checkout, no longer
+ * exists, or is outside the app's authorized roots is left out — the panel cannot
+ * act on it, so it has no business offering it.
+ */
+export async function listProjectRepos(): Promise<ProjectRepoEntry[]> {
+  const { listSessionsIncremental } = await import("../session-list-scanner");
+  const sessions = await listSessionsIncremental({ deferDetails: true });
+  const roots: string[] = [];
+  const seen = new Set<string>();
+  for (const session of sessions) {
+    const cwd = session.cwd;
+    if (typeof cwd !== "string" || !cwd.startsWith("/") || seen.has(cwd)) continue;
+    seen.add(cwd);
+    roots.push(cwd);
+  }
+
+  const { execFile } = await import("node:child_process");
+  const { stat } = await import("node:fs/promises");
+  const { promisify } = await import("node:util");
+  const run = promisify(execFile);
+  // A read-only probe: never prompt, never page, and the user's own git config
+  // stays in force (safe.directory and the like live there).
+  const probeEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_EDITOR: "true", GIT_PAGER: "cat" };
+
+  const entries = await Promise.all(roots.map(async (root): Promise<ProjectRepoEntry | null> => {
+    if (!(await isCwdAllowed(root))) return null;
+    try {
+      if (!(await stat(root)).isDirectory()) return null;
+    } catch {
+      return null;
+    }
+    let paths;
+    try {
+      paths = await inspectGitRepo(root);
+    } catch {
+      return null;
+    }
+    if (paths.workTreeRoot !== root) return null;
+    let branch: string | null = null;
+    try {
+      const { stdout } = await run("git", ["-C", root, "rev-parse", "--abbrev-ref", "HEAD"], {
+        env: probeEnv,
+        maxBuffer: 1024 * 1024,
+      });
+      branch = stdout.trim() || null;
+      if (branch === "HEAD") branch = null;
+    } catch {
+      branch = null;
+    }
+    return {
+      path: root,
+      name: path.basename(root),
+      branch,
+      isWorktree: paths.gitDir !== paths.commonDir,
+    };
+  }));
+
+  return entries
+    .filter((entry): entry is ProjectRepoEntry => entry !== null)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+}
+
 /** Label list for the switcher: disambiguate same-named repos by their parent folder. */
 export function repoLabel(
   target: RepoDescriptor,

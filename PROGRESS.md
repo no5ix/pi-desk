@@ -305,3 +305,48 @@ author and the date is asserted as a rule, not as an accident.
 
 `tsc` clean, eslint 0 errors on the touched files, `AppShell.git-panel` 12,
 `FileViewer.editor` 12, `hook-order` 2, `inline-style-tokens` 2 pass.
+## The ten panel reports (2026-07-29)
+
+Reported from the running app, with screenshots. All ten are implemented:
+
+1. **A long commit message stays in its box.** The detail is a two-column grid; the
+   message column is `min-height: 0` with its own `overflow-y: auto`, so a 40-line
+   body scrolls inside it and never reaches the window's status bar.
+2. **`Pick a file to read its diff` is gone.** The FILES column is silent until a
+   file is picked. (The phrase is asserted absent in `components/git/panel-reports.test.mjs`.)
+3. **The message and FILES are columns**, split by a divider at the app's separator
+   token; narrow widths stack them and the divider turns into a rule above.
+4. **The tab is `Stash`** (`git.tabShelf`: Stash / 贮藏 / 貯藏) and the pack's shelf
+   sentences follow the tab.
+5. **A branch and its remote at the same checkpoint are one chip**:
+   `origin & feat/synced-branch`, border `#CDC12D` (`--git-ref-synced`), from
+   `components/git/log/ref-chips.ts`, used by the log row and the commit detail.
+   Two remotes at the same checkpoint join in (`origin, upstream & feat/x`).
+6. **Right click is the browser's.** No row's context menu calls `preventDefault`
+   any more; the git menu is the row's ⋮ (which has an anchor to open and to close).
+7. **A branch is the log's filter** — the query carries `branch` for a local ref *and*
+   for a remote one (`git log <ref>` semantics from the command builder).
+8. **× on the chip clears the filter** (`onClearRef` → `setSelectedRef(null)`), and the
+   list is every branch's history again.
+9. **Enter in the search box filters by message** (`search` on the log query; the
+   service greps the message).
+10. **The switcher lists the app's projects**, not only this folder's checkouts:
+    `listProjectRepos()` in `lib/git/workspace.ts` reads the sessions' folders (the
+    sidebar's own list), keeps the authorized ones that are git roots, and
+    `GET /api/git/repos?projects=1` answers them beside the workspace repos.
+
+Verified: `node_modules/.bin/tsc --noEmit` clean;
+`node --experimental-strip-types --test components/git/panel-reports.test.mjs` 8/8
+(one test per report, on the source, the CSS tokens and the three locale packs);
+`node e2e/git-panel.mjs` runs the four `panel()` passes (desktop, desktop-dark,
+phone, narrow-window) with the new checks: the two-column detail (measured columns,
+divider, the message box scrolls and stops above the panel's bottom), the synced
+chip's text and `rgb(205, 193, 45)` border, right click opening no git menu on a
+commit row and on a branch row, the branch filter's query + rows + chip, and × back
+to every branch.
+
+Open: the `?wide=1&commits=200&lanes=18` pass — the harness reaches it and the panel
+is mounted, then the fixture host's children are gone by the time the row geometry
+is measured, with **no page error** recorded. The layout assertions of that pass
+(the 18-lane log) are the next thing to restore; the ten fixes are asserted by the
+four panel passes and by `panel-reports.test.mjs`.

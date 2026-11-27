@@ -15149,6 +15149,8 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   --git-lane-6: var(--ansi-cyan);
   --git-lane-7: color-mix(in srgb, var(--ansi-red) 50%, var(--ansi-yellow));
   --git-lane-8: var(--ansi-bright-cyan);
+  /* A branch and the remote branch of the same name, at the same commit. */
+  --git-ref-synced: #cdc12d;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -15816,6 +15818,14 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   border-style: dashed;
 }
 
+/* A branch and its remote at the same commit: one chip, and a border in the
+   colour the user asked for. The colour is a token so the component draws with
+   a var, as the rest of the app does. */
+.git-ref-chip.is-synced {
+  border-color: var(--git-ref-synced);
+  color: var(--text);
+}
+
 .git-ref-tag {
   border-color: color-mix(in srgb, var(--text-warm, var(--accent)) 40%, var(--border));
 }
@@ -15859,10 +15869,15 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   text-align: center;
 }
 
+/* A commit reads in two columns: what it says, and beside it the files it
+   touched, with a divider between. Each column scrolls in its own box —
+   `min-height: 0` on the grid and `overflow-y: auto` on the message — because a
+   long commit message used to run straight out of the panel and under the
+   window's status bar. */
 .git-commit-detail {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   flex: 0 1 45%;
-  flex-direction: column;
   min-height: 0;
   border-top: 1px solid var(--border);
 }
@@ -15903,13 +15918,22 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   margin-top: 6px;
 }
 
+.git-commit-detail-message {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 8px 10px 8px 12px;
+}
+
 .git-commit-files {
   display: flex;
+  min-width: 0;
   flex: 0 1 auto;
   flex-direction: column;
   min-height: 0;
-  max-height: 40%;
-  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--separator, var(--border));
 }
 
 .git-commit-files-header {

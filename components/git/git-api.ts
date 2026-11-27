@@ -226,13 +226,24 @@ export interface GitRepoDescriptor {
   current: boolean;
 }
 
+/** A project of the app's own list, as the switcher reads it. */
+export interface GitProjectEntry {
+  path: string;
+  name: string;
+  branch: string | null;
+  isWorktree: boolean;
+}
+
 export interface GitRepoList {
   repos: GitRepoDescriptor[];
   activeId: string;
+  /** The app's projects, asked for with `?projects=1`. */
+  projects?: GitProjectEntry[];
 }
 
-export async function fetchGitRepos(cwd: string, refresh = false): Promise<GitRepoList> {
-  const response = await fetch(`/api/git/repos?cwd=${encodeURIComponent(cwd)}${refresh ? "&refresh=1" : ""}`);
+export async function fetchGitRepos(cwd: string, refresh = false, projects = true): Promise<GitRepoList> {
+  const query = `cwd=${encodeURIComponent(cwd)}${refresh ? "&refresh=1" : ""}${projects ? "&projects=1" : ""}`;
+  const response = await fetch(`/api/git/repos?${query}`);
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new GitRequestError("REPO_NOT_FOUND", (payload as { error?: string })?.error ?? "The repositories did not answer.", undefined, response.status);

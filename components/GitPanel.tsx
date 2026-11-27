@@ -185,6 +185,39 @@ export function GitPanel({ cwd, onOpenFile, onSwitchRepository, onBusyChange }: 
                 </button>
               ))}
               {!repos?.repos.length ? <div className="git-repo-row git-repo-empty">{t("git.repoNone")}</div> : null}
+
+              {/* The app's own projects. Branchshift's switcher listed the IDE's
+                  open projects, and that was the point of it: the Git view moved
+                  between the folders the editor was working in. pi-desk's project
+                  list is the session sidebar's, so the panel shows that list, with
+                  the current workspace's worktrees above it (a worktree is its own
+                  checkout, so it stays listed as one). */}
+              {(repos?.projects ?? []).length ? (
+                <>
+                  <div className="git-repo-menu-section">{t("git.repoProjects")}</div>
+                  {(repos?.projects ?? [])
+                    .filter((project) => !(repos?.repos ?? []).some((repo) => repo.rootPath === project.path))
+                    .map((project) => (
+                      <button
+                        key={project.path}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={project.path === activeCwd}
+                        className={`git-repo-row${project.path === activeCwd ? " is-selected" : ""}`}
+                        title={project.path}
+                        onClick={() => {
+                          setReposOpen(false);
+                          setActiveCwd(project.path);
+                          onSwitchRepository?.(project.path);
+                        }}
+                      >
+                        <span className="git-repo-row-name">{project.name}</span>
+                        <span className="git-repo-row-branch">{project.branch ?? t("git.detached")}</span>
+                        {project.isWorktree ? <span className="git-repo-row-tag">{t("git.worktreeTag")}</span> : null}
+                      </button>
+                    ))}
+                </>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -276,6 +309,7 @@ export function GitPanel({ cwd, onOpenFile, onSwitchRepository, onBusyChange }: 
                     target={target}
                     refreshToken={refreshToken}
                     selectedRef={selectedRef}
+                    onClearRef={() => setSelectedRef(null)}
                     currentBranch={current?.name ?? null}
                     onBusy={setBusy}
                     onChanged={refresh}
@@ -335,6 +369,7 @@ export function GitPanel({ cwd, onOpenFile, onSwitchRepository, onBusyChange }: 
                   target={target}
                   refreshToken={refreshToken}
                   selectedRef={selectedRef}
+                  onClearRef={() => setSelectedRef(null)}
                   currentBranch={current?.name ?? null}
                   onBusy={setBusy}
                   onChanged={refresh}

@@ -180,14 +180,110 @@ async function panel(label, { width, height, touch, theme = "light" }) {
   }
 
   // ─── level 3: one commit, its files and its diff ───
-  await page.locator('#git-panel .git-log-row:has-text("draw the commit graph")').first().click();
+  await page.locator('#git-panel .git-log-row:has-text("memory sampler")').first().click();
   await page.waitForSelector("#git-panel .git-file-row");
   assert.equal(await page.locator("#git-panel .git-file-row").count(), 2, `${label}: the commit lists the files it touched`);
-  await page.waitForSelector(".file-diff-view, .diff-view, .git-diff", { timeout: 5_000 }).catch(() => null);
+  // Picking a file is how its diff arrives. The stacked phone keeps the detail
+  // below the fold, so the patch is asserted where the columns sit side by side.
   const detail = await page.locator("#git-panel").innerText();
   assert.match(detail, /LogPanel\.tsx/, `${label}: the commit detail names the file`);
-  assert.ok(/@@/.test(detail) || /draw the commit graph/.test(detail), `${label}: the detail shows the patch or the message`);
+  if (!touch) {
+    await page.locator("#git-panel .git-file-row").first().click();
+    await page.waitForSelector("#git-panel .file-diff-line", { timeout: 5_000 }).catch(() => null);
+    const withPatch = await page.locator("#git-panel").innerText();
+    // The view is built from hunks (the `@@` header is consumed as the hunk's
+    // marker), so the assertion reads the lines it drew.
+    assert.ok(await page.locator("#git-panel .file-diff-line").count() >= 2, `${label}: the picked file shows its diff`);
+    assert.match(withPatch, /--git-lane-1: var\(--ansi-blue\)/, `${label}: the diff shows the added line`);
+  }
   await expectNoSidewaysScroll(page, label, "the commit detail");
+
+  // ─── the detail reads in two columns, and a long message stays in its box ───
+  const message = await box(page, "#git-panel .git-commit-detail-message");
+  const files = await box(page, "#git-panel .git-commit-files");
+  const panelBox = await box(page, "#git-panel");
+  assert.ok(files.x >= message.x + message.w - 1,
+    `${label}: the message and its FILES are columns beside each other (message ${message.x}+${message.w}, files x=${files.x})`);
+  const divider = await page.locator("#git-panel .git-commit-files")
+    .evaluate((el) => Number.parseFloat(getComputedStyle(el).borderLeftWidth));
+  assert.ok(divider >= 1, `${label}: a divider separates the message from the files (${divider}px)`);
+  const detailBox = await page.locator("#git-panel .git-commit-detail-message").evaluate((el) => ({
+    scrolls: el.scrollHeight > el.clientHeight,
+    overflowY: getComputedStyle(el).overflowY,
+    bottom: el.getBoundingClientRect().bottom,
+  }));
+  assert.ok(detailBox.scrolls && detailBox.overflowY === "auto",
+    `${label}: a long commit message scrolls in its own box (scrolls ${detailBox.scrolls}, ${detailBox.overflowY})`);
+  assert.ok(detailBox.bottom <= panelBox.y + panelBox.h + 1,
+    `${label}: the message does not run out under the window's bar (bottom ${detailBox.bottom}, panel ${Math.round(panelBox.y + panelBox.h)})`);
+  const panelText = await page.locator("#git-panel").innerText();
+  assert.ok(!/Pick a file to read its diff/.test(panelText), `${label}: the empty diff area says nothing`);
+
+  // ─── a branch and its remote, at the same checkpoint, are one chip ───
+  const syncedRow = page.locator("#git-panel .git-log-row:has(.git-ref-chip.is-synced)").first();
+  assert.equal(await syncedRow.locator(".git-ref-chip").count(), 2,
+    `${label}: the branch and its remote are one chip, not two (${await syncedRow.locator(".git-ref-chip").count()} chips on that row)`);
+  const synced = syncedRow.locator(".git-ref-chip.is-synced");
+  assert.equal(await synced.count(), 1, `${label}: one chip carries the pair`);
+  assert.equal((await synced.first().innerText()).trim(), "origin & feat/synced-branch",
+    `${label}: the chip says origin & the branch`);
+  const syncedBorder = await synced.first().evaluate((el) => getComputedStyle(el).borderTopColor);
+  assert.equal(syncedBorder, "rgb(205, 193, 45)", `${label}: the synced chip's border is the asked-for colour (${syncedBorder})`);
+
+  // ─── right click is the browser's, not the panel's ───
+  // (The phone shows one Git view at a time, so a branch row is only reachable
+  // where the branch tree is up; `panel-reports.test.mjs` 6 checks both sources.)
+  if (!touch) {
+    for (const [what, selector] of [["a commit row", "#git-panel .git-log-row"], ["a branch row", "#git-panel .git-branch-row:not(.is-group)"]]) {
+      await page.locator(selector).first().click({ button: "right" });
+      await page.waitForTimeout(150);
+      const menus = await page.locator(".native-popover.app-menu, #git-panel .git-menu").count();
+      assert.equal(menus, 0, `${label}: right click on ${what} opens no git menu (the browser's own menu belongs to the user)`);
+    }
+  }
+
+  // The phone layout shows one Git view at a time, so the branch list is off screen
+  // once a branch was picked; the filter is exercised where both views are up.
+  if (!touch) {
+    // ─── picking a branch is `git log <branch>`; × puts every branch back ───
+    // The level-2 branch click already set a filter; clear it first, and read the
+    // query the panel sends — that is where "show this branch's commits" lives.
+    if (await page.locator("#git-panel .git-chip-clear").count()) {
+        await page.evaluate(() => { window.__logQueries = []; });
+        await page.locator("#git-panel .git-chip-clear").first().click();
+        await page.waitForTimeout(300);
+        assert.equal((await page.evaluate(() => window.__logQueries.at(-1)))?.branch, undefined,
+            `${label}: × asks for every branch again`);
+        assert.equal(await page.locator("#git-panel .git-filter-chips .git-chip").count(), 0, `${label}: × takes the branch chip away`);
+    }
+    const allRows = await page.locator("#git-panel .git-log-row").count();
+    await page.evaluate(() => { window.__logQueries = []; });
+    await page.locator('#git-panel .sidebar-project-context-menu-branch-name:text-is("git-view")').first().click();
+    await page.waitForTimeout(300);
+    const asked = await page.evaluate(() => window.__logQueries.map((query) => ({ branch: query.branch, search: query.search })));
+    assert.equal(asked.at(-1)?.branch, "feat/panel/git-view", `${label}: the log is asked for that branch's commits (asked: ${JSON.stringify(asked.at(-1))})`);
+    const chip = page.locator("#git-panel .git-filter-chips .git-chip");
+    assert.ok((await chip.first().innerText()).includes("git-view"), `${label}: the picked branch shows as the filter`);
+    const filteredRows = await page.locator("#git-panel .git-log-row").count();
+    assert.ok(filteredRows < allRows, `${label}: the list is that branch's history, not every branch's (${filteredRows} of ${allRows})`);
+    const firstSubject = (await page.locator("#git-panel .git-log-subject").first().innerText()).trim();
+    assert.match(firstSubject, /memory sampler/, `${label}: the branch's own tip is the first row (${firstSubject})`);
+
+    await page.locator("#git-panel .git-chip-clear").first().click();
+    await page.waitForTimeout(300);
+    assert.equal(await page.locator("#git-panel .git-filter-chips .git-chip").count(), 0, `${label}: × takes the branch chip away`);
+    assert.equal((await page.evaluate(() => window.__logQueries.at(-1)))?.branch, undefined, `${label}: × asks for every branch again`);
+    assert.equal(await page.locator("#git-panel .git-log-row").count(), allRows, `${label}: × puts the whole history back (${allRows} rows)`);
+
+  }
+
+  // The search box and the project list are asserted in
+  // `components/git/panel-reports.test.mjs` (9, 10): the search's contract is the
+  // `search` it puts on the log query, and the switcher's is the list it renders.
+  // Here, opening the filter row above an open commit detail leaves the virtualised
+  // list too short to paint a row — that measures the layout, not the filter, and
+  // the `?wide=1` pass below is where the rendered list is measured.
+
 
   // ─── the Commit tab: the working tree split, with the checkbox as the index ───
   await page.locator('#git-panel .git-tabs .git-tab:has-text("Commit")').first().click();
@@ -233,7 +329,7 @@ async function wideLog(label, { width, height, theme, touch }) {
     colorScheme: theme === "dark" ? "dark" : "light",
   });
   const page = await context.newPage();
-  page.on("pageerror", (error) => pageErrors.push(`${label} (wide): ${error.message}`));
+  page.on("pageerror", (error) => { pageErrors.push(`${label} (wide): ${error.message}`); if (process.env.GIT_PANEL_DEBUG) console.log("PAGEERROR", label, error.message.slice(0, 200)); });
   await page.goto(`${url}?theme=${theme}&wide=1&commits=200&lanes=18`);
   await page.waitForSelector("#git-panel", { timeout: 15_000 });
   if (touch) {

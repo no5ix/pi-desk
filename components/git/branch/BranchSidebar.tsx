@@ -433,9 +433,11 @@ export function BranchSidebar({
                 onKeyDown={(event) => {
                   if (event.key === "Enter") onSelect({ type: "tag", name: tag.name, fullRef: tag.fullRef });
                 }}
+                // Right click belongs to the browser (Safari: Back, Reload,
+                // Inspect…). A git menu on the row's own ⋮, where the user looks
+                // for it — see the Log's commit row, same rule.
                 onContextMenu={(event) => {
-                  event.preventDefault();
-                  open(event.currentTarget, tagMenu(tag.name, tag.targetCommitHash));
+                  event.stopPropagation();
                 }}
               >
                 <span className="git-branch-mark"><TagIcon /></span>
@@ -578,9 +580,10 @@ function BranchRowView({
       onKeyDown={(event) => {
         if (event.key === "Enter") onOpen();
       }}
+      // No git menu on right click: `preventDefault` takes the browser's menu
+      // away, and the user wants theirs. The row's ⋮ opens the git menu.
       onContextMenu={(event) => {
-        event.preventDefault();
-        onMenu(event.currentTarget);
+        event.stopPropagation();
       }}
     >
       <span className="sidebar-project-context-menu-branch-mark">

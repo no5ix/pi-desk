@@ -6,6 +6,7 @@ import { patchForFile } from "@/lib/patch";
 import { joinFilePath } from "@/lib/file-paths";
 import type { CommitNode, DiffFile } from "@/lib/git/types";
 import { DiffView } from "../../FileViewer";
+import { refChips } from "./ref-chips";
 import { gitCommand, useGitMutation, type GitTarget } from "../git-api";
 import {
   GitErrorLine,
@@ -211,7 +212,7 @@ export function CommitDetail({
 
   return (
     <div className="git-commit-detail">
-      <div className="git-commit-detail-header">
+      <div className="git-commit-detail-message">
         <div className="git-commit-detail-subject" title={commit.subject}>
           {commit.subject}
         </div>
@@ -221,9 +222,9 @@ export function CommitDetail({
           <span title={formatFullTime(commit.authorDate)}>{formatFullTime(commit.authorDate)}</span>
           {commit.refs.length ? (
             <span className="git-commit-detail-refs">
-              {commit.refs.map((ref) => (
-                <span key={`${ref.type}-${ref.name}`} className={`git-ref-chip git-ref-${ref.type === "remote-branch" ? "remote" : ref.type}`}>
-                  {ref.name}
+              {refChips(commit.refs).map((chip) => (
+                <span key={chip.key} className={`git-ref-chip ${chip.className}`}>
+                  {chip.label}
                 </span>
               ))}
             </span>
@@ -338,8 +339,10 @@ export function CommitDetail({
             <DiffView patch={patch} />
           </div>
         ) : null}
-        {!patch && patchState === "idle" ? (
-          <GitState kind="empty" text={selectedFile ? t("git.fileDiff") : t("git.detailFileEmpty")} />
+        {/* A file is picked and its diff is being read; with none picked, the
+            list above is the thing to look at, so the diff area says nothing. */}
+        {!patch && patchState === "idle" && selectedFile ? (
+          <GitState kind="empty" text={t("git.fileDiff")} />
         ) : null}
       </div>
 

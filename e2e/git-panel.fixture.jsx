@@ -80,9 +80,18 @@ const COMMITS = [
     authorEmail: "ada@example.com",
     authorDate: "2026-11-19T10:00:00+01:00",
     commitDate: "2026-11-19T10:00:00+01:00",
-    subject: "draw the commit graph",
-    body: "Lanes, nodes and the lines between them.",
-    refs: [],
+    subject: "fix: keep the memory sampler inside the session budget",
+    // Long on purpose: a long message used to run out of the panel and under the
+    // window's status bar, so the harness measures that it scrolls in its box.
+    body: Array.from({ length: 40 }, (unused, index) => `  * paragraph line ${index}: the graph is drawn from the lane snapshot, and a lane that leaves the page keeps its colour when it comes back.`).join("\n"),
+    // A local branch and its remote, at the same commit: the row shows one chip.
+    refs: [
+      { type: "branch", name: "feat/synced-branch" },
+      { type: "remote-branch", name: "origin/feat/synced-branch" },
+      // The branch the harness picks to test the log filter: `git log
+      // feat/panel/git-view` answers from this commit down, three of the four.
+      { type: "branch", name: "feat/panel/git-view" },
+    ],
   },
   {
     hash: "cccccccccccccccccccccccccccccccccccccccc",
@@ -211,15 +220,51 @@ const COMMANDS = {
       { id: "/repo/wt-side", name: "wt-side", rootPath: "/repo/wt-side", isWorktree: true, branch: "side/worktree", label: "wt-side" },
     ],
     currentId: "/repo",
+    // The app's project list (`?projects=1`): the folders the sessions live in.
+    projects: [
+      { path: "/repo", name: "pi-desk", branch: MAIN, isWorktree: false },
+      { path: "/repo/wt-side", name: "wt-side", branch: "side/worktree", isWorktree: true },
+      { path: "/projects/pi-web", name: "pi-web", branch: "main", isWorktree: false },
+      { path: "/projects/codex", name: "codex", branch: "feat/memory", isWorktree: false },
+      { path: "/projects/skills", name: "skills", branch: "main", isWorktree: false },
+    ],
   }),
   getBranches: () => LOCAL_BRANCHES,
   getRemoteBranches: () => REMOTE_BRANCHES,
   getTags: () => TAGS,
   getBranchDashboardPreferences: () => ({ preferences: { showTags: true, singleClickAction: "filter" }, favorites: {} }),
-  getGraphData: () =>
-    WIDE
-      ? { graphData: { commits: WIDE.commits, lanes: WIDE.lanes }, hasMore: false }
-      : { graphData: { commits: COMMITS, lanes: LANES }, hasMore: false },
+  getGraphData: (params) => {
+    // The panel's filters have to reach git, so the fixture answers them the way
+    // git does: `branch` is that ref's history, `search` is --grep. The queries
+    // are recorded for the harness to read.
+    (window.__logQueries ??= []).push(params ?? {});
+    const page = WIDE
+      ? { commits: WIDE.commits, lanes: WIDE.lanes }
+      : { commits: COMMITS, lanes: LANES };
+    let commits = page.commits;
+    if (params?.branch) {
+      // `git log <branch>`: the branch's own commits, tip first.
+      const tip = commits.find((commit) =>
+        commit.refs.some((ref) => ref.name === params.branch),
+      );
+      const wanted = new Set();
+      const walk = (hash) => {
+        const commit = commits.find((entry) => entry.hash === hash);
+        if (!commit || wanted.has(commit.hash)) return;
+        wanted.add(commit.hash);
+        commit.parents.forEach(walk);
+      };
+      if (tip) walk(tip.hash);
+      commits = commits.filter((commit) => wanted.has(commit.hash));
+    }
+    const search = (params?.search ?? "").trim();
+    if (search) {
+      commits = commits.filter((commit) =>
+        `${commit.subject} ${commit.body ?? ""}`.toLowerCase().includes(search.toLowerCase()),
+      );
+    }
+    return { graphData: { commits, lanes: page.lanes }, hasMore: false };
+  },
   loadMoreLog: () => ({ graphData: { commits: [], lanes: {} }, hasMore: false }),
   getLog: () => COMMITS,
   getCommitFiles: () => COMMIT_FILES,

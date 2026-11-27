@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { isCwdAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
 import { isApiRequestAllowed } from "@/lib/request-security";
-import { discoverWorkspaceRepos, invalidateGitWorkspace, repoLabel } from "@/lib/git/workspace";
+import { discoverWorkspaceRepos, invalidateGitWorkspace, listProjectRepos, repoLabel } from "@/lib/git/workspace";
 
 /**
  * The repositories the Git panel can act on for one project cwd.
@@ -29,9 +29,14 @@ export async function GET(request: Request) {
   }
 
   const workspace = await discoverWorkspaceRepos(cwd);
+  // `?projects=1` adds the app's own project list (the folders the sessions
+  // live in), because the panel's switcher is meant to move between the projects
+  // the app works in — the way Branchshift's switcher moved between the IDE's.
+  const projects = url.searchParams.get("projects") === "1" ? await listProjectRepos() : [];
   return NextResponse.json({
     cwd: workspace.cwd,
     activeId: workspace.currentId,
     repos: workspace.repos.map((repo) => ({ ...repo, label: repoLabel(repo, workspace.repos) })),
+    projects,
   });
 }
