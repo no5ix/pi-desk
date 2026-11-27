@@ -79,15 +79,15 @@ function loadMonaco(): Promise<MonacoModule> {
           // word inspector, multi-cursor) run there. The language workers are
           // not — the plan is no language server, and the completion the panel
           // offers is the document's words — so those labels get the stub.
-          // A bundler emits a worker chunk only for a `new URL` it can read
-          // statically, so every worker path here is a literal. A template
-          // string is invisible to webpack and to esbuild, and the worker then
-          // does not exist at runtime — which silently costs the editor its word
-          // context, and with it the completion list.
+          // The specifier is relative on purpose. `new URL` with a *module*
+          // specifier is not something webpack 5 or esbuild emits, so the
+          // request 404s and Monaco runs this on the main thread; the file
+          // beside this one (`./editor-worker.js`) is what both bundlers turn
+          // into a worker asset.
           if (label !== "editorWorkerService") return silentWorker();
           try {
             return new Worker(
-              new URL("monaco-editor/esm/vs/editor/editor.worker.js", import.meta.url),
+              new URL("./editor-worker.js", import.meta.url),
               { type: "module" },
             );
           } catch {
@@ -128,6 +128,14 @@ function loadMonaco(): Promise<MonacoModule> {
  * other provider is registered), so the popup holds exactly the document's
  * words. Enter and Tab accept the highlighted entry, Escape closes it, and Tab
  * indents when the popup is closed — Monaco's own keybindings.
+ *
+ * The `kind` is not decoration. Monaco's suggest model builds a *disabled kinds*
+ * set from the `editor.suggest.show*` options and drops every item whose kind is
+ * in it — a completion that is silently thrown away, with the popup showing
+ * "No suggestions". The words of the document are `CompletionItemKind.Text`, so
+ * `suggest.showWords` stays on; the kinds that are off (`Keyword`, `Class`,
+ * `Function`, `Variable`, `Snippet`) name the built-in providers this editor does
+ * not want, and are never the kind of our own items.
  */
 function registerWordCompletion(monaco: MonacoModule) {
   const wordIndexCache = new WeakMap<object, { text: string; index: ReturnType<typeof collectDocumentWords> }>();
@@ -153,7 +161,8 @@ function registerWordCompletion(monaco: MonacoModule) {
       };
       return {
         suggestions: completions.map((entry, order) => ({
-          kind: monaco.languages.CompletionItemKind.Keyword,
+          // `Text`, not `Keyword`: see the note above on Monaco's kind filter.
+          kind: monaco.languages.CompletionItemKind.Text,
           label: entry.word,
           insertText: entry.word,
           filterText: entry.word,
@@ -258,11 +267,15 @@ export const CodeEditor = forwardRef<CodeEditorHandle, Props>(function CodeEdito
         renderWhitespace: "selection",
         renderControlCharacters: false,
         links: true,
-        // The document's own words, nothing else.
+        // The document's own words, nothing else. `showWords` is the filter for
+        // the `Text` kind these completions carry, so it stays true: the words
+        // provider Monaco would register for it is switched off above
+        // (`wordBasedSuggestions: "off"`), and the kinds named below are the
+        // built-in lists this editor has no use for.
         wordBasedSuggestions: "off",
         quickSuggestions: { other: true, comments: false, strings: false },
         suggest: {
-          showWords: false,
+          showWords: true,
           showKeywords: false,
           showSnippets: false,
           showClasses: false,

@@ -74,7 +74,13 @@ await test("a tab with unsaved changes says so, and closing it asks first", () =
 
 await test("completion is the document's words, with nothing from a language service", () => {
   assert.match(editor, /wordBasedSuggestions: "off"/);
-  assert.match(editor, /showWords: false/, "Monaco's own word list is off; the provider below owns it");
+  // The kind an item carries decides whether Monaco keeps it: the suggest model
+  // builds a disabled-kinds set from the `editor.suggest.*` switches and drops
+  // matching items, silently, with the popup reading "No suggestions". The
+  // document's words are `CompletionItemKind.Text`, so `showWords` is on — the
+  // word provider Monaco would own is the one switched off above.
+  assert.match(editor, /showWords: true/, "the kind our items carry stays enabled");
+  assert.match(editor, /CompletionItemKind\.Text/, "the document's words are Text items, not Keywords");
   assert.match(editor, /import \{ completeWords, collectDocumentWords, prefixAtCaret \} from "@\/lib\/editor\/word-completions"/);
   assert.match(editor, /completeWords\(cached\.index, prefix, \{ excludeWord: prefix \}\)/);
   assert.match(editor, /monaco\.languages\.registerCompletionItemProvider\("\*"/);

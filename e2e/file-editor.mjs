@@ -199,10 +199,29 @@ async function editor(label, { width, height, touch, theme }) {
   await page.keyboard.press("Enter");
   await page.keyboard.type("format");
   await page.keyboard.press("Control+Space");
-  await page.waitForSelector(".monaco-editor .suggest-widget", { timeout: 5_000 });
+  const state = () => page.evaluate(() => ({
+    widgets: Array.from(document.querySelectorAll(".suggest-widget")).map((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        cls: node.className,
+        box: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
+        display: getComputedStyle(node).display,
+        rows: node.querySelectorAll(".monaco-list-row").length,
+        text: (node.textContent ?? "").slice(0, 60),
+      };
+    }),
+    contextViews: document.querySelectorAll(".context-view").length,
+    active: document.activeElement?.className ?? document.activeElement?.tagName ?? null,
+    tail: (document.querySelector(".view-lines")?.innerText ?? "").split("\n").slice(-2),
+  }));
+  const opened = await page.waitForSelector(".monaco-editor .suggest-widget", { timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false);
+  const diagnostics = await state();
+  assert.ok(opened, `${label}: typing a prefix opens the completion list (${JSON.stringify(diagnostics)})`);
   const suggestions = await page.locator(".monaco-editor .suggest-widget .monaco-list-row").allInnerTexts();
   assert.ok(suggestions.some((row) => row.includes("formatCommitTime")),
-    `${label}: the document's own word is offered (${suggestions.slice(0, 4).join(" / ")})`);
+    `${label}: the document's own word is offered (${JSON.stringify({ suggestions: suggestions.slice(0, 4), diagnostics })})`);
   await page.keyboard.press("Tab");
   const completed = await page.locator(".monaco-editor .view-lines").innerText();
   assert.match(completed, /formatCommitTime/, `${label}: Tab accepted the completion`);
