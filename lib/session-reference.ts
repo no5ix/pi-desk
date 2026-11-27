@@ -63,14 +63,23 @@ export function formatSessionReference(
 }
 
 /**
- * The title a session's `#` mention carries: the name the user gave it, else the first prompt,
- * cut the way the sidebar's row cuts it. `buildSessionMentionText` quotes what has spaces.
+ * The title a session's `#` mention carries: the name the user gave it, else its first prompt in
+ * full. This is the composer's own `#` palette rule (`hooks/useSessionMentionPalette.ts`), kept
+ * here so the row menu's "Insert into chat" and a palette pick write the same words into the box:
+ * a mention inserted from the sidebar is indistinguishable from one completed in the composer.
+ * `buildSessionMentionText` quotes what has spaces.
+ *
+ * Newlines become spaces and a double quote becomes an apostrophe because the label travels
+ * inside `#"..."`: a quote would close the token early and a newline would break the paragraph.
+ * Nothing is cut: the label is also the key of the label -> id map the send path resolves, and a
+ * cut label matches no session, so the mention would arrive as literal text.
  */
 export function sessionMentionTitle(session: { name?: string; firstMessage?: string; id: string }): string {
   const name = session.name?.trim();
-  if (name) return name;
-  const prompt = (session.firstMessage ?? "").replace(/\s+/g, " ").trim();
-  return prompt.slice(0, 50) || session.id.slice(0, 12);
+  const prompt = (session.firstMessage ?? "").replace(/\n/g, " ").trim();
+  // A session with no name and no prompt is named by its id. A shared placeholder ("Untitled
+  // session") would collide in the label -> id map across the sessions that have none.
+  return (name || prompt || session.id.slice(0, 12)).replace(/"/g, "'");
 }
 
 export function extractSessionReferenceLabels(text: string): string[] {

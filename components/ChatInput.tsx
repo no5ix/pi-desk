@@ -10,6 +10,7 @@ import {
   clearDraft,
   clearSentDraft,
   getDraft,
+  loadStoredDraftAttachments,
   mergeRestoredSubmissionDraft,
   mergeRestoredSubmissionText,
   rekeyDraft as rekeyStoredDraft,
@@ -30,11 +31,11 @@ import {
   isBase64ImageWithinLimits,
 } from "@/lib/image-attachments";
 import {
-  buildEntriesFromFiles, buildAtInsertText, extractAtQuery, extractHashQuery,
+  buildEntriesFromFiles, buildAtInsertText, buildSessionMentionText, extractAtQuery, extractHashQuery,
   filterFileEntries,
   type AtQueryMatch, type FileIndexEntry,
 } from "@/lib/file-fuzzy";
-import { resolveSessionReferences } from "@/lib/session-reference";
+import { resolveSessionReferences, sessionMentionTitle } from "@/lib/session-reference";
 import type { RoutedModelInfo } from "@/lib/types";
 import { getMarkdownListContinuation } from "@/lib/markdown-list-continuation";
 import { quoteSeparator } from "@/lib/quoted-selection";
@@ -221,6 +222,12 @@ export interface ChatInputHandle {
   replaceMessage: (message: UserMessage) => boolean;
   prependText: (text: string) => void;
   addImages: (files: File[]) => void;
+  /**
+   * A session's `#` mention at the caret, in the shape the composer's own `#` autocomplete
+   * writes, with the same label rule and the same label -> session target, so the send path
+   * expands it. The sidebar's row menu inserts through here ("Insert into chat").
+   */
+  insertSessionMention: (session: { id: string; name?: string; firstMessage?: string }) => void;
   /** Chats only: read text files into chips that travel inside the next message. */
   addTextFiles: (files: File[]) => Promise<ChatAttachmentRejection[]>;
   focus: () => void;
@@ -1081,6 +1088,34 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
 
+  // A caret insertion the composer makes itself (a palette pick, a row menu's mention, the file
+  // explorer's @ button): the separator, the text kept around the caret, the caret, the growth.
+  // One path, so an inserted mention is edited exactly like a typed one.
+  const insertTextAtCaret = useCallback((text: string) => {
+    const ta = textareaRef.current;
+    if (!ta) {
+      setValue((v) => v + (v ? " " : "") + text);
+      return;
+    }
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    const before = ta.value.slice(0, start);
+    const after = ta.value.slice(end);
+    const sep = before.length > 0 && !before.endsWith(" ") ? " " : "";
+    const newVal = before + sep + text + after;
+    valueRef.current = newVal;
+    setValue(newVal);
+    setAtQuery(null);
+    setHashQuery(null);
+    requestAnimationFrame(() => {
+      if (!ta) return;
+      const pos = start + sep.length + text.length;
+      ta.setSelectionRange(pos, pos);
+      ta.focus();
+      growComposerTextarea(ta);
+    });
+  }, [setAtQuery, setHashQuery]);
+
   useImperativeHandle(ref, () => ({
     insertIfEmpty(text: string) {
       const ta = textareaRef.current;
@@ -1248,28 +1283,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       });
     },
     insertText(text: string) {
-      const ta = textareaRef.current;
-      if (!ta) {
-        setValue((v) => v + (v ? " " : "") + text);
-        return;
-      }
-      const start = ta.selectionStart ?? ta.value.length;
-      const end = ta.selectionEnd ?? ta.value.length;
-      const before = ta.value.slice(0, start);
-      const after = ta.value.slice(end);
-      const sep = before.length > 0 && !before.endsWith(" ") ? " " : "";
-      const newVal = before + sep + text + after;
-      valueRef.current = newVal;
-      setValue(newVal);
-      setAtQuery(null);
-      setHashQuery(null);
-      requestAnimationFrame(() => {
-        if (!ta) return;
-        const pos = start + sep.length + text.length;
-        ta.setSelectionRange(pos, pos);
-        ta.focus();
-        growComposerTextarea(ta);
-      });
+      insertTextAtCaret(text);
+    },
+    insertSessionMention(session: { id: string; name?: string; firstMessage?: string }) {
+      // The palette's label rule and the palette's target: the label is what the user sees in the
+      // box and what the send path looks up, so a mention from the row menu expands to this
+      // session's transcript exactly like one completed with `#`.
+      const label = sessionMentionTitle(session);
+      sessionMentionTargetsRef.current.set(label, session.id);
+      insertTextAtCaret(buildSessionMentionText(label));
     },
     insertQuote(text: string) {
       const ta = textareaRef.current;
@@ -1431,6 +1453,35 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     // a row, and a row never writes here.
     pushDeviceCopy(draftKey, draft);
   }, [attachedFiles, attachedImages, draftKey, value]);
+
+  // A reload brings the prompt back from localStorage. The attachments are bytes, so they come
+  // from the byte store a moment later (lib/draft-attachment-store.ts), and only a composer that
+  // has nothing attached takes them: a screenshot pasted while the store was opening is the
+  // user's, never something to overwrite. Without this, refreshing a New Session page threw away
+  // the picture the prompt was written about.
+  useEffect(() => {
+    if (!draftKey) return;
+    const startedIn = draftKey;
+    let alive = true;
+    void loadStoredDraftAttachments(startedIn)
+      .then((draft) => {
+        if (!alive || !draft || draftKeyRef.current !== startedIn) return;
+        const restoredImages = draftImagesToAttachedImages(draft.images);
+        const restoredFiles = draft.files ?? [];
+        setAttachedImages((current) => {
+          if (current.length > 0) return current;
+          attachedImagesRef.current = restoredImages;
+          return restoredImages;
+        });
+        setAttachedFiles((current) => {
+          if (current.length > 0) return current;
+          attachedFilesRef.current = restoredFiles;
+          return restoredFiles;
+        });
+      })
+      .catch(() => { /* a store the browser refuses: the draft stays as this page has it */ });
+    return () => { alive = false; };
+  }, [draftKey]);
 
   useEffect(() => {
     const previousDraftKey = draftKeyRef.current;

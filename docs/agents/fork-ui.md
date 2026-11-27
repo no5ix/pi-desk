@@ -1156,6 +1156,46 @@ mirror (`lib/composer-sync.ts`, `lib/composer-draft-store.ts`,
 carried, a copy from the server repainting the composer the user was typing in. See
 [fork-files-security](fork-files-security.md) for what a copy may hold.
 
+## Sidebar search, session mentions, and a composer's attachments across a reload
+
+Three behaviours the user reads as one box and one composer; each has one owner.
+
+**The sidebar's search box is a titles-and-prompts box** (`sidebar.searchSessions` —
+"Search titles/prompts…"). Typing filters the project tree through one rule
+(`lib/session-title-search.ts`: the row's title and the session's first prompt, case-folded,
+whitespace folded). The tree can only see those two, so once the query settles (500ms, at least
+two characters — `AUTO_CONTENT_SEARCH_*`) the box escalates itself to the server's search inside
+every session (`SessionSearch`, `lib/session-search.ts`, `GET /api/sessions/search`): the label
+promises prompts, and a prompt from the third turn of a session was otherwise unreachable while
+typing. Enter escalates at once, Escape (or the clear button) comes back to the tree, and the
+tooltip (`sidebar.searchAllHint`) carries the gesture so the label stays a label on a 390px phone.
+
+**A session mention has one label rule** (`sessionMentionTitle`, `lib/session-reference.ts`): the
+name the user gave the session, else its first prompt in full, newlines to spaces, a double quote
+to an apostrophe, and the id for a session with neither. The composer's `#` palette and the
+sidebar row menu's "Insert into chat" both call it, and both register the label → id target
+(`ChatInput.insertSessionMention` → `sessionMentionTargetsRef`), so what the send path expands
+(`resolveSessionReferences`) is what the box shows. The menu used to cut the label to 50
+characters, so the mention sat in the composer as literal text: a cut label names no session. The
+insert goes through the composer's own caret insert (`insertTextAtCaret`) — native undo, the
+surrounding text kept, the field focused, nothing sent.
+
+**A composer's attachments survive a reload** (`lib/draft-attachment-store.ts`). localStorage is
+text only — it shares a ~5 MB origin budget with the drafts, and a screenshot is not a few
+kilobytes — so a New Session page refreshed in the middle of a prompt kept the words and threw
+away the picture the words were about. The bytes go to IndexedDB (`pi-web:draft-attachments`, one
+record per durable draft key: a session, or a project's `parked-new:<cwd>`) under caps (10 images,
+4 MB each, 8 MB per composer, 10 composers, oldest evicted), and `loadStoredDraftAttachments`
+reads them back: the composer asks per key and applies them only while it has nothing attached, so
+a screenshot pasted while the store opens stays the user's. A write is skipped when the
+attachments have not changed (the signature), so typing never carries a screenshot to disk. A send,
+a cleared box and a sign-out remove the record; where the browser has no IndexedDB the draft simply
+stays in memory, as it did before.
+
+`lib/draft-attachment-store.test.mjs`, `lib/draft-store.test.mjs`,
+`components/sidebar-insert-into-chat.test.mjs`, `components/SessionSidebar.session-search.test.mjs`
+and `e2e/search-draft-insert.mjs` pin these.
+
 ## The right panel opens on a terminal
 
 `handleRightPanelToggle` opens a project panel onto its shell: with a live terminal

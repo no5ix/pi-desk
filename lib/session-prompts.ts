@@ -104,7 +104,12 @@ export async function scanSessionPrompts(filePath: string): Promise<SessionPromp
   return prompts.sort((a, b) => a.at - b.at);
 }
 
-async function cachedPrompts(filePath: string): Promise<SessionPrompt[]> {
+/**
+ * A session file's prompts, rebuilt only when the file changed (size and mtime are the
+ * fingerprint). The calendar and the sidebar's prompt search both read through here, so a
+ * machine's worth of session files is scanned once, not once per feature.
+ */
+export async function cachedSessionPrompts(filePath: string): Promise<SessionPrompt[]> {
   let fingerprint: { size: number; mtimeMs: number };
   try {
     const s = await stat(filePath);
@@ -147,7 +152,7 @@ export async function collectSessionPrompts(
   const worker = async () => {
     while (next < candidates.length) {
       const session = candidates[next++];
-      const inRange = (await cachedPrompts(session.path)).filter((prompt) => prompt.at >= from && prompt.at < to);
+      const inRange = (await cachedSessionPrompts(session.path)).filter((prompt) => prompt.at >= from && prompt.at < to);
       if (inRange.length > 0) result[session.id] = inRange;
     }
   };

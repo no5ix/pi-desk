@@ -8,14 +8,34 @@ const jiti = createJiti(import.meta.url, { tsconfigPaths: true });
 const { sessionMentionTitle } = await jiti.import("@/lib/session-reference");
 const { buildSessionMentionText } = await jiti.import("@/lib/file-fuzzy");
 
-test("the mention title is the session's own name, the way the row shows it", () => {
+test("the mention title is the session's own name, and its prompt in full", () => {
   assert.equal(sessionMentionTitle({ id: "s1", name: "Design Review", firstMessage: "a long prompt" }), "Design Review");
   assert.equal(sessionMentionTitle({ id: "s1", name: "   ", firstMessage: "Fix the sidebar" }), "Fix the sidebar");
   assert.equal(sessionMentionTitle({ id: "deadbeefcafe1234", firstMessage: "" }), "deadbeefcafe");
-  // A prompt that wrapped over lines is one line of title, cut the way the row cuts it.
+  // A prompt that wrapped over lines becomes one line of mention: a newline is kept as the space
+  // it was, and a blank line as the pair of them. Nothing is cut — a cut label names no session.
   assert.equal(
     sessionMentionTitle({ id: "s1", firstMessage: "line one\nline two\n\nmore" }),
-    "line one line two more",
+    "line one line two  more",
+  );
+  // The label goes inside `#"..."`, so a double quote would close the token early.
+  assert.equal(
+    sessionMentionTitle({ id: "s1", firstMessage: 'the build said "expected : got ident" and stopped' }),
+    "the build said 'expected : got ident' and stopped",
+  );
+  assert.equal(sessionMentionTitle({ id: "s1", name: 'say "hi"' }), "say 'hi'");
+});
+
+test("the row menu's mention and the composer's own `#` pick are the same words", async () => {
+  // One rule for both (lib/session-reference.ts): the palette used to build its label inline, so a
+  // mention inserted from the row menu came out cut to 50 characters and a palette pick came out
+  // whole. The palette now calls the rule, so there is nothing left to drift.
+  const palette = await read("../hooks/useSessionMentionPalette.ts");
+  assert.match(palette, /import \{ sessionMentionTitle \} from "@\/lib\/session-reference";/);
+  assert.match(palette, /const visibleSessionName = sessionMentionTitle\(\{/);
+  assert.ok(
+    !/const sessionDisplayName = entry\.name/.test(palette),
+    "the palette has no second label rule of its own",
   );
 });
 
@@ -42,14 +62,22 @@ test("the app inserts at the composer's caret and sends nothing", async () => {
   const shell = await read("./AppShell.tsx");
   const handler = shell.slice(shell.indexOf("const handleInsertSessionMention"));
   const body = handler.slice(0, handler.indexOf("\n  const ", 20));
-  assert.match(body, /chatInputRef\.current\?\.insertText\(buildSessionMentionText\(sessionMentionTitle\(session\)\)\)/);
+  // The composer owns the insert: the label rule, the caret, the separator, the rest of the text.
+  assert.match(body, /chatInputRef\.current\?\.insertSessionMention\(session\)/);
   assert.ok(!/handleSend|onSend|sendMessage/.test(body), "the menu inserts; the prompt stays the user's to send");
   assert.match(shell, /onInsertMention=\{handleInsertSessionMention\}/);
-  // The composer already owns that insertion: the caret, the separator, the rest of the text.
   const input = await read("./ChatInput.tsx");
-  const insert = input.slice(input.indexOf("insertText(text: string) {"));
+  const mention = input.slice(input.indexOf("insertSessionMention(session: {"));
+  const mentionBody = mention.slice(0, mention.indexOf("\n    },"));
+  assert.match(mentionBody, /const label = sessionMentionTitle\(session\);/);
+  assert.match(mentionBody, /sessionMentionTargetsRef\.current\.set\(label, session\.id\);/, "the label is registered for the send path, as a palette pick registers it");
+  assert.match(mentionBody, /insertTextAtCaret\(buildSessionMentionText\(label\)\);/);
+  // The composer already owns that insertion: the caret, the separator, the rest of the text.
+  const insert = input.slice(input.indexOf("const insertTextAtCaret = useCallback("));
   assert.match(insert, /const start = ta\.selectionStart \?\? ta\.value\.length;/);
   assert.match(insert, /const newVal = before \+ sep \+ text \+ after;/);
+  assert.match(input, /insertText\(text: string\) \{\s*insertTextAtCaret\(text\);/, "the public insertText is the same path");
+  assert.match(input, /insertSessionMention: \(session: \{ id: string; name\?: string; firstMessage\?: string \}\) => void;/);
 });
 
 test("every locale names the menu item", async () => {

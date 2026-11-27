@@ -9,6 +9,7 @@ import {
   buildSessionMentionText, extractAtQuery, extractHashQuery, filterSessionEntries,
   type AtQueryMatch, type HashQueryMatch, type SessionMentionEntry,
 } from "@/lib/file-fuzzy";
+import { sessionMentionTitle } from "@/lib/session-reference";
 import type { SessionInfo } from "@/lib/types";
 
 interface UseSessionMentionPaletteOptions {
@@ -93,8 +94,13 @@ export function useSessionMentionPalette({ cwd, value, setValue, setAtQuery, tex
     const before = value.slice(0, hashQuery.start);
     let after = value.slice(cursor);
     if (hashQuery.quoted && after.startsWith('"')) after = after.slice(1);
-    const sessionDisplayName = entry.name?.trim() || entry.firstMessage.trim() || "Untitled session";
-    const visibleSessionName = sessionDisplayName.replace(/"/g, "'").replace(/\n/g, " ");
+    // One rule for the mention's label (lib/session-reference.ts): the sidebar's row menu inserts
+    // the same words for the same session, and registers the same label -> id target.
+    const visibleSessionName = sessionMentionTitle({
+      ...(entry.name?.trim() ? { name: entry.name } : {}),
+      firstMessage: entry.firstMessage,
+      id: entry.id,
+    });
     sessionMentionTargetsRef.current.set(visibleSessionName, entry.id);
     const text = buildSessionMentionText(visibleSessionName);
     const newValue = before + text + after;

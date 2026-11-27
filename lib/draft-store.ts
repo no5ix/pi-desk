@@ -4,6 +4,13 @@ import {
 } from "./image-attachments";
 import { CHAT_ATTACHMENT_MAX_FILES, splitMessageForComposer } from "./chat-attachments";
 import { getBrowserStorage } from "./browser-storage";
+import {
+  clearDraftAttachments,
+  loadDraftAttachments,
+  removeDraftAttachments,
+  saveDraftAttachments,
+  type DraftAttachments,
+} from "./draft-attachment-store";
 
 export interface ChatDraftImage {
   data: string;
@@ -22,9 +29,9 @@ export interface ChatDraft {
   value: string;
   images: ChatDraftImage[];
   /**
-   * Attached text files. Kept for the life of the page only, like the images: a
-   * file can be 256 KB, which would not fit the localStorage budget the drafts
-   * share, so they never reach storage.
+   * Attached text files. Never in localStorage — a file can be 256 KB, which the budget the
+   * drafts share cannot hold. Within the byte store's caps they are kept there with the images,
+   * so a reload brings them back (lib/draft-attachment-store.ts).
    */
   files?: ChatDraftFile[];
 }
@@ -42,7 +49,9 @@ export function parkedNewSessionDraftKey(cwd: string): string {
 
 // A session's draft text outlives a reload (#1718). Memory stays the source of
 // truth while the page lives; localStorage is a write-through copy, read once
-// per key the first time this page asks for that key. Images are never stored.
+// per key the first time this page asks for that key. Attachments are never in
+// that copy — a pasted screenshot is not a few kilobytes — they go to the byte
+// store and are read back on request (loadStoredDraftAttachments).
 // One storage key per draft, so a write rewrites only the draft that changed.
 const STORAGE_PREFIX = "pi-web:draft:";
 /** Stored drafts kept, the most recently written first. */
@@ -116,6 +125,74 @@ export function registerDraftMirror(key: string, mirrorKey: string): () => void 
 function mirrorKeyFor(key: string): string | null {
   const mirror = draftMirrors.get(key);
   return mirror && mirror !== key ? mirror : null;
+}
+
+/**
+ * The parked key a fresh composer's key belongs to. `new:<draftId>:<cwd>` names the draft of one
+ * composer, and a page owns a new id each time it opens, so the durable copy is the project's
+ * parked draft. The id is the first segment and the cwd the rest, because a Windows cwd carries a
+ * drive letter's colon.
+ */
+function parkedKeyForFreshComposerKey(key: string): string | null {
+  if (!key.startsWith(NEW_SESSION_PREFIX)) return null;
+  const rest = key.slice(NEW_SESSION_PREFIX.length);
+  const separator = rest.indexOf(":");
+  if (separator <= 0 || separator === rest.length - 1) return null;
+  return parkedNewSessionDraftKey(rest.slice(separator + 1));
+}
+
+/**
+ * Where a key's attachments are kept on disk: its durable key. A fresh composer (`new:<id>:<cwd>`)
+ * has none of its own, so its screenshots belong to the project's parked draft it mirrors — the
+ * mirror is registered by the app shell, whose effect runs after this component's, so the parked
+ * key is also derived from the composer's own key. A session's composer has no mirror and keeps
+ * its own. A key with none of these is page-only, and so are its attachments.
+ */
+function durableAttachmentsKey(key: string): string | null {
+  const mirror = mirrorKeyFor(key);
+  if (mirror) return mirror;
+  const parked = parkedKeyForFreshComposerKey(key);
+  if (parked) return parked;
+  return isStoredDraftKey(key) ? key : null;
+}
+
+/**
+ * The attachments a reload brings back. The draft's text is in localStorage and comes with the
+ * first read; the bytes are in IndexedDB and arrive a moment later, so the composer asks for
+ * them and takes them only while its own attachments are still empty — a screenshot pasted while
+ * the store was opening is the user's, not something to overwrite.
+ */
+export async function loadStoredDraftAttachments(key: string): Promise<ChatDraft | null> {
+  const durable = durableAttachmentsKey(key);
+  if (!durable) return null;
+  const stored = await loadDraftAttachments(durable);
+  if (!stored || (stored.images.length === 0 && stored.files.length === 0)) return null;
+  const current = drafts.get(key) ?? readStoredDraft(key) ?? { value: "", images: [] };
+  if (current.images.length > 0 || (current.files?.length ?? 0) > 0) return null;
+  // The durable key owns the prompt too (a fresh composer's parked draft). A composer that has no
+  // text of its own takes it with the attachments: the bytes and the words they belong to are one
+  // draft, and a page that rekeys the parked draft to its own composer key gets the text from
+  // there, so this is the fallback for a page that asks for the bytes first.
+  const durableDraft = durable === key ? current : getDraft(durable);
+  const merged: ChatDraft = {
+    value: current.value || durableDraft?.value || "",
+    images: stored.images,
+    ...(stored.files.length ? { files: stored.files } : {}),
+  };
+  drafts.set(key, cloneDraft(merged));
+  return cloneDraft(merged);
+}
+
+/**
+ * The draft's attachments to the durable store. Called with every draft write — the composer
+ * writes on each keystroke — and the store skips the write when the attachments have not changed,
+ * so typing never carries a screenshot. Best-effort: a refused store loses nothing in memory.
+ */
+function persistDraftAttachments(key: string, draft: ChatDraft): void {
+  const durable = durableAttachmentsKey(key);
+  if (!durable) return;
+  const attachments: DraftAttachments = { images: draft.images, files: draft.files ?? [] };
+  void saveDraftAttachments(durable, attachments);
 }
 
 /** The mirror write, with the guard that matters: a durable key never mirrors anything. */
@@ -261,6 +338,7 @@ export function holdStoredDraft(key: string): () => void {
 /** Removes every stored draft (signing out); drafts in this page's memory stay. */
 export function clearStoredDrafts(): void {
   pendingStores.clear();
+  void clearDraftAttachments();
   const storage = getBrowserStorage();
   if (!storage) return;
   try {
@@ -302,12 +380,15 @@ export function setDraft(key: string, draft: ChatDraft): void {
   else if (previous?.value !== draft.value) scheduleStoredDraft(key);
   const mirror = mirrorKeyFor(key);
   if (mirror) writeMirroredDraft(mirror, draft);
+  persistDraftAttachments(key, draft);
 }
 
 export function clearDraft(key: string): void {
   seededKeys.add(key);
   drafts.delete(key);
   removeStoredDraft(key);
+  const durable = durableAttachmentsKey(key);
+  if (durable) void removeDraftAttachments(durable);
 }
 
 /**
@@ -326,6 +407,9 @@ function clearDraftWithMirror(key: string): void {
   if (!mirror) return;
   drafts.delete(mirror);
   removeStoredDraft(mirror);
+  // The mirror is released when a composer unmounts, and a key whose mirror has gone has no
+  // durable attachment key of its own, so the parked draft's picture is cleared from here.
+  void removeDraftAttachments(mirror);
 }
 
 export function mergeRestoredSubmissionText(submitted: string, current: string): string {

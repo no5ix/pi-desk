@@ -14,6 +14,8 @@ export interface SessionSearchResult {
   blockIndex: number;
   /** A title hit has no message entry to reveal. */
   titleMatch?: boolean;
+  /** A hit in one of the session's own prompts (the sidebar's prompt search). */
+  promptMatch?: boolean;
   before: string;
   match: string;
   after: string;
