@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { SessionInfo, SessionWorkspaceKind } from "@/lib/types";
 import { listSessionFamilies, sideChatTitle } from "@/lib/session-family";
+import { filterSessionsByQuery, normalizeSessionQuery } from "@/lib/session-title-search";
 import {
   buildSessionTree,
   countRunningSubagentRuns,
@@ -1364,15 +1365,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [closeProjectMenu, hideProjectPathHint, projectMenu, showNativeProjectMenu]);
 
   // Phase A: project tree — groups sessions by project root. Sorting is
-  const trimmedSessionQuery = sessionQuery.trim().toLowerCase();
+  // The search is one rule for the whole sidebar (lib/session-title-search.ts): the title the row
+  // shows and the session's prompt, case-insensitively, over every session it lists. Grouping,
+  // folds and order are left to the code below, which sees only what the query kept.
   // Runs of scheduled tasks live under Scheduled, not in the project tree: an
   // hourly task would otherwise bury the sessions the user started themselves.
   const treeSessions = allSessions.filter((session) => session.relation?.kind !== "scheduled");
-  const filteredSessions = trimmedSessionQuery
-    ? treeSessions.filter((session) =>
-        (session.name ?? "").toLowerCase().includes(trimmedSessionQuery)
-        || session.firstMessage.toLowerCase().includes(trimmedSessionQuery))
-    : treeSessions;
+  const trimmedSessionQuery = normalizeSessionQuery(sessionQuery);
+  const filteredSessions = filterSessionsByQuery(treeSessions, sessionQuery);
   const chatSessions = filteredSessions
     .filter((session) => session.workspaceKind === "chat" || isChatCwd(session.cwd))
     .sort((a, b) => b.modified.localeCompare(a.modified));
