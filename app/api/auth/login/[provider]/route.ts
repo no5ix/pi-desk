@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { createModelRuntimeWithExtensions } from "@/lib/model-runtime";
 import { oauthLoginOptions } from "@/lib/oauth-login-options";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -184,7 +185,7 @@ export async function GET(
         invalidateModelsCache();
         send(controller, { type: "success" });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         if (msg !== "Login cancelled") {
           send(controller, { type: "error", message: msg });
         } else {

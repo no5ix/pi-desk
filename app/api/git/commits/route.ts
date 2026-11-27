@@ -8,6 +8,7 @@ import {
 } from "@/lib/file-access";
 import { commitPageLimit, commitPageSkip, findRepositoryRoot, isSafeGitRef, readCommitPage } from "@/lib/git-log";
 import type { GitCommitListResponse } from "@/lib/git-types";
+import { errorMessage } from "@/lib/errors";
 
 // GET /api/git/commits?cwd=&ref=&limit=&skip=
 //   →  { isGitRepository, ref, resolvedRef, repositoryRoot, commits, hasMore }
@@ -80,6 +81,6 @@ export async function GET(request: NextRequest) {
     };
     return NextResponse.json(response);
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

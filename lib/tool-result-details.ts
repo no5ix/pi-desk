@@ -1,3 +1,4 @@
+import { isRecord } from "./is-record.ts";
 // Tool results carry an opaque `details` payload next to their content. Pi-web
 // renders only a handful of its fields, but extensions are free to store
 // anything there — browser-automation tools persist a full DOM outline per
@@ -15,10 +16,6 @@
 const KEPT_DETAIL_KEYS = ["patch", "diff", "preview", "result"] as const;
 
 const SUBAGENT_DETAILS_KIND = "pi-web-subagent";
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /**
  * The subset of a tool result's `details` the UI reads, or `undefined` when

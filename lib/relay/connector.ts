@@ -32,6 +32,7 @@ import {
   type RelayConfig,
   type RelayIdentity,
 } from "./store.ts";
+import { errorMessage } from "../errors.ts";
 
 /**
  * The desktop end of the relay (docs/remote-relay.md). Keeps one outbound
@@ -191,7 +192,7 @@ class PhoneSession {
   receive(bytes: Uint8Array): void {
     this.receiveChain = this.receiveChain
       .then(() => this.closed ? undefined : this.connector.handlePhoneMessage(this, bytes))
-      .catch((error) => this.close(error instanceof Error ? error.message : String(error)));
+      .catch((error) => this.close(errorMessage(error)));
   }
 
   /** Encrypt and send one frame; frames go out in order. */
@@ -278,7 +279,7 @@ export class RelayConnector {
     try {
       socket = new WebSocketImpl(`${this.config.url}/agent`);
     } catch (error) {
-      this.scheduleReconnect(error instanceof Error ? error.message : String(error));
+      this.scheduleReconnect(errorMessage(error));
       return;
     }
     socket.binaryType = "arraybuffer";
@@ -594,7 +595,7 @@ export class RelayConnector {
       await session.send(FrameType.ResponseEnd, streamId);
     } catch (error) {
       if (!stream.controller.signal.aborted) {
-        await session.send(FrameType.ResponseError, streamId, encodeJson({ message: error instanceof Error ? error.message : String(error) }));
+        await session.send(FrameType.ResponseError, streamId, encodeJson({ message: errorMessage(error) }));
       }
     } finally {
       if (session.streams.get(streamId) === stream) session.streams.delete(streamId);

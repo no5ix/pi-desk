@@ -8,6 +8,7 @@ import {
 } from "@/lib/file-access";
 import { findRepositoryRoot, isCommitSha, readCommitDetail } from "@/lib/git-log";
 import type { GitCommitDiffResponse } from "@/lib/git-types";
+import { errorMessage } from "@/lib/errors";
 
 // GET /api/git/commit-diff?cwd=&sha=
 //   →  { isGitRepository, supported, reason?, commit, repositoryRoot, files, patch, patchBytes }
@@ -58,6 +59,6 @@ export async function GET(request: NextRequest) {
     const detail = await readCommitDetail(repositoryRoot, sha);
     return NextResponse.json({ isGitRepository: true, ...detail });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

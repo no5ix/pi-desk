@@ -1,5 +1,6 @@
 import { sendTestPush } from "@/lib/web-push";
 import { readEndpoint } from "@/lib/push-endpoint-body";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,7 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ ok: true });
   } catch (error) {
     return Response.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 502 },
     );
   }

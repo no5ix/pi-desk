@@ -8,6 +8,7 @@ import { getRpcSession, setRpcChatUnlock } from "@/lib/rpc-manager";
 import { openSessionManager, readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import type { SessionEntry } from "@/lib/types";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -54,7 +55,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (!described) return NextResponse.json({ error: "Session not found" }, { status: 404 });
     return NextResponse.json(described.access, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }
 
@@ -89,6 +90,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       data: { sessionId: changed.sessionId, recreated: changed.recreated, unlocked: body.unlocked },
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

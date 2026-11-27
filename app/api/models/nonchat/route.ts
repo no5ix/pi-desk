@@ -1,6 +1,7 @@
 import { createModelRuntimeWithExtensions } from "@/lib/model-runtime";
 import { readCodemodePreference } from "@/lib/codemode-settings";
 import { listNonChatModels, type NonChatModelRuntime } from "@/lib/nonchat-models";
+import { errorMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,6 @@ export async function GET() {
     ]);
     return Response.json({ ...models, codemode });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return Response.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

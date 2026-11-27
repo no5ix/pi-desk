@@ -12,9 +12,11 @@ import {
   validationProblem,
   type ValueGrammar,
 } from "./mcp-import-core";
-import { type EntryOutcome, isRecord, mapServerEntry, mapToolFilters, siblingMcpUrl, sseRefusal } from "./mcp-import-json";
+import { type EntryOutcome, mapServerEntry, mapToolFilters, siblingMcpUrl, sseRefusal } from "./mcp-import-json";
+import { isRecord } from "./is-record.ts";
 import { parseJsonc } from "./jsonc";
 import { literalWord, shellAssignment, type ShellWord, type ShellWordPart } from "./shell-words";
+import { errorMessage } from "./errors.ts";
 
 // Command lines: a server's own command (`npx -y @foo/server`, with
 // `NAME=value` prefixes), and `pi | claude | codex | gemini mcp add …`, plus
@@ -608,7 +610,7 @@ function parseJsonWord(word: ShellWord): { value: Record<string, unknown> } | { 
   try {
     value = parseJsonc(text);
   } catch (error) {
-    return { error: { code: "invalid-json", params: { detail: error instanceof Error ? error.message : String(error) } } };
+    return { error: { code: "invalid-json", params: { detail: errorMessage(error) } } };
   }
   if (!isRecord(value)) return { error: { code: "no-servers-found" } };
   return { value };

@@ -7,6 +7,7 @@ import {
   type ScheduledTask,
   type ScheduledTaskView,
 } from "./types";
+import { errorMessage } from "../errors.ts";
 
 export function toTaskView(task: ScheduledTask, now = new Date()): ScheduledTaskView {
   const runs = listRuns(task.id);
@@ -51,7 +52,7 @@ export function errorResponse(error: unknown): NextResponse {
     }, { status: 400 });
   }
   return NextResponse.json(
-    { error: error instanceof Error ? error.message : String(error) },
+    { error: errorMessage(error) },
     { status: 500 },
   );
 }

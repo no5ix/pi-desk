@@ -50,6 +50,8 @@ import type {
   ToolCallContent,
   ThinkingContent,
 } from "@/lib/types";
+import { isRecord } from "@/lib/is-record";
+import { errorMessage } from "@/lib/errors";
 
 // CJK chars ~1 token each (GLM/DeepSeek/GPT-o200k); other chars ~4 chars/token.
 const CJK_PATTERN = /[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}\uac00-\ud7af]/u;
@@ -1165,7 +1167,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
+          setError(errorMessage(err));
           setLoading(false);
         }
       });
@@ -1817,10 +1819,6 @@ function getResultDiff(result: ToolResultMessage): ResultDiff | null {
   return null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 // Images a tool returned — including ones a codemode script generated with an image model,
 // which pi never writes to disk — so each one can be saved.
 function ResultImages({ images }: { images: ImageContent[] }) {
@@ -2429,6 +2427,7 @@ function getToolPreview(block: ToolCallContent): string {
 }
 
 function BashExecutionView({ message, sessionId }: { message: BashExecutionMessage; sessionId?: string }) {
+  const { t } = useI18n();
   const [fullOutput, setFullOutput] = useState<string | null>(null);
   const [loadingFull, setLoadingFull] = useState(false);
   const [fullError, setFullError] = useState<string | null>(null);
@@ -2519,6 +2518,13 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
             download full output
           </button>
           {fullError && <span style={{ marginLeft: 6, color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>({fullError})</span>}
+        </div>
+      )}
+      {message.truncated && !fullOutputUrl && (
+        <div className="tool-output-truncation-note" role="status">
+          {message.fullOutputError
+            ? t("chat.fullOutputNotSaved", { error: message.fullOutputError })
+            : t("chat.outputTruncated")}
         </div>
       )}
     </div>

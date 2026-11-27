@@ -5,6 +5,7 @@ import { scheduledApi } from "@/lib/scheduled-tasks/client";
 import type { SchedulerOwnerInfo } from "@/lib/scheduled-tasks/client";
 import { openSharedEventStream } from "@/lib/scheduled-tasks/shared-stream";
 import type { ScheduledTaskEvent, ScheduledTaskView } from "@/lib/scheduled-tasks/types";
+import { errorMessage } from "@/lib/errors";
 
 export interface ScheduledTasksState {
   tasks: ScheduledTaskView[];
@@ -64,7 +65,7 @@ export async function refreshScheduledTasks(): Promise<void> {
     });
   } catch (error) {
     if (id !== loadId) return;
-    setState({ loaded: true, error: error instanceof Error ? error.message : String(error) });
+    setState({ loaded: true, error: errorMessage(error) });
   }
 }
 

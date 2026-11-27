@@ -15,10 +15,11 @@ import { useMenuPlacement } from "@/hooks/useMenuPlacement";
 import type { MenuAnchor } from "@/lib/menu-placement";
 import { useScheduledRunNotifications } from "@/hooks/useScheduledRunNotifications";
 import type { ChatScrollPosition } from "@/lib/chat-scroll-position";
-import { clearDraft } from "@/lib/draft-store";
+import { clearDraft, registerDraftMirror } from "@/lib/draft-store";
 import { movePanelTab, orderPanelTabs } from "@/lib/panel-tab-order";
 import { TabBar, type Tab } from "./TabBar";
 import { LazyTerminalPanel as TerminalPanel, preloadTerminalPanel } from "./LazyTerminalPanel";
+import { errorMessage } from "@/lib/errors";
 
 // Heavy, rarely-used surfaces are code-split out of the main bundle. The
 // config modals may never be opened at all; FileViewer drags in markdown +
@@ -57,7 +58,8 @@ import { useNativeContextMenu } from "@/hooks/useNativeContextMenu";
 import { DomContextMenuHost } from "./DomContextMenuHost";
 import { getFileName } from "@/lib/file-paths";
 import { isPathInside } from "@/lib/file-links";
-import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
+import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText, buildSessionMentionText } from "@/lib/file-fuzzy";
+import { sessionMentionTitle } from "@/lib/session-reference";
 import { PRODUCT_NAME } from "@/lib/branding";
 import { isImeComposing } from "@/lib/ime";
 import {
@@ -125,6 +127,7 @@ import { getSessionFamily, isHiddenRelation, sideChatTitle } from "@/lib/session
 import { createSideChat, deleteSideChat } from "@/lib/side-chat-client";
 import { addSideTab, pruneSideTabs, readSideTabs, SIDE_TABS_KEY, writeSideTabs, type SideTab } from "@/lib/side-tabs";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
+import { readJsonOrThrow } from "@/lib/fetch-json";
 import { archivedProjectRootFor, restoreProjectRoot } from "@/lib/archived-projects";
 import { getProjectDisplayName } from "@/lib/project-display";
 import {
@@ -969,6 +972,14 @@ export function AppShell() {
     if (isMobile) { setRightPanelOpen(false); setSidebarOpen(false); }
   }, [isMobile]);
 
+  // "Insert into chat" from a session row's menu: the session's `#<title>` mention at the
+  // composer's caret, in the same shape the composer's own `#` autocomplete writes, so the send
+  // path resolves it (lib/session-reference.ts). Nothing is sent: the prompt stays the user's.
+  const handleInsertSessionMention = useCallback((session: SessionInfo) => {
+    chatInputRef.current?.insertText(buildSessionMentionText(sessionMentionTitle(session)));
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+
   const handleAtMentions = useCallback((relativePaths: string[]) => {
     const mentions = buildFileAtMentionsText(relativePaths);
     if (mentions) chatInputRef.current?.insertText(mentions);
@@ -1105,6 +1116,10 @@ export function AppShell() {
         const draftId = `initial:${requestedCwd}`;
         setNewSessionDraftId(draftId);
         activeNewSessionDraftKeyRef.current = `new:${draftId}:${data.cwd}`;
+        // A New Session draft that outlived a reload comes back to this project's composer: the
+        // parked key is where lib/draft-store.ts keeps it, and the composer takes it over now,
+        // before the composer mounts and reads its own key.
+        rekeyDraft(parkedNewSessionDraftKey(data.cwd), `new:${draftId}:${data.cwd}`);
         setNewSessionCwd(data.cwd);
         if (data.workspaceKind === "chat") {
           setChatWorkspaceCwd(data.cwd);
@@ -1117,7 +1132,7 @@ export function AppShell() {
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setInitialCwdError(error instanceof Error ? error.message : String(error));
+        setInitialCwdError(errorMessage(error));
         setInitialCwdStatus("error");
       });
 
@@ -1755,7 +1770,7 @@ export function AppShell() {
       setAutoNameStatus({ kind: "success" });
       autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 1800);
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
+      const detail = errorMessage(error);
       const authenticationFailed = /\b401\b|authentication[_ ](?:error|fails?)|invalid[_ ]api[_ ]?key/i.test(detail);
       const message = authenticationFailed
         ? translate("title.authError")
@@ -2135,6 +2150,14 @@ export function AppShell() {
   useLayoutEffect(() => {
     activeNewSessionDraftKeyRef.current = newSessionDraftKey;
   }, [newSessionDraftKey]);
+  // A New Session draft crosses a reload through the project's parked key (lib/draft-store.ts):
+  // the composer's own key carries a per-composer id that a reload mints anew, so the pair is
+  // mirrored while this composer is the page's fresh one. Creating the session rekeys the parked
+  // draft into the session, and the project's stored copy goes with it.
+  useLayoutEffect(() => {
+    if (!newSessionDraftKey || !effectiveNewSessionCwd) return;
+    return registerDraftMirror(newSessionDraftKey, parkedNewSessionDraftKey(effectiveNewSessionCwd));
+  }, [newSessionDraftKey, effectiveNewSessionCwd]);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   const projectTrustCwd = isChatWorkspaceActive
     ? null
@@ -2179,8 +2202,7 @@ export function AppShell() {
       signal: controller.signal,
     })
       .then(async (response) => {
-        const data = await response.json() as ProjectTrustStatus & { error?: string };
-        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+        const data = await readJsonOrThrow<ProjectTrustStatus>(response);
         setProjectTrust(data);
       })
       .catch((error) => {
@@ -2211,7 +2233,7 @@ export function AppShell() {
       setModelsRefreshKey((key) => key + 1);
       setSessionKey((key) => key + 1);
     } catch (error) {
-      setProjectTrustError({ error: error instanceof Error ? error.message : String(error) });
+      setProjectTrustError({ error: errorMessage(error) });
     } finally {
       setProjectTrustBusy(false);
     }
@@ -2396,6 +2418,7 @@ export function AppShell() {
         onOpenTerminal={handleOpenTerminal}
         onBackgroundTaskDone={handleBackgroundTaskDone}
         onRunningSessionIdsChange={handleRunningSessionIdsChange}
+        onInsertMention={handleInsertSessionMention}
         onSessionsChange={handleSessionsChange}
         onOpenTasks={handleOpenTasks}
         tasksOpen={tasksOpen}

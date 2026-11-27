@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 import { findBuiltinMatch, type CatalogProvider } from "@/lib/builtin-model-match";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,6 @@ export async function GET(req: Request) {
     const catalog = builtinProviders() as unknown as readonly CatalogProvider[];
     return NextResponse.json(findBuiltinMatch(catalog, baseUrl, modelId));
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

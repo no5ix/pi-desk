@@ -13,6 +13,7 @@ import {
 } from "@/lib/bounded-form-data";
 import { isDesktopApiRequestAllowed } from "@/lib/desktop-api-auth";
 import { MAX_DESKTOP_SAVE_BYTES } from "@/lib/desktop-api";
+import { errorMessage } from "@/lib/errors";
 
 export const runtime = "nodejs";
 
@@ -41,7 +42,7 @@ function assertWritableDest(destPath: string): string | null {
       }
     }
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    return errorMessage(error);
   }
   return null;
 }
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "File is too large to save" }, { status: 413 });
     }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 500 },
     );
   }

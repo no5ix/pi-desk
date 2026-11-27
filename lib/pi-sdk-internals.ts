@@ -1,3 +1,5 @@
+import { errorMessage } from "./errors.ts";
+import { isRecord } from "./is-record.ts";
 import type { Provider } from "@earendil-works/pi-ai";
 import {
   createMcpExtension,
@@ -247,14 +249,6 @@ export interface PiSdkInternals {
 export type PiSdkInternalsResult = ({ ok: true } & PiSdkInternals) | { ok: false; reason: string };
 
 type LoadedModules = Record<SdkModuleName, Record<string, unknown>>;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 function sameRealPath(a: string, b: string): boolean {
   return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;

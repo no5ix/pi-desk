@@ -18,6 +18,7 @@ import type {
   AppUpdateProjectId,
   AppUpdatesResponse,
 } from "@/lib/app-update-types";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -178,7 +179,7 @@ async function performUpdateCheck(forceRefresh = false): Promise<AppUpdatesRespo
     } else {
       errors.push({
         project: project.id,
-        message: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        message: errorMessage(result.reason),
       });
     }
   }
@@ -212,7 +213,7 @@ export async function GET(request: Request) {
     return Response.json(await globalThis.__piWebAppUpdateCheck);
   } catch (error) {
     return Response.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 500 },
     );
   }

@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useState, useCallback, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type { SessionInfo, SessionWorkspaceKind } from "@/lib/types";
 import { listSessionFamilies, sideChatTitle } from "@/lib/session-family";
+import { filterSessionsByQuery, normalizeSessionQuery } from "@/lib/session-title-search";
 import {
   buildSessionTree,
   countRunningSubagentRuns,
@@ -85,6 +86,7 @@ import { useMenuPlacement } from "@/hooks/useMenuPlacement";
 import { usePopTransition, useShownWhileClosing } from "@/hooks/usePopTransition";
 import { SideChatPlusIcon } from "./SideChatIcon";
 import { scrollMovesAnchor, type MenuAnchor } from "@/lib/menu-placement";
+import { errorMessage } from "@/lib/errors";
 
 function sessionListUrl(summary: boolean, force: boolean): string {
   if (summary) return "/api/sessions?summary=1";
@@ -113,6 +115,8 @@ interface Props {
    *  Lets the app play a cross-workspace completion tone. */
   onBackgroundTaskDone?: () => void;
   onRunningSessionIdsChange?: (ids: Set<string>) => void;
+  /** "Insert into chat": a session row's `#<title>` mention goes into the composer (the app owns it). */
+  onInsertMention?: (session: SessionInfo) => void;
   onSessionsChange?: (sessions: SessionInfo[]) => void;
   onProjectsChange?: (projectRoots: string[]) => void;
   headerControls?: ReactNode;
@@ -154,6 +158,8 @@ const FILE_MANAGER_ERROR_KEYS: Record<string, string> = {
 };
 
 const SESSION_DETAILS_HYDRATION_DELAY_MS = 750;
+// How long the running stream leaves an unknown list version to the first summary (a cold disk).
+const INITIAL_SUMMARY_WAIT_MS = 15_000;
 
 function loadUnreadSessionIds(): Set<string> {
   if (typeof window === "undefined") return new Set();
@@ -301,7 +307,7 @@ function readIdSetPref(key: Parameters<typeof getPrefJson>[0]): Set<string> {
     : new Set();
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onOpenArtifacts, artifactsOpen = false, onOpenTasks, tasksOpen = false }: Props) {
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onInsertMention, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false, onOpenArtifacts, artifactsOpen = false, onOpenTasks, tasksOpen = false }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
@@ -354,6 +360,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // decide whether the list needs reloading, and no render reads it.
   const sessionListVersionRef = useRef<number | null>(null);
   const sessionLoadIdRef = useRef(0);
+  // While the first summary list is in flight, the running stream must not take the
+  // unknown list version for an invalidation and supersede it with a full scan.
+  // Bounded: a summary request that stalls (a dropped phone connection) must not
+  // keep the stream from loading the list forever.
+  const initialSummaryStartedAtRef = useRef<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
@@ -520,7 +531,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         await revealItemInDirNative(root);
         setProjectMenu(null);
       } catch (e) {
-        setProjectRevealError(e instanceof Error ? e.message : String(e));
+        setProjectRevealError(errorMessage(e));
       }
       return;
     }
@@ -538,7 +549,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       const key = FILE_MANAGER_ERROR_KEYS[data.error ?? ""];
       setProjectRevealError(key ? t(key) : (data.error ?? `HTTP ${res.status}`));
     } catch (e) {
-      setProjectRevealError(e instanceof Error ? e.message : String(e));
+      setProjectRevealError(errorMessage(e));
     }
   }, [t]);
   const fileManagerPlatform = isTauriDesktop()
@@ -588,7 +599,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (listScrollHideTimerRef.current) clearTimeout(listScrollHideTimerRef.current);
   }, []);
 
-  const loadSessions = useCallback(async (showLoading = false, force = false, summary = false) => {
+  const loadSessions = useCallback(async (showLoading = false, force = false, summary = false): Promise<boolean> => {
     const loadId = ++sessionLoadIdRef.current;
     try {
       if (showLoading) setLoading(true);
@@ -603,10 +614,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         completionNotificationSuppressedSessionIds?: string[];
         chatWorkspaceCwd?: string | null;
       };
-      if (loadId !== sessionLoadIdRef.current) return;
+      if (loadId !== sessionLoadIdRef.current) return false;
       sessionListVersionRef.current = data.sessionListVersion;
       setAllSessions(data.sessions);
       setChatWorkspaceCwd(data.chatWorkspaceCwd ?? null);
+      // A summary row whose file changed since the last scan is the only one
+      // without its details; the others were checked against their file's stat.
+      const needsDetails = data.sessions.some((session) => session.detailsPending === true);
       // Treat the fetched running set as an initial fallback only. Once the
       // live SSE stream is connected, a slow session-list fetch cannot overwrite it.
       if (!sseAuthoritativeRef.current) {
@@ -625,8 +639,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         return next.size === prev.size ? prev : next;
       });
       setError(null);
+      return needsDetails;
     } catch (e) {
       if (loadId === sessionLoadIdRef.current) setError(String(e));
+      return false;
     } finally {
       if (loadId === sessionLoadIdRef.current) setLoading(false);
     }
@@ -648,9 +664,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (isFirst) {
       // Header/stat metadata is enough to select the URL session and paint the
       // sidebar. Hydrate exact counts, names, and first messages once the
-      // selected chat has had a chance to start loading.
-      void loadSessions(true, false, true).then(() => {
-        if (!active) return;
+      // selected chat has had a chance to start loading, and only when the
+      // summary has rows a full scan still owes.
+      initialSummaryStartedAtRef.current = Date.now();
+      void loadSessions(true, false, true).then((needsDetails) => {
+        initialSummaryStartedAtRef.current = null;
+        if (!active || !needsDetails) return;
         detailsHydrationTimerRef.current = setTimeout(() => {
           detailsHydrationTimerRef.current = null;
           if (active) void loadSessions(false, true);
@@ -724,6 +743,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       }
       if (typeof data.sessionListVersion === "number"
         && data.sessionListVersion !== sessionListVersionRef.current) {
+        // The first summary may still be in flight (a cold disk): its version is
+        // unknown, not stale, so a full scan must not supersede it.
+        const summaryStartedAt = initialSummaryStartedAtRef.current;
+        const summaryInFlight = summaryStartedAt !== null && Date.now() - summaryStartedAt < INITIAL_SUMMARY_WAIT_MS;
+        if (summaryInFlight) return;
         // Another window/process changed the list; reuse the invalidated
         // server cache instead of forcing a fresh scan.
         await loadSessions();
@@ -1120,7 +1144,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       });
       void loadSessions(false, true);
     } catch (e) {
-      appNotify.error({ message: t("sidebar.continueInProjectFailed", { error: e instanceof Error ? e.message : String(e) }) });
+      appNotify.error({ message: t("sidebar.continueInProjectFailed", { error: errorMessage(e) }) });
     }
   }, [activateProject, handleSelectSessionFromList, loadSessions, projectRootFor, t]);
 
@@ -1237,7 +1261,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         }
         onSessionDeleted?.(id);
       } catch (e) {
-        failure = t("sidebar.deleteFailed", { error: e instanceof Error ? e.message : String(e) });
+        failure = t("sidebar.deleteFailed", { error: errorMessage(e) });
         break;
       }
     }
@@ -1271,7 +1295,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       appNotify.success({ message: t("sidebar.forkedToast", { title: forked.name || forked.firstMessage || forked.id }) });
       void loadSessions();
     } catch (error) {
-      appNotify.error({ message: t("sidebar.forkFailed", { error: error instanceof Error ? error.message : String(error) }) });
+      appNotify.error({ message: t("sidebar.forkFailed", { error: errorMessage(error) }) });
     } finally {
       forkingIdsRef.current.delete(source.id);
     }
@@ -1343,15 +1367,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [closeProjectMenu, hideProjectPathHint, projectMenu, showNativeProjectMenu]);
 
   // Phase A: project tree — groups sessions by project root. Sorting is
-  const trimmedSessionQuery = sessionQuery.trim().toLowerCase();
+  // The search is one rule for the whole sidebar (lib/session-title-search.ts): the title the row
+  // shows and the session's prompt, case-insensitively, over every session it lists. Grouping,
+  // folds and order are left to the code below, which sees only what the query kept.
   // Runs of scheduled tasks live under Scheduled, not in the project tree: an
   // hourly task would otherwise bury the sessions the user started themselves.
   const treeSessions = allSessions.filter((session) => session.relation?.kind !== "scheduled");
-  const filteredSessions = trimmedSessionQuery
-    ? treeSessions.filter((session) =>
-        (session.name ?? "").toLowerCase().includes(trimmedSessionQuery)
-        || session.firstMessage.toLowerCase().includes(trimmedSessionQuery))
-    : treeSessions;
+  const trimmedSessionQuery = normalizeSessionQuery(sessionQuery);
+  const filteredSessions = filterSessionsByQuery(treeSessions, sessionQuery);
   const chatSessions = filteredSessions
     .filter((session) => session.workspaceKind === "chat" || isChatCwd(session.cwd))
     .sort((a, b) => b.modified.localeCompare(a.modified));
@@ -1681,6 +1704,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 sessionsById={sessionsById}
                 key={node.session.id}
                 node={node}
+                onInsertMention={onInsertMention}
                 familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
                 pinnedInk={pinnedSessions.has(node.session.id)}
                 selectedSessionId={selectedSessionId}
@@ -1733,6 +1757,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                     <SessionFamilyItem
                       sessionsById={sessionsById}
                       node={node}
+                      onInsertMention={onInsertMention}
                       familySessions={nodeFamily ? [nodeFamily.root, ...nodeFamily.subagents] : undefined}
                       pinnedInk={pinnedSessions.has(node.session.id)}
                       selectedSessionId={selectedSessionId}
@@ -1770,6 +1795,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             sessionsById={sessionsById}
             key={family.root.id}
             node={node}
+            onInsertMention={onInsertMention}
             familySessions={familySessions}
             pinnedInk={pinnedSessions.has(family.root.id)}
             subtitle={projectName}
@@ -2415,6 +2441,7 @@ function SessionFamilyItem({
   onRenamed,
   onSessionDeleted,
   onContinueInProject,
+  onInsertMention,
   chatActions,
   archiveActions,
   onFork,
@@ -2444,6 +2471,8 @@ function SessionFamilyItem({
   onSessionDeleted?: (id: string) => void;
   /** Chats only: copy the conversation into a project. */
   onContinueInProject?: (session: SessionInfo) => void;
+  /** The row menu's "Insert into chat": the session's `#` mention goes into the composer. */
+  onInsertMention?: (session: SessionInfo) => void;
   /** Chats only: pin and archive, which the row menu offers beside the other actions. */
   chatActions?: ChatRowActions;
   /** Project sessions: archive or restore this session (#200). */
@@ -2502,6 +2531,7 @@ function SessionFamilyItem({
           onRenamed={onRenamed}
           onDeleted={(id) => onSessionDeleted?.(id)}
           onContinueInProject={depth === 0 ? onContinueInProject : undefined}
+          onInsertMention={depth === 0 ? onInsertMention : undefined}
           chatActions={depth === 0 ? chatActions : undefined}
           archiveActions={depth === 0 ? archiveActions : undefined}
           onFork={depth === 0 ? onFork : undefined}
@@ -2523,6 +2553,7 @@ function SessionFamilyItem({
               key={child.session.id}
               node={child}
               depth={depth + 1}
+              onInsertMention={onInsertMention}
               selectedSessionId={selectedSessionId}
               runningSessionIds={runningSessionIds}
               unreadSessionIds={unreadSessionIds}
@@ -2655,6 +2686,7 @@ function SessionItem({
   onRenamed,
   onDeleted,
   onContinueInProject,
+  onInsertMention,
   chatActions,
   archiveActions,
   onFork,
@@ -2679,6 +2711,8 @@ function SessionItem({
   onRenamed?: () => void;
   onDeleted?: (id: string) => void;
   onContinueInProject?: (session: SessionInfo) => void;
+  /** "Insert into chat": `#<session title>` at the composer's caret, never sent. */
+  onInsertMention?: (session: SessionInfo) => void;
   chatActions?: ChatRowActions;
   archiveActions?: SessionArchiveActions;
   onFork?: (session: SessionInfo) => void;
@@ -2789,7 +2823,7 @@ function SessionItem({
       }
       onRenamed?.();
     } catch (e) {
-      reportActionError(t("sidebar.renameFailed", { error: e instanceof Error ? e.message : String(e) }));
+      reportActionError(t("sidebar.renameFailed", { error: errorMessage(e) }));
     }
   }, [renameValue, session.id, session.name, onRenamed, reportActionError, t, title]);
 
@@ -2811,7 +2845,7 @@ function SessionItem({
       onDeleted?.(session.id);
     } catch (e) {
       setDeleting(false);
-      const message = t("sidebar.deleteFailed", { error: e instanceof Error ? e.message : String(e) });
+      const message = t("sidebar.deleteFailed", { error: errorMessage(e) });
       if (confirmDelete || folderDeleteOpen) setDeleteError(message);
       else reportActionError(message);
     }
@@ -2841,6 +2875,9 @@ function SessionItem({
       ...(onContinueInProject
         ? [{ label: t("sidebar.continueInProject"), onSelect: () => onContinueInProject(session) }]
         : []),
+      ...(onInsertMention
+        ? [{ label: t("sidebar.insertIntoChat"), onSelect: () => onInsertMention(session) }]
+        : []),
       ...(archive
         ? [{ label: t(archive.archived ? "sidebar.unarchiveChat" : "sidebar.archiveChat"), onSelect: archive.onToggleArchive }]
         : []),
@@ -2857,7 +2894,7 @@ function SessionItem({
     ], at);
     setMenuOpen(false);
     return shown;
-  }, [archive, beginDeleteConfirmation, onContinueInProject, onFork, pin, session, locale, startRename, t]);
+  }, [archive, beginDeleteConfirmation, onContinueInProject, onInsertMention, onFork, pin, session, locale, startRename, t]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const handled = dispatchSessionRowContextMenu({
@@ -3268,6 +3305,25 @@ function SessionItem({
                     <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
                   </svg>
                   {t("sidebar.continueInProject")}
+                </button>
+              )}
+              {onInsertMention && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); onInsertMention(session); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", height: 30, padding: "0 8px",
+                    background: "transparent", border: 0, borderRadius: "var(--radius-md)",
+                    color: "var(--text)", cursor: "pointer",
+                    fontSize: "var(--fs-body)", textAlign: "left",
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M4 4h16v12H5.5L4 17.5Z" />
+                    <path d="M9 10h6" />
+                  </svg>
+                  {t("sidebar.insertIntoChat")}
                 </button>
               )}
               {archive && (

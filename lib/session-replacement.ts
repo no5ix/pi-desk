@@ -1,3 +1,4 @@
+import { isThinkingLevel } from "./thinking-levels.ts";
 // Fork-owned: forking a session file, and ctx.newSession / ctx.fork /
 // ctx.switchSession from an extension command. The pi CLI replaces its single
 // session in place (AgentSessionRuntime); Pi Web hosts many, so the target gets
@@ -43,7 +44,6 @@ export type ExtensionCommandContextActionsLike = {
 export const UNSAVED_SESSION_FORK_ERROR =
   "This session has not been saved yet. Send a message before forking it.";
 
-const THINKING_LEVEL_NAMES = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 /**
  * Copies the active path up to `targetLeafId` into a new session file, or creates an empty
@@ -152,7 +152,7 @@ export function createSessionReplacementActions<S extends StartedSession>(host: 
     const { session, realSessionId } = await host.startSession(`__ext__${randomUUID()}`, "", host.cwd, {
       ...(toolNames !== undefined ? { toolNames } : {}),
       ...(model ? { initialModel: { provider: model.provider, modelId: model.id }, allowInitialModelFallback: true } : {}),
-      ...(thinkingLevel && THINKING_LEVEL_NAMES.has(thinkingLevel as ThinkingLevel)
+      ...(isThinkingLevel(thinkingLevel)
         ? { thinkingLevel: thinkingLevel as ThinkingLevel }
         : {}),
       ...(options?.parentSession ? { parentSession: options.parentSession } : {}),

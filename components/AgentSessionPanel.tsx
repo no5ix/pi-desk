@@ -7,6 +7,7 @@ import type { SessionInfo, SubagentSessionStatus } from "@/lib/types";
 import { isImeComposing } from "@/lib/ime";
 import { AgentRunningIcon } from "./TopbarSubagents";
 import { SideChatIcon, SideChatPlusIcon } from "./SideChatIcon";
+import { errorMessage } from "@/lib/errors";
 
 interface Props {
   rootSession: SessionInfo;
@@ -297,7 +298,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
     try {
       setSideChatError(await onNewSideChat());
     } catch (error) {
-      setSideChatError(error instanceof Error ? error.message : String(error));
+      setSideChatError(errorMessage(error));
     } finally {
       setNewSideChatPending(false);
     }
@@ -309,7 +310,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
     try {
       setSideChatError(await onDeleteSideChat(sessionId));
     } catch (error) {
-      setSideChatError(error instanceof Error ? error.message : String(error));
+      setSideChatError(errorMessage(error));
     }
   };
   const [query, setQuery] = useState("");
@@ -349,7 +350,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
       }
       return true;
     } catch (e) {
-      setControlError(e instanceof Error ? e.message : String(e));
+      setControlError(errorMessage(e));
       return false;
     } finally {
       setActionPendingId(null);

@@ -14,6 +14,7 @@ import {
   ConfigNotice,
   ConfigSectionTitle,
 } from "./SettingsUi";
+import { errorMessage } from "@/lib/errors";
 
 type NonChatModelsResponse = NonChatModels & { codemode: CodemodePreference };
 
@@ -55,7 +56,7 @@ export function NonChatModelsDetail({ onOpenMcp }: { onOpenMcp?: () => void }) {
         return body;
       })
       .then((body) => { if (!cancelled) setData(body); })
-      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
+      .catch((e: unknown) => { if (!cancelled) setError(errorMessage(e)); });
     return () => { cancelled = true; };
   }, []);
 

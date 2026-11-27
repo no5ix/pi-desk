@@ -1,4 +1,5 @@
 import type { ScheduledRun, ScheduledTaskView } from "./types";
+import { errorMessage } from "../errors.ts";
 
 /** Browser-side wrappers for /api/scheduled-tasks. Import nothing server-only here. */
 
@@ -100,5 +101,5 @@ export function apiErrorText(
   t: (key: string, params?: Record<string, string | number>) => string,
 ): string {
   if (error instanceof ScheduledApiError && error.key) return t(error.key, error.params);
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }

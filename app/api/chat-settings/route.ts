@@ -7,6 +7,7 @@ import {
   validateChatSettingsPatch,
   writeChatSettings,
 } from "@/lib/chat-settings";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export async function PUT(req: Request) {
   try {
     patch = validateChatSettingsPatch(await req.json());
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 400 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 400 });
   }
   try {
     const saved = writeChatSettings(patch);
@@ -33,6 +34,6 @@ export async function PUT(req: Request) {
     invalidateModelsCache();
     return NextResponse.json({ ...saved, instructionsMaxChars: CHAT_INSTRUCTIONS_MAX_CHARS });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

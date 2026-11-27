@@ -11,7 +11,14 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { CacheWarmingInfo } from "./types";
 import type { UsageCostBreakdownEntry } from "./usage-breakdown";
 
-export type { PiAgentMessage };
+export interface BashResultLike {
+  output: string;
+  exitCode?: number;
+  cancelled?: boolean;
+  truncated?: boolean;
+  fullOutputPath?: string;
+  fullOutputError?: string;
+}
 
 export interface ContextUsage {
   percent: number | null;
@@ -225,6 +232,7 @@ export interface AgentSessionLike {
   setFollowUpMode?(mode: "all" | "one-at-a-time"): void;
   /** pi ≥ 0.86: thinking levels the current model actually supports. */
   getAvailableThinkingLevels?(): string[];
+  waitForIdle(): Promise<void>;
   executeBash(command: string, onChunk?: (chunk: string) => void, options?: {
     excludeFromContext?: boolean;
     operations?: BashOperations;

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PREVIEW_RUNTIME_PATH, type PreviewRuntime } from "./html-preview";
+import { errorMessage } from "./errors.ts";
 
 // Loads public/preview-runtime/ once per page. The page fetches it (same
 // origin) because the sandboxed preview frames cannot: Chromium blocks their
@@ -52,7 +53,7 @@ export function usePreviewRuntime(enabled: boolean): PreviewRuntimeState {
     loadPreviewRuntime().then(
       (runtime) => { if (!cancelled) setState({ status: "ready", runtime }); },
       (error: unknown) => {
-        if (!cancelled) setState({ status: "error", error: error instanceof Error ? error.message : String(error) });
+        if (!cancelled) setState({ status: "error", error: errorMessage(error) });
       },
     );
     return () => {

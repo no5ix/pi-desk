@@ -12,6 +12,7 @@ import { createInterface } from "node:readline";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { attachmentAwareTitle } from "./chat-attachments";
+import { isRecord } from "./is-record.ts";
 import { userImageDisplayText, userMessageImageCount } from "./user-image-display";
 
 export interface ScannedSessionInfo {
@@ -36,6 +37,9 @@ interface Fingerprint {
 }
 
 const SUMMARY_HEADER_MAX_BYTES = 64 * 1024;
+/** The header is the first line, so a summary reads this much before the rest of the window. */
+const SUMMARY_HEADER_READ_BYTES = 4 * 1024;
+const NEWLINE = Buffer.from("\n");
 
 interface IndexEntry {
 	fp: Fingerprint;
@@ -43,10 +47,6 @@ interface IndexEntry {
 }
 
 type RawEntry = Record<string, unknown>;
-
-function isRecord(value: unknown): value is RawEntry {
-	return value !== null && typeof value === "object" && !Array.isArray(value);
-}
 
 // 3: derived first-message previews omit SDK image hints. Invalidate old cached
 // metadata, not session files or user-assigned session_info names.
@@ -68,20 +68,42 @@ function parseLine(line: string): RawEntry | null {
 	}
 }
 
-/** Read only the first physical line needed to identify a session file. */
+/**
+ * The first parseable line of `chunk`: the header (or null when that line is no
+ * header), or undefined when no line decided it and the last one may be cut off.
+ * Decoded a line at a time, so a cut never splits a multibyte character.
+ */
+function firstSummaryEntry(chunk: Buffer, complete: boolean): RawEntry | null | undefined {
+	for (let start = 0; start < chunk.length;) {
+		const end = chunk.indexOf(NEWLINE, start);
+		if (end === -1 && !complete) return undefined;
+		const line = chunk.subarray(start, end === -1 ? chunk.length : end).toString("utf8").replace(/\r$/, "");
+		const entry = parseLine(line);
+		if (entry) return entry.type === "session" ? entry : null;
+		if (end === -1) break;
+		start = end + 1;
+	}
+	return complete ? null : undefined;
+}
+
+/**
+ * Read only the first physical line needed to identify a session file: 4 KB
+ * first, the rest of the 64 KB window only when the header runs past it. A
+ * cold summary of 2000 files read 128 MB of windows for one line each.
+ * Sync on purpose: the summary scan walks the files in one synchronous pass.
+ */
 function readSessionHeaderSummary(filePath: string): RawEntry | null {
 	const fd = openSync(filePath, "r");
 	try {
-		const buffer = Buffer.allocUnsafe(SUMMARY_HEADER_MAX_BYTES);
-		const bytesRead = readSync(fd, buffer, 0, buffer.length, 0);
+		const head = Buffer.allocUnsafe(SUMMARY_HEADER_READ_BYTES);
+		const bytesRead = readSync(fd, head, 0, head.length, 0);
 		if (bytesRead <= 0) return null;
-		const source = buffer.subarray(0, bytesRead).toString("utf8");
-		for (const line of source.split("\n")) {
-			const entry = parseLine(line.replace(/\r$/, ""));
-			if (!entry) continue;
-			return entry.type === "session" ? entry : null;
-		}
-		return null;
+		const first = firstSummaryEntry(head.subarray(0, bytesRead), bytesRead < head.length);
+		if (first !== undefined) return first;
+		const rest = Buffer.allocUnsafe(SUMMARY_HEADER_MAX_BYTES - bytesRead);
+		const more = readSync(fd, rest, 0, rest.length, bytesRead);
+		const window = Buffer.concat([head.subarray(0, bytesRead), rest.subarray(0, more)]);
+		return firstSummaryEntry(window, true) ?? null;
 	} catch {
 		return null;
 	} finally {

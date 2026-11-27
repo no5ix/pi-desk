@@ -2,8 +2,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
-import { existsSync, realpathSync, statSync, writeFileSync } from "fs";
-import { resolve } from "path";
+import { existsSync, statSync, writeFileSync } from "fs";
 import { isDeepStrictEqual } from "util";
 import { validateAgentImages } from "./image-attachments";
 import { userImageDisplayText, userMessageImageCount } from "./user-image-display";
@@ -31,9 +30,11 @@ import {
 } from "./agent-run-liveness";
 import { cacheSessionPath, getLatestModelChange, getLatestResponseModel, getSessionListVersion, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { computeLiveSessionTotalActiveMs } from "./session-timing";
+import { realPathOrResolved } from "./paths";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { announceAttention, announceRunEnd } from "./task-completion-server";
 import type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
+import { errorMessage } from "./errors.ts";
 export type { AgentRunOutcome, AgentTaskSnapshot } from "./types";
 import { isVerboseLogging } from "../bin/pi-web-options.js";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
@@ -71,6 +72,7 @@ import {
   readSubagentRun,
   readSubagentSessionResources,
   settleOrphanedSubagentStatus,
+  configuredPackageRoots,
   subagentExtensionLoaderOptions,
   subagentToolOptions,
   SUBAGENT_CONTROL_TOOL_NAMES,
@@ -99,7 +101,7 @@ import { mcpPromptPreparation, type McpCommandCandidate } from "./mcp-command";
 import { createReadOnlyMcpPolicyExtension, createSubagentMcpPolicyExtension } from "./mcp-read-only-policy";
 import { createSubagentSkillsBinding } from "./subagent-skills";
 import { isNestedToolExecutionEvent } from "./agent-event-wire";
-import { collectLiveAssistantNotices, readShowCacheMissNotices, withSessionPrices } from "./transcript-notices-server";
+import { collectLiveAssistantNotices, readNoticeSettings, shownNotices, withSessionPrices } from "./transcript-notices-server";
 import {
   appendClearedSessionToolSelection,
   appendSessionToolSelection,
@@ -131,6 +133,7 @@ import {
 } from "./chat-workspace-policy";
 import { ComposerQueue } from "./composer-queue";
 import type { PendingComposerMessage } from "./composer-queue-types";
+import { isThinkingLevel } from "./thinking-levels.ts";
 
 // ============================================================================
 // Types
@@ -456,7 +459,6 @@ function restrictToChatTools(session: AgentSessionLike, names: readonly string[]
 
 // A tool that hands work to another agent. A chat loads no extension that registers one.
 const CHAT_DELEGATION_TOOL_NAMES: ReadonlySet<string> = new Set(SUBAGENT_CONTROL_TOOL_NAMES);
-const THINKING_LEVEL_NAMES = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 // The SDK's DEFAULT_THINKING_LEVEL (dist/core/defaults.js), which it does not export.
 const SDK_DEFAULT_THINKING_LEVEL: ThinkingLevel = "medium";
 
@@ -543,6 +545,8 @@ export class AgentSessionWrapper {
   private agentRunSettled = false;
   // Whether the last run ended because it was stopped (pi 1.1's `agent_settled.aborted`), not finished.
   private lastRunAborted = false;
+  private readonly manualCompactionWork = new Set<Promise<void>>();
+  private readonly compactWithoutContinuation: AgentSessionLike["compact"] | undefined;
   private promptAdmissionTail: Promise<void> = Promise.resolve();
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
@@ -647,13 +651,64 @@ export class AgentSessionWrapper {
       changed: (items, pendingVersion) => this.emit({ type: "composer_queue_update", items, pendingVersion }),
       failed: error => this.emit({
         type: "prompt_error",
-        errorMessage: error instanceof Error ? error.message : String(error),
+        errorMessage: errorMessage(error),
       }),
     });
     this.chatOnlyExtensionModel = options.chatOnlyExtensionModel;
     this.sideChat = options.sideChat === true;
     this.livenessNoticeMs = options.liveness?.noticeMs ?? RUN_STALL_NOTICE_MS;
     this.livenessAbortMs = options.liveness?.abortMs ?? RUN_STALL_ABORT_MS;
+
+    // An extension's ctx.compact() calls the public SDK method, and its onComplete may
+    // start the next turn. Observe the call itself: agent_settled and the interrupted
+    // prompt can finish before compaction_start, so neither can tell us whether the
+    // abort is terminal. The wrapper's own `compact` command has no completion callback
+    // and keeps the untracked method: prompts parked meanwhile report their own prompt_done.
+    const compact = inner.compact?.bind(inner);
+    this.compactWithoutContinuation = compact;
+    if (compact) inner.compact = (...args) => this.trackManualCompactionWork(compact(...args));
+    const prompt = inner.prompt?.bind(inner);
+    if (prompt) inner.prompt = (...args) => {
+      // A completion callback can submit a prompt whose async input/auth preflight
+      // has not set isStreaming yet. Follow that promise as well as active runs.
+      const duringCompaction = this.manualCompactionWork.size > 0 && !inner.isCompacting;
+      const operation = prompt(...args);
+      return duringCompaction ? this.trackManualCompactionWork(operation) : operation;
+    };
+  }
+
+  private trackManualCompactionWork<T>(operation: Promise<T>): Promise<T> {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.manualCompactionWork.add(promise);
+    const finish = () => {
+      this.manualCompactionWork.delete(promise);
+      resolve();
+      // The fork has no extension-requested shutdown; the run's completion notice is what
+      // a compaction that resumes a turn has to re-arm (lib/rpc-manager.ts, agent_settled).
+      this.notifyAgentRunComplete();
+    };
+    // Attach after the caller: the SDK's await in ctx.compact() must get to run
+    // onComplete (or onError) before we decide whether its session will continue.
+    queueMicrotask(() => { void operation.then(finish, finish); });
+    return operation;
+  }
+
+  waitForCompactionContinuation(): Promise<void> | undefined {
+    if (this.manualCompactionWork.size === 0) return;
+    return this.drainManualCompactionWork();
+  }
+
+  private async drainManualCompactionWork(): Promise<void> {
+    for (;;) {
+      if (this.manualCompactionWork.size > 0) {
+        await Promise.all(this.manualCompactionWork);
+      } else if (this.inner.isStreaming) {
+        // sendCustomMessage({ triggerTurn: true }) starts a run without prompt().
+        await this.inner.waitForIdle();
+      } else {
+        return;
+      }
+    }
   }
 
   get sessionId(): string {
@@ -697,6 +752,7 @@ export class AgentSessionWrapper {
       || this.inner.isCompacting
       || this.inner.isBashRunning
       || sdkIdle === false
+      || this.manualCompactionWork.size > 0
     );
   }
 
@@ -1070,8 +1126,8 @@ export class AgentSessionWrapper {
   }
 
   /**
-   * An assistant `message_end` with the notices pi's TUI shows under
-   * `showCacheMissNotices` (#1265), as `transcriptNotices` beside the message.
+   * An assistant `message_end` with the notices pi's TUI shows under its
+   * `notices.*` settings (#1265), as `transcriptNotices` beside the message.
    * The message itself is left alone: pi writes that object to the file.
    */
   private withTranscriptNotices(event: AgentEvent): AgentEvent {
@@ -1079,14 +1135,16 @@ export class AgentSessionWrapper {
     if (this.listeners.size === 0 || message?.role !== "assistant") return event;
     try {
       const manager = this.inner.sessionManager;
-      if (!readShowCacheMissNotices(manager.getCwd())) return event;
+      const settings = readNoticeSettings(manager.getCwd());
+      // The only two kinds a reply carries.
+      if (!settings.cacheMisses && !settings.reasoningDrops) return event;
       const entries = manager.getEntries() as unknown as SessionEntry[];
-      const notices = collectLiveAssistantNotices(
+      const notices = shownNotices(collectLiveAssistantNotices(
         entries,
         manager.getBranch() as unknown as SessionEntry[],
         message,
         withSessionPrices(entries, this.inner.modelRuntime),
-      );
+      ), settings);
       return notices.length > 0 ? { ...event, transcriptNotices: notices } : event;
     } catch (error) {
       console.warn("[pi-web] transcript notices failed:", error instanceof Error ? error.message : error);
@@ -1340,6 +1398,8 @@ export class AgentSessionWrapper {
           release();
         },
       });
+      const continuation = this.waitForCompactionContinuation();
+      if (continuation) await continuation;
     } catch (error) {
       failure = error;
     }
@@ -1355,7 +1415,7 @@ export class AgentSessionWrapper {
       if (disposition === undefined) this.parkDuringCompaction(entry);
       this.emit({
         type: "prompt_error",
-        errorMessage: failure instanceof Error ? failure.message : String(failure),
+        errorMessage: errorMessage(failure),
       });
     }
     // The client of a plain prompt waits for prompt_done; the delivery that started
@@ -1932,10 +1992,12 @@ export class AgentSessionWrapper {
             throw error;
           }
 
-          void prompt.then(() => {
+          void prompt.then(async () => {
             // Compatibility fallback if a future SDK resolves without invoking
             // the internal callback. This waits for the run, but never acks early.
             acceptPreflight();
+            const continuation = this.waitForCompactionContinuation();
+            if (continuation) await continuation;
             finishPrompt();
             if (!streamingBehavior) this.emit(this.promptDoneEvent());
           }, (error) => {
@@ -1966,7 +2028,7 @@ export class AgentSessionWrapper {
             if (preflightAccepted) {
               this.emit({
                 type: "prompt_error",
-                errorMessage: error instanceof Error ? error.message : String(error),
+                errorMessage: errorMessage(error),
               });
               if (!streamingBehavior) this.emit(this.promptDoneEvent());
             }
@@ -2206,7 +2268,7 @@ export class AgentSessionWrapper {
       case "compact": {
         try {
           return await this.withFinalIdleReset(() =>
-            this.inner.compact(command.customInstructions as string | undefined)
+            (this.compactWithoutContinuation ?? this.inner.compact.bind(this.inner))(command.customInstructions as string | undefined)
           );
         } finally {
           invalidateSessionListCache();
@@ -2681,7 +2743,7 @@ export class AgentSessionWrapper {
       type: "extension_error",
       extensionPath: `extension-widget:${key}`,
       event: "setWidget",
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     });
   }
 
@@ -2826,7 +2888,7 @@ export class AgentSessionWrapper {
     try {
       lines = custom.component.render(custom.width);
     } catch (error) {
-      lines = [`Extension custom UI render failed: ${error instanceof Error ? error.message : String(error)}`];
+      lines = [`Extension custom UI render failed: ${errorMessage(error)}`];
     }
     const event = {
       type: "extension_ui_request",
@@ -2871,7 +2933,7 @@ export class AgentSessionWrapper {
         type: "extension_error",
         extensionPath: `custom-ui:${id}`,
         event: "custom_ui_input",
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
     }
   }
@@ -2946,7 +3008,7 @@ export class AgentSessionWrapper {
             type: "extension_error",
             extensionPath: `custom-ui:${id}`,
             event: "custom_ui",
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage(error),
           });
           finish(undefined as T);
         });
@@ -3430,15 +3492,6 @@ function closingRpcSessionWait(sessionId: string): Promise<void> | null {
   return wait.done ? null : wait.promise;
 }
 
-function normalizeRpcCwd(cwd: string): string {
-  const resolvedCwd = resolve(cwd);
-  try {
-    return realpathSync(resolvedCwd);
-  } catch {
-    return resolvedCwd;
-  }
-}
-
 function getStartingSessionCwds(): Map<string, number> {
   if (!globalThis.__piStartingSessionCwds) globalThis.__piStartingSessionCwds = new Map();
   return globalThis.__piStartingSessionCwds;
@@ -3446,7 +3499,7 @@ function getStartingSessionCwds(): Map<string, number> {
 
 function trackStartingSession(cwd: string): () => void {
   const startingCwds = getStartingSessionCwds();
-  const key = normalizeRpcCwd(cwd);
+  const key = realPathOrResolved(cwd);
   startingCwds.set(key, (startingCwds.get(key) ?? 0) + 1);
   return () => {
     const remaining = (startingCwds.get(key) ?? 1) - 1;
@@ -3457,6 +3510,16 @@ function trackStartingSession(cwd: string): () => void {
 
 export function getRpcSession(sessionId: string): AgentSessionWrapper | undefined {
   return getRegistry().get(sessionId);
+}
+
+/**
+ * The session's wrapper while it is alive, for reads that should come from its in-memory
+ * `SessionManager` rather than the file. A closing wrapper is left out: its replacement may
+ * already be reading the file.
+ */
+export function getLiveRpcSession(sessionId: string): AgentSessionWrapper | undefined {
+  const rpc = getRpcSession(sessionId);
+  return rpc?.isAlive() ? rpc : undefined;
 }
 
 /**
@@ -3575,8 +3638,8 @@ export async function setRpcSessionTools(
     ...(toolNames !== undefined ? { toolNames } : {}),
     ...(model ? { initialModel: { provider: model.provider, modelId: model.id } } : {}),
     allowInitialModelFallback: true,
-    ...(currentThinkingLevel && THINKING_LEVEL_NAMES.has(currentThinkingLevel as ThinkingLevel)
-      ? { thinkingLevel: currentThinkingLevel as ThinkingLevel }
+    ...(isThinkingLevel(currentThinkingLevel)
+      ? { thinkingLevel: currentThinkingLevel }
       : {}),
   });
   return { session: started.session, sessionId: started.realSessionId, recreated: true };
@@ -3735,17 +3798,17 @@ export function getRpcSessionInfos(options: { includeTransient?: boolean } = {})
 }
 
 export function hasBusyRpcSessionForCwd(cwd: string): boolean {
-  const targetCwd = normalizeRpcCwd(cwd);
+  const targetCwd = realPathOrResolved(cwd);
   if (getStartingSessionCwds().has(targetCwd)) return true;
   return Array.from(getRegistry().values()).some(
-    (session) => normalizeRpcCwd(session.cwd) === targetCwd && session.isRunning(),
+    (session) => realPathOrResolved(session.cwd) === targetCwd && session.isRunning(),
   );
 }
 
 export async function destroyRpcSessionsForCwd(cwd: string): Promise<number> {
-  const targetCwd = normalizeRpcCwd(cwd);
+  const targetCwd = realPathOrResolved(cwd);
   const sessions = Array.from(getRegistry().values()).filter(
-    (session) => normalizeRpcCwd(session.cwd) === targetCwd,
+    (session) => realPathOrResolved(session.cwd) === targetCwd,
   );
   await Promise.all(sessions.map((session) => session.shutdown()));
   return sessions.length;
@@ -4183,7 +4246,7 @@ export async function startRpcSession(
       settingsManager,
       resourceLoaderOptions: subagentResources
         ? {
-            ...subagentExtensionLoaderOptions(subagentResources),
+            ...subagentExtensionLoaderOptions(subagentResources, configuredPackageRoots(sessionCwd, agentDir, settingsManager)),
             ...skillsBinding!.loaderOptions,
             extensionFactories: subagentExtensionFactories,
             noPromptTemplates: true,

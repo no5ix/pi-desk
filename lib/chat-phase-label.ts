@@ -1,6 +1,7 @@
 import type { AgentPhase } from "@/hooks/useAgentSession";
 import type { AgentRunPhase } from "@/lib/agent-run-liveness";
 import { formatTurnDurationCompact } from "@/lib/turn-duration";
+import type { Translate } from "./i18n/types";
 
 /**
  * The phase a state read (`GET /api/sessions/[id]/state`, `GET /api/agent/[id]`)
@@ -14,9 +15,6 @@ export function runStatePhase(prev: AgentPhase, isStreaming: boolean): AgentPhas
   if (prev?.kind === "running_tools" && prev.tools.length > 0) return prev;
   return isStreaming ? { kind: "waiting_model" } : { kind: "running_command" };
 }
-
-/** The i18n translate function shape this module needs. */
-export type Translate = (key: string, params?: Record<string, string | number>) => string;
 
 /**
  * The status line shown while the agent is working.

@@ -34,6 +34,8 @@ function setup(fetchImpl, openLoad = null) {
   const delays = [];
   const context = {
     Error, DOMException,
+    // useAgentSession reports failures through the shared helper (lib/errors.ts).
+    errorMessage: (error) => (error instanceof Error ? error.message : String(error)),
     controller: new AbortController(),
     newSessionCwd: "/project", session: null, isNew: true,
     sessionIdRef: { current: null }, thinkingLevelOverrideRef: { current: null },

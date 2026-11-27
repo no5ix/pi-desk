@@ -29,6 +29,7 @@ import {
   filterArtifacts,
   scopeOptions,
 } from "./artifacts-helpers";
+import { errorMessage } from "@/lib/errors";
 
 interface Props {
   /** How many sessions are running; the list reloads when one finishes. */
@@ -191,7 +192,7 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setListError(error instanceof Error ? error.message : String(error));
+        setListError(errorMessage(error));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
@@ -237,7 +238,7 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setDetail({ key: selectedKey, status: "error", error: error instanceof Error ? error.message : String(error) });
+        setDetail({ key: selectedKey, status: "error", error: errorMessage(error) });
       });
     return () => controller.abort();
     // `currentArtifact` is read for its ids, which `selectedKey` covers; `revision` refetches.
@@ -265,7 +266,7 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
     if (!isTauriDesktop()) return;
     event.preventDefault();
     setRowMenuError(null);
-    const fail = (error: unknown) => setRowMenuError(t("artifacts.page.menuFailed", { error: error instanceof Error ? error.message : String(error) }));
+    const fail = (error: unknown) => setRowMenuError(t("artifacts.page.menuFailed", { error: errorMessage(error) }));
     const conversation = item.conversation;
     const entries: NativeMenuEntry[] = [{
       label: t("artifacts.page.menuOpenConversation"),
@@ -314,7 +315,7 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
       setList((current) => (current ? mark(current) : current));
       setSelected((current) => (current && artifactKey(current) === key ? { ...current, favorite } : current));
     } catch (error) {
-      setFavoriteError(t("artifacts.page.favoriteFailed", { error: error instanceof Error ? error.message : String(error) }));
+      setFavoriteError(t("artifacts.page.favoriteFailed", { error: errorMessage(error) }));
     } finally {
       setFavoriteBusy(false);
     }
@@ -334,7 +335,7 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
         request,
       }));
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
+      setActionError(errorMessage(error));
     } finally {
       setContinueBusy(false);
     }

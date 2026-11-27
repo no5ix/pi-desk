@@ -1,5 +1,6 @@
 import type { AgentEventLike } from "./agent-event-wire";
 import type { DebugEventConnectionSnapshot, DebugStreamCloseReason } from "./debug-types";
+import { errorMessage } from "./errors.ts";
 
 export interface AgentEventSourceLike {
   readonly readyState: number;
@@ -155,7 +156,7 @@ export class AgentEventConnection {
     try {
       source = this.options.createSource(sessionId);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       this.lastError = { reason: "error", message, at: Date.now() };
       throw new AgentEventConnectionError("closed", message);
     }

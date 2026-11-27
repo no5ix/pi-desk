@@ -55,6 +55,7 @@ import {
 } from "./ProjectContextMenu";
 import { BranchIcon, ProjectFolderIcon, WorktreeIcon } from "./GitIcons";
 import { DiffView } from "./FileViewer";
+import { errorMessage } from "@/lib/errors";
 
 /** A page of history, the same number the server caps a page to. */
 const COMMIT_PAGE_SIZE = 40;
@@ -91,7 +92,7 @@ interface DiffRead {
 
 /** git's first line, which is the part that says what went wrong. */
 function gitMessage(error: unknown): string {
-  const text = error instanceof Error ? error.message : String(error);
+  const text = errorMessage(error);
   const line = text.split(/\r?\n/).find((candidate) => candidate.trim()) ?? text;
   return line.length > 200 ? `${line.slice(0, 200)}…` : line;
 }

@@ -7,6 +7,7 @@
 import { useCallback, useRef, useState, type MutableRefObject } from "react";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { TranslationParams } from "@/lib/i18n/types";
+import { errorMessage } from "@/lib/errors";
 
 // The hook stays mounted across session switches, so a summarized branch switch
 // still running for the previous session must not hold sends or switches in the next.
@@ -53,7 +54,7 @@ export function useBranchSummary({ sessionId, sessionIdRef, loadSession, addNoti
       }
     } catch (e) {
       if (sessionIdRef.current === sid) {
-        addNotice({ type: "error", message: t("chat.branchSummaryFailed", { error: e instanceof Error ? e.message : String(e) }) });
+        addNotice({ type: "error", message: t("chat.branchSummaryFailed", { error: errorMessage(e) }) });
       }
     } finally {
       branchSummarySessionIdRef.current = null;

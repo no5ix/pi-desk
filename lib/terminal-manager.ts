@@ -5,6 +5,7 @@ import { samePath } from "./paths";
 import { resolveTerminalShell } from "./terminal-settings";
 import { registerCachePruner } from "./cache-registry.ts";
 import type { DebugServerGlobal } from "./debug-types";
+import { errorMessage } from "./errors.ts";
 
 export type TerminalEvent =
   | { type: "output"; data: string; offset: number; reset?: boolean }
@@ -97,7 +98,7 @@ export function createTerminal(cwd: string, cols: number, rows: number, id: stri
       "The binary may be missing or incompatible. In the pi-web installation directory " +
       "(the npx cache directory when using npx), run: npm rebuild node-pty --build-from-source --ignore-scripts=false --foreground-scripts. " +
       "On Debian/Ubuntu, install build tools first: sudo apt-get install -y python3 build-essential. " +
-      `Then restart pi-web. Original error: ${error instanceof Error ? error.message : String(error)}`,
+      `Then restart pi-web. Original error: ${errorMessage(error)}`,
       { cause: error },
     );
   }

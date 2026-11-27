@@ -18,6 +18,7 @@
  * (macOS TCC denies Desktop, Documents and Downloads) and grants file access. Nothing is
  * adopted on the dialog's own authority.
  */
+import { errorMessage } from "./errors.ts";
 
 export type ProjectDirectoryChoice =
   | { status: "picked"; cwd: string }
@@ -44,6 +45,6 @@ export async function chooseProjectDirectory(cwd: string): Promise<ProjectDirect
     }
     return { status: "picked", cwd: data.cwd ?? trimmed };
   } catch (error: unknown) {
-    return { status: "unavailable", reason: error instanceof Error ? error.message : String(error) };
+    return { status: "unavailable", reason: errorMessage(error) };
   }
 }

@@ -41,6 +41,8 @@ import { hasParentDirectorySegment } from "@/lib/path-security";
 import { registerFileWatch } from "@/lib/file-watch-registry";
 import { createFileWatchStream, MAX_WATCHED_FILES_PER_STREAM, type FileWatchEntry } from "@/lib/file-watch-stream";
 import { pageStreamLabel, registerPageStream } from "@/lib/page-stream-registry";
+import { contentDisposition } from "@/lib/content-disposition";
+import { errorMessage } from "@/lib/errors";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -323,7 +325,7 @@ export async function POST(
           try {
             fs.unlinkSync(destination);
           } catch (error) {
-            errors.push({ name: source.fileName, error: error instanceof Error ? error.message : String(error) });
+            errors.push({ name: source.fileName, error: errorMessage(error) });
             continue;
           }
         }
@@ -331,7 +333,7 @@ export async function POST(
           fs.copyFileSync(source.sourcePath, destination);
           uploaded.push(source.fileName);
         } catch (error) {
-          errors.push({ name: source.fileName, error: error instanceof Error ? error.message : String(error) });
+          errors.push({ name: source.fileName, error: errorMessage(error) });
         }
       }
 
@@ -402,7 +404,7 @@ export async function POST(
       try {
         bytes = Buffer.from(await file.arrayBuffer());
       } catch (error) {
-        errors.push({ name: file.name, error: error instanceof Error ? error.message : String(error) });
+        errors.push({ name: file.name, error: errorMessage(error) });
         continue;
       }
 
@@ -414,7 +416,7 @@ export async function POST(
         }
         uploaded.push(file.name);
       } catch (error) {
-        errors.push({ name: file.name, error: error instanceof Error ? error.message : String(error) });
+        errors.push({ name: file.name, error: errorMessage(error) });
       }
     }
 
@@ -426,7 +428,7 @@ export async function POST(
     if (error instanceof RequestBodyTooLargeError) {
       return NextResponse.json({ error: "Import request is too large" }, { status: 413 });
     }
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }
 
@@ -471,19 +473,6 @@ function createFileBodyStream(filePath: string, range?: { start: number; end: nu
   });
 }
 
-function encodeHeaderValue(value: string): string {
-  return encodeURIComponent(value).replace(/[!'()*]/g, (ch) =>
-    `%${ch.charCodeAt(0).toString(16).toUpperCase()}`
-  );
-}
-
-function getContentDisposition(filePath: string, asDownload = false): string {
-  const disposition = asDownload ? "attachment" : "inline";
-  const fileName = path.basename(filePath);
-  const fallback = fileName.replace(/[^\x20-\x7E]|["\\;\r\n]/g, "_") || "download";
-  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(fileName)}`;
-}
-
 function getServeMime(filePath: string): string {
   // SERVE_EXT_TO_MIME is what lets an HTML preview render and load its own
   // stylesheets; a merge once dropped it and every HTML file came back as
@@ -501,7 +490,7 @@ function streamFile(filePath: string, stat: fs.Stats, contentType: string, range
     "Content-Type": contentType,
     "Cache-Control": "no-cache",
     "Accept-Ranges": "bytes",
-    "Content-Disposition": getContentDisposition(filePath, asDownload),
+    "Content-Disposition": contentDisposition(asDownload ? "attachment" : "inline", path.basename(filePath), "download"),
     "X-Content-Type-Options": "nosniff",
     ...extraHeaders,
   };

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ensureChatWorkspace } from "@/lib/chat-workspace";
 import { allowFileRoot } from "@/lib/file-access";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function GET() {
     );
   } catch (error) {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: errorMessage(error) },
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }

@@ -8,6 +8,7 @@ import type { FileOutputDetail, FileOutputOpInfo, FileOutputSummary } from "@/li
 import type { FileOutputRole } from "@/lib/file-output-role";
 import { ArtifactView } from "../ArtifactView";
 import { FileViewer } from "../FileViewer";
+import { errorMessage } from "@/lib/errors";
 
 interface Props {
   item: FileOutputSummary;
@@ -64,7 +65,7 @@ export function FileOutputView({ item, onOpenInConversation, onRoleChange }: Pro
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setState({ status: "error", error: error instanceof Error ? error.message : String(error) });
+        setState({ status: "error", error: errorMessage(error) });
       });
     return () => controller.abort();
   }, [item.path, revision]);
@@ -107,7 +108,7 @@ export function FileOutputView({ item, onOpenInConversation, onRoleChange }: Pro
       setState({ status: "ready", detail: data });
       onRoleChange();
     } catch (error) {
-      setActionError(t("artifacts.page.roleFailed", { error: error instanceof Error ? error.message : String(error) }));
+      setActionError(t("artifacts.page.roleFailed", { error: errorMessage(error) }));
     } finally {
       setRoleBusy(false);
     }

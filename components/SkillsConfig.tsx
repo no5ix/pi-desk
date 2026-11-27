@@ -48,10 +48,11 @@ import {
 import { isImeComposing } from "@/lib/ime";
 import { itemsToSwitch, projectTrustReloadKey } from "./settings-ui-helpers";
 import { MarkdownBody } from "./MarkdownBody";
+import type { Translate } from "@/lib/i18n/types";
+import { readJsonOrThrow } from "@/lib/fetch-json";
+import { errorMessage } from "@/lib/errors";
 
 type SkillScope = "global" | "project" | "path";
-type Translate = ReturnType<typeof useI18n>["t"];
-
 /**
  * A skill's state in the project that is open, for the "This project" row.
  *
@@ -227,14 +228,12 @@ function SkillDetail({
         const params = new URLSearchParams({ cwd, filePath: skill.filePath });
         if (documentPath !== rootDocument) params.set("document", documentPath);
         const response = await fetch(`/api/skills/content?${params}`, { signal: controller.signal });
-        const data = (await response.json()) as Partial<SkillContentResponse> & { error?: string };
-        if (!response.ok || data.error || typeof data.content !== "string") {
-          throw new Error(data.error ?? `HTTP ${response.status}`);
-        }
+        const data = await readJsonOrThrow<Partial<SkillContentResponse>>(response);
+        if (typeof data.content !== "string") throw new Error(`HTTP ${response.status}`);
         setInstructions(skillInstructionsBody(data.content));
       } catch (error) {
         if (controller.signal.aborted) return;
-        setInstructionsError(error instanceof Error ? error.message : String(error));
+        setInstructionsError(errorMessage(error));
       }
     };
     void load();
@@ -745,9 +744,8 @@ export function SkillsConfig({
     setError(null);
     try {
       const res = await fetch(`/api/skills?cwd=${encodeURIComponent(cwd)}`);
-      const d = (await res.json()) as Partial<SkillsResponse> & { error?: string };
+      const d = await readJsonOrThrow<Partial<SkillsResponse>>(res);
       if (!isCurrent()) return [];
-      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
       const list = d.skills ?? [];
       setSkills(list);
       setProjectResourcesLoaded(d.projectResourcesLoaded ?? true);
@@ -758,7 +756,7 @@ export function SkillsConfig({
       });
       return list;
     } catch (e) {
-      if (isCurrent()) setError(e instanceof Error ? e.message : String(e));
+      if (isCurrent()) setError(errorMessage(e));
       return [];
     } finally {
       if (isCurrent()) setLoading(false);
@@ -819,7 +817,7 @@ export function SkillsConfig({
       const copy = list.find((entry) => sourceLabel(entry) === "project" && entry.name === skill.name);
       if (copy) setSelected(copy.filePath);
     } catch (e) {
-      setProjectError(e instanceof Error ? e.message : String(e));
+      setProjectError(errorMessage(e));
     } finally {
       setProjectBusy(null);
     }
@@ -845,7 +843,7 @@ export function SkillsConfig({
       const globalEntry = list.find((entry) => sourceLabel(entry) !== "project" && entry.name === skill.name);
       if (globalEntry) setSelected(globalEntry.filePath);
     } catch (e) {
-      setProjectError(e instanceof Error ? e.message : String(e));
+      setProjectError(errorMessage(e));
     } finally {
       setProjectBusy(null);
     }
@@ -886,11 +884,7 @@ export function SkillsConfig({
           scope: skill?.install?.scope,
         }),
       });
-      const data = (await res.json()) as {
-        updates?: SkillUpdateResult[];
-        error?: string;
-      };
-      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const data = await readJsonOrThrow<{ updates?: SkillUpdateResult[] }>(res);
       setUpdateStatuses((current) => {
         const next = { ...current };
         for (const update of data.updates ?? []) {
@@ -899,7 +893,7 @@ export function SkillsConfig({
         return next;
       });
     } catch (e) {
-      setUpdateError(e instanceof Error ? e.message : String(e));
+      setUpdateError(errorMessage(e));
     } finally {
       setCheckingUpdates((current) => {
         const next = new Set(current);
@@ -946,7 +940,7 @@ export function SkillsConfig({
         },
       }));
     } catch (e) {
-      setUpdateError(e instanceof Error ? e.message : String(e));
+      setUpdateError(errorMessage(e));
     } finally {
       setUpdatingSkill(null);
     }
@@ -1007,8 +1001,8 @@ export function SkillsConfig({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filePaths, disableModelInvocation }),
       });
-      const d = (await res.json()) as { results?: SkillToggleResult[]; error?: string };
-      if (!res.ok || d.error || !d.results) throw new Error(d.error ?? `HTTP ${res.status}`);
+      const d = await readJsonOrThrow<{ results?: SkillToggleResult[] }>(res);
+      if (!d.results) throw new Error(`HTTP ${res.status}`);
       const results = d.results;
       setSkills((prev) => applySkillToggleResults(prev, results, disableModelInvocation));
       const failures = results.filter((result) => result.error);
@@ -1023,7 +1017,7 @@ export function SkillsConfig({
         });
       }
     } catch (e) {
-      setGroupStatus({ group, error: e instanceof Error ? e.message : String(e) });
+      setGroupStatus({ group, error: errorMessage(e) });
     } finally {
       setBulkGroup(null);
       setToggling((current) => {

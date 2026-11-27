@@ -15,6 +15,7 @@ import {
   type WorktreeRemoval,
 } from "@/components/ProjectContextMenu";
 import { invalidateProjectBranch } from "@/hooks/useProjectBranch";
+import { errorMessage } from "@/lib/errors";
 
 interface ProjectWorktreeCallbacks {
   /** A fetch landed; merge the fresh branch lists into the menu. */
@@ -33,7 +34,7 @@ interface ProjectWorktreeCallbacks {
   onBranchInWorktree?: (cwd: string, branch: string, path: string) => void;
 }
 
-const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const message = (error: unknown) => errorMessage(error);
 
 export function useProjectWorktreeActions({
   onBranchesFetched, onWorktreeCreated, onWorktreeRemoved, onBranchSwitched, onBranchInWorktree,

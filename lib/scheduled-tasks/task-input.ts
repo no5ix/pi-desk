@@ -1,3 +1,5 @@
+import { isRecord } from "../is-record.ts";
+import { isThinkingLevel } from "../thinking-levels.ts";
 import { randomUUID } from "crypto";
 import { existsSync, statSync } from "fs";
 import { isAbsolute } from "path";
@@ -14,15 +16,10 @@ import {
   type TaskSchedule,
 } from "./types";
 
-const THINKING_LEVELS = new Set<string>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 const WRITE_PRESETS = new Set<string>(["default", "full"]);
 
 function fail(message: string, key?: string, params?: Record<string, string | number>): never {
   throw new ScheduledTaskValidationError(message, key, params);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseName(value: unknown, otherNames: readonly string[]): string {
@@ -80,7 +77,7 @@ function parseModel(value: unknown): ScheduledTask["model"] {
 
 function parseThinking(value: unknown): ScheduledThinkingLevel | undefined {
   if (value === null) return undefined;
-  if (typeof value !== "string" || !THINKING_LEVELS.has(value)) fail("invalid thinkingLevel");
+  if (!isThinkingLevel(value)) fail("invalid thinkingLevel");
   return value as ScheduledThinkingLevel;
 }
 

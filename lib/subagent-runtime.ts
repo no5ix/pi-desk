@@ -25,6 +25,7 @@ import {
   SUBAGENT_RESULT_TYPE,
   selectSubagentExtensionTools,
   settleOrphanedSubagentStatus,
+  configuredPackageRoots,
   subagentExtensionLoaderOptions,
   subagentToolOptions,
   withSubagentExtensionTools,
@@ -48,6 +49,8 @@ import { SubagentQueue } from "./subagent-queue";
 import { addWorktree, removeWorktree } from "./worktree";
 import { randomUUID } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
+import { isThinkingLevel } from "./thinking-levels.ts";
+import { errorMessage } from "./errors.ts";
 
 interface HostSession {
   readonly inner: AgentSessionLike;
@@ -56,6 +59,7 @@ interface HostSession {
   isAlive(): boolean;
   isRunning(): boolean;
   waitUntilReady(): Promise<void>;
+  waitForCompactionContinuation?(): Promise<void> | undefined;
   /**
    * Connect the session's MCP servers before a run prompts the SDK session directly, past the
    * wrapper's `send()`; false when Stop or `signal` ended the wait and the run must not start.
@@ -118,9 +122,7 @@ declare global {
 }
 const SUBAGENT_CONTEXT_LIMIT = 50_000;
 const PARENT_IDLE_POLL_MS = 200;
-/** The custom type a background report reaches its parent as, and the card the chat renders for it. */
 const PARENT_NOTIFICATION_TYPE = "pi-web:subagent-notification";
-const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 const TURN_LIMIT_INSTRUCTION = "You have reached your turn limit. Wrap up immediately and provide your final answer now.";
 
@@ -232,6 +234,67 @@ function settledRunText(
 ): string | undefined {
   const collected = stored.entryBase === undefined ? undefined : runResultText(inner.sessionManager, stored.entryBase);
   return collected || inner.getLastAssistantText()?.trim();
+}
+
+type TurnLimitedSession = Awaited<ReturnType<typeof createAgentSessionFromServices>>["session"];
+
+/**
+ * Holds a run to the profile's `max_turns` through the SDK's awaited `finishTurn` hook: one
+ * wrap-up turn when the SDK would otherwise continue, then `end`. Every run, a `resume`
+ * included, counts from zero. Returns undefined with no limit; `restore()` undoes the hooks.
+ */
+function installTurnLimiter(
+  inner: TurnLimitedSession,
+  stored: StoredSubagentExecution,
+  turnLimit: number | undefined,
+): { error(): string | undefined; restore(): void } | undefined {
+  if (!turnLimit) return undefined;
+  let turnCount = 0;
+  let maxTurnsReached = false;
+  let undelivered: string[] = [];
+  const previousFinishTurn = inner.agent.finishTurn;
+  const previousSteeringMode = inner.agent.steeringMode;
+  // Finalized events retain the SDK's terminate hint; tool-result messages do not.
+  const terminatingTools = new Set<string>();
+  const unsubscribeTools = inner.subscribe((event) => {
+    if (event.type === "tool_execution_end" && event.result?.terminate === true) {
+      terminatingTools.add(event.toolCallId);
+    }
+  });
+  inner.agent.finishTurn = async (turn, signal) => {
+    const decision = (await previousFinishTurn?.(turn, signal)) ?? undefined;
+    const toolsContinue = turn.toolResults.some((message) => !terminatingTools.has(message.toolCallId));
+    terminatingTools.clear();
+    turnCount += 1;
+    if (turnCount >= turnLimit) stored.turnsUsed = true;
+    if (signal?.aborted || decision?.action === "end" ||
+      turn.message.stopReason === "error" || turn.message.stopReason === "aborted") return decision;
+    const needsAnotherTurn = toolsContinue || decision?.action === "continue" || inner.agent.hasQueuedMessages();
+    if (!needsAnotherTurn || turnCount < turnLimit) return decision;
+    if (turnCount >= turnLimit + 1) {
+      maxTurnsReached = true;
+      stored.turnLimitReached = true;
+      // AgentSession starts another run for anything still queued, past an `end`
+      // decision, so the limit holds only once the queues are empty.
+      const { steering, followUp } = inner.clearQueue();
+      undelivered = [...undelivered, ...steering, ...followUp];
+      return { action: "end" };
+    }
+    // The awaited SDK boundary delivers the instruction before the wrap-up request.
+    // In one-at-a-time mode a steer queued earlier would take the wrap-up turn and
+    // leave the instruction for later, so that turn takes everything queued.
+    inner.agent.steeringMode = "all";
+    await inner.steer(TURN_LIMIT_INSTRUCTION);
+    return decision;
+  };
+  return {
+    error: () => (maxTurnsReached ? turnLimitError(turnLimit, undelivered) : undefined),
+    restore: () => {
+      inner.agent.finishTurn = previousFinishTurn;
+      inner.agent.steeringMode = previousSteeringMode;
+      unsubscribeTools();
+    },
+  };
 }
 
 /**
@@ -434,7 +497,10 @@ export function getLiveSubagentStatus(sessionId: string): SubagentRunInfo["statu
 
 function findSubagentModel(runtime: ModelRuntime, reference: string) {
   const slash = reference.indexOf("/");
-  if (slash > 0) return runtime.getModel(reference.slice(0, slash), reference.slice(slash + 1));
+  // `provider/modelId` is a hint, as in pi's `--model`: the whole text may also be one provider's
+  // own id that contains a slash (`zai/glm-5` on a gateway, OpenRouter's `anthropic/...` ids).
+  const named = slash > 0 ? runtime.getModel(reference.slice(0, slash), reference.slice(slash + 1)) : undefined;
+  if (named) return named;
   const matches = runtime.getModels().filter((model) => model.id === reference);
   if (matches.length > 1) throw new Error(`Subagent model is ambiguous; use provider/modelId: ${reference}`);
   return matches[0];
@@ -445,14 +511,14 @@ function findSubagentModel(runtime: ModelRuntime, reference: string) {
  * followed by `:<thinking level>`. The whole reference is tried first, so an id that itself
  * contains a colon (`qwen3:8b`) still matches; a suffix that is no thinking level never matches.
  */
-function parseSubagentModel(runtime: ModelRuntime, value: string | undefined) {
+export function parseSubagentModel(runtime: ModelRuntime, value: string | undefined) {
   if (!value?.trim()) return undefined;
   const requested = value.trim();
   const exact = findSubagentModel(runtime, requested);
   if (exact) return { model: exact };
   const colon = requested.lastIndexOf(":");
-  const level = requested.slice(colon + 1) as ThinkingLevel;
-  if (colon > 0 && THINKING_LEVELS.has(level)) {
+  const level = requested.slice(colon + 1);
+  if (colon > 0 && isThinkingLevel(level)) {
     const model = findSubagentModel(runtime, requested.slice(0, colon));
     if (model) return { model, thinkingLevel: level };
   }
@@ -513,7 +579,7 @@ async function cleanupWorktree(
     await removeWorktree(parentCwd, worktree.path);
     return undefined;
   } catch (error) {
-    return `Worktree retained at ${worktree.path}: ${error instanceof Error ? error.message : String(error)}`;
+    return `Worktree retained at ${worktree.path}: ${errorMessage(error)}`;
   }
 }
 
@@ -633,7 +699,7 @@ export function createSubagentController(
         modelRuntime: parentModelRuntime,
         settingsManager,
         resourceLoaderOptions: {
-          ...subagentExtensionLoaderOptions({ ...profile, mcp: mcpEnabled }),
+          ...subagentExtensionLoaderOptions({ ...profile, mcp: mcpEnabled }, configuredPackageRoots(childCwd, agentDir, settingsManager)),
           ...skillsBinding.loaderOptions,
           ...(extensionFactories.length > 0 ? { extensionFactories } : {}),
           noPromptTemplates: true,
@@ -716,7 +782,7 @@ export function createSubagentController(
         ?? profile.thinking
         ?? profileModel?.thinkingLevel
         ?? parent.inner.agent.state?.thinkingLevel;
-      if (thinking && !THINKING_LEVELS.has(thinking as ThinkingLevel)) {
+      if (thinking && !isThinkingLevel(thinking)) {
         throw new Error(`Invalid subagent thinking level: ${thinking}`);
       }
       const parentModel = parent.inner.model as ReturnType<ModelRuntime["getModel"]>;
@@ -796,56 +862,17 @@ export function createSubagentController(
         sessionManager.appendCustomEntry(SUBAGENT_STATUS_TYPE, { version: 1, status: "running" });
         request.onUpdate?.(stored.run);
         dependencies.invalidateSessionList();
-        let turnCount = 0;
-        let maxTurnsReached = false;
-        let undelivered: string[] = [];
-        const previousFinishTurn = inner.agent.finishTurn;
-        const previousSteeringMode = inner.agent.steeringMode;
-        let unsubscribeTools: (() => void) | undefined;
-        if (turnLimit) {
-          // Finalized events retain the SDK's terminate hint; tool-result messages do not.
-          const terminatingTools = new Set<string>();
-          unsubscribeTools = inner.subscribe((event) => {
-            if (event.type === "tool_execution_end" && event.result?.terminate === true) {
-              terminatingTools.add(event.toolCallId);
-            }
-          });
-          inner.agent.finishTurn = async (turn, signal) => {
-            const decision = (await previousFinishTurn?.(turn, signal)) ?? undefined;
-            const toolsContinue = turn.toolResults.some((message) => !terminatingTools.has(message.toolCallId));
-            terminatingTools.clear();
-            turnCount += 1;
-            if (turnCount >= turnLimit) stored.turnsUsed = true;
-            if (signal?.aborted || decision?.action === "end" ||
-              turn.message.stopReason === "error" || turn.message.stopReason === "aborted") return decision;
-            const needsAnotherTurn = toolsContinue || decision?.action === "continue" || inner.agent.hasQueuedMessages();
-            if (!needsAnotherTurn || turnCount < turnLimit) return decision;
-            if (turnCount >= turnLimit + 1) {
-              maxTurnsReached = true;
-              stored.turnLimitReached = true;
-              // AgentSession starts another run for anything still queued, past an `end`
-              // decision, so the limit holds only once the queues are empty.
-              const { steering, followUp } = inner.clearQueue();
-              undelivered = [...undelivered, ...steering, ...followUp];
-              return { action: "end" };
-            }
-            // The awaited SDK boundary delivers the instruction before the wrap-up request.
-            // In one-at-a-time mode a steer queued earlier would take the wrap-up turn and
-            // leave the instruction for later, so that turn takes everything queued.
-            inner.agent.steeringMode = "all";
-            await inner.steer(TURN_LIMIT_INSTRUCTION);
-            return decision;
-          };
-        }
+        const limiter = installTurnLimiter(inner, stored, turnLimit);
         let result: SubagentRunInfo;
         try {
           await prepareChildMcp(childSession, stored);
           await inner.prompt(delegatedTask, { source: "rpc" });
+          const continuation = childSession?.waitForCompactionContinuation?.();
+          if (continuation) await continuation;
           const text = settledRunText(inner, stored);
           const stop = stored.abortRequested ? undefined : lastAssistantStop(sessionManager);
           const aborted = stored.abortRequested || stop?.aborted === true;
-          const errorMessage = aborted ? undefined : stop?.error ??
-            (maxTurnsReached && turnLimit ? turnLimitError(turnLimit, undelivered) : undefined);
+          const errorMessage = aborted ? undefined : stop?.error ?? limiter?.error();
           result = {
             ...initialRun,
             status: aborted ? "aborted" : errorMessage ? "failed" : "completed",
@@ -862,15 +889,11 @@ export function createSubagentController(
             completedAt: new Date().toISOString(),
             ...(text ? { result: text } : {}),
             ...(!aborted
-              ? { error: error instanceof Error ? error.message : String(error) }
+              ? { error: errorMessage(error) }
               : {}),
           };
         } finally {
-          if (turnLimit) {
-            inner.agent.finishTurn = previousFinishTurn;
-            inner.agent.steeringMode = previousSteeringMode;
-          }
-          unsubscribeTools?.();
+          limiter?.restore();
           request.signal?.removeEventListener("abort", handleParentAbort);
         }
 
@@ -931,7 +954,7 @@ export function createSubagentController(
       if (stored.abortRequested) queued.cancel();
       void queued.promise.then(resolveCompletion, (error) => {
         if (dropSubagentRun(initialRun.sessionId, stored)) dependencies.invalidateSessionList();
-        resolveCompletion({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) });
+        resolveCompletion({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: errorMessage(error) });
       });
 
       return { run: stored.run, completion: stored.completion };
@@ -1011,19 +1034,27 @@ export function createSubagentController(
       manager.appendCustomEntry(SUBAGENT_STATUS_TYPE, { version: 1, status: "running" });
       request.onUpdate?.(stored.run);
       let result: SubagentRunInfo;
+      // The profile's turn limit holds for a resumed run as for the first, from zero again.
+      const limiter = installTurnLimiter(
+        wrapper!.inner as unknown as TurnLimitedSession,
+        stored,
+        resolveSubagentProfile(parent.cwd, existing.profile)?.maxTurns,
+      );
       try {
         await prepareChildMcp(wrapper, stored);
         await wrapper!.inner.prompt(request.task, { source: "rpc" });
+        const continuation = wrapper!.waitForCompactionContinuation?.();
+        if (continuation) await continuation;
         const text = settledRunText(wrapper!.inner, stored);
         const stop = stored.abortRequested ? undefined : lastAssistantStop(manager);
         const aborted = stored.abortRequested || stop?.aborted === true;
-        const providerError = aborted ? undefined : stop?.error;
+        const errorMessage = aborted ? undefined : stop?.error ?? limiter?.error();
         result = {
           ...initialRun,
-          status: aborted ? "aborted" : providerError ? "failed" : "completed",
+          status: aborted ? "aborted" : errorMessage ? "failed" : "completed",
           completedAt: new Date().toISOString(),
           ...(text ? { result: text } : {}),
-          ...(providerError ? { error: providerError } : {}),
+          ...(errorMessage ? { error: errorMessage } : {}),
         };
       } catch (error) {
         const text = settledRunText(wrapper!.inner, stored);
@@ -1032,9 +1063,10 @@ export function createSubagentController(
           status: stored.abortRequested || request.signal?.aborted ? "aborted" : "failed",
           completedAt: new Date().toISOString(),
           ...(text ? { result: text } : {}),
-          ...(!stored.abortRequested && !request.signal?.aborted ? { error: error instanceof Error ? error.message : String(error) } : {}),
+          ...(!stored.abortRequested && !request.signal?.aborted ? { error: errorMessage(error) } : {}),
         };
       } finally {
+        limiter?.restore();
         request.signal?.removeEventListener("abort", handleParentAbort);
       }
       result = recordResult(manager, result);
@@ -1081,7 +1113,7 @@ export function createSubagentController(
     if (stored.abortRequested) queued.cancel();
     void queued.promise.then(resolveCompletion, (error) => {
       if (dropSubagentRun(request.sessionId, stored)) dependencies.invalidateSessionList();
-      resolveCompletion({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: error instanceof Error ? error.message : String(error) });
+      resolveCompletion({ ...initialRun, status: "failed", completedAt: new Date().toISOString(), error: errorMessage(error) });
     });
     return { run: stored.run, completion };
   }
@@ -1194,7 +1226,7 @@ export function createSubagentController(
         if (takeResultConsumed(run)) return finish("consumed");
         if (!canSteerAfterTurn(parent, run.parentSessionId, event.message)) return;
         parent.inner.sendCustomMessage(parentNotificationMessage(run), { deliverAs: "steer" }).catch((error) => {
-          console.error("[pi-web] failed to steer subagent completion:", error instanceof Error ? error.message : String(error));
+          console.error("[pi-web] failed to steer subagent completion:", errorMessage(error));
         });
       });
       const idleCheck = setInterval(() => {

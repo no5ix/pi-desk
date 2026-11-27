@@ -3,6 +3,7 @@ import { isLocalRequest } from "@/lib/remote-access";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getRelayConnector, relayFilesDir, restartRelayFromConfig } from "@/lib/relay/runtime";
 import { normalizeEntryUrl, normalizeRelayUrl, readDevices, readRelayConfig, writeRelayConfig } from "@/lib/relay/store";
+import { errorMessage } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -47,6 +48,6 @@ export async function PUT(req: Request) {
     await restartRelayFromConfig();
     return NextResponse.json(snapshot(true));
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
   }
 }

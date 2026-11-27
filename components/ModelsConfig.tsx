@@ -74,6 +74,8 @@ import { providerBadgeLabel } from "./enabled-models-helpers";
 import { OAuthPastePanel } from "./OAuthPastePanel";
 import { ProviderIcon } from "./ProviderIcon";
 import { ProviderUsageSummary } from "./ProviderUsageSummary";
+import { readJsonOrThrow } from "@/lib/fetch-json";
+import { errorMessage } from "@/lib/errors";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -232,10 +234,6 @@ const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messag
 
 // ── Form field helpers ────────────────────────────────────────────────────────
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <ConfigField label={label}>{children}</ConfigField>;
-}
-
 const inputStyle = {
   padding: "6px 9px",
   background: "var(--bg-panel)",
@@ -248,8 +246,8 @@ const inputStyle = {
   boxSizing: "border-box" as const,
 };
 
-function TextInput({ value, onChange, placeholder, mono }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
-  return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+function TextInput({ value, onChange, placeholder, mono, inputMode }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"] }) {
+  return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} inputMode={inputMode}
     style={{ ...inputStyle, fontFamily: mono ? "var(--font-mono)" : "inherit" }} />;
 }
 
@@ -261,6 +259,7 @@ function SecretTextInput({
   onKeyDown,
   autoComplete = "off",
   spellCheck = false,
+  enterKeyHint,
   style,
 }: {
   value: string;
@@ -270,6 +269,7 @@ function SecretTextInput({
   onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
   autoComplete?: string;
   spellCheck?: boolean;
+  enterKeyHint?: React.HTMLAttributes<HTMLInputElement>["enterKeyHint"];
   style?: React.CSSProperties;
 }) {
   const [visible, setVisible] = useState(false);
@@ -290,6 +290,7 @@ function SecretTextInput({
         style={{ ...inputStyle, paddingRight: 34, fontFamily: mono ? "var(--font-mono)" : "inherit" }}
         autoComplete={autoComplete}
         spellCheck={spellCheck}
+        enterKeyHint={enterKeyHint}
       />
       <button
         type="button"
@@ -404,7 +405,7 @@ function ProviderDetail({ name, editingName, fallbackLabel, provider, onChange, 
       setDiscoveryState({ phase: "success", models: data.models, endpoint: data.endpoint ?? provider.baseUrl ?? "" });
     } catch (error) {
       if (requestId !== discoveryRequestIdRef.current) return;
-      setDiscoveryState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+      setDiscoveryState({ phase: "error", message: errorMessage(error) });
     }
   }, [discoveryState.phase, name, provider]);
 
@@ -466,7 +467,7 @@ function ProviderDetail({ name, editingName, fallbackLabel, provider, onChange, 
         <EnabledModelsProviderSwitchNote providerId={name} controller={enabledModels} id={switchNoteId} />
       </div>
 
-       <Field label={t("i18n.providerId")}>
+       <ConfigField label={t("i18n.providerId")}>
         <TextInput value={editingName} onChange={onEditingNameChange} placeholder="provider-id" mono />
         {editingName !== name && editingName.trim() && (
           <button onClick={() => onRename(editingName.trim())}
@@ -474,36 +475,36 @@ function ProviderDetail({ name, editingName, fallbackLabel, provider, onChange, 
              {t("i18n.rename")}
           </button>
         )}
-      </Field>
+      </ConfigField>
 
       {/* models.json `name`: the label the sidebar and the selector show (#1567). */}
-      <Field label={t("models.providerDisplayName")}>
+      <ConfigField label={t("models.providerDisplayName")}>
         <TextInput value={provider.name ?? ""} onChange={(v) => onChange(setProviderDisplayName(provider, v))}
           placeholder={fallbackLabel} />
-      </Field>
+      </ConfigField>
 
-      <Field label="Base URL">
+      <ConfigField label="Base URL">
         <TextInput value={provider.baseUrl ?? ""} onChange={(v) => set("baseUrl", v || undefined)}
-          placeholder="https://api.example.com/v1" mono />
+          placeholder="https://api.example.com/v1" inputMode="url" mono />
         <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginTop: 2 }}>
           Leave empty for a built-in provider to use the endpoint pi ships
         </span>
         <BuiltinProviderNotice baseUrl={provider.baseUrl} openableIds={builtinProviderIds} onOpen={onOpenBuiltinProvider} />
-      </Field>
+      </ConfigField>
 
-      <Field label="API Key">
+      <ConfigField label="API Key">
         <SecretTextInput value={provider.apiKey ?? ""} onChange={(v) => set("apiKey", v || undefined)}
           placeholder="ENV_VAR_NAME, !shell-command, or literal key" mono />
         <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginTop: 2 }}>
           Prefix with <code style={{ fontFamily: "var(--font-mono)" }}>!</code> to run a shell command, or use an env var name
         </span>
-      </Field>
+      </ConfigField>
 
-      <Field label="API">
+      <ConfigField label="API">
         <Select label="API" value={provider.api ?? "openai-completions"} onChange={(v) => set("api", v)} options={API_OPTIONS} required />
-      </Field>
+      </ConfigField>
 
-      <Field label="Headers">
+      <ConfigField label="Headers">
         <HeaderListEditor
           headers={provider.headers}
           onChange={(headers) => set("headers", headers)}
@@ -511,7 +512,7 @@ function ProviderDetail({ name, editingName, fallbackLabel, provider, onChange, 
         <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginTop: 2 }}>
           Added to every request from this provider (e.g. User-Agent). Useful for gateways with bot detection.
         </span>
-      </Field>
+      </ConfigField>
 
       {modelOverrides.length > 0 && (
         <section className="models-override-section">
@@ -957,7 +958,7 @@ function ModelDetail({
       hintText = t(unsaved ? "models.specUnsaved" : "models.specSaved");
     }
     return (
-      <Field label={label}>
+      <ConfigField label={label}>
         <NumInput value={draftValue !== undefined ? String(draftValue) : ""}
           onChange={(v) => set(field, v ? parseInt(v) : undefined)}
           placeholder={overrideValue !== undefined ? overrideValue.toLocaleString() : t("models.specNotSet")} />
@@ -965,7 +966,7 @@ function ModelDetail({
           {hintText}
           {unsaved && hint.kind !== "own" && <span className="models-spec-unsaved">{t("models.specUnsavedTag")}</span>}
         </span>
-      </Field>
+      </ConfigField>
     );
   };
   const setCost = (key: ModelCostKey, value: string) => {
@@ -1051,7 +1052,7 @@ function ModelDetail({
         responseText: d.responseText,
       });
     } catch (e) {
-      setTestState({ phase: "error", message: e instanceof Error ? e.message : String(e) });
+      setTestState({ phase: "error", message: errorMessage(e) });
     }
   }, [model, provider, providerName, testState.phase]);
 
@@ -1083,7 +1084,7 @@ function ModelDetail({
       });
     } catch (error) {
       if (requestId !== catalogRequestIdRef.current) return;
-      setCatalogState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
+      setCatalogState({ phase: "error", message: errorMessage(error) });
     }
   }, [catalogState.phase, model, onChange, effectiveBaseUrl, providerName]);
 
@@ -1221,8 +1222,8 @@ function ModelDetail({
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <Field label="ID *"><TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono /></Field>
-        <Field label={t("config.name")}><TextInput value={model.name ?? ""} onChange={(v) => set("name", v || undefined)} placeholder={t("models.displayNamePlaceholder")} /></Field>
+        <ConfigField label="ID *"><TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono /></ConfigField>
+        <ConfigField label={t("config.name")}><TextInput value={model.name ?? ""} onChange={(v) => set("name", v || undefined)} placeholder={t("models.displayNamePlaceholder")} /></ConfigField>
       </div>
 
       <div style={{ padding: "2px 0" }}>
@@ -1316,9 +1317,9 @@ function ModelDetail({
           {costEditing ? (
             <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
               {costFields.map(({ key, label }) => (
-                <Field key={key} label={label}>
+                <ConfigField key={key} label={label}>
                   <NumInput value={costDraft[key]} onChange={(v) => setCost(key, v)} placeholder="0" />
-                </Field>
+                </ConfigField>
               ))}
               {hasModelCostDraftValue(costDraft) && !parseCompleteModelCost(costDraft) && (
                 <div aria-live="polite" style={{ gridColumn: "1 / -1", color: "var(--warning)", fontSize: "var(--fs-micro)" }}>
@@ -1380,19 +1381,19 @@ function ModelDetail({
 
         {advancedOpen && (
           <div id="model-advanced-settings" style={{ display: "flex", flexDirection: "column", gap: 14, padding: "4px 0 16px" }}>
-            <Field label={t("models.baseUrlOverride")}>
+            <ConfigField label={t("models.baseUrlOverride")}>
               <TextInput value={model.baseUrl ?? ""} onChange={(v) => set("baseUrl", v.trim() || undefined)}
-                placeholder={provider.baseUrl ?? t("models.providerDefaults")} mono />
+                placeholder={provider.baseUrl ?? t("models.providerDefaults")} inputMode="url" mono />
               <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginTop: 2 }}>
                 {t("models.baseUrlHelp")}
               </span>
-            </Field>
+            </ConfigField>
 
-            <Field label={t("models.apiOverride")}>
+            <ConfigField label={t("models.apiOverride")}>
               <Select label={t("models.apiOverride")} value={model.api ?? ""} onChange={(v) => set("api", v || undefined)} options={API_OPTIONS} />
-            </Field>
+            </ConfigField>
 
-            <Field label={t("models.headers")}>
+            <ConfigField label={t("models.headers")}>
               <HeaderListEditor
                 headers={model.headers}
                 onChange={(headers) => set("headers", headers)}
@@ -1400,7 +1401,7 @@ function ModelDetail({
               <span style={{ fontSize: "var(--fs-micro)", color: "var(--text-dim)", marginTop: 2 }}>
                 {t("models.headersHelp")}
               </span>
-            </Field>
+            </ConfigField>
 
             {model.reasoning && (
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1802,10 +1803,10 @@ function ApiKeyDetail({ provider, onRefresh, enabledModels, contextSettings }: {
       </ConfigDetailHeader>
 
       {llama && (
-        <Field label={t("models.llamaRouterUrl")}>
+        <ConfigField label={t("models.llamaRouterUrl")}>
           <input type="url" style={{ ...inputStyle, fontFamily: "var(--font-mono)" }} value={serverUrl} placeholder={DEFAULT_LLAMA_ROUTER_URL}
             onChange={(event) => setServerUrl(event.target.value)} spellCheck={false} />
-        </Field>
+        </ConfigField>
       )}
       {!llama && !provider.configured && (
         <p style={{ margin: 0, fontSize: "var(--fs-caption)", color: "var(--text-muted)", lineHeight: 1.5 }}>
@@ -1819,7 +1820,11 @@ function ApiKeyDetail({ provider, onRefresh, enabledModels, contextSettings }: {
         <SecretTextInput
           value={apiKey}
           onChange={setApiKey}
-          onKeyDown={(e) => { if (e.key === "Enter") handleSave(); }}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+            if (e.key === "Enter") handleSave();
+          }}
+          enterKeyHint="done"
           placeholder={llama ? t("models.optionalApiKey") : provider.configured ? t("models.replaceApiKey") : "sk-…"}
           style={{ flex: 1 }}
           autoComplete="off"
@@ -2078,11 +2083,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, onOpenMcp 
 
   useEffect(() => {
     fetch("/api/models-config")
-      .then(async (r) => {
-        const d = await r.json() as ModelsJson & { error?: string };
-        if (!r.ok || d.error) throw new Error(d.error ?? `HTTP ${r.status}`);
-        return d;
-      })
+      .then((r) => readJsonOrThrow<ModelsJson>(r))
       .then((d) => {
         const normalized = d.providers ? d : { ...d, providers: {} };
         setConfig(normalized);
@@ -2106,7 +2107,7 @@ export function ModelsConfig({ onClose, embedded = false, cwd = null, onOpenMcp 
             ? { type: "provider", name: keys[0] }
             : null);
       })
-      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) => setLoadError(errorMessage(e)))
       .finally(() => setLoading(false));
     refreshAuthProviders();
   }, [refreshAuthProviders]);

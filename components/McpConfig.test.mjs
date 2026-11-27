@@ -373,7 +373,7 @@ test("the container passes Trust to the notice and reloads in place when the pag
   assert.match(source, /onTrustProject=\{onTrustProject\}/);
   // A new decision loads the panel again without remounting it, so the selection stays.
   assert.match(source, /const trustKey = projectTrustReloadKey\(trust\);\n\s*useEffect\(\(\) => \{\n\s*void refresh\(\);[\s\S]*?\}, \[refresh, trustKey\]\);/);
-  assert.match(source, /import \{ projectTrustReloadKey \} from "\.\/settings-ui-helpers";/);
+  assert.match(source, /import \{[^}]*\bprojectTrustReloadKey\b[^}]*\} from "\.\/settings-ui-helpers";/);
   // The container renders with the page's status and handler without fetching anything itself.
   assert.match(text(render(h(McpConfig, { cwd: "/Users/me/repo", trust: untrusted, onTrustProject() {}, onClose() {}, embedded: true }))), /Loading\.\.\./);
 });
@@ -615,10 +615,10 @@ test("the container starts loading and remembers the selection per project", () 
   // Two writes, both in the helpers: the Code mode choice through the tools settings route, and
   // the servers' changes through the MCP route; and the Test request, which writes no file.
   assert.doesNotMatch(source, /method:/);
-  assert.deepEqual([...helperSource.matchAll(/method: "([A-Z]+)"/g)].map((match) => match[1]), ["PUT", "POST", "POST"]);
-  assert.match(helperSource, /fetchImpl\("\/api\/tools\/settings", \{\n\s*method: "PUT",/);
-  assert.match(helperSource, /fetchImpl\("\/api\/mcp", \{\n\s*method: "POST",/);
-  assert.match(helperSource, /fetchImpl\("\/api\/mcp\/test", \{\n\s*method: "POST",/);
+  assert.deepEqual([...helperSource.matchAll(/jsonRequest\("([A-Z]+)"/g)].map((match) => match[1]), ["PUT", "POST", "POST"]);
+  assert.match(helperSource, /requestMcpJson\("\/api\/tools\/settings", jsonRequest\("PUT", change, signal\), fetchImpl/);
+  assert.match(helperSource, /requestMcpJson\("\/api\/mcp", jsonRequest\("POST", body, signal\), fetchImpl/);
+  assert.match(helperSource, /requestMcpJson\("\/api\/mcp\/test", jsonRequest\("POST", body, signal\), fetchImpl/);
   assert.doesNotMatch(source, /style=\{/);
 });
 

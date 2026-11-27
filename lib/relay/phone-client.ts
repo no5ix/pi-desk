@@ -11,6 +11,7 @@ import {
   type ResponseHead,
 } from "./frames.ts";
 import { HandshakeState, base64UrlDecode, type KeyPair, type Transport } from "./noise.ts";
+import { errorMessage } from "../errors.ts";
 
 /**
  * The phone end of the relay (docs/remote-relay.md): pairing with a QR ticket,
@@ -255,7 +256,7 @@ export class PhoneTunnel {
     channel.listen((bytes) => {
       this.receiveChain = this.receiveChain.then(() => this.receive(bytes)).catch((error) => {
         this.close();
-        this.fail(new RelayClosedError(4500, error instanceof Error ? error.message : String(error)));
+        this.fail(new RelayClosedError(4500, errorMessage(error)));
       });
     });
     this.state = "open";

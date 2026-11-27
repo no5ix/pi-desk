@@ -5,6 +5,7 @@ import {
   tailscaleBinaries,
   type TailscaleStatus,
 } from "./tailscale-status";
+import { errorMessage } from "./errors.ts";
 
 /**
  * Tailscale Serve at server startup.
@@ -243,6 +244,6 @@ export function startTailscaleServeAtStartup(
       }
     })
     .catch((error: unknown) => {
-      log(`${ANSI_DIM}[tailscale] serve check failed: ${error instanceof Error ? error.message : String(error)}${ANSI_RESET}`);
+      log(`${ANSI_DIM}[tailscale] serve check failed: ${errorMessage(error)}${ANSI_RESET}`);
     });
 }

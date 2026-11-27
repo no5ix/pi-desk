@@ -7,6 +7,7 @@ import {
   readUtf8FileWithinLimit,
   resolveBashOutputPath,
 } from "@/lib/bash-output";
+import { contentDisposition } from "@/lib/content-disposition";
 import { isBashOutputPathReferencedBySession } from "@/lib/session-file-references";
 
 // GET /api/agent/[id]/bash-output?path=<absPath>
@@ -47,7 +48,7 @@ export async function GET(
       return new Response(stream, {
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
-          "Content-Disposition": "attachment; filename=\"bash-output.log\"",
+          "Content-Disposition": contentDisposition("attachment", "bash-output.log", "download"),
           "Cache-Control": "no-store",
         },
       });

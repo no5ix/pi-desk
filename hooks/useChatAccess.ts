@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { revealItemInDirNative } from "@/lib/desktop-native";
 import { isTauriDesktop } from "@/lib/desktop-updater";
+import { errorMessage } from "@/lib/errors";
 
 export interface ChatAccessState {
   chat: boolean;
@@ -66,7 +67,7 @@ export function useChatAccess(
         throw new Error(data.error ?? `HTTP ${res.status}`);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }, [sessionId, state?.folder]);
 
@@ -86,7 +87,7 @@ export function useChatAccess(
       await onRebuilt?.();
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
       return false;
     } finally {
       setBusy(false);

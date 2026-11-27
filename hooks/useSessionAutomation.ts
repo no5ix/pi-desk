@@ -6,6 +6,7 @@
 
 import { useCallback, useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { sendAgentCommand } from "@/lib/agent-client";
+import { errorMessage } from "@/lib/errors";
 
 export interface SessionAutomation {
   autoCompactionEnabled: boolean | null;
@@ -99,7 +100,7 @@ export function useSessionAutomationActions<State>({
       }
     } catch (e) {
       console.error("Failed to apply automation setting:", e);
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      addNotice({ type: "error", message: errorMessage(e) });
       // Re-sync from the server's actual state.
       try {
         const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);

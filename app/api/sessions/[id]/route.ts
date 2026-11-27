@@ -15,7 +15,7 @@ import {
   readSessionHeader,
 } from "@/lib/session-reader";
 import { sessionPathKey } from "@/lib/session-path";
-import { abortSubagent, getRpcSession, getRpcSessionInfos } from "@/lib/rpc-manager";
+import { abortSubagent, getLiveRpcSession, getRpcSession, getRpcSessionInfos } from "@/lib/rpc-manager";
 import { projectTreeForResponse, toSummaryTree } from "@/lib/project-tree";
 import { computeSessionTotalActiveMs } from "@/lib/session-timing";
 import { computeSessionStats } from "@/lib/session-stats";
@@ -30,6 +30,7 @@ import { samePath } from "@/lib/paths";
 import { moveFolderToTrash } from "@/lib/trash";
 import { replaceFileAtomicSync } from "@/lib/atomic-file";
 import { forgetSessionUiState } from "@/lib/session-ui-state";
+import { errorMessage } from "@/lib/errors";
 
 export async function GET(
   req: Request,
@@ -39,7 +40,6 @@ export async function GET(
   const perf = startServerPerf("GET /api/sessions/[id]");
   try {
     perf?.span("resolve");
-    const rpc = getRpcSession(id);
     const searchParams = new URL(req.url).searchParams;
     const force = searchParams.get("force") === "1";
 
@@ -48,7 +48,7 @@ export async function GET(
     // stays stale. Only probe on ?force=1 (session mount / page refresh): two
     // processes writing one JSONL is unsupported, so post-turn reads must not
     // scan disk. Eviction is idle-only; mid-run the wrapper owns the write path.
-    let liveWrapper = rpc?.isAlive() ? rpc : undefined;
+    let liveWrapper = getLiveRpcSession(id);
     let wrapperRebuilt = false;
     if (force && liveWrapper?.evictIfDiskAhead()) {
       wrapperRebuilt = true;
@@ -389,7 +389,7 @@ export async function DELETE(
     try {
       await forgetSessionUiState(deletedSessionIds);
     } catch (error) {
-      console.warn(`[pi-web] could not clear the sidebar state of deleted session ${id}: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(`[pi-web] could not clear the sidebar state of deleted session ${id}: ${errorMessage(error)}`);
     }
     invalidateSessionListCache();
     let folderTrashed = false;

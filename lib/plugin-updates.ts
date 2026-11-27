@@ -12,6 +12,7 @@ import type { PluginScope, PluginUpdateResult } from "@/lib/api-types";
 import { nodeCliInvocation } from "./node-cli";
 import { parseNpmSource } from "./npm-source";
 import { getProjectTrustStatus } from "./project-trust";
+import { errorMessage } from "./errors.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -33,7 +34,8 @@ type CheckOptions = {
   runCommand?: CommandRunner;
 };
 
-function toPluginScope(scope: ConfiguredPackage["scope"]): PluginScope {
+/** `project` stays `project`; anything else is a global package. */
+export function toPluginScope(scope: unknown): PluginScope {
   return scope === "project" ? "project" : "global";
 }
 
@@ -202,7 +204,7 @@ export async function checkPluginUpdates(
         ? await checkNpmPackage(pkg, cwd, npmCommand, runner)
         : await checkGitPackage(pkg, runner);
     } catch (error) {
-      return result(pkg, "error", error instanceof Error ? error.message : String(error));
+      return result(pkg, "error", errorMessage(error));
     }
   }));
 }

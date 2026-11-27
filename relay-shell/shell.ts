@@ -1,6 +1,7 @@
 import { exportPrivateKey, generateKeyPair, keyPairFromPrivate, type KeyPair } from "../lib/relay/noise.ts";
 import { PhoneTunnel, pairPhone, parsePairingTicket, type PhoneConfig } from "../lib/relay/phone-client.ts";
 import { safeAppPath } from "./paths.ts";
+import { errorMessage } from "@/lib/errors";
 
 /**
  * The phone shell (docs/remote-relay.md): served by the entry host at /__shell/,
@@ -150,7 +151,7 @@ async function serve(message: { method: string; url: string; headers: [string, s
     }
     port.postMessage({ type: "end" });
   } catch (error) {
-    if (!controller.signal.aborted) port.postMessage({ type: "error", message: error instanceof Error ? error.message : String(error) });
+    if (!controller.signal.aborted) port.postMessage({ type: "error", message: errorMessage(error) });
   }
 }
 

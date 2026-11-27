@@ -58,6 +58,7 @@ import { ChatShellPrompt } from "./ChatShellPrompt";
 import { lastTurnHitChatShellBlock } from "@/lib/chat-shell-block";
 import { SideChatIcon } from "./SideChatIcon";
 import { assignMessageKeys, createMessageKeyTracker } from "@/lib/message-keys";
+import { errorMessage } from "@/lib/errors";
 
 interface Props {
   session: SessionInfo | null;
@@ -585,7 +586,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       setQuoteError(refusal);
     } catch (error) {
       quoteChatInputRef.current?.restoreSubmission(prompt);
-      setQuoteError(error instanceof Error ? error.message : String(error));
+      setQuoteError(errorMessage(error));
     } finally {
       setQuoteSubmitting(false);
     }
@@ -597,7 +598,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     try {
       refusal = await startSideChat(message);
     } catch (error) {
-      refusal = error instanceof Error ? error.message : String(error);
+      refusal = errorMessage(error);
     }
     if (refusal === null) return;
     chatInputRef?.current?.restoreSubmission(message);
@@ -1180,7 +1181,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       } catch (error) {
         addNotice({
           type: "error",
-          message: error instanceof Error ? error.message : String(error),
+          message: errorMessage(error),
         });
       } finally {
         projectImportBusyRef.current = false;

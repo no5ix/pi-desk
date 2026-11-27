@@ -5,6 +5,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import lockfile from "proper-lockfile";
 import { replaceFileAtomicSync } from "./atomic-file";
 import type { ProviderCredentialType } from "@/lib/provider-listing";
+import { isRecord } from "./is-record.ts";
 
 const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8" as const, mode: 0o600 };
 
@@ -20,10 +21,6 @@ function ensureAuthFile(authPath: string): void {
     writeFileSync(authPath, "{}", AUTH_FILE_WRITE_OPTIONS);
     chmodSync(authPath, 0o600);
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function updateStoredCredentials<T>(
