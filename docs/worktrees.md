@@ -74,7 +74,7 @@ Each session still remembers the working directory it was created with. That mea
 
 Every checkout uses the same sequential development-port allocation. The launcher tries 30141 first, then 30142, 30143, 30144, and continues upward until it finds an available port. This applies equally to the main checkout and every linked worktree, so concurrent servers naturally move to the next free port instead of relying on path-derived port numbers.
 
-Both `npm run dev` and `npm run web` use the same resolver. The launcher prints the selected port; use that address rather than assuming a fixed one.
+Both `npm run dev`, `npm run web`, and `npm start` use the same resolver. The launcher prints the selected port; use that address rather than assuming a fixed one.
 
 To choose a specific port, either pass the npm option directly or set `PI_WEB_PORT`:
 
