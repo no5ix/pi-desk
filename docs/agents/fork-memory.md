@@ -56,10 +56,16 @@ directly — no import cycle, no app-module side effects — and bounds its walk
   a running server over the largest sessions on disk and samples the process the
   whole run: peak, retained, **given back**.
 
-`PI_WEB_MEMORY_BUDGET_MB` is the RSS the valve works against: default **1024** in
-production, **2560** in dev (a healthy dev server is 1.5–2 GB of Turbopack module
-graph, so a budget inside that range fires every minute and finds nothing to
-release; over the heap ceiling is the signal). Clamped 256–32768, `0` off.
+`PI_WEB_MEMORY_BUDGET_MB` is the **managed** memory the valve works against — `managedBytes`,
+the V8 heap plus the external stores bound to JS (`arrayBuffers` counted once), the only bytes
+releasing and `global.gc()` can act on. Not RSS: on macOS RSS carries the read-only library
+mappings (the dyld shared cache, resident) and Turbopack's mmap'd module graph, and the valve has
+no power over any of it. Measured on a dev server that had released everything it could: RSS
+2.9 GB, physical footprint 1.1 GB, **0.52 GB** of heap and external stores — an RSS trigger
+printed a pressure line every minute for a 1 MB release. Default **1024** in production,
+**2048** in dev (the dev heap ceiling: managed memory past the ceiling is growth *outside* the
+heap, the signal the valve exists for). Clamped 256–32768, `0` off. RSS stays in the report
+(`rss`, `peakRss`) as the number Activity Monitor agrees with, and never as a trigger.
 
 ## What releases, and when
 
@@ -103,7 +109,7 @@ prune(targetBytes) }`, registered by the module that owns the store
 file listings). `applyMemoryPressure()` runs the stores in order — sessions
 first (a read from disk is the refetch), then each cache to half of what it
 holds, then `global.gc()` if the process has it — at most once a minute, from
-the sampler when RSS is over budget, or on request.
+the sampler when managed memory is over budget, or on request.
 
 Halving is deliberate: emptying the artifact index forces a rescan of every
 session file on the next Artifacts page, and emptying the listings forces a

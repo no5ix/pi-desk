@@ -96,12 +96,16 @@ function applyServerMemoryEnv(env = process.env, mode = "start") {
 const DEV_ENV_DEFAULTS = {
   PI_WEB_IDLE_TIMEOUT_MS: "120000",
   PI_WEB_MCP_IDLE_MS: "120000",
-  // Above the dev heap ceiling on purpose. A dev server's RSS is mostly
-  // Turbopack's module graph — a normal `npm run dev` day sits at 1.5-2 GB — so
-  // the production budget (1024) would have the release valve fire every minute
-  // on a healthy process and find nothing to release. Over the ceiling is the
-  // signal that matters in dev: RSS past the heap is growth outside the heap.
-  PI_WEB_MEMORY_BUDGET_MB: "2560",
+  // The budget is the server's *managed* memory — the V8 heap plus the external
+  // stores bound to JS, what releasing and collecting can act on — and not RSS.
+  // RSS counts the read-only library mappings (the dyld shared cache, resident)
+  // and Turbopack's mmap'd module graph, so a budget built on it had a healthy
+  // dev server over budget from its first minute: measured 2.9 GB of RSS against
+  // 0.55 GB of heap and external stores, and a valve releasing 1 MB a minute.
+  // Set at the dev heap ceiling: managed memory above the ceiling is growth
+  // outside the heap (external buffers, native stores), which is the signal in
+  // dev that the valve exists for.
+  PI_WEB_MEMORY_BUDGET_MB: "2048",
 };
 
 function applyDevEnvDefaults(env = process.env) {

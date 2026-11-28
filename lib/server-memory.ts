@@ -47,15 +47,30 @@ export interface DebugPageMemory {
 
 export interface DebugMemoryReport {
   at: number;
-  /** Process resident memory, the number Activity Monitor shows. */
+  /**
+   * Process resident memory, the number Activity Monitor shows. Reported, never
+   * a trigger: on macOS it includes the read-only library mappings (the dyld
+   * shared cache alone measures in gigabytes, resident), and in dev the
+   * Turbopack module graph is mmap'd too. Measured on a dev server holding
+   * 0.55 GB of JS and external stores: RSS 2.9 GB, physical footprint 1.1 GB.
+   * A valve built on RSS fires every minute on a healthy process and releases
+   * the 1 MB it can find.
+   */
   rss: number;
   heapTotal: number;
   heapUsed: number;
   external: number;
   arrayBuffers: number;
+  /**
+   * What the pressure valve can act on: the V8 heap it collects and the external
+   * stores bound to JS objects. This is the number the budget is compared to.
+   * `arrayBuffers` is reported inside `external` by Node, and the max is taken so
+   * a runtime that reports them apart still counts them once.
+   */
+  managedBytes: number;
   /** V8's old-space ceiling in force — bin/server-flags.js sets it; otherwise Next's (dev: half of RAM) or V8's default. */
   heapLimit: number;
-  /** The pressure threshold, `PI_WEB_MEMORY_BUDGET_MB`. 0: the valve is off. */
+  /** The pressure threshold in MB, `PI_WEB_MEMORY_BUDGET_MB`, against `managedBytes`. 0: the valve is off. */
   budgetMb: number;
   overBudget: boolean;
   /** True when `global.gc()` exists (a dev server started with `--expose-gc`). */
@@ -88,11 +103,14 @@ export interface DebugPressureState {
 }
 
 /**
- * PI_WEB_MEMORY_BUDGET_MB: the RSS above which the server starts releasing what
- * it is holding. Unset is 1024, `0` switches the valve off, and the value is
- * clamped to a range that is a budget and not a joke. It is deliberately lower
- * than the heap ceiling: the caches and wrappers are what get released, and the
- * ceiling is what makes collecting them worth doing.
+ * PI_WEB_MEMORY_BUDGET_MB: the managed memory (the V8 heap plus the external
+ * stores bound to JS — what releasing and collecting can act on) above which the
+ * server starts releasing what it is holding. Unset is 1024, `0` switches the
+ * valve off, and the value is clamped to a range that is a budget and not a joke.
+ * It is deliberately measured against the heap and not RSS: RSS counts the
+ * read-only library mappings and mmap'd module graphs the valve has no power over
+ * (see DebugMemoryReport.rss), so an RSS budget made a healthy dev server look
+ * over budget from the minute it started.
  */
 export const DEFAULT_MEMORY_BUDGET_MB = 1024;
 const MIN_MEMORY_BUDGET_MB = 256;
@@ -344,6 +362,10 @@ export function sampleServerMemory(now: number = Date.now()): DebugMemoryReport 
   peakRss = Math.max(peakRss, usage.rss);
   samples += 1;
   const budgetMb = resolveMemoryBudgetMb();
+  // What the valve can reach: the heap V8 collects, plus the external stores
+  // bound to JS. Node reports arrayBuffers inside external; the max keeps them
+  // counted once on a runtime that reports them apart.
+  const managedBytes = usage.heapTotal + Math.max(0, usage.external, usage.arrayBuffers);
   const report: DebugMemoryReport = {
     at: now,
     rss: usage.rss,
@@ -351,9 +373,10 @@ export function sampleServerMemory(now: number = Date.now()): DebugMemoryReport 
     heapUsed: usage.heapUsed,
     external: usage.external,
     arrayBuffers: usage.arrayBuffers,
+    managedBytes,
     heapLimit: heap.heap_size_limit,
     budgetMb,
-    overBudget: budgetMb > 0 && usage.rss > budgetMb * MB,
+    overBudget: budgetMb > 0 && managedBytes > budgetMb * MB,
     gcAvailable: typeof (globalThis as { gc?: unknown }).gc === "function",
     lastGcAt,
     peakRss,
@@ -389,7 +412,7 @@ export function startServerMemorySampler(intervalMs: number = SAMPLER_INTERVAL_M
   samplerTimer = setInterval(() => {
     try {
       const report = sampleServerMemory();
-      // Over the RSS budget, release what can be released (at most once a minute).
+      // Over the managed-memory budget, release what can be released (at most once a minute).
       if (report.overBudget) void maybeApplyPressure(report.at)?.catch(() => {});
     } catch {
       // Reading the process must never be the reason the server has a problem.
@@ -422,8 +445,9 @@ export function noteGarbageCollection(at: number = Date.now()): void {
 // Order matters as much as the steps: collecting before the stores are released
 // frees nothing, because every byte is still reachable.
 //
-// It fires when the process is over PI_WEB_MEMORY_BUDGET_MB, at most once a
-// minute, and on request (the debug route's `pressure=1`, the bench). It is
+// It fires when the process is over PI_WEB_MEMORY_BUDGET_MB of managed memory
+// (the heap and the external stores, not RSS), at most once a minute, and on
+// request (the debug route's `pressure=1`, the bench). It is
 // synchronous work on the main thread — a Map drop and, in dev, a full GC — so
 // the interval is the cost control, and the report keeps the last run's actions
 // so a drop in the numbers is explainable.
@@ -499,7 +523,7 @@ export function applyMemoryPressure(reason = "requested", now: number = Date.now
   return run;
 }
 
-/** The sampler's trigger: over the RSS budget, and not more than once a minute. */
+/** The sampler's trigger: over the managed-memory budget, and not more than once a minute. */
 export function maybeApplyPressure(now: number = Date.now()): Promise<DebugPressureState> | null {
   const report = sampleServerMemory(now);
   if (!report.overBudget) return null;
