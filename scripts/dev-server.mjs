@@ -50,12 +50,29 @@ console.log(
   + " · PI_WEB_MAX_OLD_SPACE_SIZE / PI_WEB_IDLE_TIMEOUT_MS override",
 );
 
-const port = await resolveDevPort({ cwd: pkgDir, env: process.env, explicitPort: readPortArgument(process.argv.slice(2)) });
+const scriptArgs = process.argv.slice(2);
+const port = await resolveDevPort({ cwd: pkgDir, env: process.env, explicitPort: readPortArgument(scriptArgs) });
 console.log(`[pi-web] dev server port: ${port} · PI_WEB_PORT / --port override`);
+
+// npm 11 may forward `npm run dev --port 30146` as the bare argument `30146`.
+// Consume all supported port spellings here so Next never mistakes the value
+// for a project directory; the resolved port is passed once below.
+const nextArgs = [];
+for (let index = 0; index < scriptArgs.length; index += 1) {
+  const arg = scriptArgs[index];
+  if (arg === "--port" || arg === "-p") {
+    index += 1;
+    continue;
+  }
+  if (arg.startsWith("--port=") || arg.startsWith("-p=") || /^-p\\d+$/.test(arg) || /^\\d+$/.test(arg)) {
+    continue;
+  }
+  nextArgs.push(arg);
+}
 
 const child = spawn(
   process.execPath,
-  getNextNodeArgs(resolveNextBin(), ["dev", "-H", "127.0.0.1", ...process.argv.slice(2), "-p", port]),
+  getNextNodeArgs(resolveNextBin(), ["dev", "-H", "127.0.0.1", ...nextArgs, "-p", port]),
   {
     cwd: pkgDir,
     // Inherited, not piped: `next dev` writes its ready line, its progress and
