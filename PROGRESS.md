@@ -1,3 +1,112 @@
+# PROGRESS — the stream's readiness timeout, and the valve's trigger
+
+Branch `fix/agent-stream-readiness-liveness`, from
+`test-merge/test-merge-pi-desk-main` (`40f85b09`). Sections below are the merged
+branches' history, kept as-is.
+
+## Measured before touching anything
+
+The report was a browser line and two dev-log lines. The numbers behind them:
+
+- The running dev server: **RSS 2.9 GB**, `heapTotal` 0.40 GB, `heapUsed` 0.38 GB,
+  `external` 0.12 GB. `vmmap --summary` / `footprint`: **physical footprint 1.1 GB**,
+  2.1 GB of libraries *mapped* with 469 MB resident. So RSS on this macOS host is
+  mostly mapped read-only pages, and `overBudget` (`rss > 2560 MB`) was true from
+  the first minutes — hence `[pi-web] memory pressure (over-budget): released 1 MB`
+  printed on a healthy process, once a minute, releasing 1 MB.
+- The server's readiness path is fast and stays fast under pressure: opening
+  `GET /api/agent/<id>/events` for a cold session answered `connected` in **68 ms**,
+  and **32–44 ms** with the pressure valve run 1 s in and then every 2 s
+  (deliberate experiment, not a committed script). Wrappers: `starting: 0`, so no
+  start was stuck. A cold start is not the bottleneck on this machine.
+- The client path in real browsers: Chromium **and** WebKit, against loopback and
+  against the same Tailscale HTTPS origin the report used
+  (`https://macb00kpr0m4.taila0e40f.ts.net`), typing and sending a prompt:
+  the events stream opens, `connected` arrives, the assistant reply renders. The
+  reported `ready_timeout` did **not** reproduce here; what that leaves open is in
+  `BLOCKERS.md`.
+
+## Fixed
+
+**1 — the readiness wait is a silence window under a ceiling**
+(`lib/agent-event-connection.ts`, `hooks/useAgentSession.ts`).
+`open()` armed one `readinessTimeoutMs` (60 s) timer at the socket and cleared it
+only on `connected`. The server sends a heartbeat every 30 s precisely to say
+"alive, still starting", and the timer ignored it. So a session that takes longer
+than a minute to start — a dev route compile, extensions and MCP servers loading,
+a large transcript, a phone on a slow link — was reported as
+`Timed out starting the agent session. Please try again.` on a stream that was
+answering, and `fail()` closed that healthy stream and restarted the start from
+zero, so the next attempt raced the same timer. Now every piece of data re-arms the
+window, and `readinessCeilingMs` (the page: 300 s; omitted: five times the window,
+never under `READINESS_CEILING_FLOOR_MS`) is what ends a start that only ever
+heartbeats. The two failures are worded apart — silence and a stream that never
+opened say retry, a ceiling says the session is slow — and `AgentEventConnectionError.detail`
+carries what the stream did, so the forwarded `[browser]` line is evidence and not
+a guess. `snapshot()` already reported `readyState` / `lastHeartbeatAt` / `events`,
+which is what the Debug panel reads.
+Pinned by `lib/agent-event-connection.test.mjs` (heartbeats keep a five-window
+start alive on one stream; the ceiling fails with the "slow session" words and
+retries; a silent open stream and a stream that never opened get the words that
+fit) and by `hooks/useAgentSession.test.mjs` (60 s window, 300 s ceiling, both
+wired into the connection).
+
+**2 — the valve triggers on memory it can act on**
+(`lib/server-memory.ts`, `bin/server-flags.js`, `docs/agents/fork-memory.md`).
+The report keeps `rss` and `peakRss` (the numbers Activity Monitor agrees with)
+and adds `managedBytes` = `heapTotal` + max(`external`, `arrayBuffers`) — the V8
+heap plus the stores bound to JS, the only bytes the valve's two moves (drop the
+stores, `global.gc()`) can reach. `overBudget` is now `managedBytes > budget`, so a
+mapped-page-heavy RSS stops opening the log every minute. Dev's budget follows the
+meaning: **2048** (the dev heap ceiling), not 2560 chosen to keep an RSS trigger
+quiet against a 1.5–2 GB Turbopack module graph. Pinned by
+`lib/server-memory.test.mjs` (a 2.9 GB RSS / 0.52 GB managed process is not over a
+1024 MB budget and is over a 500 MB one) and `scripts/server-flags.test.mjs`.
+Verified live on the running dev server: `GET /api/agent/debug?memory=1` answers
+`rss 2345 MB, managedBytes 561 MB, overBudget false`.
+
+**3 — a stale test the merged composer left behind**
+(`hooks/useAgentSession.test.mjs`, `docs/agents/fork-sessions.md`).
+"keeps the compaction control reachable while a turn is auto-compacting" grepped
+`ChatInput.tsx` for `{onCompact && isCompacting && (`, which `65f311a5` moved into
+`ComposerPlusMenu.tsx`; the slice came back empty and the test failed on
+`40f85b09`. It now reads the file the control lives in, with the same intent: the
+running compaction's Stop row is guarded by `isCompacting && onAbortCompaction`
+and never by `!isStreaming`, the `+` wears `data-compacting`, and starting one is
+offered only while `canCompactNow`. The doc paragraph that described the old gear
+menu is corrected in the same pass.
+
+## Verification
+
+- `node --test lib/agent-event-connection.test.mjs` → **18/18** (15 kept, 3 new).
+- `node --test lib/server-memory.test.mjs scripts/server-flags.test.mjs hooks/useAgentSession.test.mjs lib/agent-event-connection.test.mjs` → **82/82**.
+- `node_modules/.bin/tsc --noEmit` → **exit 0**.
+- `npm run lint` → 45 warnings and **one pre-existing error** (`bin/worktree-port.js:3`,
+  `@typescript-eslint/no-require-imports`), present on `40f85b09`; nothing new
+  from these files.
+- `npm test` → 5631 tests, **5590 pass / 39 fail**. All 39 are baseline failures of
+  this test-merge branch, proven by re-running the same 18 files at the base commit
+  `40f85b09` in a throwaway worktree: **39 failures of 187, with identical per-file
+  counts** (`ChatInput.composer-row` 10, `ChatInput.test` 6, `ChatInput.composer-expand` 3,
+  `ChatInput.automation`/`ChatInput.compaction`/`MobilePwaLayout`/`composer-panel-placement`
+  2 each, and 7 files with 1). They are the merged composer work’s stale source-shape
+  guards, `scripts/prod-server-flags.test.mjs` (the production start scripts moved under
+  the port allocator) and `scripts/web-logging.test.mjs`. None names a file this task
+  touched and none is in the stream or memory path; closing them is its own task, in the
+  same “a guard follows the code it guards” shape as item 3. Counted whole, the base fails
+  40 of these tests and this branch 39: the 39 above, plus item 3’s compaction guard,
+  which failed at the base and passes here. No failure on this branch is new.
+- Live, after the change: a real-browser send against the running dev server —
+  Chromium on loopback and WebKit over the Tailscale HTTPS origin (the origin the
+  report used) — opens the events stream, reaches `connected`, renders the reply, and
+  the console is clean. Turbopack had rebuilt the client bundle, so this is the
+  changed path and not the old bundle.
+
+## Noted, not this task
+
+- The WebKit send printed a React warning: *Encountered two children with the same
+  key `message-local-0`*. A local-message key collision in the transcript, in the
+  message list's keys, not in the stream path.
 # PROGRESS — startup lease noise, breathing task glyphs, composer fold, context chips, live branch
 
 Branch `fix/bg-task-lease-log-breathing-composer-chips`, from

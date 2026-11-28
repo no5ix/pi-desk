@@ -1,6 +1,37 @@
 # BLOCKERS
 
-None open.
+## The reported `ready_timeout` is not reproduced (open)
+
+The report: `npm run dev` healthy, and
+
+    [browser] Failed to send message: AgentEventConnectionError: Timed out starting the agent session. Please try again.
+
+The defect class it matches is fixed and pinned (the 60 s readiness countdown
+ignored the stream's heartbeats — `PROGRESS.md`, and
+`lib/agent-event-connection.test.mjs`). What is **not** proven is that this was
+that class in that moment, because the failure did not reproduce in this
+environment:
+
+- Chromium and WebKit, loopback and the Tailscale HTTPS origin the report used:
+  type a prompt, send, `connected` arrives, the reply renders.
+- The server's cold start answers `connected` in 30–70 ms, with the pressure valve
+  run 1 s in and every 2 s after.
+- `eventStreams.total` 1, `wrappers.starting: 0`, four live wrappers: no stuck
+  start, no starved stream pool while measuring.
+
+Ruled out by measurement, so nobody re-walks them: the events route's
+`connected` encode path; a start blocked by MCP (`prepareForPrompt` runs at the
+prompt, not at session start); the pressure valve evicting a wrapper mid-start
+(`enforceIdleSessionCap(halve, graceMs: 0)` never produced a stream that closed
+without `connected`); Safari's six-connection HTTP/1.1 pool (one agent stream, one
+terminal stream, three shared streams at the Tailscale origin).
+
+The smallest next step is the page, not the code: the next time the line appears,
+`GET /api/agent/debug?session=<id>` (the Debug panel's connection row) says
+`state`, `readyState`, `opens`, `retries`, `lastError`, and the notice itself now
+carries the stream's own words — "the stream never opened", "stayed silent for 60s"
+or "took more than 300s to start" — which separate a request that never left the
+browser from a server that is slow, from a proxy that ate the stream.
 
 ## Resolved
 

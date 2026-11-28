@@ -745,3 +745,37 @@ where the guard expected `sortedOptions`. Each assertion was rewritten to the
 file and shape that carries the behaviour, with the reason beside it. Deleting an
 assertion is not the move: every one of these three still fails if the behaviour
 goes.
+
+## A stream that answers is not a timed-out session (2026-11)
+
+The page's readiness wait was one 60 s timer armed at the socket, cleared only on
+`connected`. The server's 30 s heartbeat — whose only job is to say "alive, still
+starting" — did not touch it, so a session that needs more than a minute (a dev
+route compile, extensions and MCP servers loading, a large transcript, a phone on
+a slow link) was reported as "Timed out starting the agent session. Please try
+again.", and `fail()` closed the healthy stream and restarted the start from zero.
+The window is now silence (`readinessTimeoutMs`, re-armed by any data) under a
+ceiling (`readinessCeilingMs`, counted from the socket). The trade-off is real: a
+session that is genuinely wedged keeps its page waiting up to 300 s instead of 60,
+and the page's send sits behind that wait. The accepted side of that is the
+`snapshot()` the Debug panel reads — `state`, `readyState`, `lastHeartbeatAt`,
+`lastError` — and the failure's own words: silence says retry, a ceiling says the
+session is slow. Trusting the heartbeat is the whole point; a rule that ignores it
+is a rule that fails the healthy case.
+
+## The pressure valve is measured against what it can release (2026-11)
+
+`overBudget` was `rss > PI_WEB_MEMORY_BUDGET_MB`. On macOS, RSS carries the
+read-only library mappings (the dyld shared cache, resident) and Turbopack's mmap'd
+module graph: this app's dev server measured 2.9 GB of RSS, 1.1 GB of physical
+footprint, and 0.52 GB of heap plus external stores — so a healthy process was
+"over budget" from its first minute and the valve printed a line a minute to release
+1 MB. The trigger is now `managedBytes` = `heapTotal` + max(`external`,
+`arrayBuffers`): exactly what the valve's two moves (drop the stores, `global.gc()`)
+can reach. Dev's budget follows the meaning and sits at the heap ceiling (2048), not
+above an RSS that no release can lower. What this stops detecting is growth in
+neither bucket — a native leak in an addon, mmap'd files. That is not blind: `rss`
+and `peakRss` stay in the report, `scripts/memory-bench.mjs` measures RSS and
+"given back" as its headline, and `lib/server-memory.ts` names the buckets that
+carry the external stores. A valve that fires on pages it cannot free is noise, and
+noise is what trains an operator to ignore the one line that matters.

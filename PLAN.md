@@ -1,3 +1,57 @@
+# PLAN — the stream's readiness timeout, and the valve's trigger
+
+Branch `fix/agent-stream-readiness-liveness`, from
+`test-merge/test-merge-pi-desk-main` (`40f85b09`).
+
+The ask, in the user's words: `npm run dev` starts fine, and the browser prints
+
+    [browser] Failed to send message: AgentEventConnectionError: Timed out starting the agent session. Please try again.
+        at lib/agent-event-connection.ts:173 (the readiness timeout)
+
+with two `[pi-web] memory pressure (over-budget): released 1 MB …` lines above it.
+(The older section below is the merged branch's plan, kept for history.)
+
+## Acceptance criteria
+
+1. **Implemented.** A stream that stays open and keeps delivering data (the app's
+   30 s heartbeat) is never failed by a fixed 60 s readiness countdown, and the
+   page never closes that stream and restarts the session start from zero.
+2. **Implemented.** The two readiness failures say what the stream did: a silence
+   window (or a stream that never opened) says retry; a ceiling says the session
+   itself is slow. `AgentEventConnectionError.detail` carries the same words for a
+   log line.
+3. **Implemented.** The pressure valve triggers on memory it can act on (the V8
+   heap plus the external stores), not on RSS, so a healthy dev server stops
+   printing a pressure line every minute for a 1 MB release.
+4. **Recorded.** The exact Safari-over-Tailscale timeout in the report was not
+   reproduced here; what was measured instead, and what stays unverified, is in
+   `PROGRESS.md` and `BLOCKERS.md`.
+5. **Verified.** `tsc --noEmit` clean; `npm run lint` adds nothing; `npm test` 5631 tests,
+   5590 pass / 39 fail — all 39 proven baseline at `40f85b09`; a real-browser send
+   (Chromium on loopback, WebKit over the Tailscale origin) reaches `connected` and
+   renders the reply on the rebuilt bundle. Evidence in `PROGRESS.md`.
+
+## Baseline failures found on the base commit
+
+- `hooks/useAgentSession.test.mjs` "keeps the compaction control reachable while
+  a turn is auto-compacting" fails on `40f85b09`: it greps `ChatInput.tsx` for a
+  control the merged composer work (`65f311a5`) moved to `ComposerPlusMenu.tsx`.
+  The assertion now reads the file the control lives in, intent unchanged.
+- `npm run lint` carries one error on `40f85b09`: `bin/worktree-port.js:3` uses a
+  `require()` import (`@typescript-eslint/no-require-imports`). Not this task’s
+  file; recorded, not silenced.
+- `npm test` on `40f85b09` fails **39 of 5631** in 18 files. The same 18 files run at
+  the base commit in a throwaway worktree fail 39 of 187 with identical per-file
+  counts, so none of them is this task’s: the merged composer work’s stale
+  source-shape guards (`ChatInput.composer-row` 10, `ChatInput.test` 6,
+  `ChatInput.composer-expand` 3, the rest 1-2 each), `scripts/prod-server-flags.test.mjs`
+  (the production start scripts moved under the port allocator) and
+  `scripts/web-logging.test.mjs`. Closing them is its own task, in the same shape as
+  the item above. The compaction guard named first above is the base’s 40th failure, and it
+  is the one repaired here.
+
+---
+
 # PLAN — startup lease noise, breathing task glyphs, composer fold, context chips, live branch
 
 Branch `fix/bg-task-lease-log-breathing-composer-chips`, from
