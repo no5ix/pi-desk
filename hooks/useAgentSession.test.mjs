@@ -7,6 +7,7 @@ const source = await jitiSource(new URL("./useAgentSession.ts", import.meta.url)
 const chatWindowSource = await jitiSource(new URL("../components/ChatWindow.tsx", import.meta.url));
 const phaseLabelSource = await jitiSource(new URL("../lib/chat-phase-label.ts", import.meta.url));
 const chatInputSource = await jitiSource(new URL("../components/ChatInput.tsx", import.meta.url));
+const composerPlusMenuSource = await jitiSource(new URL("../components/ComposerPlusMenu.tsx", import.meta.url));
 const messageViewSource = await jitiSource(new URL("../components/MessageView.tsx", import.meta.url));
 const appShellSource = await jitiSource(new URL("../components/AppShell.tsx", import.meta.url));
 
@@ -413,8 +414,13 @@ test("delegates event stream readiness and hides an empty agent phase", () => {
   assert.match(phaseLabelSource, /return null;/);
 });
 
-test("uses one absolute agent-readiness deadline instead of a five-second transport deadline", () => {
+test("uses one agent-readiness silence window under a ceiling, not a transport deadline", () => {
+  // 60s of *silence* (the server's heartbeat re-arms it) under a 300s ceiling: a
+  // session that is slow to start on a live stream is not a dead server, and the
+  // page must not fail it at a fixed 60s and discard a stream that is answering.
   assert.match(source, /EVENT_STREAM_READY_TIMEOUT_MS = 60_000/);
+  assert.match(source, /EVENT_STREAM_READY_CEILING_MS = 300_000/);
+  assert.match(source, /readinessCeilingMs: EVENT_STREAM_READY_CEILING_MS/);
   assert.doesNotMatch(source, /EVENT_STREAM_OPEN_TIMEOUT_MS/);
 });
 
@@ -872,19 +878,21 @@ test("keeps the compaction control reachable while a turn is auto-compacting", (
   // Auto-compaction starts mid-turn, so `isStreaming` (sessionBusy) is already true. Hiding
   // the control behind `!isStreaming` left only the generic stop button, which aborts the
   // whole prompt instead of the compaction.
-  // Manual compaction moved into the composer's session (gear) menu; a running
-  // compaction keeps its own row control, guarded only by isCompacting so it
-  // shows whether or not a turn is streaming.
-  const controlBlock = chatInputSource.slice(
-    chatInputSource.indexOf("{onCompact && isCompacting && ("),
-    chatInputSource.indexOf('aria-label={t("chat.stopCompaction")}'),
+  // Manual compaction moved into the composer's `+` menu (the card row carries only the `+`,
+  // the prompt and Send), where a running compaction keeps its own row, guarded only by
+  // isCompacting so it shows whether or not a turn is streaming.
+  const controlBlock = composerPlusMenuSource.slice(
+    composerPlusMenuSource.indexOf("{isCompacting && onAbortCompaction && ("),
+    composerPlusMenuSource.indexOf("{session && (session.automation || onCompact) && ("),
   );
 
-  assert.ok(controlBlock.length > 0);
+  assert.ok(controlBlock.length > 0, "the `+` menu carries a running compaction's Stop");
   assert.doesNotMatch(controlBlock, /!isStreaming/);
-  assert.match(controlBlock, /onClick=\{onAbortCompaction\}/);
-  assert.match(controlBlock, /cursor: "pointer"/);
-  // Starting one is offered only when nothing is running.
+  assert.match(controlBlock, /onSelect=\{\(\) => \{ onAbortCompaction\(\); close\(\); \}\}/);
+  // The `+` itself wears the state, so the control is findable while the menu is closed.
+  assert.match(composerPlusMenuSource, /data-compacting=\{isCompacting \? "true" : undefined\}/);
+  // The composer hands the handler down, and starting one is offered only when nothing runs.
+  assert.match(chatInputSource, /onAbortCompaction=\{onAbortCompaction\}/);
   assert.match(chatInputSource, /const canCompactNow = Boolean\(onCompact && !isStreaming && !isCompacting\)/);
 });
 

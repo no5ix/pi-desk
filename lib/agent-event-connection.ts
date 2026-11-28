@@ -12,13 +12,23 @@ export interface AgentEventSourceLike {
 export type AgentEventConnectionStatus = "ready_timeout" | "startup_error" | "closed";
 
 export class AgentEventConnectionError extends Error {
-  constructor(public readonly status: AgentEventConnectionStatus, message?: string) {
+  /**
+   * What the stream actually did, in the words a log line needs. The readiness
+   * failure separates a stream that never opened from a stream that stayed open
+   * and kept answering while the session took its time: a retry is the right
+   * advice for one and not the other, so the message the notice prints carries
+   * this and the field keeps it readable programmatically.
+   */
+  readonly detail: string | null;
+
+  constructor(public readonly status: AgentEventConnectionStatus, message?: string, detail?: string) {
     super(message ?? (
       status === "ready_timeout"
         ? "Timed out starting the agent session. Please try again."
         : "Failed to connect to the agent event stream. Please try again."
     ));
     this.name = "AgentEventConnectionError";
+    this.detail = detail ?? null;
   }
 }
 
@@ -48,7 +58,24 @@ export interface AgentEventConnectionOptions {
   createSource(sessionId: string): AgentEventSourceLike;
   onEvent(event: AgentEventLike): void;
   shouldMaintain(sessionId: string): boolean;
+  /**
+   * How long the stream may stay silent before the readiness wait gives up. This
+   * is a *silence* window, not a countdown from the socket: every piece of data
+   * the stream delivers re-arms it, and the server's heartbeat
+   * (AGENT_EVENT_HEARTBEAT_MS) is data sent for exactly that purpose — "alive,
+   * still starting". A cold start (a dev route compile, extensions and MCP
+   * servers loading, a large transcript, a phone on a slow link) is slow work,
+   * not a dead stream: failing at a fixed 60s from the socket told the user to
+   * retry a session that was about to be ready, and threw away the start in
+   * progress together with a healthy stream.
+   */
   readinessTimeoutMs: number;
+  /**
+   * The absolute ceiling on the readiness wait, counted from the socket opening:
+   * what stops a session that starts forever, heartbeats and all. Omitted: five
+   * times the silence window, at least READINESS_CEILING_FLOOR_MS.
+   */
+  readinessCeilingMs?: number;
   reconnectDelayMs: number;
   /**
    * A ready stream that delivers nothing for this long, heartbeats included
@@ -59,6 +86,33 @@ export interface AgentEventConnectionOptions {
 }
 
 const EVENT_SOURCE_OPEN = 1;
+
+/** The shortest absolute ceiling on the readiness wait, however short the silence window is. */
+export const READINESS_CEILING_FLOOR_MS = 300_000;
+
+/** The readiness failure's words, from what the stream actually did. */
+function readinessFailure(
+  connection: Connection,
+  kind: "silent" | "ceiling",
+  windowMs: number,
+): AgentEventConnectionError {
+  const seconds = Math.max(1, Math.round(windowMs / 1000));
+  const opened = connection.source.readyState === EVENT_SOURCE_OPEN;
+  const answered = connection.lastHeartbeatAt !== null || connection.events > 0;
+  if (kind === "ceiling") {
+    return new AgentEventConnectionError(
+      "ready_timeout",
+      `The agent session took more than ${seconds}s to start, although its stream stayed open and the server kept answering. Send again \u2014 the session is usually ready by then.`,
+      `stream open for ${seconds}s and answering, no connected`,
+    );
+  }
+  return new AgentEventConnectionError(
+    "ready_timeout",
+    `Timed out starting the agent session: ${opened ? "the stream stayed silent for " : "the stream never opened and nothing arrived for "}${seconds}s. Please try again.`,
+    `${opened ? "stream open, silent" : "stream never opened"} for ${seconds}s`
+      + `${answered ? ", earlier data did arrive" : ", nothing has arrived"}`,
+  );
+}
 
 /** Owns the EventSource, agent-readiness handshake, and passive reconnect. */
 export class AgentEventConnection {
@@ -169,26 +223,51 @@ export class AgentEventConnection {
       resolve = resolvePromise;
       reject = rejectPromise;
     });
-    const timeout = setTimeout(() => {
-      this.fail(connection, new AgentEventConnectionError("ready_timeout"), "ready_timeout");
-    }, this.options.readinessTimeoutMs);
+    const openedAt = Date.now();
+    // The readiness wait is a silence window under an absolute ceiling. Data of any
+    // kind — above all the server's heartbeat — re-arms the window, because a stream
+    // that keeps answering is a server that is alive and still starting the session.
+    // The ceiling is what ends a start that only ever heartbeats. See
+    // AgentEventConnectionOptions.readinessTimeoutMs for why the window is not a
+    // countdown from the socket.
+    const silenceMs = this.options.readinessTimeoutMs;
+    const ceilingMs = this.options.readinessCeilingMs ?? Math.max(READINESS_CEILING_FLOOR_MS, silenceMs * 5);
+    const readiness = {
+      silence: null as ReturnType<typeof setTimeout> | null,
+      ceiling: null as ReturnType<typeof setTimeout> | null,
+    };
+    const clearReadiness = () => {
+      if (readiness.silence !== null) clearTimeout(readiness.silence);
+      if (readiness.ceiling !== null) clearTimeout(readiness.ceiling);
+      readiness.silence = null;
+      readiness.ceiling = null;
+    };
+    const failReadiness = (kind: "silent" | "ceiling", windowMs: number) => {
+      clearReadiness();
+      this.fail(connection, readinessFailure(connection, kind, windowMs), "ready_timeout");
+    };
+    const armSilence = () => {
+      if (readiness.silence !== null) clearTimeout(readiness.silence);
+      readiness.silence = setTimeout(() => failReadiness("silent", silenceMs), silenceMs);
+    };
+    readiness.ceiling = setTimeout(() => failReadiness("ceiling", ceilingMs), ceilingMs);
+    armSilence();
     const attempt: Attempt = {
       promise,
       ready: false,
       succeed() {
         if (settled) return;
         settled = true;
-        clearTimeout(timeout);
+        clearReadiness();
         resolve();
       },
       fail(error) {
         if (settled) return;
         settled = true;
-        clearTimeout(timeout);
+        clearReadiness();
         reject(error);
       },
     };
-    const openedAt = Date.now();
     const connection: Connection = {
       sessionId,
       source,
@@ -205,6 +284,9 @@ export class AgentEventConnection {
     source.onmessage = (message) => {
       if (this.current !== connection) return;
       connection.lastSeenAt = Date.now();
+      // The server is answering: the silence window starts again from now. Once
+      // `connected` has arrived the watchdog (staleAfterMs) owns this job.
+      if (!attempt.ready) armSilence();
       let event: AgentEventLike;
       try {
         event = JSON.parse(message.data) as AgentEventLike;

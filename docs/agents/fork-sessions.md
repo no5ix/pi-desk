@@ -78,8 +78,23 @@ Pi stores toolCall blocks as `{type:"toolCall", id, name, arguments}` but `ToolC
 ## SSE reconnect on page refresh mid-stream
 On `ChatWindow` mount, `GET /api/agent/[id]` is called. If `state.isStreaming === true`, SSE is reconnected automatically. `thinkingLevel` and `isCompacting` are also synced from this response.
 
+## The stream's readiness wait is a silence window under a ceiling (`lib/agent-event-connection.ts`)
+
+`connected` is the server's proof that the session exists, and the page's send waits for it. The
+wait is `readinessTimeoutMs` of **silence**, re-armed by every piece of data the stream delivers
+(above all the app's own 30 s heartbeat, whose whole job is to say "alive, still starting"), under
+`readinessCeilingMs` counted from the socket opening (the page: 60 s of silence, a 300 s ceiling;
+omitted, five times the window, never under `READINESS_CEILING_FLOOR_MS`). A countdown from the
+socket was the old rule, and it lied: a cold start — a dev route compile, extensions and MCP
+servers loading, a large transcript, a phone on a slow link — is slow work, and the page called it
+"Timed out starting the agent session. Please try again." while the stream sat open and answered
+every 30 s, then closed that healthy stream and restarted the start from zero. Keep the two
+failures worded apart: silence and a stream that never opened say to retry, a ceiling says the
+session is slow. The `AgentEventConnectionError.detail` field carries what the stream did, and
+`snapshot()`'s `lastError` keeps the reason (`ready_timeout`) for the Debug panel.
+
 ## Compaction & summarization-retry SSE events
-pi 0.86 emits `compaction_start`/`compaction_end` (the legacy `auto_compaction_*` names are gone — do not re-add their cases) plus `summarization_retry_scheduled/attempt_start/finished` when summary generation enters backoff. `handleAgentEvent` keeps `isCompacting` in sync and mirrors the retry counter into `summarizationRetry`, shown as "Compacting… (retry n/m)" on the compact control. `compaction_end.willRetry` deliberately leaves the counter in place so the countdown stays visible between compaction passes. Manual compact is a blocking POST — the button stays disabled until the response returns. Starting one lives in the composer's session (gear) menu, offered while `canCompactNow` (`onCompact && !isStreaming && !isCompacting`); a running compaction gets its own row control guarded only by `onCompact && isCompacting`, because an auto-compaction mid-run must stay visible and abortable, which is exactly when `isStreaming && isCompacting`.
+pi 0.86 emits `compaction_start`/`compaction_end` (the legacy `auto_compaction_*` names are gone — do not re-add their cases) plus `summarization_retry_scheduled/attempt_start/finished` when summary generation enters backoff. `handleAgentEvent` keeps `isCompacting` in sync and mirrors the retry counter into `summarizationRetry`, shown as "Compacting… (retry n/m)" on the compact control. `compaction_end.willRetry` deliberately leaves the counter in place so the countdown stays visible between compaction passes. Manual compact is a blocking POST — the button stays disabled until the response returns. Starting one lives in the composer's `+` menu (`components/ComposerPlusMenu.tsx`), offered while `canCompactNow` (`onCompact && !isStreaming && !isCompacting`); a running compaction gets its own row in that menu, guarded only by `isCompacting && onAbortCompaction`, because an auto-compaction mid-run must stay visible and abortable, which is exactly when `isStreaming && isCompacting` — the `+` itself wears `data-compacting` so the control is findable with the menu closed.
 
 ## A finished report cancels the compaction that opens after it (`lib/rpc-manager.ts`)
 

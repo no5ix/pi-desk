@@ -288,6 +288,15 @@ const EVENT_STREAM_IDLE_GRACE_MS = 30_000;
 const AGENT_STATE_RECONCILE_MS = 15_000;
 const BASH_STATE_RECONCILE_MS = 1_000;
 const EVENT_STREAM_READY_TIMEOUT_MS = 60_000;
+/**
+ * The ceiling on the readiness wait, counted from the socket. The 60s above is a
+ * silence window — the server's 30s heartbeat re-arms it — so this is what bounds a
+ * session that starts forever while its stream stays healthy. A slow start is the
+ * session's own work (extensions, MCP servers, a large transcript, a dev route
+ * compile), so the page gives it minutes and says so, rather than reporting a dead
+ * server and discarding a stream that was answering.
+ */
+const EVENT_STREAM_READY_CEILING_MS = 300_000;
 const EVENT_STREAM_RECONNECT_DELAY_MS = 1_000;
 /**
  * A ready stream that delivered nothing at all — heartbeats included — for three of them
@@ -679,6 +688,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         )
       ),
       readinessTimeoutMs: EVENT_STREAM_READY_TIMEOUT_MS,
+      readinessCeilingMs: EVENT_STREAM_READY_CEILING_MS,
       reconnectDelayMs: EVENT_STREAM_RECONNECT_DELAY_MS,
       // The connection reconnects a silent stream; `connected` then re-snapshots the run,
       // and the reconcile below catches anything the outage swallowed.
