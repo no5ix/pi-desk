@@ -193,6 +193,14 @@ const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
   edit: "Edit",
 };
 
+/** The route's reason, in the pack's words. Four refusals, four sentences. */
+const DIFF_DENIAL_KEYS: Record<string, string> = {
+  "outside-root": "files.diffDenied.outsideRoot",
+  "link-escapes-root": "files.diffDenied.linkEscapesRoot",
+  "parent-segment": "files.diffDenied.parentSegment",
+  "unresolvable": "files.diffDenied.unresolvable",
+};
+
 const FILE_CODE_STYLE: CSSProperties = {
   fontFamily: "var(--font-mono)",
   fontSize: "var(--fs-body)",
@@ -1220,6 +1228,14 @@ function TextFileViewer({
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
   const [gitDiffResolved, setGitDiffResolved] = useState(false);
+  /**
+   * Why git refused this file's diff, in the route's own words (`outside-root`,
+   * `link-escapes-root`, `parent-segment`, `unresolvable`). A refused diff used to
+   * mean "no diff", and the view slid back to the source: the reader was left with
+   * a file, no change, and no sentence about why. The refusal is four different
+   * situations, and the panel names the one it is in.
+   */
+  const [gitDiffDenial, setGitDiffDenial] = useState<string | null>(null);
   const [sessionDiff, setSessionDiff] = useState<SessionFileDiffResponse | null>(null);
   const [sessionDiffLoading, setSessionDiffLoading] = useState(false);
   const [sessionDiffResolved, setSessionDiffResolved] = useState(false);
@@ -1471,11 +1487,15 @@ function TextFileViewer({
       const params = new URLSearchParams({ cwd, path: targetPath });
       if (diffCommitSha) params.set("ref", diffCommitSha);
       const response = await fetch(`/api/git/diff?${params.toString()}`);
-      const next = await response.json() as GitFileDiffResponse & { error?: string };
+      const next = await response.json() as GitFileDiffResponse & { error?: string; reason?: string };
       if (requestId !== gitDiffRequestRef.current) return;
       setGitDiff(response.ok && next.supported && typeof next.patch === "string" ? next : null);
+      setGitDiffDenial(!response.ok && next.reason ? next.reason : null);
     } catch {
-      if (requestId === gitDiffRequestRef.current) setGitDiff(null);
+      if (requestId === gitDiffRequestRef.current) {
+        setGitDiff(null);
+        setGitDiffDenial(null);
+      }
     } finally {
       if (requestId === gitDiffRequestRef.current) {
         setGitDiffLoading(false);
@@ -1582,8 +1602,10 @@ function TextFileViewer({
   const isDeletedDiff = hasDiff && activeDiff?.status === "deleted";
 
   useEffect(() => {
-    if (diffResolved && !hasDiff && displayMode === "diff") updateDisplayMode("source");
-  }, [displayMode, diffResolved, hasDiff, updateDisplayMode]);
+    // A refusal is not "this file has no change": the diff mode stays, and the
+    // pane says what the refusal was.
+    if (diffResolved && !hasDiff && !gitDiffDenial && displayMode === "diff") updateDisplayMode("source");
+  }, [displayMode, diffResolved, hasDiff, gitDiffDenial, updateDisplayMode]);
 
   // Wait for the diff requests before restoring diff mode so the unresolved
   // placeholder cannot immediately demote it back to source.
@@ -2121,6 +2143,11 @@ function TextFileViewer({
               }}
               onSave={() => void saveDraft()}
             />
+          </div>
+        ) : effectiveDisplayMode === "diff" && gitDiffDenial ? (
+          <div className="file-diff-denied" role="status">
+            <span className="file-diff-denied-title">{t(DIFF_DENIAL_KEYS[gitDiffDenial] ?? "files.diffDenied.unresolvable")}</span>
+            <span className="file-diff-denied-path">{filePath}</span>
           </div>
         ) : effectiveDisplayMode === "diff" && hasDiff ? (
           <>

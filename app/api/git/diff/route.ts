@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { lstatSync } from "fs";
-import path from "path";
-import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
+import { getAllowedFileRoots, isWindowsAbsolutePath } from "@/lib/file-access";
+import { readDiffPathDenial } from "@/lib/git-diff-access";
 import { getGitFileDiff } from "@/lib/git-changes";
-import { hasParentDirectorySegment } from "@/lib/path-security";
 
 /**
  * A commit named by hash. The commit panel hands the tab a full sha, and a
@@ -13,25 +11,6 @@ import { hasParentDirectorySegment } from "@/lib/path-security";
  */
 function isCommitSha(value: string): boolean {
   return /^[0-9a-f]{4,64}$/i.test(value);
-}
-
-function isDiffPathAllowed(filePath: string, allowedRoots: Set<string>): boolean {
-  if (hasParentDirectorySegment(filePath)) return false;
-  // Deleted files (and their parents) may be absent. Authorize the nearest
-  // existing entry, but never walk past a dangling link or an access error.
-  let candidate = filePath;
-  while (isFilePathAllowed(candidate, allowedRoots)) {
-    try {
-      lstatSync(candidate);
-      return isExistingFilePathAllowed(candidate, allowedRoots);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return false;
-    }
-    const parent = path.dirname(candidate);
-    if (parent === candidate) return false;
-    candidate = parent;
-  }
-  return false;
 }
 
 export async function GET(request: NextRequest) {
@@ -47,13 +26,16 @@ export async function GET(request: NextRequest) {
     }
 
     const allowedRoots = await getAllowedFileRoots();
-    if (!isFilePathAllowed(cwd, allowedRoots) || !isFilePathAllowed(filePath, allowedRoots)) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
-    }
-    // Check the target as well as cwd: a directory junction inside a repository
-    // can otherwise expose an outside file through an apparently local path.
-    if (!isExistingFilePathAllowed(cwd, allowedRoots) || !isDiffPathAllowed(filePath, allowedRoots)) {
-      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    // Both sides are the path git printed (git resolves links, so a worktree
+    // opened through a link answers with the link-free path), while the roots
+    // record the folder the user picked. The gate is containment after the links
+    // are followed, on both sides; the reason names which of the four cases a 403
+    // is, so the panel never answers "Access denied" to a file of the user's own
+    // working tree. A directory junction inside a repository stays refused: that
+    // is `link-escapes-root`.
+    const denial = readDiffPathDenial(cwd, allowedRoots) ?? readDiffPathDenial(filePath, allowedRoots);
+    if (denial) {
+      return NextResponse.json({ error: "Access denied", reason: denial, supported: false }, { status: 403 });
     }
 
     if (ref && !isCommitSha(ref)) {

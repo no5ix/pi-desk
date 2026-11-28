@@ -58,7 +58,9 @@ test("refuses a file reached through an outside junction before returning any co
   directoryLink(outside, path.join(root, "linked"));
   const response = await request(root, path.join(root, "linked", "secret.txt"));
   assert.equal(response.status, 403);
-  assert.deepEqual(await response.json(), { error: "Access denied" });
+  // The body names the case: a link inside the project that leaves it is the one
+  // check this route exists for, and the panel says so in words.
+  assert.deepEqual(await response.json(), { error: "Access denied", reason: "link-escapes-root", supported: false });
 });
 
 test("refuses missing descendants of an outside or dangling junction", async () => {
@@ -181,7 +183,50 @@ test("rejects parent traversal and keeps an absent untracked path unsupported", 
   const root = fixture();
   const response = await request(root, `${root}${path.sep}unused${path.sep}..${path.sep}missing.txt`);
   assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: "Access denied", reason: "parent-segment", supported: false });
   const missing = await request(root, path.join(root, "absent", "missing.txt"));
   assert.equal(missing.status, 200);
   assert.deepEqual(await missing.json(), { supported: false });
+});
+
+test("answers for the path git prints when the project was opened through a link", async () => {
+  // A branchshift-shaped project: a linked worktree, opened from a folder that
+  // reaches it through a link. The allowed root is the folder the user picked;
+  // git answers with the checkout resolved, so the panel's diff request carries
+  // the other spelling of the same file. Before, that pair answered 403 — the
+  // file list and the file itself read fine, the diff of an uncommitted change
+  // said "Access denied".
+  const repo = fixture();
+  git(repo, "config", "user.name", "Test");
+  git(repo, "config", "user.email", "test@example.invalid");
+  fs.writeFileSync(path.join(repo, "tracked.txt"), "committed\n");
+  git(repo, "add", ".");
+  git(repo, "commit", "--quiet", "-m", "fixture");
+
+  const worktreeBase = fs.mkdtempSync(path.join(base, "worktrees-"));
+  const worktree = path.join(worktreeBase, "feat");
+  git(repo, "worktree", "add", "--quiet", "-b", "feat", worktree, "HEAD");
+  const linkBase = path.join(base, `link-${path.basename(worktreeBase)}`);
+  directoryLink(worktreeBase, linkBase);
+  const openedThroughLink = path.join(linkBase, "feat");
+  allowFileRoot(openedThroughLink);
+
+  // Uncommitted, in the worktree, in the spelling git prints for it.
+  const resolvedWorktree = fs.realpathSync(openedThroughLink);
+  assert.notEqual(resolvedWorktree, openedThroughLink, "the fixture really opens the worktree through a link");
+  fs.writeFileSync(path.join(resolvedWorktree, "feature.txt"), "a new file\n");
+
+  const response = await request(resolvedWorktree, path.join(resolvedWorktree, "feature.txt"));
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.supported, true, JSON.stringify(result));
+  assert.equal(result.status, "untracked");
+  assert.ok(result.patch.includes("feature.txt"));
+
+  // A path under no root at all is refused, with the reason.
+  const elsewhere = fs.mkdtempSync(path.join(base, "elsewhere-"));
+  fs.writeFileSync(path.join(elsewhere, "notes.txt"), "not a project\n");
+  const outside = await request(resolvedWorktree, path.join(elsewhere, "notes.txt"));
+  assert.equal(outside.status, 403);
+  assert.equal((await outside.json()).reason, "outside-root");
 });
