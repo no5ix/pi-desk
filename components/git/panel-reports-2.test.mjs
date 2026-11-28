@@ -36,7 +36,10 @@ await test("1. the phone keeps the panel's expand button, in the corner it has o
   assert.match(block, /\.file-panel-expand-button \{\s*\n\s*display: inline-flex;/, "the button is shown on a phone");
   assert.match(block, /\.right-panel-container\.right-panel-open\.right-panel-full-width \{[\s\S]*?top: 0;[\s\S]*?height: var\(--app-viewport-height, 100dvh\);/,
     "expanded is the whole viewport; not expanded leaves the chat's topbar above it");
-  assert.match(block, /\.right-panel-container\.right-panel-open:not\(\.right-panel-full-width\) \{[\s\S]*?top: 52px;/,
+  // The unexpanded state carries `!important`: the panel's phone block pins the
+  // card with `top: 0 !important; height: 100dvh !important`, so the state that
+  // leaves the topbar above it has to beat that weight.
+  assert.match(block, /\.right-panel-container\.right-panel-open:not\(\.right-panel-full-width\) \{[\s\S]*?top: 52px !important;[\s\S]*?height: auto !important;/,
     "and the two states differ, so the button does something");
 });
 
@@ -52,8 +55,9 @@ await test("2. the phone's header names the project and opens the app's projects
   assert.match(chip, /onSelectProject\?\.\(project\.path\);\s*\n\s*close\(\);/, "picking a row switches, and closes the tip");
   assert.match(tip, /const close = useCallback\(/, "the shared tip knows how to close, for a tip that became a list");
 
-  assert.match(appShell, /const topbarProjects = useMemo\(/, "the shell builds the list");
-  assert.match(appShell, /isMobile && availableProjectRoots\.length/, "on the phone, from the sidebar's own project list");
+  assert.match(appShell, /const appProjectList = useMemo\(/, "the shell builds the app's project list — the sidebar's own project roots");
+  assert.match(appShell, /const topbarProjects = isMobile && appProjectList\.length \? appProjectList : null;/,
+    "the phone's header is the surface that takes it; the desktop has its sidebar");
   assert.match(appShell, /getProjectDisplayName\(root, availableProjectRoots\)/, "with the sidebar's names");
   assert.match(appShell, /onSelectProject=\{topbarProjects \? handleTopbarProjectSelect : undefined\}/, "and it is wired, only when there is a list");
   assert.match(appShell, /handleNewSession\(`project-\$\{Date\.now\(\)\}`, projectRoot, "project"\)/, "picking one opens a session in that project");

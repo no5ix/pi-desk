@@ -2438,15 +2438,14 @@ export function AppShell() {
   // phone it is a drawer away, so the header's project chip carries the list
   // itself: the same rows, in the sidebar's order, and picking one opens a
   // session in that project. The desktop keeps the path tip — its sidebar is open.
-  const topbarProjects = useMemo(
-    () => (isMobile && availableProjectRoots.length
-      ? availableProjectRoots.map((root) => ({
-        name: getProjectDisplayName(root, availableProjectRoots) ?? root.split("/").filter(Boolean).pop() ?? root,
-        path: root,
-      }))
-      : null),
-    [availableProjectRoots, isMobile],
+  const appProjectList = useMemo(
+    () => availableProjectRoots.map((root) => ({
+      name: getProjectDisplayName(root, availableProjectRoots) ?? root.split("/").filter(Boolean).pop() ?? root,
+      path: root,
+    })),
+    [availableProjectRoots],
   );
+  const topbarProjects = isMobile && appProjectList.length ? appProjectList : null;
   const handleTopbarProjectSelect = useCallback((projectRoot: string) => {
     handleNewSession(`project-${Date.now()}`, projectRoot, "project");
   }, [handleNewSession]);
@@ -3921,6 +3920,7 @@ export function AppShell() {
               <GitPanel
                 key={visibleProjectCwd}
                 cwd={visibleProjectCwd}
+                projects={appProjectList.length ? appProjectList : undefined}
                 onOpenFile={handleGitPanelOpenFile}
                 onOpenFileGitDiff={handleGitPanelOpenFileDiff}
                 fileHistoryPath={gitFileRequest?.kind === "history" ? gitFileRequest.path : null}

@@ -260,18 +260,26 @@ export interface ProjectRepoEntry {
   name: string;
   branch: string | null;
   isWorktree: boolean;
+  /**
+   * False for a folder with no repository in it. The switcher is the app's
+   * project list, so such a folder is listed like every other one — the panel
+   * simply has nothing to read there, and says so.
+   */
+  isRepo: boolean;
 }
 
 /**
- * The projects of the app's own list — the folders the sessions live in — as git
- * repositories.
+ * The projects of the app's own list — the folders the sessions live in.
  *
  * Branchshift's repo switcher listed the IDE's open projects, and that was the
  * point of it: the Git view switched between the same folders the editor was
  * working in. pi-desk has no IDE: its project list is the session sidebar's, so
- * the panel reads the same list. A folder that is not a checkout, no longer
- * exists, or is outside the app's authorized roots is left out — the panel cannot
- * act on it, so it has no business offering it.
+ * the panel reads the same list — the same folders, the same display names, and
+ * all of them. The list is the project list, not a list of repositories: a
+ * project without a repository is answered with `isRepo: false` and is left in,
+ * because leaving it out makes the panel's list disagree with the sidebar's.
+ * A folder that no longer exists, or that the app is not allowed to read, is
+ * the exception: there is nothing to switch to, and nothing to say about it.
  */
 export async function listProjectRepos(): Promise<ProjectRepoEntry[]> {
   const { listSessionsIncremental } = await import("../session-list-scanner");
@@ -284,6 +292,12 @@ export async function listProjectRepos(): Promise<ProjectRepoEntry[]> {
     seen.add(cwd);
     roots.push(cwd);
   }
+
+  // The sidebar's names: a bare basename, with parent segments only where two
+  // projects share one. The switcher and the sidebar must say the same word for
+  // the same folder, so the shared rule is used here too (lib/project-display.ts).
+  const { getProjectDisplayNames } = await import("../project-display");
+  const displayNames = getProjectDisplayNames(roots);
 
   const { execFile } = await import("node:child_process");
   const { stat } = await import("node:fs/promises");
@@ -300,13 +314,14 @@ export async function listProjectRepos(): Promise<ProjectRepoEntry[]> {
     } catch {
       return null;
     }
+    const name = displayNames.get(root) ?? path.basename(root);
     let paths;
     try {
       paths = await inspectGitRepo(root);
     } catch {
-      return null;
+      // No repository here. The project is still a project.
+      return { path: root, name, branch: null, isWorktree: false, isRepo: false };
     }
-    if (paths.workTreeRoot !== root) return null;
     let branch: string | null = null;
     try {
       const { stdout } = await run("git", ["-C", root, "rev-parse", "--abbrev-ref", "HEAD"], {
@@ -320,9 +335,10 @@ export async function listProjectRepos(): Promise<ProjectRepoEntry[]> {
     }
     return {
       path: root,
-      name: path.basename(root),
+      name,
       branch,
       isWorktree: paths.gitDir !== paths.commonDir,
+      isRepo: true,
     };
   }));
 

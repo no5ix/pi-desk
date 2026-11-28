@@ -39,7 +39,8 @@ interface Props {
    *  commit a commit-panel file row was clicked on: the tab reads that commit
    *  against its parent, because a committed file has no working-tree diff. */
   onOpenFileGitDiff?: (filePath: string, fileName: string, commitSha?: string) => void;
-  /** The app's own project list, for the switcher's Projects group. */
+  /** The app's own project list, for the switcher's Projects group: the sidebar's
+   *  rows, in the sidebar's order, with the sidebar's display names. */
   projects?: { path: string; name: string }[];
   /** The panel's own way to take the full width. On a phone the panel is already
    *  full width, and the header's button is the only expand control that sits
@@ -69,7 +70,7 @@ const SPLIT_STORAGE_KEY = "pi-git-split";
 const SPLIT_MIN = 170;
 const SPLIT_MAX = 420;
 
-export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepository, onBusyChange, fileHistoryPath, blameRequestPath, onGitFileRequestDone, onToggleFullWidth, fullWidth = false }: Props) {
+export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepository, onBusyChange, projects, fileHistoryPath, blameRequestPath, onGitFileRequestDone, onToggleFullWidth, fullWidth = false }: Props) {
   const { t } = useI18n();
   const [activeCwd, setActiveCwd] = useState(cwd);
   const [tab, setTab] = useState<PanelTab>("log");
@@ -150,6 +151,27 @@ export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepositor
   useEffect(() => {
     void loadRepos(false);
   }, [loadRepos]);
+
+  /**
+   * The Projects group: the app's project list, all of it, in the sidebar's order.
+   *
+   * The shell's `projects` prop is the sidebar's own list (the same folders, the
+   * same display names); the `?projects=1` answer is the same list read on the
+   * server, and stays as the fallback for a surface that has no sidebar to ask.
+   * A project the switcher already lists above as one of this folder's checkouts
+   * (a worktree is its own checkout) is not repeated below it.
+   *
+   * A project row carries its name and nothing else. The group answers "which
+   * project", and the branch is what the header chip says for the project that is
+   * open: with a branch and a worktree tag on every row, the names were being cut
+   * to four characters ("pi-…", "auto…") to make room for a second column, and a
+   * list whose rows the reader cannot name is not a project list.
+   */
+  const projectRows = useMemo(() => {
+    const source = projects?.length ? projects : (repos?.projects ?? []);
+    const listed = new Set((repos?.repos ?? []).map((repo) => repo.rootPath));
+    return source.filter((project) => !listed.has(project.path));
+  }, [projects, repos]);
 
   /**
    * A path the panel reads from git — repo-relative, as git names it — as the
@@ -258,33 +280,30 @@ export function GitPanel({ cwd, onOpenFile, onOpenFileGitDiff, onSwitchRepositor
               {/* The app's own projects. Branchshift's switcher listed the IDE's
                   open projects, and that was the point of it: the Git view moved
                   between the folders the editor was working in. pi-desk's project
-                  list is the session sidebar's, so the panel shows that list, with
-                  the current workspace's worktrees above it (a worktree is its own
-                  checkout, so it stays listed as one). */}
-              {(repos?.projects ?? []).length ? (
+                  list is the session sidebar's, so the panel shows that list —
+                  every row of it, the way the sidebar shows it — with the current
+                  workspace's worktrees above it (a worktree is its own checkout,
+                  so it stays listed as one). */}
+              {projectRows.length ? (
                 <>
                   <div className="git-repo-menu-section">{t("git.repoProjects")}</div>
-                  {(repos?.projects ?? [])
-                    .filter((project) => !(repos?.repos ?? []).some((repo) => repo.rootPath === project.path))
-                    .map((project) => (
-                      <button
-                        key={project.path}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={project.path === activeCwd}
-                        className={`git-repo-row${project.path === activeCwd ? " is-selected" : ""}`}
-                        title={project.path}
-                        onClick={() => {
-                          setReposOpen(false);
-                          setActiveCwd(project.path);
-                          onSwitchRepository?.(project.path);
-                        }}
-                      >
-                        <span className="git-repo-row-name">{project.name}</span>
-                        <span className="git-repo-row-branch">{project.branch ?? t("git.detached")}</span>
-                        {project.isWorktree ? <span className="git-repo-row-tag">{t("git.worktreeTag")}</span> : null}
-                      </button>
-                    ))}
+                  {projectRows.map((project) => (
+                    <button
+                      key={project.path}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={project.path === activeCwd}
+                      className={`git-repo-row${project.path === activeCwd ? " is-selected" : ""}`}
+                      title={project.path}
+                      onClick={() => {
+                        setReposOpen(false);
+                        setActiveCwd(project.path);
+                        onSwitchRepository?.(project.path);
+                      }}
+                    >
+                      <span className="git-repo-row-name">{project.name}</span>
+                    </button>
+                  ))}
                 </>
               ) : null}
             </div>

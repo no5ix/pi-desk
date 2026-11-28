@@ -12,6 +12,7 @@ const detail = await read("components/git/log/CommitDetail.tsx");
 const sidebar = await read("components/git/branch/BranchSidebar.tsx");
 const commitPanel = await read("components/git/commit/CommitPanel.tsx");
 const gitPanel = await read("components/GitPanel.tsx");
+const appShell = await read("components/AppShell.tsx");
 const gitApi = await read("components/git/git-api.ts");
 const route = await read("app/api/git/repos/route.ts");
 const workspace = await read("lib/git/workspace.ts");
@@ -109,9 +110,35 @@ await test("10. the switcher lists the app's projects, not just this folder's ch
   assert.match(workspace, /export async function listProjectRepos\(/, "the app's project list is read as git repositories");
   assert.match(workspace, /listSessionsIncremental\(\{ deferDetails: true \}\)/, "from the sessions' folders — the sidebar's own list");
   assert.match(workspace, /if \(!\(await isCwdAllowed\(root\)\)\) return null;/, "and only inside the app's authorized roots");
+  assert.match(workspace, /isRepo: false/, "a project with no repository stays in the list, marked as one");
+  assert.match(workspace, /getProjectDisplayNames\(roots\)/, "under the sidebar's display names, so the two lists say the same word");
   assert.match(route, /url\.searchParams\.get\("projects"\) === "1" \? await listProjectRepos\(\) : \[\]/, "the route answers ?projects=1");
   assert.match(gitApi, /projects = true/, "the client asks for them");
   assert.match(gitPanel, /\{t\("git\.repoProjects"\)\}/, "the switcher has the Projects section");
   assert.equal(messages.git.repoProjects, "Projects");
   assert.deepEqual(["en", "zh-CN", "zh-TW"].map((locale) => message("git.repoProjects", locale)), ["Projects", "项目", "專案"]);
+});
+
+await test("10b. the Projects group is the app's whole project list, with names only", () => {
+  // The shell hands the panel the sidebar's own list, so the two cannot drift.
+  assert.match(appShell, /projects=\{appProjectList\.length \? appProjectList : undefined\}/,
+    "the shell passes the app's project list to the panel");
+  assert.match(appShell, /const appProjectList = useMemo\(/,
+    "built from the sidebar's roots, in the sidebar's order");
+  assert.match(gitPanel, /const projectRows = useMemo\(/, "the panel owns the group as a list of its own");
+  assert.match(gitPanel, /projects\?\.length \? projects : \(repos\?\.projects \?\? \[\]\)/,
+    "the shell's list first, the server's answer as the fallback");
+  assert.match(gitPanel, /\{projectRows\.map\(\(project\) => \(/, "and every row of it is rendered, not a capped page");
+
+  // A row of the Projects group, cut out of the panel's source: the name and
+  // nothing else. With a branch column and a worktree tag, the names were cut to
+  // four characters to make room for a second column ("pi-…", "auto…").
+  const start = gitPanel.indexOf("{projectRows.map((project) => (");
+  const end = gitPanel.indexOf("</button>\n                  ))}", start);
+  assert.ok(start > 0 && end > start, "the Projects rows are findable in the panel");
+  const row = gitPanel.slice(start, end);
+  assert.match(row, /className="git-repo-row-name">\{project\.name\}/, "a project row carries its name");
+  assert.ok(!row.includes("git-repo-row-branch"), "and no branch column — the branch is the header chip's business");
+  assert.ok(!row.includes("git-repo-row-tag"), "and no worktree tag");
+  assert.match(row, /title=\{project\.path\}/, "the full path is the row's tip");
 });

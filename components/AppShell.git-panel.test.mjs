@@ -234,6 +234,9 @@ test("the panel names its repository, and switches between the ones the folder c
   assert.match(panel, /aria-haspopup="menu"/, "the switcher is a menu");
   assert.match(panel, /role="menuitemradio"/, "with one selected repository");
   assert.match(panel, /git-repo-row-tag/, "a worktree is marked as one");
+  assert.match(appShell, /projects=\{appProjectList\.length \? appProjectList : undefined\}/,
+    "the Projects group is the sidebar's own project list, handed down by the shell");
+  assert.match(panel, /\{projectRows\.map\(\(project\) => \(/, "and every project of it gets a row");
   assert.match(panel, /isGitRepository|t\("git\.repoNone"\)/, "and a folder that is not one says so");
   assert.match(api, /\/api\/git\/repos\?\$\{query\}/, "the route is the panel's only way to the list");
   assert.match(api, /cwd=\$\{encodeURIComponent\(cwd\)\}/, "the folder is named in the query");
