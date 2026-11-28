@@ -588,3 +588,96 @@ errors (48 warnings, upstream's and the git port's). Unit suite: 5131 tests,
 (5121 / 39): **zero new failures, two fixed**. `e2e/git-panel.mjs` passes.
 `e2e/file-editor.mjs` passes every assertion except the completion popup, which
 stays an open blocker (BLOCKERS.md).
+
+## 2026-11-28 — the Git tab, the uncommitted diff, the find widget, the listing's numbers
+
+**The Git view is a tab of the panel's bar.** `GIT_PANEL_TAB_ID` (`git:panel`) is a
+pinned tab of kind `git` carrying `badge: changesCount`, beside the file,
+terminal, artifact and side-chat tabs, and never in a chat's bar. Picking it sets
+`gitPanelOpen` and opens the panel; picking any other tab clears it and activates
+that tab; its `x` hides the view and leaves the tab. The panel keeps the
+`git-panel-keepalive` mount, so a tab switch is a look away and not a re-read of
+the repository. Checks: `components/TabBar.git-tab.test.mjs`, `e2e/git-tab.mjs`
+(the real strip with the real CSS: one row, the count inside the tab and never
+over the label, glyph/label/dirty dot/count/close `x` all within 1px of the
+tab's centre line, the `99+` cap, the clicks). Both are in `npm run test:e2e`.
+
+**The uncommitted diff's `Access denied` was the path git prints** — the opposite
+of the lead on record. The lead said the diff route's *stricter* pair resolves
+real paths while the read route's plain check passes; measured,
+`isExistingPathWithinRoots` resolves both sides and read and diff agreed on six
+path shapes (modified, non-ASCII, deleted, untracked, link-escape, missing).
+The split runs the other way: git prints the checkout **resolved** and the
+allowed roots record the folder the user picked — through a link, when the
+project is a linked worktree reached by one. The route's lexical
+`isDiffPathAllowed` then rejected the diff of a file the panel had just listed
+and read. `lib/git-diff-access.ts` is the gate now: containment after the links
+are followed, on both sides, walking to the nearest existing entry for a deleted
+file; a link inside the project that leaves it is still refused. The refusal is
+one of four named cases (`parent-segment`, `outside-root`, `link-escapes-root`,
+`unresolvable`) in the body, and the file viewer keeps the diff mode and shows
+the sentence with the path, instead of demoting to the source and presenting a
+file with "no change". Checks: `lib/git-diff-access.test.mjs` (8, a real
+`git worktree` under a real link), `app/api/git/diff/route.test.mjs`,
+`components/FileViewer.diff-denied.test.mjs` (the reason sets at both ends stay
+in step, the box is a class with tokens, the sentences exist in three packs).
+
+**Monaco's find row rides one centre line.** The widget is a 33px box Monaco
+places by hand — the row carries a 3px top margin, the close `x` is absolutely
+placed 5px down — and in a 520px panel that measured three centre lines in one
+strip (widget 64.5, field 63.5, `x` at 61). The row gets the widget's 4px gutter,
+the `x` the symmetric 8.5px of its 16px box. `e2e/editor-find.mjs` measures 380,
+520 and 900px: every part within 1px of the widget's centre, the widget inside
+the editor's box, and a last pass serves the CSS with the rules removed and
+expects the old split, so the probe can see the bug it is for. The harness is
+half the finding: **Monaco's own stylesheet is what positions those parts**,
+esbuild emits it beside the bundle, and a page linking only the app's sheets
+measures the buttons as unstyled 377–337px blocks, one per row — which is what
+the earlier probe reported as the widget's design. Any harness that mounts
+Monaco links both sheets, in the app's order. The tab strip's `x` measured
+already centred (live app and `e2e/git-tab.mjs`: every part at centre line 24 of
+the 48px strip), so the plan's centring fix became a registered measurement.
+
+**File listing, measured** (dev on 30141, a production build on 30142, the route
+handler timed in-process; "cold" = a fresh process and a root never listed, a
+true cold disk needs `sudo purge` and is not in these numbers): readdir
+0.1–0.3 ms; the route's visibility rule 8.9–16.9 ms per directory **at the
+current code and 8.1–16.3 ms at the pre-fork baseline `6fcd7d4` (v0.10.0)** — the
+fork costs nothing here; first list request of a fresh production process 561 ms
+(one-time route init), the same warm 18–21 ms; HTTP warm 12–26 ms per directory,
+flat with size; panel open **production** first row 275 ms with one list (26 ms)
+and one git/status (36 ms), **dev** first row 1117–2831 ms with the list and the
+status each firing twice (StrictMode) and the route's first compile. The floor is
+the **git child process**, not the directory: the visibility rule spawns
+`git check-ignore` per listing (6.8 ms of it spent outside a work tree, to fail),
+upstream's module, parity with upstream. The remaining user-visible cost is one
+request per folder opened plus the `/api/git/status` that rides every cwd change
+and every `treeRefreshKey` bump. The fix that follows is a short-TTL,
+event-invalidated memo of the git answer per directory in a **fork-owned** module
+(`lib/file-access.ts` already caches its roots for 5 s the same way) and skipping
+git where there is no work tree to ask; `lib/file-tree-visibility.ts` stays
+upstream's. Nothing changed there: the plan asked for the measurement first.
+
+**branchshift bs2, checked in code and live.** The phone's expand button is the
+strip's own (`@media (max-width: 640px) .file-panel-expand-button { display:
+inline-flex }`) and expanded means the viewport, unexpanded keeps the chat's
+topbar above the card. The project list carries the branch in both places that
+show it: the sidebar's project rows (`pi-desk · Pinned · /Users/… ·
+test-merge/test-merge-pi-desk-main`) and the panel's switcher, whose Projects
+group is served by `/api/git/repos?…&projects=1` — 16 projects on this machine,
+each with `branch` and `isWorktree`. The branch and commit menus open at the
+**row's** left edge, not the button's (`anchorTo` in `components/git/git-ui.tsx`),
+and `e2e/branch-menu-rows.mjs` passes on the current CSS.
+
+**i18n (all new keys in en, zh-CN, zh-TW).** `gitPanel.tabLabel` and
+`files.diffDenied.{outsideRoot,linkEscapesRoot,parentSegment,unresolvable}`.
+
+**Verification (2026-11-28).** `tsc --noEmit` clean; `eslint` on the changed
+files clean of errors. Targeted units: `lib/git-diff-access`,
+`app/api/git/diff/route`, `TabBar.git-tab`, `TabBar.reorder`,
+`AppShell.git-panel`, `FileViewer.diff-denied` — 34 + 4 pass, 0 fail.
+`lib/i18n/*`, `components/fork-extractions`, `scripts/upstream-css-baseline` —
+84 pass, 0 fail. e2e: `git-tab`, `editor-find`, `git-panel`,
+`branch-menu-rows` exit 0. Unchanged blockers: the 37 composer-family unit
+failures measured at HEAD before this work, and the completion popup in
+`e2e/file-editor.mjs` (BLOCKERS.md).
