@@ -34,6 +34,8 @@ import { mergeSessionStats, type SessionFileStats } from "@/lib/session-stats";
 import { userMessageKey } from "@/lib/prompt-recovery";
 import { AgentEventConnection } from "@/lib/agent-event-connection";
 import { AGENT_EVENT_HEARTBEAT_MS, isNestedToolExecutionEvent, isSystemMessageEvent } from "@/lib/agent-event-wire";
+import { applyToolUpdateDelta, rememberToolUpdateState, type ToolUpdateState } from "@/lib/tool-update-delta";
+import type { PayloadTruncation } from "@/lib/event-payload-limit";
 import type { AgentRunLiveness, AgentRunPhase } from "@/lib/agent-run-liveness";
 import { formatTurnDurationCompact } from "@/lib/turn-duration";
 import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
@@ -54,7 +56,10 @@ import {
   getLiveFollowAttached,
   hasEarlierAfterPrepend,
   isScrollAtTail,
+  loadedWindowCap,
   shouldShowScrollToLatest,
+  trimLoadedWindow,
+  VISIBLE_PAGE_SIZE,
 } from "@/lib/chat-lazy-load";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
 import { useI18n } from "@/hooks/useI18n";
@@ -253,6 +258,15 @@ export interface UseAgentSessionOptions {
   setToolPreset?: (preset: ToolPreset) => void;
   deferInitialScroll?: boolean;
   onScrollPositionChange?: (sessionId: string, position: ChatScrollPosition) => void;
+  /**
+   * The loaded-window policy (Phase 6, lib/chat-lazy-load.ts). The page owns the
+   * rendered window, so it reports how many rows it renders and which rows a
+   * navigation is currently standing on; the hook evicts what is past the cap.
+   */
+  loadedWindow?: {
+    visibleCount: () => number;
+    keepEntryIds?: () => Iterable<string>;
+  };
 }
 
 export type ThinkingLevelOption = "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -398,7 +412,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
     session, newSessionCwd, newSessionDraftKey, onAgentEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSideSession,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
-    onOpenSettings, chatWorkspace = false,
+    onOpenSettings, chatWorkspace = false, loadedWindow,
   } = opts;
   const { t } = useI18n();
 
@@ -411,6 +425,22 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [activeToolResults, setActiveToolResults] = useState<Map<string, ToolResultMessage>>(new Map());
   const [entryIds, setEntryIds] = useState<string[]>([]);
+  /**
+   * Entry ids the event stream named for messages this tab appended (Phase 5),
+   * waiting for the render that puts the message in the list. `entryIds` is
+   * parallel to `messages`, so the ids are handed over in queue order by the
+   * alignment effect below; an id that never lands is dropped, and a live
+   * message whose id is unknown keeps its content inline (what it did before).
+   */
+  const pendingEntryIdsRef = useRef<string[]>([]);
+  const queueLiveEntryId = useCallback((entryId: string, replaceLast = false) => {
+    const queue = pendingEntryIdsRef.current;
+    // Bound the queue: a run whose messages are appended by another path (a
+    // reconcile, a session reload) must not leave ids to be handed to strangers.
+    if (queue.length > 200) queue.length = 0;
+    if (replaceLast && queue.length > 0) queue[queue.length - 1] = entryId;
+    else queue.push(entryId);
+  }, []);
   const [historyCursor, setHistoryCursor] = useState<string | null>(null);
   const [hasEarlierMessages, setHasEarlierMessages] = useState(false);
   const [streamState, dispatch] = useReducer(streamReducer, INITIAL_STREAMING_STATE);
@@ -562,6 +592,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const dataRef = useRef<SessionData | null>(null);
   const messagesRef = useRef<AgentMessage[]>([]);
   const queuedMessagesRef = useRef<QueuedMessages>({ steering: [], followUp: [] });
+  const toolUpdateStatesRef = useRef<Map<string, ToolUpdateState>>(new Map());
   const entryIdsRef = useRef<string[]>([]);
   const activeLeafIdRef = useRef<string | null>(null);
   const historyCursorRef = useRef<string | null>(null);
@@ -576,9 +607,67 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   historyCursorRef.current = historyCursor;
   hasEarlierMessagesRef.current = hasEarlierMessages;
 
+  /**
+   * `entryIds` is parallel to `messages` (SessionContext). Two paths break the
+   * parallelism, and this is the one place that repairs it:
+   *
+   *  - a live message is appended before the stream names its entry (Phase 5):
+   *    the ids queue in `pendingEntryIdsRef` and fill the slots the render opened;
+   *  - the loaded window evicts rows (Phase 6, lib/chat-lazy-load.ts): ids of
+   *    messages that left the list leave too, and ids queued for them are
+   *    dropped, never handed to a row that stayed.
+   *
+   * A slot with no known id is the empty string: the row has no entry to fetch
+   * deferred content from, so its card shows what the message carries inline.
+   */
+  useEffect(() => {
+    const queue = pendingEntryIdsRef.current;
+    const deficit = messages.length - entryIds.length;
+    if (deficit === 0) return;
+    if (deficit > 0) {
+      const ids = queue.splice(0, deficit);
+      while (ids.length < deficit) ids.push("");
+      setEntryIds((prev) => (prev.length === entryIds.length ? [...prev, ...ids] : prev));
+      return;
+    }
+    queue.length = 0;
+    setEntryIds((prev) => (prev.length > messages.length ? prev.slice(0, messages.length) : prev));
+  }, [messages, entryIds]);
+
+  /**
+   * Phase 6: the loaded window slides. Past the cap, the rows that fall off the
+   * head leave React state (and their DOM, their highlighted code, their expanded
+   * cards), and the history cursor moves to the row the window now starts on, so
+   * "load earlier" fetches them back on demand.
+   *
+   * The cap follows the window the page renders (plus slack), so a page never
+   * evicts a row it is showing; rows named by the page (the anchor the viewport
+   * is re-attaching to, a search target being scrolled to) are protected, so a
+   * navigation in flight cannot be evicted out from under the reader. The policy
+   * itself is `trimLoadedWindow`, and `lib/chat-lazy-load.test.mjs` pins it.
+   */
+  useEffect(() => {
+    const visibleCount = loadedWindow?.visibleCount() ?? VISIBLE_PAGE_SIZE;
+    if (messages.length <= loadedWindowCap(visibleCount)) return;
+    const keep = loadedWindow?.keepEntryIds?.();
+    const trimmed = trimLoadedWindow(messages, entryIds, {
+      visibleCount,
+      keepEntryIds: keep,
+    });
+    if (trimmed.evicted === 0) return;
+    setMessages(trimmed.messages);
+    setEntryIds(trimmed.entryIds);
+    if (trimmed.oldestEntryId) setHistoryCursor(trimmed.oldestEntryId);
+    // Older history still exists: the sentinel stays, and it fetches from the
+    // cursor the window left behind.
+    setHasEarlierMessages(true);
+  }, [messages, entryIds, loadedWindow]);
+
   if (!eventConnectionRef.current) {
     eventConnectionRef.current = new AgentEventConnection({
-      createSource: (sid) => new EventSource(`/api/agent/${encodeURIComponent(sid)}/events`),
+      // `toolUpdates=delta`: this page reconstructs tool updates from deltas, so the
+      // stream stops resending a tool's whole partial result every 150 ms (Phase 7).
+      createSource: (sid) => new EventSource(`/api/agent/${encodeURIComponent(sid)}/events?toolUpdates=delta`),
       onEvent: (event) => handleAgentEventRef.current?.(event as AgentEvent),
       shouldMaintain: (sid) => (
         sessionHookMountedRef.current
@@ -1710,6 +1799,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     switch (event.type) {
       case "connected": {
         dispatch({ type: "end" });
+        // A stream is a delta sequence of its own: the server's encoder starts
+        // this connection at `rev 1`, so the reconstructions of the one before
+        // are worthless from here on.
+        toolUpdateStatesRef.current.clear();
         if (Array.isArray(event.pendingExtensionUiIds)) {
           // The server replays what it still holds right after this event.
           const pending = new Set(event.pendingExtensionUiIds as string[]);
@@ -1758,6 +1851,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // compacting, or continuing messages queued by extension handlers.
         // Keep the stream open until prompt_done/agent_settled and the idle grace.
         if (!agentRunningRef.current) break;
+        // No tool call streams past the end of a run: drop the reconstructions.
+        toolUpdateStatesRef.current.clear();
         setAgentPhase(null);
         setRunStall(null);
         setRetryInfo(null);
@@ -1883,26 +1978,57 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (!agentRunningRef.current) break;
         if (isSystemMessageEvent(event)) break;
         const completed = event.message as AgentMessage | undefined;
-        if (completed && completed.role === "user") {
+        // The stream names the session entry this message became (Phase 5), so a
+        // live message's deferred thinking and media are fetched by the same
+        // entry-scoped route a historical one uses, and the row carries an entry
+        // id for Fork / navigate / search-jump. `entryIds` stays parallel to
+        // `messages` (lib/types.ts SessionContext); ids queued here are applied
+        // by the alignment effect below, because a message can land before React
+        // has rendered the message it belongs to.
+        const liveEntryId = typeof event.entryId === "string" ? event.entryId : "";
+        const marker = event.payloadTruncated as PayloadTruncation | undefined;
+        // The stream's marker belongs on the message the card renders, so a
+        // shortened value cannot look complete (Phase 7). It rides on the
+        // normalized copy: the normalization rule is the same one every append
+        // path uses, and the marker must survive it.
+        const withMarker = (message: AgentMessage): AgentMessage =>
+          (marker ? { ...message, payloadTruncated: marker } as AgentMessage : message);
+        const completedWithMarker = completed ? withMarker(completed) : completed;
+        if (completed && completedWithMarker?.role === "user") {
           // Delivered steering/follow-up messages surface here as user
           // messages. The run's initial prompt also emits one, but handleSend
           // already appended it optimistically. Consume only the still-adjacent
           // optimistic bubble; later same-text queue deliveries must render.
-          const delivered = normalizeToolCalls(completed);
+          const delivered = withMarker(normalizeToolCalls(completed));
           const deliveredKey = userMessageKey(delivered);
           const optimisticKey = optimisticUserMessageKeyRef.current;
           optimisticUserMessageKeyRef.current = null;
+          const lastRendered = messagesRef.current[messagesRef.current.length - 1];
+          const consumesOptimistic = Boolean(
+            optimisticKey && lastRendered?.role === "user" && userMessageKey(lastRendered) === optimisticKey,
+          );
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (optimisticKey && last?.role === "user" && userMessageKey(last) === optimisticKey) {
-              return optimisticKey === deliveredKey
-                ? prev
-                : [...prev.slice(0, -1), delivered];
+              if (optimisticKey === deliveredKey) {
+                // The bubble the page already shows. Take the entry's copy only
+                // when the stream deferred something out of it (Phase 5): the
+                // attachment's base64 leaves React state, the card reads the
+                // entry URL. An undeferred delivery keeps the object identity.
+                return event.deferredContent === true ? [...prev.slice(0, -1), delivered] : prev;
+              }
+              return [...prev.slice(0, -1), delivered];
             }
             return [...prev, delivered];
           });
-        } else if (completed) {
-          setMessages((prev) => [...prev, normalizeToolCalls(completed)]);
+          // One slot for one message: the id replaces the empty slot the
+          // optimistic bubble queued, joins the end, or is skipped when the
+          // delivered message is the bubble the page already shows.
+          if (consumesOptimistic) queueLiveEntryId(liveEntryId, optimisticKey === deliveredKey);
+          else queueLiveEntryId(liveEntryId);
+        } else if (completedWithMarker) {
+          setMessages((prev) => [...prev, withMarker(normalizeToolCalls(completedWithMarker))]);
+          queueLiveEntryId(liveEntryId);
         }
         dispatch({ type: "end" });
         setAgentPhase({ kind: "waiting_model" });
@@ -1926,8 +2052,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (isNestedToolExecutionEvent(event)) break;
         const id = event.toolCallId as string;
         const name = event.toolName as string;
-        const partialResult = event.partialResult as Partial<ToolResultMessage> | undefined;
-        const content = partialResult?.content;
+        // Phase 7: an update is often a delta against the partial result this tab
+        // already holds. Rebuild it here, so a tool's live output costs the bytes
+        // that changed instead of a fresh copy of everything the tool printed.
+        const applied = applyToolUpdateDelta(toolUpdateStatesRef.current.get(id), event);
+        if (applied.state) rememberToolUpdateState(toolUpdateStatesRef.current, id, applied.state);
+        // The frame this update describes: the reconstruction when it arrived as
+        // a delta, the event's own partial result when it arrived whole (the
+        // non-delta client, the first frame of a call, a refused delta).
+        const effectivePartialResult = (applied.state?.partialResult ?? event.partialResult) as
+          Partial<ToolResultMessage> | undefined;
+        const content = effectivePartialResult?.content;
         // Live output for shells; for codemode, the calls its script has made so far.
         if ((name === "bash" || name === "powershell" || name === CODEMODE_TOOL_NAME) && Array.isArray(content)) {
           setActiveToolResults((prev) => {
@@ -1937,15 +2072,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               toolCallId: id,
               toolName: name,
               content,
-              isError: partialResult?.isError,
-              details: partialResult?.details,
+              isError: effectivePartialResult?.isError,
+              details: effectivePartialResult?.details,
             });
             return next;
           });
         }
         const progress = name === CODEMODE_TOOL_NAME
-          ? getCodemodeProgress(event.partialResult)
-          : getToolExecutionProgress(event.partialResult);
+          ? getCodemodeProgress(effectivePartialResult)
+          : getToolExecutionProgress(effectivePartialResult);
         setAgentPhase((prev) => {
           const tools = prev?.kind === "running_tools" ? [...prev.tools] : [];
           const existing = tools.find((tool) => tool.id === id);
@@ -1964,6 +2099,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "tool_execution_end": {
         if (isNestedToolExecutionEvent(event)) break;
         const id = event.toolCallId as string;
+        // The call is over: its delta baseline and its live copy are history, and
+        // the tool result message carries the authoritative content from here on.
+        toolUpdateStatesRef.current.delete(id);
         setActiveToolResults((prev) => {
           if (!prev.has(id)) return prev;
           const next = new Map(prev);
@@ -2028,7 +2166,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleForkAgentEvent(event);
         break;
     }
-  }, [addNotice, beginRunTiming, cancelEventStreamGrace, endRunTiming, handleExtensionUiRequest, handleForkAgentEvent, loadSession, notifyPromptStage, onAgentEnd, reportCompactFailure, scheduleEventStreamClose, scrollToBottom, setCompactNotice, settleUiStage, syncLiveModel, t]);
+  }, [addNotice, beginRunTiming, cancelEventStreamGrace, endRunTiming, handleExtensionUiRequest, handleForkAgentEvent, loadSession, notifyPromptStage, onAgentEnd, reportCompactFailure, scheduleEventStreamClose, scrollToBottom, setCompactNotice, settleUiStage, syncLiveModel, t, queueLiveEntryId]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
@@ -2087,6 +2225,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
+    // The bubble's slot in `entryIds` opens now and is filled when the stream
+    // names the entry the delivered message became.
+    queueLiveEntryId("");
     optimisticUserMessageKeyRef.current = userMessageKey(userMsg);
     promptRunIdRef.current = promptRunId;
     agentRunningRef.current = true;
@@ -2170,7 +2311,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, beginRunTiming, cancelEventStreamGrace, chatWorkspace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, editEntryId, setEdit, branchSummarySessionIdRef, t]);
+  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, beginRunTiming, cancelEventStreamGrace, chatWorkspace, closeEvents, composerDraftKey, reconcileAgentState, restoreSubmission, editEntryId, setEdit, branchSummarySessionIdRef, t, queueLiveEntryId]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;

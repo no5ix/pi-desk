@@ -52,6 +52,8 @@ const options = {
   idleSeconds: flagValue("idle", 90),
   sampleMs: flagValue("sample", 2_000),
   json: hasFlag("json"),
+  wire: hasFlag("wire"),
+  calls: flagValue("calls", 120),
 };
 
 /** Resident memory of the process serving the port, in bytes, from the OS. */
@@ -158,7 +160,241 @@ function summarise() {
   return { peakRss, byPhase, last, live, cache };
 }
 
+// ── Phase 8: the live path, measured in this process ──────────────────────────
+//
+// The server bench above answers "what does the process hold". This answers the
+// other half of the memory work: what a run costs the *page* — the bytes that
+// cross the event stream, and the state a browser keeps after them. It runs the
+// app's own modules (lib/tool-update-delta.ts, lib/deferred-message-content.ts,
+// lib/event-payload-limit.ts, lib/chat-lazy-load.ts, lib/content-retention.ts)
+// over a synthetic run, so it needs no server, no model and no session file, and
+// it compares the shipped path against the path it replaced.
+//
+//   node scripts/memory-bench.mjs --wire
+//   node scripts/memory-bench.mjs --wire --calls 400 --json > wire.json
+//
+// The columns are bytes on the wire and bytes of page state, which is what the
+// phases change; process RSS and heap are the server bench's subject.
+
+/** One tool-heavy run: a shell log that grows, a screenshot per call, and a
+ *  long reasoning block per reply — the shape that made tabs unreadable. */
+function wireWorkload(calls) {
+  const events = [];
+  for (let call = 0; call < calls; call += 1) {
+    let log = "";
+    // A command that prints, in windows of five updates, which is what the
+    // stream's coalescing window sees at ~20 updates a second.
+    for (let window = 0; window < 5; window += 1) {
+      for (let frame = 0; frame < 5; frame += 1) {
+        log += `call ${call} window ${window} frame ${frame} ${"x".repeat(400)}\n`;
+        events.push({
+          type: "tool_execution_update",
+          toolCallId: `call-${call}`,
+          toolName: "bash",
+          partialResult: { content: [{ type: "text", text: log }], details: { fullOutput: log }, isError: false },
+        });
+      }
+      // The stream keeps the newest frame per tool call per window.
+      events.push({ type: "__window_flush" });
+    }
+    events.push({
+      type: "message_end",
+      entryId: `entry-tool-${call}`,
+      message: {
+        role: "toolResult",
+        toolCallId: `call-${call}`,
+        toolName: "bash",
+        content: [
+          // Every tenth call prints a log big enough to need the per-event
+          // budget; a run where nothing is oversize does not test the cap.
+          { type: "text", text: `out ${call} ${"o".repeat(call % 10 === 0 ? 3 * 1024 * 1024 : 200 * 1024)}` },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "Q".repeat(300 * 1024) } },
+        ],
+        isError: false,
+        timestamp: 1000 + call,
+      },
+    });
+    events.push({
+      type: "message_end",
+      entryId: `entry-reply-${call}`,
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: `reasoning ${call} ${"r".repeat(60 * 1024)}` },
+          { type: "text", text: `reply ${call} ${"a".repeat(1500)}` },
+        ],
+        model: "bench-model",
+        provider: "bench",
+        usage: { input: 400, output: 900 },
+      },
+    });
+  }
+  return events;
+}
+
+/** Ordinary user/assistant rows: a session is mostly these. */
+function historyRows(count) {
+  return Array.from({ length: Math.max(0, count) }, (_unused, index) => ({
+    role: index % 5 === 0 ? "user" : "assistant",
+    content: [{ type: "text", text: `history ${index} ${"h".repeat(2000)}` }],
+  }));
+}
+
+function percentile(sorted, q) {
+  if (sorted.length === 0) return 0;
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
+}
+
+async function wireBenchmark() {
+  const jiti = (await import("jiti")).createJiti(import.meta.url);
+  const delta = await jiti.import("../lib/tool-update-delta.ts");
+  const defer = await jiti.import("../lib/deferred-message-content.ts");
+  const limit = await jiti.import("../lib/event-payload-limit.ts");
+  const lazy = await jiti.import("../lib/chat-lazy-load.ts");
+  const retention = await jiti.import("../lib/content-retention.ts");
+
+  const calls = options.calls ?? 120;
+  const events = wireWorkload(calls);
+
+  const configs = [
+    { name: "full", delta: false, defer: false, limitBytes: 0 },
+    { name: "phases", delta: true, defer: true, limitBytes: limit.MAX_EVENT_PAYLOAD_BYTES },
+    { name: "phases-64k", delta: true, defer: true, limitBytes: limit.MIN_EVENT_PAYLOAD_BYTES },
+  ];
+  const rows = [];
+
+  for (const config of configs) {
+    const encoder = config.delta ? delta.createToolUpdateEncoder() : null;
+    const states = new Map();
+    const messages = [];
+    const sizes = [];
+    let wireBytes = 0;
+    let frames = 0;
+    let deltaFrames = 0;
+    let deferredFrames = 0;
+    let cappedFrames = 0;
+    let reconstructFails = 0;
+
+    for (const event of events) {
+      if (event.type === "__window_flush") continue;
+      let wire = event;
+      if (event.type === "tool_execution_update" && encoder) {
+        wire = encoder.encode(event);
+      } else if (event.type === "message_end" && config.defer) {
+        const projected = defer.deferLiveMessageContent(event.message, {
+          sessionId: "bench",
+          entryId: event.entryId,
+        });
+        if (projected.deferred.thinkingBlocks > 0 || projected.deferred.imageBlocks > 0) deferredFrames += 1;
+        wire = { ...event, entryId: event.entryId, message: projected.message };
+      }
+
+      const json = JSON.stringify(wire);
+      let onWire = json;
+      if (config.limitBytes) {
+        const capped = limit.capEventPayloadJson(wire, json, {
+          limitBytes: config.limitBytes,
+          sessionId: "bench",
+          entryId: wire.entryId,
+        });
+        if (capped) {
+          onWire = capped.json;
+          cappedFrames += 1;
+        }
+      }
+
+      sizes.push(onWire.length);
+      wireBytes += onWire.length;
+      frames += 1;
+      if (wire.mode === delta.TOOL_UPDATE_WIRE_DELTA) deltaFrames += 1;
+
+      // The page's side of the same stream: deltas are reconstructed, finished
+      // messages are appended to the transcript the component list holds.
+      if (event.type === "tool_execution_update") {
+        const applied = delta.applyToolUpdateDelta(states.get(event.toolCallId), wire);
+        if (config.delta && !applied.ok) reconstructFails += 1;
+        delta.rememberToolUpdateState(states, event.toolCallId, applied.state);
+      } else if (event.type === "message_end") {
+        messages.push(JSON.parse(onWire).message);
+      }
+    }
+
+    // Phase 6: the loaded window and the thinking cache, over the same run. The
+    // window only does something once the transcript is past its cap, so the
+    // run is followed by the plain history rows a long session also has.
+    const padded = [...historyRows(lazy.MAX_LOADED_MESSAGES + 400 - messages.length), ...messages];
+    const ids = padded.map((_message, index) => `entry-${index}`);
+    const trimmed = lazy.trimLoadedWindow(padded, ids, { visibleCount: lazy.MAX_LOADED_MESSAGES });
+    const windowBytes = trimmed.messages.reduce((sum, message) => sum + JSON.stringify(message).length, 0);
+
+    const cache = new retention.RetainedTextCache();
+    let thinkingTotal = 0;
+    for (const [index, message] of messages.entries()) {
+      const blocks = Array.isArray(message.content) ? message.content : [];
+      for (const [blockIndex, block] of blocks.entries()) {
+        if (block?.type !== "thinking" || block.deferred) continue;
+        const text = String(block.thinking ?? "");
+        thinkingTotal += text.length;
+        cache.set(`bench:entry-${index}:${blockIndex}`, text, text.length);
+      }
+    }
+
+    rows.push({
+      config: config.name,
+      frames,
+      wireBytes,
+      p50: percentile(sizes.slice().sort((a, b) => a - b), 0.5),
+      p95: percentile(sizes.slice().sort((a, b) => a - b), 0.95),
+      max: Math.max(...sizes),
+      deltaFrames,
+      deferredFrames,
+      cappedFrames,
+      reconstructFails,
+      transcriptBytes: messages.reduce((sum, message) => sum + JSON.stringify(message).length, 0),
+      windowBytes,
+      loadedRows: trimmed.messages.length,
+      evicted: trimmed.evicted,
+      thinkingTotalChars: thinkingTotal,
+      cacheBytes: cache.bytes(),
+      cacheEntries: cache.size(),
+    });
+  }
+
+  const baseline = rows[0];
+  const phases = rows[1];
+  const result = { calls, events: events.length, rows };
+
+  if (options.json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  console.log(`wire benchmark · ${calls} tool calls · ${events.length} events · `
+    + `${(baseline.wireBytes / 1024 / 1024).toFixed(0)} MB on the wire unfixed`);
+  console.log("\nconfig        frames   wire MB    p50 KB    p95 KB     max KB   deltas  deferred  capped  state MB  window MB");
+  for (const row of rows) {
+    console.log(
+      `${row.config.padEnd(12)} ${String(row.frames).padStart(7)} ${mb(row.wireBytes)} `
+      + `${(row.p50 / 1024).toFixed(1).padStart(9)} ${(row.p95 / 1024).toFixed(1).padStart(9)} ${(row.max / 1024).toFixed(1).padStart(9)} `
+      + `${String(row.deltaFrames).padStart(7)} ${String(row.deferredFrames).padStart(9)} ${String(row.cappedFrames).padStart(7)} `
+      + `${mb(row.transcriptBytes)} ${mb(row.windowBytes)}`,
+    );
+  }
+  const saved = baseline.wireBytes > 0 ? 1 - phases.wireBytes / baseline.wireBytes : 0;
+  console.log(`\nwire: ${mb(baseline.wireBytes)} MB → ${mb(phases.wireBytes)} MB (${Math.round(saved * 100)}% less), `
+    + `${phases.cappedFrames} events cut to ${mb(limit.MAX_EVENT_PAYLOAD_BYTES)} MB, `
+    + `${phases.deferredFrames} appends projected, ${phases.reconstructFails} deltas refused`);
+  console.log(`window: ${(phases.transcriptBytes / 1024 / 1024).toFixed(1)} MB of run rows, `
+    + `${(phases.windowBytes / 1024 / 1024).toFixed(1)} MB in the window of ${phases.loadedRows} rows `
+    + `(${phases.evicted} rows handed back); thinking cache ${mb(phases.cacheBytes)} MB in `
+    + `${phases.cacheEntries} entries, of ${mb(baseline.cacheBytes)} MB unfixed`);
+  console.log("\nRead: the `full` row is the path the phases replaced. `state MB` is the serialized size of the");
+  console.log("     transcript the page holds, `window MB` what the loaded window keeps after the cap: bytes,");
+  console.log("     not heap — the process side is the server bench (`npm run memory:bench`, no --wire).");
+}
+
 async function main() {
+  if (options.wire) return wireBenchmark();
   const targets = largestSessions(options.sessions);
   if (targets.length === 0) {
     console.error(`No session files under ${sessionsDir()}. Nothing to browse.`);

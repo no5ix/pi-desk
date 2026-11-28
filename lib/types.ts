@@ -1,5 +1,13 @@
 // Types mirrored from pi-mono coding-agent session-manager
 
+import type { PayloadTruncation } from "./event-payload-limit.ts";
+
+/**
+ * The marker a payload-cut event carries (lib/event-payload-limit.ts). Re-exported
+ * so a component reads it off the message the way the wire sends it.
+ */
+export type { PayloadTruncation };
+
 export interface SessionHeader {
   type: "session";
   version?: number;
@@ -53,6 +61,8 @@ export interface UserMessage {
   role: "user";
   content: string | (TextContent | ImageContent)[];
   timestamp?: number;
+  /** Set when the event stream cut this message to its per-event payload budget. */
+  payloadTruncated?: PayloadTruncation;
 }
 
 export interface AgentUsage {
@@ -83,6 +93,8 @@ export interface AssistantMessage {
   /** From `timestamp` until the response ended, measured by pi (pi 1.1); absent for older messages. */
   durationMs?: number;
   usage?: AgentUsage;
+  /** Set when the event stream cut this message to its per-event payload budget. */
+  payloadTruncated?: PayloadTruncation;
 }
 
 export interface ToolResultMessage {
@@ -96,6 +108,8 @@ export interface ToolResultMessage {
   /** How long the tool ran, measured by pi with a monotonic clock (pi 1.1); absent for older results. */
   durationMs?: number;
   usage?: AgentUsage;
+  /** Set when the event stream cut this message to its per-event payload budget. */
+  payloadTruncated?: PayloadTruncation;
 }
 
 export interface CustomMessage {
@@ -105,6 +119,8 @@ export interface CustomMessage {
   display: boolean;
   details?: unknown;
   timestamp?: number;
+  /** Set when the event stream cut this message to its per-event payload budget. */
+  payloadTruncated?: PayloadTruncation;
 }
 
 export interface BashExecutionMessage {
@@ -119,6 +135,8 @@ export interface BashExecutionMessage {
   fullOutputError?: string;
   excludeFromContext?: boolean;
   timestamp?: number;
+  /** Set when the event stream cut this message to its per-event payload budget. */
+  payloadTruncated?: PayloadTruncation;
 }
 
 export type AgentMessage = UserMessage | AssistantMessage | ToolResultMessage | CustomMessage | BashExecutionMessage;

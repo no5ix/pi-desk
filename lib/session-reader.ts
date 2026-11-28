@@ -6,14 +6,14 @@ import {
 import { closeSync, type Dirent, fstatSync, openSync, readSync, statSync } from "fs";
 import { open, readdir } from "fs/promises";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
-import type { AgentMessage, ImageContent, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
+import type { AgentMessage, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
 import { normalizeToolCalls } from "./normalize";
 import { withoutMessageSignatures } from "./message-signatures";
-import { getThinkingPreview, isMessageGroupAnchor } from "./message-display";
+import { isMessageGroupAnchor } from "./message-display";
+import { deferThinkingBlocks, deferToolResultBase64Images } from "./deferred-message-content";
 import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
 import { skillExpansionToCommand } from "./slash-display";
-import { MAX_TOOL_RESULT_IMAGE_BYTES, TOOL_RESULT_IMAGE_MIMES } from "./tool-result-images";
 import { projectToolResultDetails, slimToolResultMessage } from "./tool-result-details";
 import { openSlimSessionManager } from "./session-slim-load";
 import { registerCachePruner } from "./cache-registry.ts";
@@ -1067,71 +1067,6 @@ function parseEntryTimestamp(timestamp: string): number | undefined {
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-function base64ImageInfo(block: unknown): { bytes: number; mime?: string } | null {
-  if (!isRecord(block) || block.type !== "image") return null;
-
-  let data: string | undefined;
-  let mime: string | undefined;
-  if (typeof block.data === "string") {
-    data = block.data;
-    mime = typeof block.mimeType === "string" ? block.mimeType : undefined;
-  } else if (isRecord(block.source) && block.source.type === "base64" && typeof block.source.data === "string") {
-    data = block.source.data;
-    mime = typeof block.source.media_type === "string" ? block.source.media_type : undefined;
-  }
-  if (!data) return null;
-
-  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
-  return { bytes: Math.max(0, Math.floor(data.length * 3 / 4) - padding), mime };
-}
-
-function deferToolResultBase64Images(
-  message: AgentMessage,
-  sessionId: string | undefined,
-  entryId: string,
-): AgentMessage {
-  if (message.role !== "toolResult") return message;
-
-  let omitted = 0;
-  let bytes = 0;
-  const mimes = new Set<string>();
-  const content = message.content.flatMap((block, blockIndex) => {
-    const image = base64ImageInfo(block);
-    if (!image) return [block];
-
-    // Keep the initial history response small, but preserve an image block that
-    // the browser can load only when its collapsed tool result is expanded.
-    if (
-      sessionId &&
-      image.mime &&
-      TOOL_RESULT_IMAGE_MIMES.has(image.mime) &&
-      image.bytes > 0 &&
-      image.bytes <= MAX_TOOL_RESULT_IMAGE_BYTES
-    ) {
-      const source: ImageContent["source"] = {
-        type: "url",
-        media_type: image.mime,
-        url: `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/tool-result-image?blockIndex=${blockIndex}`,
-      };
-      return [{ type: "image", source } satisfies ImageContent];
-    }
-
-    // Retain the old bounded fallback for callers that do not have a session id.
-    omitted += 1;
-    bytes += image.bytes;
-    if (image.mime) mimes.add(image.mime);
-    return [];
-  });
-  if (omitted === 0) return { ...message, content };
-
-  const mimeText = mimes.size > 0 ? `: ${[...mimes].join(", ")}` : "";
-  content.push({
-    type: "text",
-    text: `[${omitted} tool result image${omitted === 1 ? "" : "s"} omitted from initial history payload${mimeText}, ~${bytes} bytes]`,
-  });
-  return { ...message, content };
-}
-
 // Convert a session entry on the active branch into a UI message.
 // Returns null for entries that do not map to chat history (metadata, non-message types).
 function entryToUiMessage(
@@ -1160,15 +1095,9 @@ function entryToUiMessage(
         message = { ...message, content: [{ type: "text", text: legacyContent }] } as AgentMessage;
       }
       if (!options.deferThinking || message.role !== "assistant") return message;
-      const content = message.content;
-      return {
-        ...message,
-        content: content.map((block) => (
-          block.type === "thinking" && block.thinking.trim() !== ""
-            ? { ...block, thinking: getThinkingPreview(block.thinking), deferred: true }
-            : block
-        )),
-      };
+      // The same projection the live append path applies (lib/deferred-message-content.ts),
+      // so a message read from the file and a message watched live retain the same thing.
+      return deferThinkingBlocks(message);
     }
     case "compaction":
       return {

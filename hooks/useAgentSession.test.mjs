@@ -532,7 +532,12 @@ test("shows the latest streamed tool execution progress in the running phase", (
     source.indexOf('case "tool_execution_end"'),
   );
 
-  assert.match(updateSource, /getToolExecutionProgress\(event\.partialResult\)/);
+  // The running phase shows the progress of the frame the update describes.
+  // Since Phase 7 that frame is the delta reconstruction when the update arrived
+  // as a delta, and `event.partialResult` when it arrived whole (a client that
+  // did not ask for deltas, the first frame of a call, a refused delta).
+  assert.match(updateSource, /applied\.state\?\.partialResult \?\? event\.partialResult/);
+  assert.match(updateSource, /getToolExecutionProgress\(effectivePartialResult\)/);
   assert.match(updateSource, /tools: \[\.\.\.tools\.filter\([\s\S]*?, updated\]/);
   assert.match(phaseLabelSource, /if \(latest\?\.progress\)/);
   assert.match(phaseLabelSource, /chat\.runningNamedTool[\s\S]*latest\.progress/);
@@ -562,10 +567,12 @@ test("reports a running script's newest call as its progress", () => {
     source.indexOf('case "tool_execution_end"'),
   );
   // A codemode snapshot has no text content, so the generic progress would stay empty.
+  // The frame is the delta reconstruction where there is one (Phase 7).
   assert.match(
     updateSource,
-    /name === CODEMODE_TOOL_NAME\s*\? getCodemodeProgress\(event\.partialResult\)\s*: getToolExecutionProgress\(event\.partialResult\)/,
+    /name === CODEMODE_TOOL_NAME\s*\? getCodemodeProgress\(effectivePartialResult\)\s*: getToolExecutionProgress\(effectivePartialResult\)/,
   );
+  assert.match(updateSource, /\?\? event\.partialResult/);
 });
 
 test("keeps calls a tool made itself out of the running tools", () => {

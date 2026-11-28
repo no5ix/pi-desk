@@ -15,7 +15,8 @@ export async function GET(
 ) {
   const { id } = await params;
   if (req.signal.aborted) return new Response(null, { status: 204 });
-  const holderParam = new URL(req.url).searchParams.get("holder");
+  const query = new URL(req.url).searchParams;
+  const holderParam = query.get("holder");
   const holder = isValidLivenessHolder(holderParam) ? holderParam : null;
 
   // Fast path: already-running session
@@ -32,7 +33,13 @@ export async function GET(
     sessionPromise = startRpcSession(id, filePath, undefined).then((result) => result.session);
   }
 
-  const stream = createAgentEventStream(req, id, sessionPromise, { holder, ...describeStreamClient(req.headers) });
+  const stream = createAgentEventStream(req, id, sessionPromise, { holder, ...describeStreamClient(req.headers) }, {
+    // Phase 7: the page asks for tool updates as deltas; a client that did not
+    // ask keeps the whole-partial-result events it already understands.
+    deltaToolUpdates: query.get("toolUpdates") === "delta",
+    // Phase 5: the live deferred projection is on unless a client opts out.
+    deferLiveContent: query.get("liveDefer") !== "off",
+  });
 
   return new Response(stream, {
     headers: {

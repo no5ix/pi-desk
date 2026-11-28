@@ -54,7 +54,10 @@ export async function GET(
     if (!read) return NextResponse.json({ error: "Session not found" }, { status: 404 });
 
     const { entry } = read;
-    if (!entry || entry.type !== "message" || entry.message.role !== "toolResult") {
+    if (!entry || entry.type !== "message" || (entry.message.role !== "toolResult" && entry.message.role !== "user")) {
+      // A tool result's screenshot and a user message's attachment: the two
+      // message roles whose base64 images the history and live projections turn
+      // into this URL (lib/deferred-message-content.ts).
       return NextResponse.json({ error: "Tool result not found" }, { status: 404 });
     }
 

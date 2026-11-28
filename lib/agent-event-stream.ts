@@ -4,14 +4,38 @@ import {
   toClientAgentEvent,
   type AgentEventLike,
 } from "./agent-event-wire";
+import { createToolUpdateEncoder } from "./tool-update-delta";
+import { capEventPayloadJson, resolveMaxEventPayloadBytes } from "./event-payload-limit";
+import { deferLiveMessageContent } from "./deferred-message-content";
+import type { AgentMessage } from "./types";
+import { isRecord } from "./is-record.ts";
 import type { DebugEventStream } from "./debug-types";
 import { errorMessage } from "./errors.ts";
 
+/**
+ * What the stream needs from a session. `leafEntry` is what Phase 5 uses to name
+ * the entry a finished message became: the SDK appends a `message_end` message
+ * to the session synchronously after its listeners run, so the leaf of the
+ * branch one microtask later *is* that message. When it is not (a custom entry
+ * landed in between, an older SDK), the message keeps its full payload: a card
+ * that can never expand is worse than bytes on the wire.
+ */
 export interface AgentEventStreamSession {
   readonly isStreaming: boolean;
   readonly streamingMessage: unknown;
   isAlive?(): boolean;
   onEvent(listener: (event: AgentEventLike) => void): () => void;
+  leafEntry?(): { id: string; type: string; role?: string } | null;
+}
+
+/** Per-connection stream options (the client negotiates the first two). */
+export interface AgentEventStreamOptions {
+  /** Send `tool_execution_update` as deltas (the client asked with `?toolUpdates=delta`). */
+  deltaToolUpdates?: boolean;
+  /** Per-event serialized budget; default `PI_WEB_MAX_EVENT_PAYLOAD_BYTES` or 1 MiB. */
+  maxEventPayloadBytes?: number;
+  /** Turn the live deferred projection off (the client asked with `?liveDefer=off`). */
+  deferLiveContent?: boolean;
 }
 
 /**
@@ -119,6 +143,12 @@ interface AgentEventStreamInfo {
   lastWriteAt: number | null;
   droppedEvents(): number;
   queuedBytes(): number;
+  /** Events cut to the per-event payload budget (Phase 7). */
+  cappedEvents?(): number;
+  /** Live messages projected to deferred thinking/media (Phase 5). */
+  deferredAppends?(): number;
+  /** Whether this connection negotiated delta tool updates (Phase 7). */
+  deltaToolUpdates?: boolean;
 }
 const streamInfos: Map<StreamCloser, AgentEventStreamInfo> =
   ((globalThis as Record<symbol, Map<StreamCloser, AgentEventStreamInfo>>)[STREAM_INFO_REGISTRY] ??= new Map());
@@ -145,6 +175,9 @@ export function listAgentEventStreams(): (DebugEventStream & { sessionId: string
         lastWriteAt: info.lastWriteAt,
         droppedEvents: info.droppedEvents(),
         queuedBytes: info.queuedBytes(),
+        cappedEvents: info.cappedEvents?.(),
+        deferredAppends: info.deferredAppends?.(),
+        deltaToolUpdates: info.deltaToolUpdates,
       });
     } catch {
       // An entry another version of this file left behind.
@@ -169,6 +202,7 @@ export function createAgentEventStream(
   sessionId: string,
   sessionPromise: Promise<AgentEventStreamSession>,
   meta?: { holder?: string | null; address?: string | null; client?: string | null },
+  options?: AgentEventStreamOptions,
 ): ReadableStream<Uint8Array> {
   let cancelStream: (closeController: boolean | "error") => void = () => {};
 
@@ -182,6 +216,22 @@ export function createAgentEventStream(
       // Latest `tool_execution_update` per tool call id, waiting for the flush.
       const pendingToolUpdates = new Map<unknown, AgentEventLike>();
       let toolUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+      // Phase 7: this connection's delta baseline (what *this* browser was last given).
+      const toolUpdateEncoder = options?.deltaToolUpdates ? createToolUpdateEncoder() : null;
+      // Phase 7: the per-event serialized budget. 0 turns it off.
+      const maxEventPayloadBytes = options?.maxEventPayloadBytes
+        ?? resolveMaxEventPayloadBytes(process.env.PI_WEB_MAX_EVENT_PAYLOAD_BYTES);
+      // Phase 5: project a finished live message the way history projects its entries.
+      const deferLiveContent = options?.deferLiveContent !== false;
+      let cappedEvents = 0;
+      let deferredAppends = 0;
+      let streamSession: AgentEventStreamSession | null = null;
+      // A finished message is forwarded one microtask late: that is when the SDK
+      // has appended it, so its entry id (the pointer the deferred content is
+      // fetched by) is knowable. Events that arrive in the meantime wait too.
+      const pendingAppends: { event: AgentEventLike; leafIdBefore: string | null; role: string }[] = [];
+      const gatedEvents: AgentEventLike[] = [];
+      let appendFlushQueued = false;
 
       // "error": hard-terminate the response (SSE client sees a broken
       // stream and reconnects). Used on process shutdown: a plain close() is
@@ -199,6 +249,8 @@ export function createAgentEventStream(
         if (heartbeat !== null) clearInterval(heartbeat);
         if (toolUpdateTimer !== null) clearTimeout(toolUpdateTimer);
         pendingToolUpdates.clear();
+        pendingAppends.length = 0;
+        gatedEvents.length = 0;
         unsubscribe?.();
         unsubscribe = null;
         if (abortHandler) req.signal.removeEventListener("abort", abortHandler);
@@ -223,9 +275,12 @@ export function createAgentEventStream(
         lastWriteAt: null,
         droppedEvents: () => droppedEvents,
         queuedBytes: () => Math.max(0, STREAM_HIGH_WATER_MARK_BYTES - (controller.desiredSize ?? STREAM_HIGH_WATER_MARK_BYTES)),
+        cappedEvents: () => cappedEvents,
+        deferredAppends: () => deferredAppends,
+        deltaToolUpdates: Boolean(toolUpdateEncoder),
       };
       streamInfos.set(cleanup, info);
-      const enqueueText = (text: string, options?: { droppable?: boolean }) => {
+      const enqueueText = (text: string, options?: { droppable?: boolean; onDrop?: () => void }) => {
         if (closed) return;
         const desiredSize = controller.desiredSize;
         if (desiredSize === null) {
@@ -235,6 +290,7 @@ export function createAgentEventStream(
         const queuedBytes = STREAM_HIGH_WATER_MARK_BYTES - desiredSize;
         if (options?.droppable && queuedBytes > STREAM_HIGH_WATER_MARK_BYTES) {
           droppedEvents += 1;
+          options.onDrop?.();
           logBackpressure(sessionId, queuedBytes, backlogLimitBytes, droppedEvents, false);
           return;
         }
@@ -253,14 +309,85 @@ export function createAgentEventStream(
           cleanup(false);
         }
       };
-      const encode = (data: unknown, options?: { droppable?: boolean }) => {
-        enqueueText(`data: ${JSON.stringify(data)}\n\n`, options);
+      const encode = (
+        data: unknown,
+        options?: { droppable?: boolean; onDrop?: () => void; entryId?: string },
+      ) => {
+        const json = JSON.stringify(data);
+        let text = `data: ${json}\n\n`;
+        // Phase 7: one event is bounded, structurally, before it is allocated on
+        // the socket. Cutting is recorded on the event, so the page can say so.
+        if (maxEventPayloadBytes && text.length > maxEventPayloadBytes) {
+          const capped = capEventPayloadJson(data, json, {
+            limitBytes: maxEventPayloadBytes,
+            sessionId,
+            entryId: options?.entryId,
+          });
+          if (capped) {
+            text = `data: ${capped.json}\n\n`;
+            cappedEvents += 1;
+          }
+        }
+        enqueueText(text, options);
       };
       const flushToolUpdates = () => {
         toolUpdateTimer = null;
         const updates = [...pendingToolUpdates.values()];
         pendingToolUpdates.clear();
-        for (const update of updates) encode(update, { droppable: true });
+        for (const update of updates) {
+          // The delta is computed against what the client was last *given*, so it
+          // is computed here, after coalescing, not when the event arrived.
+          const wire = toolUpdateEncoder ? toolUpdateEncoder.encode(update) : update;
+          encode(wire, {
+            droppable: true,
+            // A dropped delta leaves a hole: forget this call's baseline so the
+            // next update goes out whole. Deltas stay droppable under backpressure.
+            onDrop: () => toolUpdateEncoder?.invalidate((update as AgentEventLike).toolCallId),
+          });
+        }
+      };
+      const flushAppends = () => {
+        appendFlushQueued = false;
+        if (closed) {
+          pendingAppends.length = 0;
+          gatedEvents.length = 0;
+          return;
+        }
+        const leafNow = streamSession?.leafEntry?.() ?? null;
+        for (let index = 0; index < pendingAppends.length; index += 1) {
+          const pending = pendingAppends[index];
+          // Only a leaf that moved, is a message entry, and carries this message's
+          // role names the entry. Anything else keeps the message whole.
+          const entryId = index === pendingAppends.length - 1
+            && leafNow
+            && leafNow.id !== pending.leafIdBefore
+            && leafNow.type === "message"
+            && leafNow.role === pending.role
+            ? leafNow.id
+            : undefined;
+          if (!entryId) {
+            sendClientEvent(pending.event);
+            continue;
+          }
+          const { message, deferred } = deferLiveMessageContent(pending.event.message as AgentMessage, {
+            sessionId,
+            entryId,
+          });
+          if (deferred.thinkingBlocks > 0 || deferred.imageBlocks > 0) deferredAppends += 1;
+          sendClientEvent({
+            ...pending.event,
+            entryId,
+            message,
+            // Tells the page the message it is being handed is a projection: a
+            // card that was showing streamed content re-reads it from the entry.
+            ...(deferred.thinkingBlocks > 0 || deferred.imageBlocks > 0 ? { deferredContent: true } : {}),
+          });
+        }
+        pendingAppends.length = 0;
+        for (const event of gatedEvents.splice(0)) {
+          const clientEvent = toClientAgentEvent(event);
+          if (clientEvent) sendClientEvent(clientEvent);
+        }
       };
       const sendClientEvent = (clientEvent: AgentEventLike) => {
         if (clientEvent.type === "tool_execution_update") {
@@ -273,15 +400,48 @@ export function createAgentEventStream(
         // agent_end does the same for any tool call whose end never came.
         if (clientEvent.type === "tool_execution_end") {
           pendingToolUpdates.delete(clientEvent.toolCallId);
+          // The call is over: its delta baseline is worthless, and a long run of
+          // short calls must not leave one baseline per call behind.
+          toolUpdateEncoder?.invalidate(clientEvent.toolCallId);
         } else if (clientEvent.type === "agent_end") {
           pendingToolUpdates.clear();
         }
-        encode(clientEvent, { droppable: isDroppableEvent(clientEvent) });
+        // The entry id the append flush attached is what lets a payload-cut tool
+        // result name the route that serves its full text (Phase 7 + Phase 5).
+        encode(clientEvent, {
+          droppable: isDroppableEvent(clientEvent),
+          entryId: typeof clientEvent.entryId === "string" ? clientEvent.entryId : undefined,
+        });
       };
       const forwardEvent = (event: AgentEventLike, snapshot: unknown) => {
         if (isEventIncludedInSnapshot(event, snapshot)) return;
+        // A finished message is waiting for its entry id: keep the producer's order.
+        if (pendingAppends.length > 0) {
+          gatedEvents.push(event);
+          return;
+        }
         const clientEvent = toClientAgentEvent(event);
-        if (clientEvent) sendClientEvent(clientEvent);
+        if (!clientEvent) return;
+        if (
+          deferLiveContent
+          && clientEvent.type === "message_end"
+          && isRecord(clientEvent.message)
+          && typeof clientEvent.message.role === "string"
+          && clientEvent.message.role !== "system"
+        ) {
+          const leaf = streamSession?.leafEntry?.() ?? null;
+          pendingAppends.push({
+            event: clientEvent,
+            leafIdBefore: leaf?.id ?? null,
+            role: clientEvent.message.role as string,
+          });
+          if (!appendFlushQueued) {
+            appendFlushQueued = true;
+            queueMicrotask(flushAppends);
+          }
+          return;
+        }
+        sendClientEvent(clientEvent);
       };
 
       const publishSession = async () => {
@@ -318,6 +478,7 @@ export function createAgentEventStream(
             return;
           }
           unsubscribe = stopListening;
+          streamSession = session;
 
           const snapshot = session.streamingMessage;
           encode({

@@ -49,6 +49,7 @@ import {
   getVisibleRenderWindow,
   isScrollAtTail,
   restoreScrollTop,
+  MAX_NAVIGATED_LOADED_MESSAGES,
   VISIBLE_PAGE_SIZE,
 } from "@/lib/chat-lazy-load";
 import { sessionVisibleCounts } from "@/lib/scroll-memory";
@@ -366,6 +367,20 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   });
   const [restoreAnchorReady, setRestoreAnchorReady] = useState(false);
 
+  /**
+   * The loaded-window policy is the hook's (Phase 6), and the window is this
+   * page's: the ref carries the rendered row count, and the keep list names the
+   * rows a navigation is standing on — the anchor a prepend is re-attaching to,
+   * and the row a search jump is scrolling to. Both are read lazily, from a
+   * stable object, so the hook's effect does not re-run on every render.
+   */
+  const loadedWindowVisibleCountRef = useRef(VISIBLE_PAGE_SIZE);
+  const loadedWindowKeepRef = useRef<string[]>([]);
+  const loadedWindow = useMemo(() => ({
+    visibleCount: () => loadedWindowVisibleCountRef.current,
+    keepEntryIds: () => loadedWindowKeepRef.current,
+  }), []);
+
   const {
     loading, error, messages, activeToolResults, entryIds, historyCursor, hasEarlierMessages, streamState,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
@@ -401,6 +416,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     onOpenSettings,
     deferInitialScroll: Boolean(pendingScrollRestore),
     onScrollPositionChange,
+    loadedWindow,
   });
   const sessionBusy = agentRunning || bashRunning;
   // A background subagent keeps working after the main turn ends. The header counts it;
@@ -743,6 +759,23 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   pendingScrollRestoreRef.current = pendingScrollRestore;
   const [pendingSearchScroll, setPendingSearchScroll] = useState<Props["searchTarget"]>(null);
 
+  // Phase 6: the window the page renders is the input to the hook's retention
+  // policy, and the policy's ceiling is the navigation bound: a page can render
+  // as many rows as the reader navigated to, never more.
+  loadedWindowVisibleCountRef.current = visibleCount;
+  loadedWindowKeepRef.current = [
+    scrollAnchorRef.current?.entryId,
+    pendingSearchScroll?.entryId,
+    pendingScrollRestore?.anchorEntryId,
+  ].filter((id): id is string => Boolean(id));
+  /** Grow the rendered window, bounded by the navigation cap. */
+  const growVisibleCount = useCallback(
+    (next: number | ((current: number) => number)) => setVisibleCount((current) => (
+      Math.min(Math.max(current, typeof next === "function" ? next(current) : next), MAX_NAVIGATED_LOADED_MESSAGES)
+    )),
+    [],
+  );
+
   // ChatWindow intentionally stays mounted across session switches. Reset all
   // per-viewport state during render so the next commit cannot paint the old
   // session's window or consume its pending restoration state.
@@ -820,7 +853,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     const locate = async () => {
       const initialHistory = searchHistoryRef.current;
       if (initialHistory.entryIds.includes(position.anchorEntryId)) {
-        setVisibleCount((current) => Math.max(current, initialHistory.entryIds.length * 2));
+        growVisibleCount(initialHistory.entryIds.length * 2);
         setRestoreAnchorReady(true);
         return;
       }
@@ -837,7 +870,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
             setPendingScrollRestore(null);
             return;
           }
-          setVisibleCount((current) => current + Math.max(VISIBLE_PAGE_SIZE, context.messages.length * 2));
+          growVisibleCount(current => current + Math.max(VISIBLE_PAGE_SIZE, context.messages.length * 2));
           if (context.entryIds.includes(position.anchorEntryId)) {
             setRestoreAnchorReady(true);
             return;
@@ -861,7 +894,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       // A branch change cancels restoration and must reveal the new context.
       setPendingScrollRestore(null);
     };
-  }, [activeLeafId, loadContext, loading, pendingScrollRestore, scrollToBottom, searchTarget, session?.id]);
+  }, [activeLeafId, loadContext, loading, pendingScrollRestore, scrollToBottom, searchTarget, session?.id, growVisibleCount]);
 
   useLayoutEffect(() => {
     const position = pendingScrollRestore;
@@ -882,7 +915,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       scrollToBottom("instant");
       setPendingScrollRestore(null);
     }
-  }, [entryIds, pendingScrollRestore, restoreAnchorReady, scrollToBottom, scrollToMessage, searchTarget, visibleCount]);
+  }, [entryIds, pendingScrollRestore, restoreAnchorReady, scrollToBottom, scrollToMessage, searchTarget, visibleCount, growVisibleCount]);
 
   useEffect(() => {
     if (!searchTarget || loading) return;
@@ -902,7 +935,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       if (controller.signal.aborted) return;
       if (found) {
         prevScrollDistanceRef.current = null;
-        setVisibleCount((current) => Math.max(current, (searchHistoryRef.current.entryIds.length + 200) * 2));
+        growVisibleCount((searchHistoryRef.current.entryIds.length + 200) * 2);
         setPendingSearchScroll(searchTarget);
       } else {
         onSearchTargetHandled?.(searchTarget);
@@ -910,7 +943,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
     };
     void locate();
     return () => controller.abort();
-  }, [searchTarget, loading, activeLeafId, sessionBusy, loadContext, onSearchTargetHandled, scrollContainerRef]);
+  }, [searchTarget, loading, activeLeafId, sessionBusy, loadContext, onSearchTargetHandled, scrollContainerRef, growVisibleCount]);
 
   useLayoutEffect(() => {
     if (!pendingSearchScroll || pendingSearchScroll !== searchTarget) return;
@@ -1039,9 +1072,13 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   }, [historyCursor, hasEarlierMessages, session, activeLeafId, loadContext, sessionIdRef, scrollContainerRef, captureScrollAnchor]);
 
   // Keep the rendered window at least as large as what's loaded, so prepended
-  // (older) pages stay visible instead of being sliced off the top.
+  // (older) pages stay visible instead of being sliced off the top. Bounded by
+  // the navigation cap: the loaded window is trimmed to this window plus slack
+  // (Phase 6), so an unbounded "render everything loaded" here and an
+  // unbounded page size in the search jump are the two ways a 600-row page
+  // turns back into a page of the whole transcript.
   useEffect(() => {
-    setVisibleCount((current) => Math.max(current, messages.length));
+    setVisibleCount((current) => Math.min(MAX_NAVIGATED_LOADED_MESSAGES, Math.max(current, messages.length)));
   }, [messages.length]);
 
   // After visibleCount increases (more messages prepended), put the viewport

@@ -106,6 +106,12 @@ export interface DebugEventStream {
   droppedEvents: number;
   /** Bytes the browser has not read yet. */
   queuedBytes: number;
+  /** Events cut to the per-event payload budget (Phase 7); absent on an older stream. */
+  cappedEvents?: number;
+  /** Live messages projected to deferred thinking/media (Phase 5). */
+  deferredAppends?: number;
+  /** Whether this connection negotiated delta tool updates (Phase 7). */
+  deltaToolUpdates?: boolean;
 }
 
 /** One page holding event streams on the server, labelled by its first stream's request. */

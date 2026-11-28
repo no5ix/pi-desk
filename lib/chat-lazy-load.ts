@@ -16,26 +16,123 @@ export function getNextVisibleCount(currentVisibleCount: number, pageSize = VISI
 }
 
 /**
- * The most history one chat page holds. The rendered window follows the loaded
- * count (a prepend must land inside the window the reader is scrolling in), so
- * the loaded count is what the tab keeps: rows, their DOM, their highlighted
- * code. A five-year session is thousands of entries, and the way to one of them
- * is search, not an endless scroll.
+ * The most history one chat page holds *by default*. The rendered window follows
+ * the loaded count (a prepend must land inside the window the reader is scrolling
+ * in), so the loaded count is what the tab keeps: rows, their DOM, their
+ * highlighted code. A five-year session is thousands of entries.
+ *
+ * Phase 6 made this a real bound and not only a pagination hint: the loaded
+ * window **slides**. Past the cap, the rows that fall off the head are dropped
+ * from React state and the history cursor moves with them, so "load earlier"
+ * keeps working (the rows come back from the server on demand) while the page
+ * never holds more than the window it renders plus `LOADED_WINDOW_SLACK`.
+ *
+ * The cap follows an explicit navigation: jumping to a row the reader searched
+ * for loads the rows that contain it, up to `MAX_NAVIGATED_LOADED_MESSAGES`.
+ * `trimLoadedWindow` is the policy; `lib/chat-lazy-load.test.mjs` pins it.
  */
 export const MAX_LOADED_MESSAGES = 600;
 
+/** Rows kept behind the rendered window, so scrolling down needs no refetch. */
+export const LOADED_WINDOW_SLACK = 120;
+
+/** The most rows one explicit navigation (a search jump, a scroll restore) loads. */
+export const MAX_NAVIGATED_LOADED_MESSAGES = 2_400;
+
 /**
- * Whether "load earlier" is still offered after a page lands: the server's
- * answer, cut off at the page's cap. Past the cap the sentinel disappears —
- * the alternative is a spinner at the top of a list that never moves, loading
- * rows the window will not show.
+ * How many rows a page may keep loaded: what it renders plus slack, at least
+ * `max`, never past the navigation bound. A cap that follows the window is the
+ * only kind that cannot evict a row the reader is looking at.
+ */
+export function loadedWindowCap(
+  visibleCount: number,
+  max = MAX_LOADED_MESSAGES,
+  navigated = MAX_NAVIGATED_LOADED_MESSAGES,
+): number {
+  const floor = Math.max(max, 0);
+  const windowed = Math.max(0, visibleCount) + LOADED_WINDOW_SLACK;
+  return Math.min(Math.max(floor, windowed), Math.max(floor, navigated));
+}
+
+/** What one pass of the retention policy left behind. */
+export interface LoadedWindow<T> {
+  messages: T[];
+  entryIds: string[];
+  /** Rows dropped from the head; 0 when the window still fits. */
+  evicted: number;
+  /** The oldest row this page has fetched: the "load earlier" cursor. */
+  oldestEntryId: string | null;
+}
+
+/**
+ * The loaded-window retention policy (Phase 6).
+ *
+ * Eviction is from the head only, because the rendered window is the tail
+ * (`getVisibleRenderWindow`): the rows the reader stands on, the rows they are
+ * reading, and the streaming tail are never touched. Rows named by
+ * `keepEntryIds` (an anchor the viewport is attached to, a search target) are
+ * protected too: eviction stops in front of the earliest of them, so a
+ * navigation in flight cannot be evicted out from under the reader.
+ *
+ * A row that leaves the window is not lost: the session file is the store, the
+ * history cursor names where to fetch from, and the sentinel keeps offering the
+ * page. This is a window, not a ring buffer of the visible part: nothing is
+ * dropped that the page is rendering.
+ */
+export function trimLoadedWindow<T>(
+  messages: readonly T[],
+  entryIds: readonly string[],
+  options: {
+    visibleCount: number;
+    max?: number;
+    navigated?: number;
+    keepEntryIds?: Iterable<string>;
+  },
+): LoadedWindow<T> {
+  const cap = loadedWindowCap(options.visibleCount, options.max, options.navigated);
+  const kept = [...messages];
+  const keptIds = [...entryIds];
+  // The cursor is the fetch watermark: the oldest entry this page has asked the
+  // server for. It is *not* the oldest kept row — a protected navigation target
+  // pins the head of the window, and a cursor that followed the kept rows would
+  // re-request the same page for ever.
+  const fetchedOldestEntryId = entryIds.length ? entryIds[0] : null;
+  let evict = Math.max(0, kept.length - cap);
+  if (evict > 0) {
+    const keep = options.keepEntryIds ? new Set(options.keepEntryIds) : null;
+    if (keep && keep.size > 0) {
+      for (let index = 0; index < keptIds.length; index += 1) {
+        if (keptIds[index] && keep.has(keptIds[index])) {
+          // Eviction stops in front of a protected row.
+          evict = Math.min(evict, index);
+          break;
+        }
+      }
+    }
+  }
+  if (evict <= 0) return { messages: kept, entryIds: keptIds, evicted: 0, oldestEntryId: fetchedOldestEntryId };
+  kept.splice(0, evict);
+  keptIds.splice(0, evict);
+  return { messages: kept, entryIds: keptIds, evicted: evict, oldestEntryId: fetchedOldestEntryId };
+}
+
+/**
+ * Whether "load earlier" is still offered after a page lands.
+ *
+ * Since Phase 6 the loaded window slides (rows past the cap are evicted and the
+ * cursor moves with them), so the cap does not end the reader's reach: the
+ * sentinel stays while the server has more. Kept as a named rule because the
+ * page's sentinel is the affordance, and a spinner at the top of a list that
+ * never moves is the failure this function exists to prevent.
  */
 export function hasEarlierAfterPrepend(
   loadedCount: number,
   serverHasMore: boolean,
   max = MAX_LOADED_MESSAGES,
 ): boolean {
-  return serverHasMore && loadedCount < max;
+  void max;
+  void loadedCount;
+  return serverHasMore;
 }
 
 /**

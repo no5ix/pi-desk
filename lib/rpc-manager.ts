@@ -820,6 +820,28 @@ export class AgentSessionWrapper {
     return this.inner.agent.state?.streamingMessage;
   }
 
+  /**
+   * The newest entry of the current branch, as a three-field descriptor.
+   *
+   * The agent event stream uses it to name the entry a finished message became
+   * (Phase 5, lib/deferred-message-content.ts): pi appends a `message_end`
+   * message to the session synchronously after its listeners run, so the leaf
+   * one microtask later is that message — provided the leaf moved, is a message
+   * entry, and carries the same role. The stream only ever *identifies* an
+   * entry here, so nothing of the entry (its megabytes) crosses into the stream:
+   * the descriptor is id, type and role.
+   */
+  leafEntry(): { id: string; type: string; role?: string } | null {
+    const manager = this.inner.sessionManager;
+    if (!manager || typeof manager.getLeafEntry !== "function") return null;
+    const entry = manager.getLeafEntry() as
+      | { id?: unknown; type?: unknown; message?: { role?: unknown } }
+      | undefined;
+    if (!entry || typeof entry.id !== "string" || typeof entry.type !== "string") return null;
+    const role = entry.message && typeof entry.message.role === "string" ? entry.message.role : undefined;
+    return { id: entry.id, type: entry.type, role };
+  }
+
   get isStreaming(): boolean {
     return this.inner.isStreaming;
   }

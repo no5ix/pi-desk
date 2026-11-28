@@ -50,9 +50,15 @@ import type {
   ImageContent,
   ToolCallContent,
   ThinkingContent,
+  PayloadTruncation,
 } from "@/lib/types";
 import { isRecord } from "@/lib/is-record";
 import { errorMessage } from "@/lib/errors";
+import {
+  registerContentCache,
+  RetainedTextCache,
+  shouldReleaseOnCollapse,
+} from "@/lib/content-retention";
 
 // CJK chars ~1 token each (GLM/DeepSeek/GPT-o200k); other chars ~4 chars/token.
 const CJK_PATTERN = /[\u3000-\u30ff\u3400-\u9fff\uf900-\ufaff\u{20000}-\u{2fa1f}\uac00-\ud7af]/u;
@@ -106,7 +112,20 @@ function estimateUpdatedTokens(previous: TokenEstimateCacheEntry | undefined, te
 }
 
 const MAX_THINKING_CACHE_ENTRIES = 100;
-const thinkingContentCache = new Map<string, Promise<string>>();
+/** The bytes of full reasoning one tab keeps for re-expanding cards. */
+const MAX_RETAINED_THINKING_BYTES = 4 * 1024 * 1024;
+/** A request in flight is accounted at this size until its text is known. */
+const THINKING_INFLIGHT_ESTIMATE_BYTES = 64 * 1024;
+/**
+ * Fetched full thinking blocks, bounded by entries *and* bytes (Phase 6): a
+ * hundred 3 MB reasoning blocks is not a cache, it is a leak with a size limit
+ * on the count. The cache also answers to the page's own memory pressure.
+ */
+const thinkingContentCache = new RetainedTextCache<Promise<string>>(
+  MAX_THINKING_CACHE_ENTRIES,
+  MAX_RETAINED_THINKING_BYTES,
+);
+registerContentCache(thinkingContentCache);
 
 // Messages larger than this skip markdown rendering entirely. react-markdown +
 // KaTeX + syntax highlighting on multi-hundred-KB payloads (e.g. pasted HAR or
@@ -179,11 +198,7 @@ const USER_BUBBLE_MAX_HEIGHT = 900;
 function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
   const key = `${sessionId}:${entryId}:${blockIndex}`;
   const cached = thinkingContentCache.get(key);
-  if (cached) {
-    thinkingContentCache.delete(key);
-    thinkingContentCache.set(key, cached);
-    return cached;
-  }
+  if (cached) return cached;
 
   const request = fetch(
     `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/thinking?blockIndex=${blockIndex}`,
@@ -192,16 +207,18 @@ function loadThinkingContent(sessionId: string, entryId: string, blockIndex: num
     const data = await response.json() as { thinking?: unknown };
     if (typeof data.thinking !== "string") throw new Error("Invalid thinking response");
     return data.thinking;
+  }).then((thinking) => {
+    // The bytes are known now: account for them, so the byte cap can evict.
+    thinkingContentCache.set(key, Promise.resolve(thinking), thinking.length);
+    return thinking;
   }).catch((error) => {
     thinkingContentCache.delete(key);
     throw error;
   });
 
-  thinkingContentCache.set(key, request);
-  if (thinkingContentCache.size > MAX_THINKING_CACHE_ENTRIES) {
-    const oldestKey = thinkingContentCache.keys().next().value;
-    if (oldestKey) thinkingContentCache.delete(oldestKey);
-  }
+  // In flight the entry must already be in the cache, so a second expand of the
+  // same block does not fire a second request.
+  thinkingContentCache.set(key, request, THINKING_INFLIGHT_ESTIMATE_BYTES);
   return request;
 }
 
@@ -944,6 +961,12 @@ function AssistantMessageView({
         </div>
       )}
 
+      {/* Phase 7: a reply the stream cut to its payload budget says so. A short
+          reply is not a complete one. */}
+      {message.payloadTruncated && (
+        <PayloadCutNote marker={message.payloadTruncated} />
+      )}
+
       {levelRefused && (
         <div className="thinking-refusal-hint" role="note">
           <span>
@@ -1185,6 +1208,20 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex,
     };
   }, [expanded, block.deferred, content, sessionId, entryId, blockIndex]);
 
+  // Phase 6: a collapsed card hands its fetched reasoning back once it is big
+  // enough that re-reading it is cheaper than holding it. The effect (not the
+  // click) is the rule: a card that closes for any reason — the position rule,
+  // the switch, a click — releases the same way, and the next expand fills it
+  // in again, from the cache while the cache holds it.
+  useEffect(() => {
+    if (expanded) return;
+    if (shouldReleaseOnCollapse(content)) {
+      setContent(null);
+      setLoading(false);
+      setError(null);
+    }
+  }, [expanded, content]);
+
   return (
     <div className="thinking-card" style={{
       display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
@@ -1259,13 +1296,16 @@ function isSubagentToolDetails(value: unknown): value is SubagentToolDetails {
   return details.kind === "pi-web-subagent" && typeof details.sessionId === "string";
 }
 
-function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOpenSession }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; aborted?: boolean; defaultExpanded?: boolean; onOpenSession?: (sessionId: string) => void }) {
+function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOpenSession, onExpandedChange }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; aborted?: boolean; defaultExpanded?: boolean; onOpenSession?: (sessionId: string) => void; onExpandedChange?: (expanded: boolean) => void }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(() => defaultExpanded ?? isToolCallExpanded(block.toolCallId));
   const toggleExpanded = () => {
     const next = !expanded;
     setToolCallExpanded(block.toolCallId, next);
     setExpanded(next);
+    // Phase 6: the pane a collapsed card used to show can be bytes nobody is
+    // looking at. Callers use this to give fetched content back.
+    onToolExpandedChange(next);
   };
   const inputStr = getWrittenFileText(block) ?? getToolCallInputText(block);
   const isStreamingInput = block.rawInput !== undefined;
@@ -1304,6 +1344,54 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
     ? result.details
     : null;
   const codemodeCallCount = codemode ? codemode.calls.length + codemode.omitted : 0;
+
+  /**
+   * Phase 7: the stream cut this tool result to its per-event payload budget.
+   * The card says so — a shortened value never renders as if it were complete —
+   * and offers the entry's full block, which the session file keeps.
+   */
+  const payloadCut = result?.payloadTruncated;
+  const payloadContentUrl = payloadCut?.contentUrl;
+  const [cappedFull, setCappedFull] = useState<string | null>(null);
+  const [cappedLoading, setCappedLoading] = useState(false);
+  const [cappedError, setCappedError] = useState<string | null>(null);
+  const loadCappedContent = async () => {
+    if (!payloadContentUrl) return;
+    setCappedLoading(true);
+    setCappedError(null);
+    try {
+      const response = await fetch(payloadContentUrl);
+      const data = await response.json() as { text?: unknown; error?: string };
+      if (!response.ok || typeof data.text !== "string") {
+        setCappedError(data.error ?? `HTTP ${response.status}`);
+      } else {
+        setCappedFull(data.text);
+      }
+    } catch (error) {
+      setCappedError(errorMessage(error));
+    } finally {
+      setCappedLoading(false);
+    }
+  };
+  const onToolExpandedChange = (next: boolean) => {
+    // Phase 6: the full text loaded for a cut result is the card's biggest
+    // fetchable payload; a collapsed card hands it back.
+    if (!next && shouldReleaseOnCollapse(cappedFull)) {
+      setCappedFull(null);
+      setCappedError(null);
+    }
+    onExpandedChange?.(next);
+  };
+
+  // The card collapsed (by its header, a preference, or a re-render): give the
+  // loaded full text back, so a session of collapsed cards keeps no output.
+  useEffect(() => {
+    if (expanded) return;
+    if (shouldReleaseOnCollapse(cappedFull)) {
+      setCappedFull(null);
+      setCappedError(null);
+    }
+  }, [expanded, cappedFull]);
 
   return (
     <div
@@ -1439,6 +1527,17 @@ function ToolCallBlock({ block, result, duration, aborted, defaultExpanded, onOp
             isError={isError}
           />
         )
+      )}
+
+      {/* ── Phase 7: the stream cut this result to its payload budget ── */}
+      <PayloadCutNote
+        marker={payloadCut}
+        onLoad={payloadContentUrl && cappedFull === null ? loadCappedContent : undefined}
+        loading={cappedLoading}
+        error={cappedError}
+      />
+      {payloadCut && cappedFull !== null && (
+        <PairedResult text={cappedFull} isEmpty={cappedFull.trim() === ""} isError={false} />
       )}
     </div>
   );
@@ -1878,6 +1977,55 @@ function ResultImages({ images }: { images: ImageContent[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Phase 7: the stream cut this message to its per-event payload budget.
+ *
+ * A shortened value must never render as if it were complete, so every cut
+ * event carries `payloadTruncated` and every card that shows one says what fell
+ * off. Where the session entry keeps the bytes (a tool result's text), the note
+ * carries the way back.
+ */
+function PayloadCutNote({ marker, onLoad, loading, error }: {
+  marker?: PayloadTruncation;
+  onLoad?: () => void;
+  loading?: boolean;
+  error?: string | null;
+}) {
+  const { t } = useI18n();
+  if (!marker) return null;
+  return (
+    <div className="tool-output-truncation-note" role="status">
+      <span>
+        {marker.chars > 0
+          ? t("chat.payloadTruncated", { chars: marker.chars.toLocaleString() })
+          : t("chat.payloadTruncatedImages", { count: marker.images })}
+      </span>
+      {onLoad && (
+        <button
+          type="button"
+          onClick={onLoad}
+          disabled={loading}
+          style={{
+            marginLeft: 8,
+            background: "none",
+            border: "none",
+            padding: 0,
+            color: "var(--accent)",
+            fontSize: "var(--fs-micro)",
+            textDecoration: "underline",
+            cursor: loading ? "default" : "pointer",
+          }}
+        >
+          {loading ? t("chat.loadingFullOutput") : t("chat.showFullOutput")}
+        </button>
+      )}
+      {error && (
+        <span style={{ marginLeft: 6, color: "var(--text-dim)", fontSize: "var(--fs-micro)" }}>({error})</span>
+      )}
     </div>
   );
 }
@@ -2494,7 +2642,19 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
       };
   return (
     <div style={{ margin: "6px 0" }}>
-      <ToolCallBlock block={block} result={result} defaultExpanded={isRunning} />
+      <ToolCallBlock
+        block={block}
+        result={result}
+        defaultExpanded={isRunning}
+        onExpandedChange={(next) => {
+          // Phase 6: the full output loaded behind "view full output" is the
+          // biggest thing this card can hold; collapsing it gives the text back.
+          if (!next && shouldReleaseOnCollapse(fullOutput)) {
+            setFullOutput(null);
+            setFullError(null);
+          }
+        }}
+      />
       {message.truncated && fullOutputUrl && (
         <div style={{ padding: "4px 10px", fontSize: "var(--fs-micro)", marginTop: -1 }}>
           {showFullButton && (

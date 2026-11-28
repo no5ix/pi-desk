@@ -1,4 +1,86 @@
-# PROGRESS — search prompts, one session mention, attachments across a reload
+# PROGRESS — the live path stops carrying the transcript (memory Phases 5–8)
+
+Branch `feat/complete-memory-optimization-phases`, from
+`test-merge/test-merge-pi-desk-main` (`66455ffe`).
+
+## Done and verified
+
+**Phase 5 — the live append is a projection, not the transcript.**
+`lib/deferred-message-content.ts` is the shared projection (`deferThinkingBlocks`,
+`deferToolResultBase64Images`, `deferLiveMessageContent`); history
+(`lib/session-reader.ts`) and the live path (`lib/agent-event-stream.ts`) call the
+same rules. The stream gates `message_end` one microtask so `leafEntry()`
+(`lib/rpc-manager.ts`, id/type/role only) can name the entry the message became,
+and gates the events behind it so the producer's order survives. The reducer keeps
+`entryIds` parallel to `messages` (`pendingEntryIdsRef` + one aligning effect,
+`""` for a slot with no id). Retrieval is the collapsed card's existing routes,
+plus `…/tool-result-content` for a payload-cut result. No entry id, no deferral —
+the message goes through whole; `?liveDefer=off` is the escape hatch.
+Verified: `lib/deferred-message-content.test.mjs` (9),
+`lib/agent-event-stream-phases.test.mjs` (deferral, ordering, no-leaf, switch,
+screenshot frame 4 MB → 0.6 KB).
+
+**Phase 6 — the loaded window slides; a collapsed card gives its content back.**
+`trimLoadedWindow`/`loadedWindowCap` (lib/chat-lazy-load.ts): eviction from the
+head only, cap = the live window + slack, navigation targets protected,
+`hasEarlierAfterPrepend` follows the server. The cursor is the **fetch
+watermark**, not the kept head — the walk test caught a real bug here: a cursor
+that followed the kept rows re-requested the same page forever once a protected
+row pinned the head. `ChatWindow` clamps the rendered window to
+`MAX_NAVIGATED_LOADED_MESSAGES` at both places that grow it, and passes a stable
+`loadedWindow` to the reducer. `lib/content-retention.ts`:
+`shouldReleaseOnCollapse` (16 KiB) on thinking, full bash output and a loaded
+payload-cut text; `RetainedTextCache` bounds the thinking cache by bytes and
+entries and registers with `announceContentPressure()`.
+Verified: `lib/chat-lazy-load.test.mjs` (5 new: cap, head eviction, protection,
+the 40-round walk, the sentinel), `components/memory-live-path.test.mjs`.
+
+**Phase 7 — deltas and a per-event budget.** `lib/tool-update-delta.ts`:
+per-connection baselines, `textAppend`/`contentAppend`/`callsAppend`/
+`detailsReplace`, whole-frame fallback, `rev`/`base` guards on both sides
+(a hole is refused, the card keeps its frame), invalidation on drop /
+`tool_execution_end` / `agent_end`, LRU caps both sides, opt-in via
+`?toolUpdates=delta`. `lib/event-payload-limit.ts`: 1 MiB per event
+(`PI_WEB_MAX_EVENT_PAYLOAD_BYTES`, clamped ≥ 64 KiB, `0`/`off` off), structural
+cutting (never a JSON string slice), `ESSENTIAL_KEYS` kept, a string keeps as much
+head as the budget allows, images become counted notes, and the event carries
+`payloadTruncated` (+ `contentUrl`) so a shortened value never renders as
+complete; `ToolCallBlock` shows the notice and fetches the entry's real text.
+Verified: `lib/tool-update-delta.test.mjs` (12), `lib/event-payload-limit.test.mjs`
+(11), `lib/agent-event-stream-phases.test.mjs` (wire deltas, the 64 KiB cut with
+its `contentUrl`, the budget off).
+
+**Phase 8 — the live path is measured.** `scripts/memory-bench.mjs --wire` runs a
+synthetic tool-heavy run through the app's own modules and prints `full`,
+`phases`, `phases-64k`: wire MB, p50/p95/max frame bytes, delta/deferred/capped
+counts, page-state and window bytes. Reference (120 calls): **132 MB → 51 MB on
+the wire** (max frame 3.37 MB → 1.02 MB; 64 KB at the floor), **100 MB of page
+state → 34 MB**, 240 appends projected, 0 deltas refused.
+
+Two wiring details the tests forced into the open: the append flush hands the
+entry id to the payload cap, so a live tool result the budget cut carries the
+`contentUrl` of its own entry (the card offers the real text, not a silent
+shortening); and `lib/rpc-manager-leaf-entry.test.mjs` drives a **real SDK
+`SessionManager`** to prove `leafEntry()` answers in production — a descriptor of
+id/type/role, never the entry's bytes — because a projection that never activates
+is invisible to every other test here.
+`PayloadCutNote` is the one component that says what fell off, used by the tool
+card and by an assistant reply.
+
+Docs: `docs/agents/fork-memory.md` gained the four sections and the file/test
+lists; `AGENTS.md`'s fork-memory line names them.
+
+## Notes for the next session
+
+- The streaming bubble itself (`streaming.thinking`, the live reply text) is not
+  deferred: a page cannot show a reply it has not received. It is released when
+  the message ends, and the appended copy is the projected one.
+- `scripts/check-installed-deps.test.mjs` and `scripts/upstream-css-baseline.test.mjs`
+  fail at the base commit `66455ffe` too (worktree `node_modules` lag; the merge
+  branch's CSS baseline). `npm ci` fixes the first; the second is merge bookkeeping.
+
+---
+
 
 Branch `fix/new-session-attachments-prompt-search-session-mention`, from
 `test-merge/test-merge-pi-desk-main` (`742ae86e`). Pushed: `69f37468` (the
