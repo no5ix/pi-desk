@@ -138,7 +138,7 @@ npm install
 npm run dev
 ```
 
-The dev server tries port `30141` first and automatically increments to the next available port when it is occupied; check the startup output for the actual address. It does not open a browser. `npm run web` starts the same loopback server and opens the selected port in the desktop browser after it is ready. From WSL that is the Windows browser. You can request a specific port with `npm run dev --port 30146`. See [Web profile](./docs/web-profile.md).
+The dev server tries port `30141` first and automatically increments to the next available port when it is occupied; check the startup output for the actual address. It does not open a browser. `npm run web` starts the same loopback server and opens the selected port in the desktop browser after it is ready. From WSL that is the Windows browser. You can request a specific port with `npm run dev --port 30146` or `npm start --port 30146`. See [Web profile](./docs/web-profile.md).
 
 Do not run `next build` or `npm run build` during normal development. They write into `.next/` and can disrupt a running dev server; production builds are done by the desktop preparation script or by CI.
 
