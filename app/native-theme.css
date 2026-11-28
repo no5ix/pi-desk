@@ -14231,6 +14231,28 @@ html.dark .artifacts-thumb[data-tone="data"] { --tone: #4fc1d6; }
   font-size: var(--fs-micro);
 }
 
+/* The panel's answer when git refuses a file's diff. The sentence is the point,
+   so it is the sentence in the pane, with the path under it in the mono ink: a
+   reader who is told "outside the project" can see which path was meant. */
+.file-diff-denied {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 12px;
+}
+
+.file-diff-denied-title {
+  color: var(--text);
+  font-size: var(--fs-small);
+}
+
+.file-diff-denied-path {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  overflow-wrap: anywhere;
+}
+
 /* The diff's rows. An added or removed line is a state of the row, so its wash,
    its left rail and the sign's ink are rules here, in the palette's diff roles
    — the same greens and reds as the editor's diff gutter and the minimap, so a
@@ -17218,6 +17240,23 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   line-height: 1;
 }
 
+/* The row's centre line, and the close `x` on it. The widget is a 33px box whose
+   parts Monaco places by hand: the row (`.find-part`, 25px) carries a 3px top
+   margin and the close glyph is absolutely placed 5px down, so the row sat 1px
+   and the `x` 3.5px above the widget's middle — measured in a 520px panel at
+   centre lines 64.5 / 63.5 / 61 (widget, input row, `x`), and the same split at
+   380px and 900px, where the widget narrows itself. The row gets the widget's
+   4px gutter (33 - 25 over two), the `x` the symmetric 8.5px of its 16px box,
+   so the glyph, the field and the buttons ride one line at every width. */
+.code-editor-monaco .monaco-editor .find-widget > .find-part,
+.code-editor-monaco .monaco-editor .find-widget > .replace-part {
+  margin-top: 4px;
+}
+
+.code-editor-monaco .monaco-editor .find-widget > .button.codicon-widget-close {
+  top: 8.5px;
+}
+
 /* The strip's Git button carries the count the panel is about: the files the
    working tree changed. A reader opens the panel from that number, not from the
    glyph, so it hangs off the corner the button already has. */
@@ -17453,6 +17492,24 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   flex-shrink: 0;
   border-radius: 50%;
   background: var(--accent);
+}
+
+/* The Git tab's changed-file count. The number, not the glyph, is what decides
+   opening the view, so it rides in the tab's own row beside the label — the same
+   ink as the count on the strip's glyph, sized to sit on a text baseline. */
+.file-tab-badge {
+  flex-shrink: 0;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg-panel);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 15px;
+  text-align: center;
+  pointer-events: none;
 }
 
 @media (max-width: 640px) {

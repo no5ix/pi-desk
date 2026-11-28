@@ -131,21 +131,100 @@ branchshift (bs2). Each fix below carries a check that fails without it.
 
 ### Open, not started
 
-- File-list load speed (needs a measurement of `/api/file-tree` against the
-  pre-fork behaviour before anything is changed).
-- The Git view as a tab: mutual exclusion with the file/terminal tabs, the
-  changed-file badge on the glyph, no reload when tabs are switched, and the
-  broken diff for an uncommitted file (`Access denied` in the diff pane).
-  Lead for the diff: `/api/git/diff` answers 403 from
-  `isExistingFilePathAllowed(cwd)` / `isDiffPathAllowed(path)`
-  (`app/api/git/diff/route.ts:47-53`), the stricter pair that resolves the
-  real path, while the read route the panel uses to show the file gets past the
-  plain `isFilePathAllowed` check. A branchshift linked worktree whose path
-  resolves through a symlink (a home under a link, `/tmp`, a case-differing
-  volume) is the case that splits the two. Reproduce it in a unit test over
-  `lib/file-access.ts` with a linked root before changing either check.
-- Editor chrome: the tab's `x` centred on its row, the Monaco find widget's
-  alignment. A probe measured the widget in the app's stylesheet (419px wide,
-  the actions centred on the second row); the fix needs the real panel's DOM.
 - branchshift bs2: the mobile expand button, the project list without branch
   info, left-aligned branch/commit menus.
+- File-list load speed, beyond the measurement below (the client's own queue of
+  per-folder requests is the remaining cost, not the server's).
+
+### Shipped and verified (2026-11-28, second batch)
+
+- **The Git view is a tab of the right panel's bar.** `GIT_PANEL_TAB_ID` is a
+  pinned tab (`kind: "git"`, `badge: changesCount`) beside the file, terminal,
+  artifact and side-chat tabs; a chat's bar never gets it. Picking it opens the
+  view, picking any other tab hands the content area back, and its `x` hides the
+  view without removing the tab. The view stays mounted behind the tab switch
+  (the keepalive), so switching tabs is a look away, not a re-read.
+  Checks: `components/TabBar.git-tab.test.mjs` (the tab, the count, both
+  directions of the exclusion, the keepalive, the badge's ink, the three packs)
+  and `e2e/git-tab.mjs` (the real strip with the real CSS: four tabs on one row,
+  the count inside the tab and never over the label, every part of every tab —
+  glyph, label, dirty dot, count, close `x` — within 1px of the tab's centre
+  line, `99+` cap, the click answers). Both are in `npm run test:e2e`.
+- **The uncommitted diff's `Access denied` was the path git prints.** The lead
+  on record ("the stricter pair resolves real paths while the plain lexical
+  check passes") is **not** what splits: `isExistingPathWithinRoots` resolves
+  both sides (`resolveRealRoots`), and a live probe of the route over six path
+  shapes (modified, non-ASCII, deleted, untracked, link-escape, missing) showed
+  read and diff agreeing everywhere. The split is the opposite direction: git
+  prints the checkout **resolved** (`git rev-parse --show-toplevel`), the
+  allowed roots record the folder the user picked — through a link when the
+  project is a linked worktree reached by one. The lexical check the route ran
+  first rejected the file the panel had just listed and read.
+  `lib/git-diff-access.ts` is now the gate: containment after the links are
+  followed, on both sides, walking up to the nearest existing entry for a
+  deleted file, and the refusal is one of four named cases
+  (`parent-segment`, `outside-root`, `link-escapes-root`, `unresolvable`) so the
+  pane can say which. A link inside the project that leaves it is still refused.
+  Checks: `lib/git-diff-access.test.mjs` (8 tests, a real `git worktree` under a
+  real link), `app/api/git/diff/route.test.mjs` (the linked-worktree request
+  answers with its patch; the junction refusal carries its reason),
+  `components/FileViewer.diff-denied.test.mjs` (the refusal keeps the diff mode,
+  shows the sentence and the path, and the reason sets at both ends stay in
+  step). Four sentences, three packs each.
+- **Monaco's find widget: one centre line.** The widget is a 33px box Monaco
+  lays out by hand — the row carries a 3px top margin, the close `x` is
+  absolutely placed 5px down — so a 520px panel measured **three** centre lines
+  in one strip (widget 64.5, field 63.5, `x` 61). The row gets the widget's 4px
+  gutter, the `x` the symmetric 8.5px of its 16px box. Check:
+  `e2e/editor-find.mjs` at 380/520/900px — every part within 1px of the widget's
+  centre, the widget inside the editor's box, and a second pass with the rules
+  removed that measures the old split, so the probe can see the bug it is for.
+  The harness is part of the finding: **Monaco's own stylesheet is what positions
+  those parts.** esbuild emits it beside the bundle (`fixture.css`) and a page
+  that links only the app's sheets measures the buttons as unstyled 337px blocks,
+  one per row — which is what the earlier probe reported as "419px wide, actions
+  centred on the second row". Any harness that mounts Monaco must link both
+  sheets, in the app's order.
+- **The tab's `x` is centred, measured.** The plan asked for the fix; the probe
+  says the tab row already centres. The real panel's strip (48px) puts its tab
+  bar, every tab, and each tab's glyph, label, dot, count and `x` at centre
+  line 24 — in the live app and in `e2e/git-tab.mjs`. That check is now
+  registered, so the centring is pinned instead of assumed.
+
+### File listing: the measurement (was "needs a live measurement")
+
+Dev server on 30141, a production build served on 30142 (`PI_WEB_DESKTOP_BUILD`),
+and the route handler timed in-process. "Cold" is a fresh server process and a
+root never listed before; a true cold *disk* needs `purge` (sudo) and is not in
+these numbers.
+
+| what | number |
+| --- | --- |
+| readdir of a directory (no git) | 0.1–0.3 ms |
+| the route's visibility rule, one directory (current) | p50 8.9–16.9 ms |
+| the same at the pre-fork baseline `6fcd7d4` (v0.10.0) | p50 8.1–16.3 ms — **the fork costs nothing here** |
+| first list request of a fresh production process | 561 ms (one-time route init) |
+| the same request, warm | 18–21 ms |
+| HTTP, warm, production | 12–26 ms per directory, flat with size |
+| panel open, **production** | first tree row 275 ms; 1 list (26 ms) + 1 git/status (36 ms) |
+| panel open, **dev** | first tree row 1117–2831 ms; the list and the status each fire **twice** |
+
+Readings, in order of what they cost:
+
+1. The floor is the **git child process**, not the directory: the visibility
+   rule runs `git check-ignore` (and `git ls-files` when a name comes back
+   ignored) per listing, `lib/file-tree-visibility.ts`. It is ~7 ms per spawn,
+   so a listing is 8–17 ms whatever it holds, and 6.8 ms of that is spent
+   spawning git **outside a work tree** just to fail. Upstream owns this module
+   and the fork's list handler is at parity with the baseline.
+2. Dev-mode's **double effect** (React StrictMode) doubles the panel's opening
+   pair, and the first request pays the route's first-compile. Production pays
+   neither: 275 ms and one request.
+3. The remaining user-visible cost is **one request per folder opened**, each
+   with its own git spawn, plus the `/api/git/status` that rides every cwd
+   change and every `treeRefreshKey` bump.
+
+The fix that follows from the table is a short-TTL, event-invalidated memo of the
+git answer per directory in a fork-owned module (the file `lib/file-access.ts`
+already caches its roots for 5 s the same way), plus skipping git where there is
+no work tree to ask. That keeps `lib/file-tree-visibility.ts` upstream's.
