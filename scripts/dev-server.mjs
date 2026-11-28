@@ -64,7 +64,7 @@ for (let index = 0; index < scriptArgs.length; index += 1) {
     index += 1;
     continue;
   }
-  if (arg.startsWith("--port=") || arg.startsWith("-p=") || /^-p\\d+$/.test(arg) || /^\\d+$/.test(arg)) {
+  if (arg.startsWith("--port=") || arg.startsWith("-p=") || /^-p\d+$/.test(arg) || /^\d+$/.test(arg)) {
     continue;
   }
   nextArgs.push(arg);
