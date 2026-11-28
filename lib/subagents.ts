@@ -254,6 +254,24 @@ const BUILTIN_PROFILES: SubagentProfile[] = [
     enabled: true,
     scope: "builtin",
   },
+  {
+    name: "background-task",
+    displayName: "Background task",
+    description: "Run and monitor a long-running shell task without editing project files",
+    systemPrompt: "You are a background shell-task worker. Execute and monitor the delegated shell task until it reaches a terminal state or a genuine external blocker prevents progress. Do not edit or write project files. Report the exact process status, exit code, and relevant output or log location. Never claim that a process will survive a server crash, application quit, or machine restart unless the host explicitly confirms recovery. If blocked, preserve the process or task identifiers and report the concrete blocker.",
+    tools: ["read", "bash", "grep", "find", "ls"],
+    loadSkills: false,
+    loadExtensions: false,
+    codemode: "off",
+    mcp: "off",
+    promptMode: "append",
+    thinking: "medium",
+    maxTurns: 15,
+    inheritContext: false,
+    runInBackground: true,
+    enabled: true,
+    scope: "builtin",
+  },
 ];
 
 function stringValue(value: unknown): string | undefined {

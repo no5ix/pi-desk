@@ -126,7 +126,7 @@ npm install
 npm run dev
 ```
 
-开发服务器运行在 [http://localhost:30141](http://localhost:30141)，不会自动打开浏览器。`npm run web` 启动同一个 loopback 服务器，并在就绪后用桌面浏览器打开 `http://127.0.0.1:30141`。在 WSL 中打开的是 Windows 浏览器。见 [Web profile](./docs/web-profile.md)。
+开发服务器不会自动打开浏览器。主检出（main checkout）运行在 [http://localhost:30141](http://localhost:30141)；每个 linked Git worktree 会获得一个由路径决定的固定端口，启动脚本会打印实际选定的端口。`npm run web` 启动同一个 loopback 服务器，并在就绪后用桌面浏览器打开该地址。在 WSL 中打开的是 Windows 浏览器。可用 `PI_WEB_PORT` 指定端口（传入 `--port` 优先级更高）。见 [Web profile](./docs/web-profile.md) 与 [跨 Worktree 的开发服务器端口](./docs/worktrees.zh-CN.md#跨-worktree-的开发服务器端口)。
 
 日常开发期间不要运行 `next build` 或 `npm run build`。这些命令会写入 `.next/`，可能干扰正在运行的开发服务器；正式构建由桌面准备脚本或 CI 完成。
 

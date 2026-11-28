@@ -138,7 +138,7 @@ npm install
 npm run dev
 ```
 
-The dev server runs at [http://localhost:30141](http://localhost:30141) and does not open a browser. `npm run web` starts the same loopback server and opens `http://127.0.0.1:30141` in the desktop browser after it is ready. From WSL that is the Windows browser. See [Web profile](./docs/web-profile.md).
+The dev server does not open a browser. The main checkout runs at [http://localhost:30141](http://localhost:30141); a linked Git worktree gets its own deterministic port, and the launcher prints the port it chose. `npm run web` starts the same loopback server and opens that address in the desktop browser after it is ready. From WSL that is the Windows browser. Set `PI_WEB_PORT` (or pass `--port`, which wins) to pick a port explicitly. See [Web profile](./docs/web-profile.md) and [Development server ports across worktrees](./docs/worktrees.md#development-server-ports-across-worktrees).
 
 Do not run `next build` or `npm run build` during normal development. They write into `.next/` and can disrupt a running dev server; production builds are done by the desktop preparation script or by CI.
 

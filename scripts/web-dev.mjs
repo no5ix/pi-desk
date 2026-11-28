@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const { getHelpText, parseLaunchOptions } = require("../bin/pi-web-options.js");
 const { getNextNodeArgs } = require("../bin/pi-web-node-args.js");
+const { readPortArgument, resolveDevPort } = require("../bin/worktree-port.js");
 const { wireChildProcessLifecycle } = require("../bin/process-lifecycle.js");
 const { attachReadyHandoff, shouldOpenBrowser } = require("../lib/browser-open.js");
 const { applyDevEnvDefaults, applyServerMemoryEnv } = require("../bin/server-flags.js");
@@ -45,9 +46,11 @@ function resolveNextBin() {
 }
 
 const nextBin = resolveNextBin();
+const port = await resolveDevPort({ cwd: pkgDir, env: process.env, explicitPort: readPortArgument(process.argv.slice(2)) });
+console.log(`[pi-web] dev server port: ${port} · PI_WEB_PORT / --port override`);
 const child = spawn(
   process.execPath,
-  getNextNodeArgs(nextBin, ["dev", "-H", "127.0.0.1", "-p", launchOptions.port]),
+  getNextNodeArgs(nextBin, ["dev", "-H", "127.0.0.1", "-p", port]),
   {
     cwd: pkgDir,
     stdio: ["inherit", "pipe", "inherit"],
@@ -63,7 +66,7 @@ const child = spawn(
 );
 
 attachReadyHandoff(child.stdout, {
-  port: launchOptions.port,
+  port,
   wantOpen: launchOptions.openBrowser && shouldOpenBrowser(process.env),
 });
 wireChildProcessLifecycle(child);

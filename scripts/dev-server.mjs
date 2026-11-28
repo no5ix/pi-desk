@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { getNextNodeArgs } = require("../bin/pi-web-node-args.js");
+const { readPortArgument, resolveDevPort } = require("../bin/worktree-port.js");
 const { wireChildProcessLifecycle } = require("../bin/process-lifecycle.js");
 const { applyDevEnvDefaults, applyServerMemoryEnv, maxOldSpaceMb } = require("../bin/server-flags.js");
 
@@ -49,9 +50,12 @@ console.log(
   + " · PI_WEB_MAX_OLD_SPACE_SIZE / PI_WEB_IDLE_TIMEOUT_MS override",
 );
 
+const port = await resolveDevPort({ cwd: pkgDir, env: process.env, explicitPort: readPortArgument(process.argv.slice(2)) });
+console.log(`[pi-web] dev server port: ${port} · PI_WEB_PORT / --port override`);
+
 const child = spawn(
   process.execPath,
-  getNextNodeArgs(resolveNextBin(), ["dev", "-H", "127.0.0.1", "-p", "30141", ...process.argv.slice(2)]),
+  getNextNodeArgs(resolveNextBin(), ["dev", "-H", "127.0.0.1", ...process.argv.slice(2), "-p", port]),
   {
     cwd: pkgDir,
     // Inherited, not piped: `next dev` writes its ready line, its progress and

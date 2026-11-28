@@ -76,6 +76,20 @@ Pi Web 按 project root 分组会话，所以 main checkout 和 linked worktree 
 - 在 main checkout 创建的会话，会继续使用 main checkout。
 - 如果某个 worktree 已被删除，它的历史会话仍会显示在项目下，方便你找回上下文。
 
+## 跨 Worktree 的开发服务器端口
+
+每个 linked worktree 都会根据 checkout path 得到一个确定的开发端口，所以多个分支可以并行运行，而不必都争抢 30141。main checkout 在 30141 可用时仍然使用它。如果自动选中的端口已被占用，启动脚本会继续探测 worktree 端口区间里剩下的候选，并选择下一个可用端口。
+
+`npm run dev` 和 `npm run web` 使用同一个解析器。启动脚本会打印选定的端口；请使用该地址，不要假定一个固定端口。
+
+如需指定端口，请设置 `PI_WEB_PORT`：
+
+```bash
+PI_WEB_PORT=30155 npm run dev
+```
+
+显式的 `--port` / `-p` 选项优先于 `PI_WEB_PORT`；`PORT` 仍作为兼容回退保留。显式请求的端口不会被静默更换：如果它已被占用，启动会失败并给出可操作的错误信息。启动隔离服务器的 E2E 测试仍会使用系统分配的临时端口。
+
 ## 常见问题
 
 **为什么我看不到 worktree 切换器？**

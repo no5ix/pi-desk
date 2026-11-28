@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,6 +10,43 @@ import test from "node:test";
 const require = createRequire(import.meta.url);
 const { isVerboseLogging } = require("../bin/pi-web-options.js");
 const { attachReadyHandoff } = require("../lib/browser-open.js");
+
+// The fixture below spawns the real launchers out of a temp tree, so every
+// module a launcher requires has to be copied into that tree. `bin/worktree-port.js`
+// joined this list when the dev launchers started resolving a worktree-aware
+// port: without it the spawn dies with MODULE_NOT_FOUND and the assertion that
+// follows reports a status code, which reads like a launcher bug.
+const FIXTURE_FILES = [
+  "bin/pi-web-options.js",
+  "bin/pi-web-node-args.js",
+  "bin/worktree-port.js",
+  "bin/process-lifecycle.js",
+  "bin/pi-web.js",
+  "bin/rotate-preview-secrets.js",
+  "bin/node-version.js",
+  "bin/network-exposure-warning.js",
+  "bin/keep-alive.js",
+  "bin/server-flags.js",
+  "lib/browser-open.js",
+  "scripts/web-dev.mjs",
+  "next.config.ts",
+];
+const FIXTURE_LAUNCHERS = ["scripts/web-dev.mjs", "bin/pi-web.js"];
+
+test("the launcher fixture copies every module the launched scripts require", async () => {
+  const copied = new Set(FIXTURE_FILES);
+  for (const launcher of FIXTURE_LAUNCHERS) {
+    const source = await readFile(new URL(`../${launcher}`, import.meta.url), "utf8");
+    for (const spec of source.matchAll(/require\("(\.\.?\/[^"]+)"\)/g)) {
+      const base = path.posix.normalize(path.posix.join(path.posix.dirname(launcher), spec[1]));
+      const resolved = copied.has(base) || copied.has(`${base}.js`) ? (copied.has(base) ? base : `${base}.js`) : null;
+      assert.ok(
+        resolved,
+        `${launcher} requires ${spec[1]}, which the fixture does not copy. Add the file to FIXTURE_FILES.`,
+      );
+    }
+  }
+});
 
 test("Next's native request logging is opt-in and excludes query values", async () => {
   const previous = process.env.PI_WEB_VERBOSE;
@@ -56,7 +93,7 @@ test("launchers propagate verbosity and retain startup, diagnostics and unknown 
   const dir = await mkdtemp(path.join(tmpdir(), "pi-web-logging-"));
   try {
     for (const directory of ["bin", "lib", "scripts", ".next", "node_modules/next/dist/bin"]) await mkdir(path.join(dir, directory), { recursive: true });
-    for (const file of ["bin/pi-web-options.js", "bin/pi-web-node-args.js", "bin/process-lifecycle.js", "bin/pi-web.js", "bin/rotate-preview-secrets.js", "bin/node-version.js", "bin/network-exposure-warning.js", "bin/keep-alive.js", "bin/server-flags.js", "lib/browser-open.js", "scripts/web-dev.mjs", "next.config.ts"]) {
+    for (const file of FIXTURE_FILES) {
       await cp(new URL(`../${file}`, import.meta.url), path.join(dir, file));
     }
     await writeFile(path.join(dir, "package.json"), JSON.stringify({ scripts: { web: "node scripts/web-dev.mjs" } }));
@@ -87,7 +124,24 @@ test("launchers propagate verbosity and retain startup, diagnostics and unknown 
       });
       assert.equal(result.status, 7, result.stderr);
       assert.match(result.stdout, /Ready in 1s/);
-      assert.match(result.stdout, /pi-web: http:\/\/127\.0\.0\.1:0/);
+      const printedPort = result.stdout.match(/pi-web: http:\/\/127\.0\.0\.1:(\d+)/);
+      assert.ok(
+        printedPort,
+        `the handoff must print the canonical URL. stdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+      );
+      if (production) {
+        // The production launcher forwards the requested port verbatim.
+        assert.equal(printedPort[1], "0", `production forwarded port: ${result.stdout}`);
+      } else {
+        // The dev launchers resolve the port before Next starts, so `-p 0` means
+        // "give me an OS-assigned ephemeral port" and the printed URL names the
+        // port the server was actually told to use, never the literal 0.
+        const resolved = Number(printedPort[1]);
+        assert.ok(
+          Number.isInteger(resolved) && resolved > 0 && resolved <= 65535,
+          `the dev launcher must resolve -p 0 to a real ephemeral port, printed ${printedPort[1]}`,
+        );
+      }
       assert.equal(result.stdout.includes("GET /api/models"), verbose);
       assert.match(result.stdout, /Warning: diagnostic example\n GET \/example 200 in 1ms\n    at example.js:1:1/);
       assert.match(result.stdout, /partial warning without a newline/);

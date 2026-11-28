@@ -1,6 +1,6 @@
 # Web profile
 
-`npm run web` starts the dev server on `127.0.0.1` and opens `http://127.0.0.1:<port>` in the desktop browser after Next prints `Ready`. The default port is `30141`.
+`npm run web` starts the dev server on `127.0.0.1` and opens `http://127.0.0.1:<port>` in the desktop browser after Next prints `Ready`. The default port is `30141` in the main checkout; a linked Git worktree gets its own deterministic port and the launcher prints the port it chose. `--port` / `-p` wins over `PI_WEB_PORT`, which wins over `PORT`. See [Development server ports across worktrees](./worktrees.md#development-server-ports-across-worktrees).
 
 From WSL, the helper opens the Windows default browser with `powershell.exe -NoProfile -Command Start-Process '<url>'`. On macOS it uses `open`. On other Linux hosts it uses `xdg-open`.
 

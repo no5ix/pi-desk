@@ -70,6 +70,20 @@ Each session still remembers the working directory it was created with. That mea
 - A session started in the main checkout continues to use the main checkout.
 - If a worktree has been removed, old sessions from it stay visible under the project so you can still find the history.
 
+## Development server ports across worktrees
+
+Each linked worktree receives a deterministic development port derived from its checkout path, so multiple branches can run side by side without all competing for 30141. The main checkout uses 30141 when it is available. If an automatically selected port is occupied, the launcher probes the remaining worktree-port range and chooses the next available candidate.
+
+Both `npm run dev` and `npm run web` use the same resolver. The launcher prints the selected port; use that address rather than assuming a fixed one.
+
+To choose a specific port, set `PI_WEB_PORT`:
+
+```bash
+PI_WEB_PORT=30155 npm run dev
+```
+
+An explicit `--port` / `-p` option takes precedence over `PI_WEB_PORT`; `PORT` remains supported as a compatibility fallback. An explicitly requested port is never silently changed: if it is occupied, startup fails with an actionable error. E2E harnesses that start isolated servers continue to use an OS-assigned ephemeral port.
+
 ## Troubleshooting
 
 **I do not see my worktrees.**
