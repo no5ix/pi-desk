@@ -681,3 +681,85 @@ files clean of errors. Targeted units: `lib/git-diff-access`,
 `branch-menu-rows` exit 0. Unchanged blockers: the 37 composer-family unit
 failures measured at HEAD before this work, and the completion popup in
 `e2e/file-editor.mjs` (BLOCKERS.md).
+
+## 2026-11-28 — bs2's three rows, and the tree asks for a directory once
+
+**The phone's expand button expands.** The strip's expand button is kept at phone
+width on purpose (upstream hides it: the card already spans the width; the Git view
+cannot live in a short card), but the shell computed the full-width class with
+`&& !isMobile`: the press moved `aria-pressed` and the card did not move. The
+phone's expanded state is now its own — `rightPanelViewportFull`, meaning the
+viewport — carried by the same `right-panel-full-width` class the CSS answers, and
+`rightPanelExpandedVisual` is what the button's pressed state, icon and word
+follow. The state clears when the panel closes and when the shell kind crosses,
+never merely because the shell is a phone. The CSS part is only visible with
+`!important`: the panel's phone block pins the card with `top: 0 !important;
+height: 100dvh !important`, so the unexpanded `top: 52px !important; height: auto
+!important` — the card leaving the chat's topbar above it — needs the same weight.
+Checks: `e2e/mobile-panel-expand.mjs` (390px, real stylesheets: the button in the
+header row's right end, press → viewport, press → card, plus an un-fixed pass where
+the press must change nothing) and `components/AppShell.mobile-expand.test.mjs`
+(the shell's rule, the words in three packs, the CSS that has to beat the pin).
+
+**The project list says which branch each project is on.** The picker listed
+folders by name; in a worktree setup the names are what the user typed, and the
+list that decides which folder the next session works in carried no branch while the
+sidebar's rows and the panel's switcher did. `GET /api/projects/branches`
+(`lib/project-branches.ts`) answers many paths in one request, deduplicated, capped
+at 50, from a 5 s cache with in-flight joining, and answers a path it may not read
+exactly like a folder that is not a repository — `isRepo: false`, no name, no
+branch — so it never confirms that a path exists. The hook (`useProjectBranches`)
+fetches only while the dropdown is open, keys on the list rather than the array (the
+picker rebuilds the array on every keystroke of its filter), drops a stale answer,
+and accumulates: an answered row keeps its branch while another list is fetched, and
+a failed request leaves the list a list. Checks: `lib/project-branches.test.mjs` (8,
+a real worktree answers with its own branch and says it is one, a detached HEAD is
+not a branch named HEAD), `app/api/projects/branches/route.test.mjs` (5, the
+foreign origin refused, `refresh=1` beating the cache),
+`components/ProjectPicker.branches.test.mjs` (4).
+
+**The branch and commit menus open at their row**, at `max(MENU_MARGIN, row.left)`
+and not under the kebab. `anchorTo` already said so;
+`e2e/git-menu-alignment.mjs` measures it — three panel widths, one click per row,
+the settled box after the pop-in transform, and a kebab-anchored pass that
+reproduces the old placement. Two harness facts it cost to find, now in the file's
+comment: a phone viewport needs `<meta name="viewport">` (without it the page lays
+out at 980px and every `max-width: 640px` rule misses), and the app's three
+stylesheets must be served as three `<link>`s — concatenated into one sheet, one
+parse error takes the rest down and the phone rules silently stop applying.
+
+**The file tree asks for a directory once.** `lib/file-listing-cache.ts`
+(fork-owned) sits under `FileExplorer.fetchEntries` with three rules: *in flight is
+enough* (a second caller joins the running request), *a window that ends*
+(`LISTING_TTL_MS` 15 s; `runFileOp` invalidates the target and its tree, an upload
+invalidates the folder it wrote into, the root listing runs `force`, and a refusal
+is never cached so a 403 stays retryable), *a prefetch that is a courtesy* (child
+directories at concurrency 3, a refusal swallowed for the prefetch and shown to the
+reader who opens the folder). Measured on the dev server, this project as the
+workspace: **5–6 duplicate requests joined per open** (8 fetches where the flow
+asked for 13), a prefetched folder's expansion costs **no request of its own**
+(`hits` 1 → 4 over three expansions, 56–84 ms), a folder past the cap still costs
+its request. The window's first value — 2 s, the shape of the file-access root
+cache — was the bug: it covered the development double effect and a
+collapse-and-reopen and expired before a hand reached the mouse, so a prefetched
+folder was fetched again; `__piFileListingCache.stats()` is what showed it.
+`PREFETCH_CHILD_DIRS` 6 and `PREFETCH_ALL_UNDER` 12 are the tree's bound: measured
+at 25 prefetched directories the open got slower, so a home directory (this app
+opens one as a workspace) is not prefetched hundred-wide. Re-expanding stays free
+the way it already was — a loaded node keeps its children — so no claim is made
+there. Checks: `lib/file-listing-cache.test.mjs` (6),
+`components/FileExplorer.listing-cache.test.mjs` (5). `lib/file-tree-visibility.ts`
+and the list route stay upstream's: the queue is the fork's, the endpoint is not.
+
+**i18n.** New keys this batch: `files.expandViewport`, `files.shrinkPanel` — added
+in en, zh-CN and zh-TW, and asserted in
+`components/AppShell.mobile-expand.test.mjs`. The project list reuses the pack's
+existing `git.detached`; the listing work adds no keys.
+
+**Verification (2026-11-28).** `tsc --noEmit` clean. The batch's six new suites:
+32 tests, 0 failures. `eslint` on the changed files: 0 errors (one pre-existing
+unused-import warning in `components/FileExplorer.tsx`, present at HEAD).
+`npm run test:e2e` gained `e2e/git-menu-alignment.mjs` and
+`e2e/mobile-panel-expand.mjs` (41 entries). Unchanged blockers: the 37
+composer-family unit failures measured at HEAD before this work, and the completion
+popup in `e2e/file-editor.mjs` (BLOCKERS.md).

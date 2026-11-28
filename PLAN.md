@@ -131,10 +131,64 @@ branchshift (bs2). Each fix below carries a check that fails without it.
 
 ### Open, not started
 
-- branchshift bs2: the mobile expand button, the project list without branch
-  info, left-aligned branch/commit menus.
-- File-list load speed, beyond the measurement below (the client's own queue of
-  per-folder requests is the remaining cost, not the server's).
+- Nothing from the recorded list is open. The two that remained — branchshift bs2
+  and the file-list load speed — are in the third batch below.
+
+### Shipped and verified (2026-11-28, third batch)
+
+- **branchshift bs2.** Three items, and the first and third turned out to be
+  presses that did nothing.
+  - *The phone's expand button expands.* The shell computed the panel's full-width
+    class with `&& !isMobile`, so the button the fork keeps on a phone (the Git
+    view cannot live in a short card) set a state the CSS never saw. The phone's
+    expanded state is its own (`rightPanelViewportFull` — the viewport, not a
+    wider column), carried by the same class the CSS answers, cleared when the
+    panel closes and when the shell kind crosses, and the button says the screen
+    and the card (`files.expandViewport` / `files.shrinkPanel`, three packs). The
+    phone's CSS must carry `!important` to be seen: the panel's phone block pins
+    the card with `top: 0 !important`, so the unexpanded `top: 52px` needs the same
+    weight to leave the chat's topbar above the card.
+    Checks: `e2e/mobile-panel-expand.mjs` (390px: the button in the header row's
+    right end, press → viewport, press → card, and an un-fixed pass where the press
+    must change nothing) and `components/AppShell.mobile-expand.test.mjs` (the
+    shell's rule, the words in three packs, the CSS that has to beat the pin).
+  - *The project list says which branch each project is on.* The picker listed
+    folders by name; in a worktree setup the names are what the user typed. New
+    `GET /api/projects/branches` answers many paths in one request from a 5 s cache,
+    and answers a path it may not read exactly like a folder that is not a
+    repository. Checks: `lib/project-branches.test.mjs` (8),
+    `app/api/projects/branches/route.test.mjs` (5),
+    `components/ProjectPicker.branches.test.mjs` (4).
+  - *The branch and commit menus open at their row.* `anchorTo` already placed a
+    menu at `max(MENU_MARGIN, row.left)`; `e2e/git-menu-alignment.mjs` now measures
+    it — three panel widths, every row, the settled box after the pop-in transform,
+    and a kebab-anchored pass that reproduces the old placement. Writing it found
+    two harness facts: a phone viewport needs `<meta name="viewport">`, and the
+    app's stylesheets must be served as three `<link>`s (concatenated, one parse
+    error takes the rest down and the phone rules silently stop applying).
+- **The file tree asks for a directory once.** `lib/file-listing-cache.ts`
+  (fork-owned) puts the tree's listings behind three rules — in flight is enough
+  (a second caller joins the running request), a window that ends (15 s, and the
+  app invalidates the moment it writes, renames or deletes in a folder; a refusal is
+  never cached), a prefetch that is a courtesy (child directories, concurrency 3).
+  `FileExplorer.fetchEntries` goes through it, the root listing runs `force` so the
+  refresh is never answered from the window, `runFileOp` invalidates the target and
+  its tree, an upload invalidates the folder it wrote into, and `__piFileListingCache.stats()`
+  tells a probe what was saved.
+  Measured on the dev server (Turbopack, this project as the workspace, one open and
+  three expansions): **5–6 duplicate requests joined** per open — the development
+  double effect and the prefetch's pair, 8 real fetches where the flow asked for 13;
+  a prefetched folder's expansion costs **no request of its own** (`hits` 1 → 4
+  across three expansions, 56–84 ms); a folder past the prefetch's cap still costs
+  its request. The window's first value, 2 s, was the bug: it covered the burst and
+  expired before a hand reached the mouse, so a prefetched folder was fetched again.
+  The prefetch's caps are the tree's (`PREFETCH_CHILD_DIRS` 6, `PREFETCH_ALL_UNDER`
+  12): measured at 25 prefetched requests the open got slower, which is why a home
+  directory is not prefetched hundred-wide. Re-expanding stays free the way it was
+  (the tree keeps a loaded node's children).
+  Checks: `lib/file-listing-cache.test.mjs` (6), `components/FileExplorer.listing-cache.test.mjs` (5).
+  `lib/file-tree-visibility.ts` and the list route stay upstream's — the queue is
+  the fork's.
 
 ### Shipped and verified (2026-11-28, second batch)
 
