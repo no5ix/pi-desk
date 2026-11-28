@@ -96,7 +96,7 @@ Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
   pattern); never "fix" such a failure by weakening the assertion.
 - The `node` on `PATH` may not be the one the project runs on: the Pi app bundles its own
   runtime, while a dev server started from a terminal uses another install. Use the port
-  printed by `npm run dev` / `npm run web` (linked worktrees no longer share 30141), then check
+  printed by `npm run dev` / `npm run web` (concurrent checkouts automatically move to the next free port), then check
   with `ps -o command= -p $(lsof -nP -iTCP:<port> -sTCP:LISTEN -t)`.
 - `npm run test:e2e` refuses to start while a dev server holds `.next/dev/lock`, and
   `E2E_SERVER_MODE=start` (the mode CI uses) needs a production build. Both can be
