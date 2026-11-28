@@ -72,13 +72,14 @@ Each session still remembers the working directory it was created with. That mea
 
 ## Development server ports across worktrees
 
-Each linked worktree receives a deterministic development port derived from its checkout path, so multiple branches can run side by side without all competing for 30141. The main checkout uses 30141 when it is available. If an automatically selected port is occupied, the launcher probes the remaining worktree-port range and chooses the next available candidate.
+Every checkout uses the same sequential development-port allocation. The launcher tries 30141 first, then 30142, 30143, 30144, and continues upward until it finds an available port. This applies equally to the main checkout and every linked worktree, so concurrent servers naturally move to the next free port instead of relying on path-derived port numbers.
 
 Both `npm run dev` and `npm run web` use the same resolver. The launcher prints the selected port; use that address rather than assuming a fixed one.
 
-To choose a specific port, set `PI_WEB_PORT`:
+To choose a specific port, either pass the npm option directly or set `PI_WEB_PORT`:
 
 ```bash
+npm run dev --port 30146
 PI_WEB_PORT=30155 npm run dev
 ```
 
