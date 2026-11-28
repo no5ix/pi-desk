@@ -70,6 +70,29 @@ function measureRow(rowIndex) {
   if (!menu) return { missing: true, reason: "no menu opened" };
   const menuBox = menu.getBoundingClientRect();
   const buttonBox = row.querySelector(".git-row-menu-button").getBoundingClientRect();
+  // The rows of the menu: a menu about a row reads as a list, so its labels start
+  // at the row's own left inset. Centred labels turn a menu into a column of
+  // headlines whose left edges mean nothing, and a wide menu makes it worse: the
+  // reader cannot run the eye down the list to compare items.
+  const itemRows = Array.from(menu.querySelectorAll(".git-menu-item")).map((item) => {
+    const itemBox = item.getBoundingClientRect();
+    const label = item.querySelector(".git-menu-label") ?? item;
+    const labelBox = label.getBoundingClientRect();
+    const style = getComputedStyle(item);
+    const inset = labelBox.left - itemBox.left;
+    // The row's own content edge: the box the label sits in, past its border and
+    // its padding (a menu row wears a 2px transparent border for its focus ring).
+    const contentLeft = (item.clientLeft || 0) + (Number.parseFloat(style.paddingLeft) || 0);
+    const contentWidth = item.clientWidth
+      - (Number.parseFloat(style.paddingLeft) || 0) - (Number.parseFloat(style.paddingRight) || 0);
+    return {
+      label: (label.textContent ?? "").trim().slice(0, 40),
+      textAlign: style.textAlign,
+      inset,
+      contentLeft,
+      fill: labelBox.width - contentWidth,
+    };
+  });
   return {
     kind: row.classList.contains("git-branch-row") ? "branch" : "commit",
     rowLeft: rowBox.left,
@@ -81,6 +104,7 @@ function measureRow(rowIndex) {
     items: menu.querySelectorAll(".git-menu-item").length,
     separators: menu.querySelectorAll(".app-menu-separator").length,
     innerWidth: window.innerWidth,
+    itemRows,
   };
 }
 
@@ -88,6 +112,8 @@ const server = await serve();
 const port = server.address().port;
 const browser = await chromium.launch();
 const failures = [];
+/** Set when the centred pass reproduces the old centred labels, so the check is known to measure them. */
+let centredSeen = false;
 const rowIndexes = [0, 1, 2, 3, 4];
 const MENU_MARGIN = 8;
 
@@ -132,6 +158,20 @@ for (const spec of cases) {
     if (measure.menuLeft < 7.5) {
       failures.push(`${spec.label} ${measure.kind} row ${rowIndex}: the menu left the window's margin (${measure.menuLeft.toFixed(1)})`);
     }
+    // The labels are left-aligned: every label box starts at its row's content
+    // edge and fills it, so the text of every row begins at the same x.
+    for (const item of measure.itemRows) {
+      if (item.textAlign !== "left" && item.textAlign !== "start") {
+        failures.push(`${spec.label} ${measure.kind} row ${rowIndex}: the “${item.label}” row is ${item.textAlign}-aligned, not left`);
+      }
+      const offInset = item.inset - item.contentLeft;
+      if (Math.abs(offInset) > 1.5) {
+        failures.push(`${spec.label} ${measure.kind} row ${rowIndex}: the “${item.label}” label starts ${offInset.toFixed(1)}px off the row's content edge (label ${item.inset.toFixed(1)} from the row's border box, content edge ${item.contentLeft.toFixed(1)})`);
+      }
+      if (Math.abs(item.fill) > 1.5) {
+        failures.push(`${spec.label} ${measure.kind} row ${rowIndex}: the “${item.label}” label is ${item.fill.toFixed(1)}px off the row's content width — the text is centred in the row, not flush left`);
+      }
+    }
   }
 }
 
@@ -165,6 +205,44 @@ for (const spec of cases) {
   }
 }
 
+// The check must see the alignment bug too: the same menu with centred labels.
+{
+  const page = await browser.newPage({ viewport: { width: 900, height: 720 } });
+  await page.goto(`http://127.0.0.1:${port}/?width=380`, { waitUntil: "domcontentloaded" });
+  await page.waitForSelector(".git-branch-row .git-row-menu-button", { timeout: 15000 });
+  await page.evaluate(() => {
+    const style = document.createElement("style");
+    // What the menu looked like before the labels were given their own left edge:
+    // a centred column of headlines inside a wide box.
+    style.textContent = ".git-menu .git-menu-item { justify-content: center; text-align: center; } .git-menu .git-menu-label { flex: 0 1 auto; }";
+    document.head.append(style);
+  });
+  await page.evaluate(clickRow, 1);
+  await page.waitForSelector(".git-menu", { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(320);
+  const centred = await page.evaluate(() => {
+    const menu = document.querySelector(".git-menu");
+    if (!menu) return { missing: true };
+    const item = menu.querySelector(".git-menu-item");
+    const label = item.querySelector(".git-menu-label") ?? item;
+    const style = getComputedStyle(item);
+    const contentLeft = (item.clientLeft || 0) + (Number.parseFloat(style.paddingLeft) || 0);
+    return {
+      textAlign: getComputedStyle(item).textAlign,
+      inset: label.getBoundingClientRect().left - item.getBoundingClientRect().left,
+      contentLeft,
+    };
+  });
+  await page.close();
+  if (centred.missing) {
+    failures.push("the centred pass opened no menu: the probe cannot see the alignment bug it is for");
+  } else if (centred.textAlign === "center" || Math.abs(centred.inset - centred.contentLeft) > 1.5) {
+    centredSeen = true;
+  } else {
+    failures.push(`the centred pass measures textAlign ${centred.textAlign} and an inset ${centred.inset.toFixed(1)} at the content edge ${centred.contentLeft.toFixed(1)}: the probe cannot see the centring it is for`);
+  }
+}
+
 await browser.close();
 server.close();
 
@@ -172,4 +250,8 @@ if (failures.length) {
   console.error("FAILURES:\n  " + failures.join("\n  "));
   process.exit(1);
 }
-console.log("e2e/git-menu-alignment.mjs: every branch and commit menu opens at its row's left edge and inside the window, and the probe sees the kebab-anchored placement");
+if (!centredSeen) {
+  console.error("the centred pass never reproduced the centred labels");
+  process.exit(1);
+}
+console.log("e2e/git-menu-alignment.mjs: every branch and commit menu opens at its row's left edge, inside the window, with its labels left-aligned, and the probe sees the kebab-anchored placement");

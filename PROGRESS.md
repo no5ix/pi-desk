@@ -763,3 +763,82 @@ unused-import warning in `components/FileExplorer.tsx`, present at HEAD).
 `e2e/mobile-panel-expand.mjs` (41 entries). Unchanged blockers: the 37
 composer-family unit failures measured at HEAD before this work, and the completion
 popup in `e2e/file-editor.mjs` (BLOCKERS.md).
+
+## 2026-11-28 — bs3: the switcher's project list, and a menu's left edge
+
+The bs2 batch's six reports were re-checked in the code first: **Reveal in Finder**
+goes through the Rust command (`reveal_item_in_dir`, `src-tauri/src/lib.rs:217`) and
+the tree calls it only in the desktop shell (`canReveal` + `revealPath` in
+`components/FileExplorer.tsx`, with the tree's own reveal kept); the **Markdown
+outline** is `useState(true)` — expanded by default — a `flex: none` column beside
+the document (`.file-toc`, never an overlay), toggled from the toolbar's corner and
+from the header inside the panel; the **Git view is a tab** of the panel's strip
+(`GIT_PANEL_TAB_ID`, `components/AppShell.tsx`); a linked worktree's **uncommitted
+diff** is gated by `lib/git-diff-access.ts`; the **phone's expand button** expands
+the viewport. The two bs3 reports below are the work.
+
+**The panel's Projects group is the app's project list, with names only** (bs3-5).
+The bs2 batch had put a branch column on the switcher's project rows; the report is
+the opposite for this surface: the list is *which project*, and the branch is what
+the header chip says about the project that is open. Measured in the fixture, the
+second column was the whole bug: at 280px the row's name shrank to `pi-…`,
+`auto…`, `pi-desk-br…` — a project list whose rows the reader cannot name. Three
+changes:
+
+- `AppShell` builds `appProjectList` from the sidebar's own `availableProjectRoots`
+  (order and `getProjectDisplayName` names) and hands it to `GitPanel` as
+  `projects`; the phone's `topbarProjects` is now the same memo, so the two lists
+  cannot drift.
+- `GitPanel` renders the Projects group from that list (the `?projects=1` answer
+  stays as the fallback), one row per project, and the row carries
+  `git-repo-row-name` and nothing else — no branch, no worktree tag, full path in
+  the tip. The workspace's own checkouts stay above, with their branch and tag:
+  a worktree is its own checkout, and there the branch is what tells them apart.
+- `listProjectRepos()` stopped filtering the app's list down to repositories. A
+  project folder with no checkout is answered `isRepo: false` and **stays listed**
+  (the panel says `git.repoNone` / shows git's own answer when opened there);
+  names come from `getProjectDisplayNames`, so a folder is called what the sidebar
+  calls it. A folder that is gone, or outside the authorized roots, is the one
+  thing left out — there is nothing to switch to.
+
+Checks: `lib/git/workspace.test.mjs` +2 (a real worktree answers `isRepo: true`
+with its own branch and is named apart from a same-named checkout; a plain folder
+is listed, marked, and named; a gone folder is absent), `panel-reports.test.mjs`
+(10, 10b: the shell hands the list down, every project gets a row, and the row's
+source carries no branch and no tag), `AppShell.git-panel.test.mjs` (the prop is
+wired).
+
+**A menu's labels start at the row's left edge** (bs3-6). The bs2 fix moved the
+menu's box to the row's left; the report is the *inside*: a branch menu read as a
+column of centred headlines. The cause is not a rule of the app at all — a
+`<button>` is `text-align: center` in the browser's own sheet, and the menu row's
+label inherits it. `e2e/git-menu-alignment.mjs` proved it: computed
+`text-align: center` on every row, with **no** declaration anywhere on the ancestor
+chain (the probe walks the chain over all three stylesheets as three `<link>`s).
+The shared row rule of `.app-menu` now says `text-align: start`, so the fix is the
+surface's and not the panel's: the file-tree menu, the DOM context menu and every
+`AppSelect` list get the same left edge. `.git-repo-row` and
+`.project-picker-option` already declared their own `text-align: left`, which is
+why the project lists looked right while the branch and commit menus did not.
+The probe measures, per row, the label box against the row's **content** edge
+(past the row's 2px focus-ring border and its padding) and that it fills the
+content width, across three panel widths × five rows, plus a centred pass that
+injects the old centring and must reproduce it — the check can see the bug it is
+for. `git-menu-alignment`, `branch-menu-rows`, `branch-menu-filter`,
+`ui-menu-consistency` pass.
+
+**Two red assertions repaired.** `panel-reports-2.test.mjs` was failing at HEAD:
+test 1's regex asked for `top: 52px;` while `1dc0eb37` gave the rule
+`top: 52px !important; height: auto !important` (the weight the panel's phone pin
+forces); test 2 followed the `topbarProjects` memo rename. Both are back to
+asserting the behaviour, with the reason in the comment.
+
+**Verification (2026-11-28).** `tsc --noEmit` clean. Targeted units:
+`lib/git/workspace` 12/12, `git/panel-reports` 12/12, `git/panel-reports-2` 7/7,
+`AppShell.git-panel` 12/12, `AppShell.mobile-expand`, `AppShell.worktree-project`,
+`ui-menu-consistency`, `inline-style-tokens`, `fork-extractions`,
+`upstream-css-baseline`, `lib/i18n/*` — 137 tests, 0 failures. e2e exit 0:
+`git-menu-alignment`, `git-tab`, `mobile-panel-expand`, `file-panel`,
+`branch-menu-rows`, `branch-menu-filter`. New blockers measured at HEAD (not this
+batch's): `e2e/option-controls.mjs` and `e2e/composer-expand.mjs` — see BLOCKERS.md.
+

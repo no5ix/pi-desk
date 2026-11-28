@@ -237,3 +237,35 @@ thing a reader needs, with the Git panel one tap away.
 - The phone's CSS must carry `!important` to be seen at all: the panel's phone block pins the card with `top: 0 !important; height: 100dvh !important`, so the unexpanded card's `top: 52px !important; height: auto !important` (which leaves the chat's topbar above it) needs the same weight. `components/AppShell.mobile-expand.test.mjs` pins that; `e2e/mobile-panel-expand.mjs` measures the boxes at 390px (button in the header row's right end, press → viewport, press → card) and includes an un-fixed pass where the press must change nothing.
 - Two harness facts that cost hours once: a phone viewport needs `<meta name="viewport">` (without it the page lays out at 980px and every `max-width: 640px` rule misses), and the app's three stylesheets must be served as three `<link>`s — concatenated into one sheet, one parse error takes the rest down and the phone rules silently stop applying.
 - **Row menus open at their row.** `anchorTo` (`components/git/git-ui.tsx`, exported for the check) places a branch/commit menu at `max(MENU_MARGIN, row.left)`, from the row's left edge and not the kebab's; the pop-in transform means a browser check measures the settled box, after the animation. `e2e/git-menu-alignment.mjs` measures three panel widths × every row, and a kebab-anchored pass shows the old placement so the check can see the bug.
+- **A menu's labels start at the row's left edge, not its middle.** A `<button>` is `text-align: center` in the browser's own sheet, and a menu row's label inherits that: the branch menu read as a column of centred headlines whose left edges line up with nothing, widest in the widest menu. The shared row rule in `app/native-theme.css` (`.app-menu :is(button[role="menuitem" | menuitemcheckbox | menuitemradio | option])`) says `text-align: start`, so every menu in the app is a list. It is a rule of the shared surface, not of the Git panel: `.git-repo-row` and `.project-picker-option` had already declared their own `text-align: left`, which is why those lists looked right while the branch and commit menus did not. `e2e/git-menu-alignment.mjs` measures every label box against its row's content edge (past the row's 2px focus-ring border and its padding) and fills its content width, and a centred pass reproduces the old look so the check can see it.
+
+## The repo switcher's Projects group
+
+The header's repo button opens one menu: the checkouts this folder can reach (its
+worktrees — a worktree is its own checkout, so each is a row with its branch and
+its `worktree` tag), and below them the **Projects** group, which is the app's own
+project list.
+
+- **The list is the sidebar's list.** `AppShell` builds `appProjectList` from
+  `availableProjectRoots` (the sidebar's roots, in the sidebar's order, named by
+  `getProjectDisplayName`) and hands it to `GitPanel` as `projects`. The panel's
+  `?projects=1` answer is the same list read on the server
+  (`listProjectRepos()` in `lib/git/workspace.ts`) and stays as the fallback for a
+  surface with no sidebar to ask. The two must not drift: the phone's project chip
+  (`topbarProjects`) is built from the same memo.
+- **A project row carries its name and nothing else** — no branch, no worktree
+  tag. The group answers *which project*; the branch is the header chip's job for
+  the project that is open. With a second column, the names were cut to four
+  characters (`pi-…`, `auto…`) and a list whose rows the reader cannot name is not
+  a project list.
+- **All of it, including the projects with no repository.** `listProjectRepos()`
+  answers `isRepo: false` for a project folder that is not a checkout and leaves it
+  in; dropping those folders made the panel's list disagree with the sidebar's. A
+  project whose folder is gone, or that the app is not allowed to read, is left
+  out — there is nothing to switch to. Opening a project with no repository is a
+  real answer: the panel says `git.repoNone` / shows git's own error, rather than
+  hiding the project.
+  `lib/git/workspace.test.mjs` measures both shapes against a real worktree and a
+  plain folder, and `components/git/panel-reports.test.mjs` (10, 10b) pins the
+  names-only row and the shell handing the list down.
+

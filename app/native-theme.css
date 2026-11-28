@@ -4868,6 +4868,11 @@ html.dark {
   color: var(--text);
   font-size: var(--fs-small);
   line-height: 1.4;
+  /* A `<button>` is centred by the browser's own sheet, and a menu row's label
+     inherits that: a branch menu turns into a column of centred headlines whose
+     left edges mean nothing, widest in the widest menu. A menu is a list — every
+     row begins at one left edge, so the eye can run down it and compare. */
+  text-align: start;
 }
 
 .app-menu :is(button[role="menuitem"], button[role="menuitemcheckbox"], button[role="menuitemradio"]) {

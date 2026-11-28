@@ -104,3 +104,21 @@ are the same one-line-of-source moves, unmade:
 
 The rule that applies to them is the one in DECISIONS.md: follow the behaviour to
 the file that carries it, and keep the assertion able to fail.
+
+## e2e probes red at HEAD, measured 2026-11-28 (bs3)
+
+Measured by stashing the bs3 work and running the probes at `0b419910`: both are
+red there, unchanged by the batch, and both are source/fixture drift, not the app.
+
+- `e2e/composer-expand.mjs` — `the composer ships flexDirection: compact ?
+  "column" : "row",; the fixture must mirror it` (line 90). The composer no longer
+  writes that literal, so the probe's mirror check needs the shape the composer
+  uses now.
+- `e2e/option-controls.mjs` — the in-page script asserted at line 78 returns 1
+  (`1 !== 0`). It walks the `AppSelect` / `AppCombobox` keyboard, geometry and
+  row-gap rules, and the harness reports only the exit code, so the walk has to be
+  bisected by hand (drop sections until it goes green) to name the rule.
+
+The rule that applies is DECISIONS.md's: follow the behaviour to the code that
+carries it and keep the assertion able to fail — do not widen a tolerance to
+silence either one.
