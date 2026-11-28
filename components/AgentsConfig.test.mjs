@@ -9,6 +9,13 @@ const source = await readFile(new URL("./AgentsConfig.tsx", import.meta.url), "u
 const confirmDangerSource = await readFile(new URL("./ConfirmDangerButton.tsx", import.meta.url), "utf8");
 const cssSource = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
 const chatInputSource = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+// The composer's model picker lives in the `+`'s menu, not in the composer's row
+// (the row carries only the `+`, the prompt and Send — the rule that kept a
+// narrow window's row from losing its controls). This assertion followed the
+// picker to the file that hosts it, and keeps the point: the composer reuses the
+// shared model selector, with the project's scoped models, rather than a select
+// of its own.
+const composerPlusSource = await readFile(new URL("./ComposerPlusMenu.tsx", import.meta.url), "utf8");
 const modelSelectorSource = await readFile(new URL("./ModelSelector.tsx", import.meta.url), "utf8");
 
 test("editor draft preserves named and empty selections independently of activation", () => {
@@ -110,10 +117,14 @@ test("persists existing profile toggles immediately without submitting unsaved f
 test("reuses the ChatInput model selector with scoped models", () => {
   assert.match(source, /fetch\(`\/api\/models\?cwd=\$\{encodeURIComponent\(cwd\)\}`/);
   assert.match(source, /import \{ ModelSelector \} from "\.\/ModelSelector"/);
-  assert.match(chatInputSource, /import \{ ModelSelector \} from "\.\/ModelSelector"/);
+  assert.match(composerPlusSource, /import \{ ModelSelectorList[\s\S]*?\} from "\.\/ModelSelector"/);
   assert.match(source, /<ModelSelector[\s\S]*?options=\{modelSelectorOptions\}[\s\S]*?variant="field"/);
-  assert.match(chatInputSource, /<ModelSelector[\s\S]*?options=\{modelOptions\}/);
-  assert.match(modelSelectorSource, /filterModelOptions\(sortedOptions, filter\)/);
+  assert.match(chatInputSource, /<ComposerPlusMenu[\s\S]*?model=\{modelOptions\.length/);
+  assert.match(composerPlusSource, /<ModelSelectorList[\s\S]*?options=\{model\.options\}/);
+  // The selector filters the list by the typed query; the rows are sorted once
+  // for the chip's label and the group order, so the filtered call takes the raw
+  // options on one path and the sorted list on the other. Either is the point.
+  assert.match(modelSelectorSource, /filterModelOptions\((?:sortedOptions|options), filter\)/);
   assert.match(modelSelectorSource, /modelsByProvider\.map/);
   assert.match(modelSelectorSource, /event\.key !== "Escape" \|\| !open[\s\S]*?event\.preventDefault\(\)[\s\S]*?event\.stopPropagation\(\)/);
   assert.match(source, /agents\.modelUnavailable/);

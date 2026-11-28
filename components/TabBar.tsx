@@ -10,15 +10,27 @@ export interface Tab {
   id: string;
   label: string;
   filePath: string;
-  /** "side": a side chat opened beside the main chat (C1). */
-  kind?: "terminal" | "artifact" | "side";
+  /** "side": a side chat opened beside the main chat (C1). "git": the panel's
+   * Git view — a pinned tab, so closing it hides the view and the tab stays. */
+  kind?: "terminal" | "artifact" | "side" | "git";
+  /** A count the tab carries beside its label: the Git view wears the number of
+   * files the working tree changed, because that is what decides opening it. */
+  badge?: number | null;
   closing?: boolean;
   sourceSessionId?: string | null;
   /** Open the diff a session recorded for this file (`GET /api/sessions/[id]/file-diff`). */
   diffSessionId?: string | null;
+  /** The commit a commit-panel file row opened: the Diff mode reads that commit. */
+  diffCommitSha?: string | null;
+  /** The other file of a "Select for Compare" pair (`GET /api/files/compare`). */
+  compareWith?: string | null;
   initialDisplayMode?: FileViewerDisplayMode;
   /** PDF page requested by the link that opened this tab (`#page=N`). */
   page?: number;
+  /** Unsaved edits in the file this tab holds: the tab says so, and closing asks. */
+  dirty?: boolean;
+  /** The buffer, kept by the shell so a tab switch does not lose it. */
+  draft?: string | null;
   viewerState?: FileViewerState;
   viewerRevision?: number;
 }
@@ -92,13 +104,14 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTermin
         return (
           <div
             key={tab.id}
-            className={`file-tab${isActive ? " is-active" : ""}${dropTarget?.id === tab.id ? (dropTarget.after ? " is-drop-after" : " is-drop-before") : ""}`}
+            className={`file-tab${isActive ? " is-active" : ""}${tab.kind === "git" ? " file-tab--git" : ""}${dropTarget?.id === tab.id ? (dropTarget.after ? " is-drop-after" : " is-drop-before") : ""}`}
             role="tab"
-            aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) : tab.kind === "side" ? `${t("sideChat.tabLabel")}: ${tab.label}` : tab.label}
+            aria-label={tab.kind === "terminal" ? t("terminal.tabLabel", { name: tab.label }) : tab.kind === "side" ? `${t("sideChat.tabLabel")}: ${tab.label}` : tab.kind === "git" ? (tab.badge ? `${t("gitPanel.tabLabel")} — ${t("sidebar.changedFiles", { count: tab.badge })}` : t("gitPanel.tabLabel")) : tab.label}
             aria-selected={isActive}
+            aria-controls={tab.kind === "git" ? "git-panel" : undefined}
             tabIndex={isActive || (!activeTabId && tabs[0].id === tab.id) ? 0 : -1}
             data-tab-id={tab.id}
-            title={tab.filePath}
+            title={tab.kind === "git" && tab.badge ? `${tab.filePath} — ${t("sidebar.changedFiles", { count: tab.badge })}` : tab.filePath}
             draggable={Boolean(onReorderTab)}
             onDragStart={(event) => {
               if (!onReorderTab) return;
@@ -164,19 +177,44 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab, onNewTermin
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M12 3 3 8l9 5 9-5-9-5Z" /><path d="m3 13 9 5 9-5" />
                 </svg>
+              ) : tab.kind === "git" ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <line x1="6" y1="4" x2="6" y2="15" />
+                  <circle cx="18" cy="6" r="2.6" />
+                  <circle cx="6" cy="18" r="2.6" />
+                  <path d="M18 9a9 9 0 0 1-9 9" />
+                </svg>
               ) : getFileIcon(tab.label, 13)}
             </span>
             <span className="file-tab-label" title={tab.filePath}>
               {tab.label}
             </span>
+            {tab.badge ? (
+              <span
+                className="file-tab-badge"
+                aria-hidden="true"
+                data-count={tab.badge}
+                title={t("sidebar.changedFiles", { count: tab.badge })}
+              >
+                {tab.badge > 99 ? "99+" : tab.badge}
+              </span>
+            ) : null}
+            {tab.dirty ? (
+              <span
+                className="file-tab-dirty"
+                role="img"
+                aria-label={t("files.editorDirty")}
+                title={t("files.editorDirty")}
+              />
+            ) : null}
             <button
               className="file-tab-close"
               draggable={false}
               onDragStart={(event) => event.stopPropagation()}
               disabled={tab.closing}
               onClick={(e) => { e.stopPropagation(); onCloseTab(tab.id); }}
-              title={t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")}
-              aria-label={`${t(tab.kind === "terminal" ? "terminal.close" : "i18n.close")} ${tab.label}`}
+              title={t(tab.kind === "terminal" ? "terminal.close" : tab.kind === "git" ? "gitPanel.hide" : "i18n.close")}
+              aria-label={`${t(tab.kind === "terminal" ? "terminal.close" : tab.kind === "git" ? "gitPanel.hide" : "i18n.close")} ${tab.label}`}
             >
               <svg width="12" height="12" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
                 <line x1="2" y1="2" x2="8" y2="8" />

@@ -51,8 +51,12 @@ test("the shell resolves the composer's project and hands it to the header and t
   // checkout keeps its folder name (that is the project).
   assert.match(appShell, /headerProjectIsWorktree && headerProjectRoot\n\s*\? getProjectDisplayName\(headerProjectRoot, availableProjectRoots\)/,
     "the worktree's label is its project's name, resolved the way every project name is");
-  assert.match(appShell, /<TopbarProjectChip name=\{topBarSubtitle\} path=\{visibleProjectCwd \?\? ""\} isWorktree=\{headerProjectIsWorktree\} \/>/,
+  assert.match(appShell, /<TopbarProjectChip\s*\n\s*name=\{topBarSubtitle\}\s*\n\s*path=\{visibleProjectCwd \?\? ""\}\s*\n\s*isWorktree=\{headerProjectIsWorktree\}/,
     "the header's project glyph is asked of the folder, and its tip keeps the worktree's own path");
+  // On a phone this chip is also the project switcher: the sidebar's list, and the
+  // way into it. The desktop keeps the path tip, because its sidebar is already open.
+  assert.match(appShell, /projects=\{topbarProjects \?\? undefined\}/, "the phone is given the app's projects");
+  assert.match(appShell, /onSelectProject=\{topbarProjects \? handleTopbarProjectSelect : undefined\}/, "and only when there is a list to show");
   assert.match(appShell, /composerProjectRoot=\{composerProjectIdentity\.projectRoot\}\n\s*composerProjectIsWorktree=\{composerProjectIdentity\.isWorktree\}/,
     "the composer is told the same pair");
 });

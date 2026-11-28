@@ -918,3 +918,43 @@ export const markdownPreviewRehypePlugins: ReactMarkdownOptions["rehypePlugins"]
   rehypeMatchClobberedIds,
   [rehypeKatex, { throwOnError: false, strict: false }],
 ];
+
+export interface MarkdownHeading {
+  level: number;
+  title: string;
+  /** The 1-based line the heading is on — what the editor reveals. */
+  line: number;
+  /** Its place among the rendered headings — what the preview scrolls to. */
+  index: number;
+}
+
+/**
+ * The outline of a Markdown document: its headings, in order, with the line each
+ * one is on.
+ *
+ * A fenced block is skipped: a `# comment` inside a code sample is not a section
+ * of the document, and an outline that lists it is a lie about the file.
+ */
+export function parseMarkdownHeadings(text: string): MarkdownHeading[] {
+  const out: MarkdownHeading[] = [];
+  let fence: string | null = null;
+  const lines = text.split("\n");
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const fenceMatch = /^\s*(```+|~~~+)/.exec(line);
+    if (fence) {
+      if (fenceMatch?.[1]?.startsWith(fence)) fence = null;
+      continue;
+    }
+    if (fenceMatch) {
+      fence = fenceMatch[1];
+      continue;
+    }
+    const heading = /^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+\s*)?$/.exec(line);
+    if (!heading) continue;
+    const title = (heading[2] ?? "").trim();
+    if (!title) continue;
+    out.push({ level: heading[1].length, title, line: i + 1, index: out.length });
+  }
+  return out;
+}

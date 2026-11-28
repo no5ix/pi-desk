@@ -1,6 +1,10 @@
 import { getFileExt } from "./file-types.ts";
 
-export type FileViewerDisplayMode = "source" | "preview" | "diff";
+/**
+ * `edit` is the buffer: Monaco over the file, with the save against the disk
+ * time the file was read at. `source` stays the read-only view of the bytes.
+ */
+export type FileViewerDisplayMode = "source" | "preview" | "diff" | "edit";
 
 export interface FileViewerState {
   displayMode: FileViewerDisplayMode;

@@ -25,17 +25,35 @@ import { TopbarTip, TopbarTipRow, useTopbarTip } from "./TopbarTip";
  * on `main-bak` read that as a lie: the folder is a worktree, and the glyph is where they
  * check which folder a prompt runs in.
  */
-export function TopbarProjectChip({ name, path, isWorktree = false }: {
+export function TopbarProjectChip({
+  name,
+  path,
+  isWorktree = false,
+  projects,
+  currentPath,
+  onSelectProject,
+}: {
   name: string;
   path: string;
   /** The folder the session works in is a linked worktree checkout. The glyph is asked of
    *  the folder alone: see the note above. */
   isWorktree?: boolean;
+  /** Every project the app knows, in the sidebar's order. Where they are given — a
+   *  phone, where the sidebar is a drawer and this is the only project list in reach —
+   *  the tip becomes the switcher: the same rows as the sidebar's, and tapping one opens
+   *  a session in that project. */
+  projects?: { name: string; path: string }[];
+  /** The project this session works in, marked in the list. */
+  currentPath?: string;
+  onSelectProject?: (projectRoot: string) => void;
 }) {
   const { t } = useI18n();
-  const { tipId, pop, pos, tipRef, triggerProps } = useTopbarTip<HTMLButtonElement>();
+  const { tipId, pop, pos, tipRef, triggerProps, close } = useTopbarTip<HTMLButtonElement>();
+  const list = projects && onSelectProject && projects.length > 0 ? projects : null;
   return (
     <small className="app-topbar-project app-topbar-project--chip">
+      {/* The chip names the folder it stands for, in both shapes: the tip that shows
+          the path, and the tip that lists the projects, are both about that folder. */}
       <button
         {...triggerProps}
         className="app-topbar-project-hit"
@@ -48,9 +66,31 @@ export function TopbarProjectChip({ name, path, isWorktree = false }: {
         <span>{name}</span>
       </button>
       {pop.mounted && path ? (
-        <TopbarTip tipId={tipId} pos={pos} tipRef={tipRef} closing={pop.closing}>
-          <TopbarTipRow label={t("chat.projectTipPathLabel")} value={path} />
-        </TopbarTip>
+        list ? (
+          <TopbarTip tipId={tipId} pos={pos} tipRef={tipRef} closing={pop.closing}>
+            <span className="app-topbar-project-list">
+              <span className="app-topbar-tip-label">{t("chat.projectListTitle")}</span>
+              {list.map((project) => (
+                <button
+                  key={project.path}
+                  type="button"
+                  className={`app-topbar-project-row${project.path === currentPath ? " is-current" : ""}`}
+                  onClick={() => {
+                    onSelectProject?.(project.path);
+                    close();
+                  }}
+                >
+                  <ProjectFolderIcon size={13} />
+                  <span className="app-topbar-project-row-name">{project.name}</span>
+                </button>
+              ))}
+            </span>
+          </TopbarTip>
+        ) : (
+          <TopbarTip tipId={tipId} pos={pos} tipRef={tipRef} closing={pop.closing}>
+            <TopbarTipRow label={t("chat.projectTipPathLabel")} value={path} />
+          </TopbarTip>
+        )
       ) : null}
     </small>
   );

@@ -1,4 +1,85 @@
+## The write API refuses project-local secrets, not only the home-folder ones
+
+`lib/credential-paths.ts` is anchored at the home folders, which is right for the
+read side (`~/.ssh`, `~/.aws`, `.pi/agent/auth.json`). A project checkout can
+carry the same names inside itself — a vendored `.ssh`, a deploy key, a
+repository's own `.git/hooks`. Writes are policed structurally in
+`lib/file-write.ts`: the secret directory names, the named credential files,
+`*.pem`/`*.p12`/`*.key`, and any `.git` segment (a hook runs as the user, so
+writing one is running code). `.env` stays writable: in a project it is
+configuration the user edits, not a credential store.
+
+## A save is refused when the file moved on disk, and the refusal is a name
+
+The panel edits files the agent is also writing. `PUT /api/files/[...path]`
+takes the `mtime` the editor read the file at and refuses with `CONFLICT` when
+the disk time differs; the client shows Reload, and "Save over it" only when the
+user asks for that (the route marks the response `overwritten`). The watcher
+never replaces a dirty buffer, and a file that disappeared is `NOT_FOUND`, not
+silently recreated. Codes, not prose, drive the save bar.
+
+## The editor is Ayu Monokai; the read view keeps the theme-following palette
+
+The generated `lib/editor/ayu-monokai.ts` is the editor's palette, from the
+vendored theme file. The read view (`SyntaxHighlighter` with `calmCodeTheme`)
+keeps painting from `--code-accent`/`--code-warm`/`--code-comment`, because that
+palette follows the app's light/dark switch; pinning it to Monokai's dark canvas
+would put a dark-only palette on a light theme. The editor is a deliberate dark
+surface, so it can carry the generated one.
+
+## The graph's lane colours are CSS variables, not literals in the component
+
+`scripts/inline-style-tokens.test.mjs` keeps literal sizes, weights and hex
+colours out of `components/**`. The Log graph needs eight distinguishable hues,
+which the app's tokens do not provide, so they are `--git-lane-1…8` on
+`.git-panel` in `app/native-theme.css` (with a `:root.dark` set) and the SVG
+strokes reference them. One palette, in the fork's stylesheet, per both themes.
+
 # DECISIONS
+
+## The Branchshift Git panel and the editable file panel (this branch)
+
+- **The Git panel is a port, not a rewrite.** `src/git/**` in Branchshift has no
+  `vscode` imports, so `lib/git/**` is a copy (via `scripts/port-branchshift.mjs`)
+  and its mocha suites came with it (`scripts/port-branchshift-tests.mjs`). A
+  rewrite of 5.2k lines of git handling would have thrown away the parsing, the
+  index transaction behind partial commits, the worktree path handling and the
+  tests that cover them.
+- **The command surface stays Branchshift's, behind one route.** The webview
+  posted `{command, params, repoId}` to the extension host; the panel posts the
+  same envelope to `POST /api/git/execute`. `lib/git/commands.ts` is a closed
+  table — no command takes a shell string, an argv array, or a repository path —
+  so the panel keeps its 70 commands without becoming a remote shell.
+- **The repository is derived from an authorized cwd, never from the browser.**
+  `lib/git/workspace.ts` discovers the checkout that owns the cwd, its sibling
+  worktrees, and the checkouts nested inside it; a `repoId` is honoured only when
+  discovery reached it. Worktrees matter here: pi-desk's projects *are* worktrees,
+  and a worktree has its own index, HEAD and `gitDir` — an operation must run
+  against the selected checkout, so each worktree is its own repository entry.
+- **Two panels, one live signal.** The file tree keeps its cwd-scoped status
+  projection (`lib/git-changes.ts`, which the explorer's dots and the
+  changed-files group need) and the Git panel reads the full repository state
+  from `lib/git`; both refresh from the same SSE stream, so a terminal commit
+  moves both. Keeping one implementation for both would have made the explorer's
+  tolerant, cwd-filtered view strict and repository-wide.
+- **Branchshift's CSS variables are mapped, not copied.** The ported components
+  read `--vscode-*` variables. `.git-panel` in `app/native-theme.css` defines
+  those from pi-desk's own tokens, so the panel themes with the app, the fork
+  keeps its "fork CSS lives only in native-theme.css" rule, and no second colour
+  palette is invented.
+- **The three-way merge editor is the one declined piece.** The sidebar has no
+  width for three columns; Accept Yours / Theirs, the conflict list,
+  base/ours/theirs contents, and merge/rebase continue-skip-abort are all there,
+  and the file panel's editor is where a hunk gets resolved by hand.
+- **CONTRIBUTING.md's out-of-scope list declines Git clients and file editing for
+  upstream pi-web.** This fork wants both — the request is explicit — so they are
+  built here, kept inside pi-desk's existing security posture (allowed roots, the
+  desktop token, the web password), and recorded as a deliberate fork divergence.
+- **The editor engine is chosen by measurement, not preference.** Both CodeMirror 6
+  and Monaco standalone were installed and driven in the app (bundle size, theme
+  fidelity, completion work). The one that wins is the one that gets the Ayu
+  Monokai theme with the least duplicated palette and gives Tab-accept word
+  completion without a completion framework.
 - **A plain-text surface strips ANSI; it never renders it.** The running-tool status line
   ("Running bash… <progress>") and a tool card's result pane run a command's streamed
   output through `stripAnsi` (`lib/ansi.ts`) — the fork's existing rule for extension
@@ -595,3 +676,72 @@ composer asked for it. Two rules fix that, both in `lib/draft-store.ts`.
 - **The composer's edits outrank the store's answer.** `attachmentsTouchedRef`
   (`components/ChatInput.tsx`) marks a key whose attachments the user edited on this page; a restore
   snapshot arriving after that is dropped, so a box the user cleared is not refilled by an older read.
+## A fixture's answer comes from the server, never from the component (2026-07)
+
+`e2e/git-panel.fixture.jsx` answered `getRemoteBranches` from the shape the
+component asked for, and the panel passed at five viewports while the real server
+answer crashed it in the browser. A harness whose fixture and component were
+written from the same assumption tests the assumption, not the seam.
+
+Rule for this panel: every fixture answer is read off the service (`lib/git/**`)
+or off a real repository, and where a shape is load-bearing a test pins the
+server side too (`app/api/git/flow.test.mjs` asserts that a remote group has no
+`name` key). A `useGitQuery<T>` whose `T` was typed by the caller, not copied
+from the command's return, is the same bug in the other direction — the compiler
+is told a lie and stops helping.
+
+## The row owns its menu, and the menu opens under the row (2026-07)
+
+The file tree's hover buttons (`@ mention`, download) took width from the name at
+a narrow panel and offered two actions out of ten. Every row now has a menu
+button, and the menu opens under the **row's** left edge — for the tree
+(`components/FileTreeMenu.tsx`) and for the Git panel (`anchorTo` in
+`components/git/git-ui.tsx`, walking `closest(".git-branch-row, .git-log-row,
+.git-shelf-row, .git-change-row, [data-git-menu-row]")`). A menu anchored to a
+16px button at the far right of a wide row reads as a menu about the button, and
+in a narrow panel it lands off the row it describes.
+
+**Delete goes to the system Trash** (`lib/trash.ts`, the rule that removed chats
+follow). A taken name is refused, never silently overwritten; an explicit
+overwrite is the only path that removes what is there. A project root is not the
+tree's to delete.
+
+**A compare tab is a separate view**, keyed `compare:<a>:<b>`, not a mode of the
+file tab. The same file opened plainly is a different question, and one tab id
+cannot carry both.
+
+## The Git panel lives as long as the right sidebar, not as long as its toggle (2026-07)
+
+`GitPanel` is mounted while `rightPanelOpen`, and hidden when its own toggle is
+off. Reopening the Git view is a look at the same repository; the panel refetches
+on its refresh buttons, on the `GET /api/git/events` stream, and when the sidebar
+itself closes and opens again. A panel that re-reads git on every tab switch
+flickers, and on a big repository it is a second of blank list for a glance.
+
+The consequence is written down because it is a real cost: while the sidebar is
+open the panel's queries and its SSE stream stay alive, so a hidden panel keeps
+watching the repository. That is the same liveness the panel has when it is
+visible, and it has no timer.
+
+## A completion's kind decides whether Monaco keeps it (2026-07)
+
+`SuggestModel` builds a disabled-kinds set from `editor.suggest.show*` and drops
+every item whose kind is in it — no log, no notice, a popup that says "No
+suggestions". The document's own words are `CompletionItemKind.Text`, so
+`suggest.showWords: true` is not "turn Monaco's word list on" (`wordBasedSuggestions`
+stays `"off"`, our provider owns the vocabulary); it is the switch that keeps our
+own items. `Keyword` — the kind this editor used first — is filtered out by
+`showKeywords: false`.
+
+## A guard follows the code it guards (2026-07)
+
+Three source-shape guards failed because the code they name moved, not because
+the behaviour went: the composer's model picker is a row of the `+`'s menu
+(`AgentsConfig.test.mjs` now reads `ComposerPlusMenu.tsx` and ChatInput's
+`model={modelOptions…}` handoff), the tree's mention/download actions live in the
+row menu (`SessionSidebar.file-search.test.mjs` asserts the menu items and the
+shared `actions={actions}`), and the selector's filtered call takes `options`
+where the guard expected `sortedOptions`. Each assertion was rewritten to the
+file and shape that carries the behaviour, with the reason beside it. Deleting an
+assertion is not the move: every one of these three still fails if the behaviour
+goes.

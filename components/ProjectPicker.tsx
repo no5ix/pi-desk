@@ -8,6 +8,7 @@ import { selectDirectoryNative } from "@/lib/desktop-window";
 import { isImeComposing } from "@/lib/ime";
 import { useI18n } from "@/hooks/useI18n";
 import { errorMessage } from "@/lib/errors";
+import { useProjectBranches } from "@/hooks/useProjectBranches";
 
 interface ProjectPickerProps {
   recentProjects: string[];
@@ -84,6 +85,10 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
   const [customPathError, setCustomPathError] = useState<string | null>(null);
   const [customPathValidating, setCustomPathValidating] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  // The branch of every project in the list. The list names folders, and a
+  // worktree setup is a list of folders whose only difference is a name the user
+  // chose; the branch is what tells them apart.
+  const { branches, refresh: refreshBranches } = useProjectBranches(recentProjects, dropdownOpen);
 
   const closeDropdown = useCallback(() => {
     setDropdownOpen(false);
@@ -221,6 +226,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
             setDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
           }
+          if (!dropdownOpen) void refreshBranches();
           setDropdownOpen((v) => !v);
         }}
         title={selectedProject ?? selectedCwd ?? ""}
@@ -342,6 +348,11 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
               title={project}
             >
               <PathLabel text={displayCwd(project, homeDir)} style={{ flex: 1 }} />
+              {branches[project]?.isRepo ? (
+                <span className="project-picker-branch" data-project-branch={branches[project]?.branch ?? "detached"}>
+                  {branches[project]?.branch ?? t("git.detached")}
+                </span>
+              ) : null}
             </button>
           ))}
           {visibleProjects.length === 0 && trimmedFilter && (

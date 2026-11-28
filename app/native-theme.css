@@ -16,6 +16,10 @@
   --fw-bold: 700;
   /* Hairlines: one device pixel on retina, where a CSS pixel is two. */
   --hairline: 1px;
+  /* The Git panel's synced chip: a branch and its remote sitting on the same
+     commit. The colour is an asked-for one, and it lives here so the panel's
+     section of this file names tokens and carries no literal colour. */
+  --git-ref-synced: #cdc12d;
 }
 @media (min-resolution: 2dppx) {
   :root { --hairline: 0.5px; }
@@ -1327,18 +1331,84 @@
   --assistant-bg: transparent;
   --tool-bg: rgba(0, 0, 0, 0.04);
   --bg-subtle: rgba(0, 0, 0, 0.04);
-  /* Heading ink, one colour per level (h1 … h6), darker shades on a light page. */
-  --heading-1: #b45309;
-  --heading-2: #a21caf;
-  --heading-3: #15803d;
-  --heading-4: #1d4ed8;
-  --heading-5: #dc2626;
-  --heading-6: #7d6b45;
+  /* Heading ink. Markdown headings carry one ink, the palette's function
+     colour, at every level: the hierarchy is size, weight and the rule under
+     the levels that open a section (see the Markdown block below), not six hues.
+     The per-level names stay, so a heading in a reply and the same heading in a
+     Markdown file are one declaration. */
+  --heading-1: var(--md-heading);
+  --heading-2: var(--md-heading);
+  --heading-3: var(--md-heading);
+  --heading-4: var(--md-heading);
+  --heading-5: var(--md-heading);
+  --heading-6: var(--md-heading);
   --scroll-thumb: rgba(110, 110, 110, 0.3);
-  /* Syntax colours (lib/code-theme.ts): one muted blue, one muted warm tone. */
-  --code-accent: #3f5f8f;
-  --code-warm: #8a5a2e;
-  --code-comment: #8e8e93;
+  /* Syntax colours (lib/code-theme.ts). Every entry is the Ayu Monokai hue of
+     the role, darkened for a light page: the same seven roles as the dark
+     block below, so a file's ink is the same story on either surface and
+     switching mode stays a CSS change. The hues are the ones
+     vendor/ayu-monokai/Ayu Monokai-color-theme.json names; the light values are
+     its derivations (same hue, ~4.5:1 on the paper). */
+  --code-keyword: #a4622a;
+  --code-string: #6b8b23;
+  --code-constant: #7d4bc4;    /* numbers, constants, escapes */
+  --code-function: #9a6700;    /* functions, attributes, headings, list markers */
+  --code-type: #1f7ead;        /* types, classes, properties, links */
+  --code-property: #b23c63;
+  --code-operator: #b06a3a;
+  --code-regexp: #16725f;
+  --code-inserted: #4a8a2b;
+  --code-deleted: #c0453f;
+  --code-changed: #2a72ad;
+  --code-comment: #7c848c;
+  --code-punctuation: rgba(29, 29, 31, 0.72);
+  /* Markdown, in the same seven roles. One heading hue (the amber), the warm
+     keyword for emphasis, the type blue for links, the string green for inline
+     code, the comment tone for quotations — a long document stays calm. */
+  --md-heading: #9a6700;
+  --md-strong: #a4622a;
+  --md-link: #1f7ead;
+  --md-link-url: rgba(95, 95, 99, 0.85);
+  --md-inline-code: #6b8b23;
+  --md-inline-code-bg: rgba(0, 0, 0, 0.045);
+  --md-quote: #6d757d;
+  --md-quote-rule: var(--code-keyword);   /* a quotation marked in the keyword */
+  --md-quote-bg: rgba(0, 0, 0, 0.025);
+  --md-list: #9a6700;
+  --md-table-border: rgba(0, 0, 0, 0.12);
+  --md-table-head-bg: rgba(0, 0, 0, 0.035);
+  --md-table-row-bg: rgba(0, 0, 0, 0.018);
+  --md-rule: rgba(0, 0, 0, 0.14);
+  --md-task-checked: #6b8b23;
+  --md-task-border: rgba(0, 0, 0, 0.22);
+  --md-code-bg: var(--surface);
+  --md-code-header-bg: rgba(0, 0, 0, 0.03);
+  --md-indent-guide: rgba(0, 0, 0, 0.1);
+  /* The file panel's Git marks, from the theme's own gutter hues. */
+  --diff-added: #4a8a2b;
+  --diff-added-bg: rgba(74, 138, 43, 0.12);
+  --diff-deleted: #c0453f;
+  --diff-deleted-bg: rgba(192, 69, 63, 0.12);
+  /* The editor surface, in the palette's own words. A light page has no Ayu
+     Monokai equivalent — the theme is a dark theme — so these are the same
+     roles on paper: the card as the page, the current line one step down, the
+     selection and the caret in the app's blue. */
+  --editor-bg: #ffffff;
+  --editor-fg: #1d1d1f;
+  /* The code surface and the code ink, in the role names the components ask by:
+     a fence, a code chip and the read view ask for `--code-*`, and get the
+     palette's page and ink. */
+  --code-fg: var(--editor-fg);
+  --editor-current-line: #f5f5f6;
+  --editor-selection: rgba(59, 108, 246, 0.22);
+  --editor-selection-inactive: rgba(59, 108, 246, 0.1);
+  --editor-cursor: #1d1d1f;
+  --editor-whitespace: rgba(110, 110, 110, 0.45);
+  --editor-indent-guide: rgba(0, 0, 0, 0.08);
+  --editor-indent-active-guide: rgba(0, 0, 0, 0.2);
+  --editor-line-number: rgba(110, 110, 110, 0.75);
+  --editor-line-number-active: rgba(60, 60, 64, 0.9);
+  --editor-border: rgba(0, 0, 0, 0.12);
 
   /* Typography. "Noto Sans SC" backstops CJK on Linux builds (deb target in
      release.yml), which this stack otherwise has no CJK fallback for once it
@@ -1414,7 +1484,7 @@ html.dark {
   --workbench-bg: #242424;
   --surface-muted: rgba(36, 36, 36, 0.72);
   --surface-elevated: #262626;
-  --text: #ececec;
+  --text: var(--editor-fg);
   --text-muted: #a8a8ad;
   --text-dim: #8a8a8e;
   --text-meta: #a8a8ad;
@@ -1434,17 +1504,134 @@ html.dark {
   --assistant-bg: transparent;
   --tool-bg: rgba(255, 255, 255, 0.06);
   --bg-subtle: rgba(255, 255, 255, 0.06);
-  /* Heading ink, one colour per level (h1 … h6), brighter shades on the dark page. */
-  --heading-1: #f5a43c;
-  --heading-2: #e06bd6;
-  --heading-3: #4ade80;
-  --heading-4: #6b93ff;
-  --heading-5: #ff6961;
-  --heading-6: #c9b385;
+  /* Heading ink, one ink for every level, in the palette's function colour —
+     see the light block above: the hierarchy is size, weight and a rule, not
+     hue. The per-level names stay for the same reason. */
+  --heading-1: var(--md-heading);
+  --heading-2: var(--md-heading);
+  --heading-3: var(--md-heading);
+  --heading-4: var(--md-heading);
+  --heading-5: var(--md-heading);
+  --heading-6: var(--md-heading);
   --scroll-thumb: rgba(169, 169, 169, 0.3);
-  --code-accent: #8fb0dc;
-  --code-warm: #cfa77c;
-  --code-comment: #8a8a8e;
+  /* Syntax colours (lib/code-theme.ts), the Ayu Monokai palette exactly as
+     vendor/ayu-monokai/Ayu Monokai-color-theme.json names it, and as
+     lib/editor/ayu-monokai.ts (the generated Monaco theme) carries it: the
+     editor, its Markdown preview and every Prism-coloured fence read these, so
+     a fence inside a Markdown file, a `.ts` file and a JSON file are the same
+     ink. Keep this block and the generated file in step (THEME_COLORS.md). */
+  --code-keyword: #FF8F40;
+  --code-string: #AAD94C;
+  --code-constant: #D2A6FF;    /* numbers, constants, escapes */
+  --code-function: #FFB454;    /* functions, attributes, headings, list markers */
+  --code-type: #59C2FF;        /* types, classes, properties, links */
+  --code-property: #F07178;
+  --code-operator: #F29668;
+  --code-regexp: #95E6CB;
+  --code-inserted: #7FD962;
+  --code-deleted: #F26D78;
+  --code-changed: #73B8FF;
+  --code-comment: #ACB6BF8C;
+  --code-punctuation: #BFBDB6B3;
+  /* Markdown, in the same roles: one heading hue (the palette's amber), the
+     warm keyword for emphasis, the type blue for links, the string green for
+     inline code, the comment tone for quotations. */
+  --md-heading: #FFB454;
+  --md-strong: #FF8F40;
+  --md-link: #59C2FF;
+  --md-link-url: rgba(191, 189, 182, 0.6);
+  --md-inline-code: #AAD94C;
+  --md-inline-code-bg: rgba(191, 189, 182, 0.06);
+  --md-quote: #ACB6BF8C;
+  --md-quote-rule: var(--code-keyword);   /* a quotation marked in the keyword */
+  --md-quote-bg: rgba(191, 189, 182, 0.04);
+  --md-list: #FFB454;
+  --md-table-border: rgba(108, 115, 128, 0.36);
+  --md-table-head-bg: rgba(191, 189, 182, 0.06);
+  --md-table-row-bg: rgba(191, 189, 182, 0.03);
+  --md-rule: rgba(108, 115, 128, 0.36);
+  --md-task-checked: #AAD94C;
+  --md-task-border: rgba(108, 115, 128, 0.6);
+  --md-code-bg: var(--surface);
+  --md-code-header-bg: rgba(191, 189, 182, 0.05);
+  --md-indent-guide: #6c738033;
+  /* The file panel's Git marks: the theme's gutter added/modified/deleted. */
+  --diff-added: #7FD962;
+  --diff-added-bg: rgba(127, 217, 98, 0.12);
+  --diff-deleted: #F26D78;
+  --diff-deleted-bg: rgba(242, 109, 120, 0.14);
+  /* The editor surface, exactly as the palette names it: the page #0b0e14, the
+     ink #bfbdb6, the current line #131721, the selection #409fff4d, the caret
+     #e6b450, the whitespace, gutters and indent guides in the palette's gray.
+     Everything below and every `--vscode-*` role is written from these, so the
+     palette exists once. The file panel (`app/native-theme.css`, the
+     `.file-viewer-panel` scope) paints with them, and Monaco, Prism and the
+     Markdown preview inherit them. */
+  --editor-bg: #0b0e14;
+  --editor-fg: #bfbdb6;
+  --code-fg: var(--editor-fg);
+  --editor-current-line: #131721;
+  --editor-selection: #409fff4d;
+  --editor-selection-inactive: #409fff21;
+  --editor-cursor: #e6b450;
+  --editor-whitespace: #6c738099;
+  --editor-indent-guide: #6c738033;
+  --editor-indent-active-guide: #6c738080;
+  --editor-line-number: #6c738099;
+  --editor-line-number-active: #6c7380e6;
+  --editor-border: rgba(108, 115, 128, 0.36);
+  /* The editor surface: the palette's page, current line, selection, cursor,
+     gutters and indent guides, published under the names Monaco, the CodeMirror
+     panels and the terminal chrome read (components/CodeEditor.tsx). */
+  --vscode-editor-background: var(--editor-bg);
+  --vscode-editor-foreground: var(--editor-fg);
+  --vscode-editor-selection-background: var(--editor-selection);
+  --vscode-editor-selection-inactive-background: var(--editor-selection-inactive);
+  --vscode-editor-current-line: var(--editor-current-line);
+  --vscode-editor-cursor: var(--editor-cursor);
+  --vscode-editor-whitespace: var(--editor-whitespace);
+  --vscode-editor-indent-guide: var(--editor-indent-guide);
+  --vscode-editor-indent-active-guide: var(--editor-indent-active-guide);
+  --vscode-editor-line-number: var(--editor-line-number);
+  --vscode-editor-line-number-active: var(--editor-line-number-active);
+  --vscode-editor-line-number-background: var(--editor-bg);
+  --vscode-editor-font-family: var(--font-mono);
+  --vscode-editor-font-size: 13px;
+  --vscode-editor-font-weight: 400;
+  --vscode-editor-widget-background: #0f131a;
+  --vscode-editor-widget-border: var(--editor-border);
+  --vscode-editor-hover-background: #0f131a;
+  --vscode-editor-hover-border: var(--editor-border);
+  --vscode-editor-find-match: #6c5980;
+  --vscode-editor-bracket-match: #6c73804d;
+  --vscode-editor-info-foreground: var(--code-type);
+  --vscode-editor-warning-foreground: var(--code-function);
+  --vscode-editor-error-foreground: var(--code-deleted);
+  --vscode-editor-link-foreground: var(--md-link);
+  --vscode-editor-placeholder-foreground: rgba(191, 189, 182, 0.45);
+  --vscode-input-background: var(--editor-current-line);
+  --vscode-input-border: var(--editor-border);
+  --vscode-list-active-foreground: var(--editor-fg);
+  --vscode-list-hover-background: #47526640;
+  --vscode-list-highlight-foreground: var(--editor-cursor);
+  --vscode-panel-background: var(--editor-bg);
+  --vscode-panel-border: var(--editor-border);
+  --vscode-scrollbar-shadow: #000000;
+  --vscode-side-bar-background: var(--editor-bg);
+  --vscode-terminal-background: var(--editor-bg);
+  --vscode-tooltip-background: #0f131a;
+  --vscode-tooltip-foreground: var(--editor-fg);
+  --vscode-text-link-foreground: var(--editor-cursor);
+  /* The terminal panel and the file panels sit on the page. */
+  --workspace-terminal-background: var(--editor-bg);
+  --workspace-terminal-foreground: var(--editor-fg);
+  --workspace-terminal-background-muted: rgba(19, 23, 33, 0.85);
+  --workspace-terminal-background-panel: rgba(19, 23, 33, 0.72);
+  --workspace-terminal-border: rgba(108, 115, 128, 0.3);
+  --workspace-terminal-text: var(--editor-fg);
+  --workspace-terminal-text-muted: rgba(172, 182, 191, 0.72);
+  --workspace-terminal-accent: var(--code-function);
+  --workspace-terminal-hover: rgba(191, 189, 182, 0.06);
   --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.24);
   --shadow-composer: 0 1px 2px rgba(0, 0, 0, 0.28),
     0 14px 36px rgba(0, 0, 0, 0.3);
@@ -3211,6 +3398,107 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   pointer-events: none;
 }
 
+/* The row menu's inline editors. A rename replaces the row's name in place, and
+   a new file or folder is named at the top of the folder it goes into, at that
+   folder's own indent — so the name is typed where the file will appear. */
+.file-tree-name-input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  background: var(--bg-panel);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+}
+
+.file-tree-create-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  height: 24px;
+}
+
+/* What an operation just did, and why one failed. A line of its own, kept to the
+   bottom of the panel, so it never shifts the rows the user is aiming at. */
+.file-tree-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+}
+
+.file-tree-notice.is-error {
+  color: var(--danger);
+}
+
+.file-tree-notice-text {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+
+/* "Find in Folder…" leaves the folder it searches stated, and clearable: a
+   search that silently answers for one folder is a search that lies. */
+.file-tree-search-scope {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 4px 2px 6px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-panel);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+}
+
+.file-tree-search-scope-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-tree-search-scope-clear {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.file-tree-search-scope-clear:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* The Git view while its toggle is off: kept mounted, not rendered. Reopening it
+   is a look at the same repository, not a reason to read git again. */
+.git-panel-keepalive {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.git-panel-keepalive[hidden] {
+  display: none;
+}
+
 /* Git changes header: list / tree switch (F2). */
 .file-changes-view-toggle {
   display: flex;
@@ -3855,6 +4143,57 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   overflow-wrap: anywhere;
 }
 
+/* The header's project switcher, on a phone: the sidebar's rows, in the tip the
+   chip already opens. Rows are 36px for a thumb, the name truncates because the
+   row's job is to be picked, and the current project is marked the way the
+   sidebar marks it. */
+.app-topbar-project-list {
+  display: grid;
+  gap: 2px;
+  min-width: 168px;
+  max-width: min(340px, calc(100vw - 24px));
+}
+
+.app-topbar-project-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-size: var(--fs-small);
+  text-align: left;
+}
+
+.app-topbar-project-row:hover {
+  background: var(--bg-hover);
+}
+
+.app-topbar-project-row.is-current {
+  background: var(--bg-selected);
+  color: var(--accent);
+}
+
+.app-topbar-project-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The phone's header row is short, and the branch is the first thing cut. It is
+   also the least useful thing there: the project is what a reader taps, and the
+   branch is one tap away in the Git panel. So the branch stays on the desktop,
+   where the row has room. */
+@media (max-width: 640px) {
+  .app-topbar-branch {
+    display: none;
+  }
+}
+
 /* The live clock after the branch: how long the task has been running since the
    last prompt. It re-reads itself every second, so `tabular-nums` keeps the
    ticking label from re-flowing the row around it, and it never shrinks — the
@@ -3917,6 +4256,7 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   outline: 2px solid var(--focus-ring);
   outline-offset: 1px;
 }
+/* (The side-chat group's lit colour is the hover rule below, which covers both.) */
 
 .app-topbar-subagents svg {
   flex: 0 0 auto;
@@ -4342,6 +4682,21 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   border-bottom-color: transparent !important;
 }
 
+/* The branch of a project row. The list names folders, and in a worktree setup
+   the names are what the user typed, not what the checkout is: the branch is the
+   row's information. It sits behind the path, in the dim mono ink, and takes no
+   more than half the row so the path keeps the leading half. */
+.project-picker-branch {
+  flex: 0 0 auto;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
 /* Every input in a popover is a field: the separator hairline, the panel's radius,
    the muted surface. The branch list's filter box is excluded and paints its own
    background (`.sidebar-project-context-menu-filter`): `--surface-muted` is a white
@@ -4513,6 +4868,11 @@ html.dark {
   color: var(--text);
   font-size: var(--fs-small);
   line-height: 1.4;
+  /* A `<button>` is centred by the browser's own sheet, and a menu row's label
+     inherits that: a branch menu turns into a column of centred headlines whose
+     left edges mean nothing, widest in the widest menu. A menu is a list — every
+     row begins at one left edge, so the eye can run down it and compare. */
+  text-align: start;
 }
 
 .app-menu :is(button[role="menuitem"], button[role="menuitemcheckbox"], button[role="menuitemradio"]) {
@@ -6939,23 +7299,30 @@ html.dark {
 .markdown-body p:last-child { margin-bottom: 0; }
 .markdown-body > :first-child,
 .markdown-body > .streamdown-animated > :first-child { margin-top: 0; }
-/* One colour per heading level (h1 … h6), so a heading reads as its level from
-   across the panel: orange, magenta, green, blue, red, tan. The tokens are
-   darker shades of each on the light page and brighter on the dark one. */
+/* One ink for headings, in the palette's function amber, and a hierarchy that
+   comes from size, weight and a rule under the two levels that open a section.
+   A Markdown document is the widest surface in the app and it is read, not
+   scanned: six heading colours make a long file tiring, one colour read at four
+   sizes tells the level without shouting. The tokens are the palette's own
+   (see the syntax block above); `--heading-N` stays a token so a theme can
+   part ways with the shared ink. */
 .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 {
   font-weight: var(--fw-semibold);
   line-height: 1.35;
   letter-spacing: 0;
+  color: var(--heading-1);
 }
 .markdown-body h1 {
   font-size: calc(20px + var(--chat-font-size-offset, 0px));
   margin: 28px 0 12px;
   line-height: 1.3;
+  font-weight: var(--fw-bold);
   color: var(--heading-1);
 }
 .markdown-body h2 {
   font-size: calc(17px + var(--chat-font-size-offset, 0px));
   margin: 24px 0 10px;
+  font-weight: var(--fw-bold);
   color: var(--heading-2);
 }
 .markdown-body h3 {
@@ -6969,13 +7336,14 @@ html.dark {
   color: var(--heading-4);
 }
 .markdown-body h5 {
-  font-size: 1em;
+  font-size: 0.95em;
   margin: 18px 0 8px;
   color: var(--heading-5);
 }
 .markdown-body h6 {
-  font-size: 1em;
+  font-size: 0.9em;
   margin: 18px 0 8px;
+  letter-spacing: 0.02em;
   color: var(--heading-6);
 }
 .markdown-body ul, .markdown-body ol {
@@ -6994,7 +7362,7 @@ html.dark {
 .markdown-body li > p { margin: 0 0 4px; }
 .markdown-body li > p:last-child { margin-bottom: 0; }
 .markdown-body li::marker {
-  color: color-mix(in srgb, var(--accent) 72%, var(--text-muted));
+  color: var(--md-list);
   font-weight: var(--fw-semibold);
 }
 /* An ordered list's marker is drawn in the list's own left padding, to the left of
@@ -7008,24 +7376,28 @@ html.dark {
   --ol-marker-digits: 2;
   padding-left: calc(1em + var(--ol-marker-digits) * 0.7em);
 }
+/* Emphasis is the palette's warm keyword; a quotation is the comment tone, and
+   a link is the type blue. All three are tokens, so the chat, the file panel's
+   preview and a Markdown file's own source view carry the same ink. */
 .markdown-body strong {
-  color: var(--text);
-  font-weight: var(--fw-semibold);
+  color: var(--md-strong);
+  font-weight: var(--fw-bold);
 }
-.markdown-body em { color: var(--text-muted); }
+.markdown-body em { color: var(--text); font-style: italic; }
+.markdown-body del { color: var(--text-muted); text-decoration: line-through; }
 .markdown-body a {
-  color: var(--accent);
+  color: var(--md-link);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
-  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--md-link) 45%, transparent);
 }
-.markdown-body a:hover { text-decoration-color: var(--accent); }
+.markdown-body a:hover { text-decoration-color: var(--md-link); }
 .markdown-body .markdown-inline-code {
-  background: var(--bg-subtle);
+  background: var(--md-inline-code-bg);
   border-radius: var(--radius-sm);
   padding: 1px 5px 2px;
-  color: var(--text);
+  color: var(--md-inline-code);
   font-family: var(--font-mono);
   font-size: calc(13px + var(--chat-font-size-offset, 0px));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
@@ -7049,40 +7421,40 @@ html.dark {
   width: 14px;
   height: 14px;
   margin: 0;
-  border: var(--hairline) solid var(--border);
+  border: var(--hairline) solid var(--md-task-border);
   border-radius: var(--radius-xs);
-  background: var(--bg);
+  background: var(--surface);
   display: inline-grid;
   place-content: center;
 }
 .markdown-body .task-list-item > input[type="checkbox"]:checked,
 .markdown-body .task-list-item > p:first-child > input[type="checkbox"]:first-child:checked {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  background: color-mix(in srgb, var(--accent) 10%, var(--bg));
+  border-color: var(--md-task-checked);
+  background: color-mix(in srgb, var(--md-task-checked) 18%, var(--surface));
 }
 .markdown-body .task-list-item > input[type="checkbox"]:checked::before,
 .markdown-body .task-list-item > p:first-child > input[type="checkbox"]:first-child:checked::before {
   content: "";
   width: 4px;
   height: 8px;
-  border: solid var(--accent);
+  border: solid var(--md-task-checked);
   border-width: 0 1.5px 1.5px 0;
   transform: rotate(45deg) translateY(-1px);
 }
 .markdown-body blockquote {
   margin: 8px 0;
   padding: 8px 12px;
-  border-left: 2px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-left: 2px solid var(--md-quote-rule);
   border-radius: 2px 8px 8px 2px;
-  background: color-mix(in srgb, var(--surface) 48%, transparent);
-  color: color-mix(in srgb, var(--text) 82%, var(--text-muted));
+  background: var(--md-quote-bg);
+  color: var(--md-quote);
 }
 .markdown-table-wrap {
   width: 100%;
   margin: 8px 0;
   overflow-x: auto;
   overflow-y: hidden;
-  border: var(--hairline) solid var(--border);
+  border: var(--hairline) solid var(--md-table-border);
   border-radius: var(--radius-lg);
 }
 .markdown-body table {
@@ -7097,7 +7469,7 @@ html.dark {
 .markdown-table-wrap > table { width: auto; }
 .markdown-body th, .markdown-body td {
   border: 0;
-  border-bottom: var(--hairline) solid var(--separator);
+  border-bottom: var(--hairline) solid var(--md-table-border);
   padding: 6px 10px;
   text-align: left;
   vertical-align: top;
@@ -7109,16 +7481,16 @@ html.dark {
 }
 .markdown-body tr:last-child td { border-bottom: 0; }
 .markdown-body th {
-  background: var(--bg-panel);
-  color: color-mix(in srgb, var(--text) 88%, var(--text-muted));
+  background: var(--md-table-head-bg);
+  color: var(--md-heading);
   font-weight: var(--fw-semibold);
 }
-.markdown-body tbody tr:nth-child(even) td { background: var(--bg-subtle); }
+.markdown-body tbody tr:nth-child(even) td { background: var(--md-table-row-bg); }
 .markdown-body hr {
   border: none;
   height: 1px;
   margin: 12px 0;
-  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  background: var(--md-rule);
 }
 .markdown-body .katex-display {
   margin: 0.6em 0;
@@ -7240,9 +7612,10 @@ html.dark {
 }
 .markdown-code-header {
   padding: 5px 10px;
-  /* A solid step off the block body. --bg-panel is the recessed sidebar tone
-     (darker than the chat canvas in dark mode), so derive from --bg instead. */
-  background: #6D5C5C;
+  /* A solid step off the block body, in the palette's own surface tone (the
+     header and the fence body read as one flat block, so the step is the
+     current-line surface, not a hue of its own). */
+  background: var(--md-code-header-bg);
   /* Upstream draws the header's underside; the header and the fence body read as
      one flat block now. The zero is named, not dropped, for exactly that reason. */
   border-bottom: 0;
@@ -7254,7 +7627,7 @@ html.dark {
   gap: 8px;
 }
 .markdown-code-lang {
-  color: #DEB9B9;
+  color: var(--md-heading);
   font-family: var(--font-mono);
   font-weight: var(--fw-semibold);
 }
@@ -7313,9 +7686,11 @@ html.dark {
   color: var(--text);
 }
 
-/* GitHub alerts (`> [!NOTE]`), see remarkGithubAlerts in lib/markdown.ts. */
+/* GitHub alerts (`> [!NOTE]`), see remarkGithubAlerts in lib/markdown.ts. Each
+   kind keeps its own hue, drawn from the palette: the string green, the
+   constant purple, the function amber, the destructive red. */
 .markdown-body .markdown-alert {
-  --alert-color: var(--accent);
+  --alert-color: var(--md-link);
   margin: 8px 0;
   padding: 7px 12px;
   border-left: 3px solid var(--alert-color);
@@ -7323,10 +7698,10 @@ html.dark {
   background: color-mix(in srgb, var(--alert-color) 8%, var(--bg));
   color: var(--text);
 }
-.markdown-body .markdown-alert-tip { --alert-color: #22a06b; }
-.markdown-body .markdown-alert-important { --alert-color: #8b5cf6; }
-.markdown-body .markdown-alert-warning { --alert-color: #d29922; }
-.markdown-body .markdown-alert-caution { --alert-color: #e5484d; }
+.markdown-body .markdown-alert-tip { --alert-color: var(--code-inserted); }
+.markdown-body .markdown-alert-important { --alert-color: var(--code-constant); }
+.markdown-body .markdown-alert-warning { --alert-color: var(--md-heading); }
+.markdown-body .markdown-alert-caution { --alert-color: var(--code-deleted); }
 .markdown-body .markdown-alert > :last-child { margin-bottom: 0; }
 .markdown-body .markdown-alert-title {
   margin: 0 0 4px;
@@ -8524,38 +8899,153 @@ html.dark {
   text-decoration: none;
 }
 
-/* File viewer markdown preview — larger headings */
+/* ---- The editor surface -------------------------------------------------
+   The file panel is where a file is read and edited, so it paints the palette:
+   the page, the ink, the current line, the gutter, the guides, the selection,
+   the fences and the code surfaces. Everything the panel draws reaches these
+   through the role names it already uses — `--bg`, `--text`, `--border`,
+   `--code-surface` — so no component carries a colour, the Markdown preview and
+   the source view of one file agree, and Monaco (whose theme is generated from
+   the same file) sits on the same page. Keep the list on roles only. */
+.file-viewer-shell,
+.file-viewer-content,
+.file-source-view,
+.file-editor-host,
+.markdown-file-preview {
+  --bg: var(--editor-bg);
+  --bg-panel: var(--editor-current-line);
+  --bg-subtle: var(--editor-current-line);
+  --surface: var(--editor-bg);
+  --text: var(--editor-fg);
+  --text-muted: color-mix(in srgb, var(--code-comment) 82%, var(--editor-fg));
+  --text-dim: var(--editor-line-number);
+  --border: var(--editor-border);
+  --separator: var(--editor-border);
+  --selection: var(--editor-selection);
+  --code-fg: var(--editor-fg);
+  --code-surface: var(--editor-bg);
+  --md-code-bg: var(--editor-bg);
+  --md-code-header-bg: var(--editor-current-line);
+  --md-inline-code-bg: color-mix(in srgb, var(--editor-fg) 6%, transparent);
+  --md-quote-bg: color-mix(in srgb, var(--editor-fg) 4%, transparent);
+  --md-table-head-bg: var(--editor-current-line);
+  --md-table-row-bg: color-mix(in srgb, var(--editor-fg) 3%, transparent);
+}
+
+/* A Markdown outline beside the file is part of the same page. */
+.file-toc {
+  --bg-panel: var(--editor-current-line);
+  --border: var(--editor-border);
+  --separator: var(--editor-border);
+}
+
+/* The Markdown ink, per the palette. The vendored theme colours Markdown with
+   five hues (green headings, salmon bold and italic, teal quotes); the palette
+   the editor is built on asks for a calmer document: one heading hue, the warm
+   keyword for emphasis, the default ink for prose, the comment tone for a
+   quotation. A long Markdown file is read, not scanned, so the markup ink is
+   the one the palette names, and it is the ink Prism gives the same construct
+   in the source view (lib/code-theme.ts). */
+
+/* The heading hierarchy in one hue: a rule under the two levels that open a
+   section, a step in weight, and the last two levels sitting back from the ink
+   towards the prose. */
+.markdown-file-preview h1,
+.markdown-file-preview h2 {
+  padding-bottom: 6px;
+  border-bottom: var(--hairline) solid var(--md-rule);
+  font-weight: var(--fw-bold);
+}
+.markdown-file-preview h4,
+.markdown-file-preview h5,
+.markdown-file-preview h6 {
+  font-size: 1em;
+}
+/* A nested list's rail is the editor's own indent guide: the same tone the
+   source view draws for nesting, so a list's depth reads the same in both
+   modes, and a deep list does not need six bullet shapes to be followed. */
+.markdown-file-preview li > ul,
+.markdown-file-preview li > ol {
+  padding-left: 20px;
+  border-left: var(--hairline) solid var(--md-indent-guide);
+}
+/* The task list's two states, in the palette's accents: the checked box is the
+   string green, the open one the guide gray, and the check mark is punched out
+   of the page so it stays legible on both. */
+.markdown-file-preview .task-list-item > input[type="checkbox"],
+.markdown-file-preview .task-list-item > p:first-child > input[type="checkbox"]:first-child {
+  border-color: var(--md-task-border);
+  background: transparent;
+}
+.markdown-file-preview .task-list-item > input[type="checkbox"]:checked,
+.markdown-file-preview .task-list-item > p:first-child > input[type="checkbox"]:first-child:checked {
+  border-color: var(--md-task-checked);
+  background: var(--md-task-checked);
+}
+.markdown-file-preview .task-list-item > input[type="checkbox"]:checked::before,
+.markdown-file-preview .task-list-item > p:first-child > input[type="checkbox"]:first-child:checked::before {
+  border-color: var(--md-code-bg);
+}
+/* A fenced block in the preview is the component's own card, and the app's flat
+ * rule holds here too: no outline, the palette's surface step carries it. Its
+ * tokens are Prism's, coloured from the same tokens as the source view, so
+ * fenced TypeScript in a Markdown file is the ink of a `.ts` file. */
+.markdown-file-preview .markdown-code-body > pre {
+  border: 0;
+  border-radius: 0;
+  margin: 0;
+}
+/* Raw HTML written inside Markdown keeps its own tags' ink in the source view
+   (Prism's markup grammar, through the palette's tag rose and amber
+   attributes); rendered, it is prose, so it takes the document's ink. */
+.markdown-file-preview :is(div, section, details, summary, span)[class] > p {
+  color: var(--text);
+}
 .markdown-file-preview h1 { font-size: 1.8em; }
 .markdown-file-preview h2 { font-size: 1.4em; }
 .markdown-file-preview h3 { font-size: 1.15em; }
 .markdown-file-preview p { margin: 0 0 12px; }
 .markdown-file-preview pre {
-  background: var(--bg-panel);
-  border: var(--hairline) solid var(--border);
+  background: var(--md-code-bg);
   border-radius: var(--radius-sm);
   padding: 12px 16px;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: var(--fs-body);
   margin: 12px 0;
+  color: var(--code-fg);
 }
 .markdown-file-preview code {
   font-family: var(--font-mono);
   font-size: 0.9em;
-  background: var(--bg-panel);
+  background: var(--md-inline-code-bg);
+  color: var(--md-inline-code);
   padding: 1px 5px;
   border-radius: var(--radius-xs);
 }
 .markdown-file-preview pre code {
   background: none;
+  color: inherit;
   padding: 0;
 }
+.markdown-file-preview .markdown-inline-code { color: var(--md-inline-code); }
 
 /* syntax highlighter line numbers */
 .markdown-body span.linenumber,
-span.linenumber {
-  color: var(--text-dim) !important;
+span.linenumber,
+.file-source-view span.linenumber {
+  color: var(--vscode-editor-line-number) !important;
   font-style: normal !important;
+}
+/* Monaco's gutter. The editor theme carries the palette's gutter ink, and where
+   a line-number element reaches the page without it, the gutter is the palette's
+   gutter: the same muted tone the read view's numbers and the file panel's
+   metadata use, and the current line's number one step brighter. */
+.monaco-editor .line-numbers {
+  color: var(--editor-line-number);
+}
+.monaco-editor .line-numbers.active-line-number {
+  color: var(--editor-line-number-active);
 }
 
 @keyframes drop-zone-in {
@@ -9150,6 +9640,9 @@ span.linenumber {
 
 
 .file-viewer-path {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
   overflow: hidden;
   flex: 1 1 auto;
@@ -13768,6 +14261,86 @@ html.dark .artifacts-thumb[data-tone="data"] { --tone: #4fc1d6; }
   font-size: var(--fs-micro);
 }
 
+/* The panel's answer when git refuses a file's diff. The sentence is the point,
+   so it is the sentence in the pane, with the path under it in the mono ink: a
+   reader who is told "outside the project" can see which path was meant. */
+.file-diff-denied {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 12px;
+}
+
+.file-diff-denied-title {
+  color: var(--text);
+  font-size: var(--fs-small);
+}
+
+.file-diff-denied-path {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  overflow-wrap: anywhere;
+}
+
+/* The diff's rows. An added or removed line is a state of the row, so its wash,
+   its left rail and the sign's ink are rules here, in the palette's diff roles
+   — the same greens and reds as the editor's diff gutter and the minimap, so a
+   line means the same thing in the row, the gutter and the map. */
+.file-diff-gap {
+  padding: 2px 16px;
+  border-top: var(--hairline) solid var(--border);
+  border-bottom: var(--hairline) solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+.file-diff-line {
+  display: flex;
+  min-width: 100%;
+  border-left: 3px solid transparent;
+}
+.file-diff-line.is-added {
+  background: var(--diff-added-bg);
+  border-left-color: var(--diff-added);
+}
+.file-diff-line.is-removed {
+  background: var(--diff-deleted-bg);
+  border-left-color: var(--diff-deleted);
+}
+.file-diff-line-number {
+  width: 48px;
+  min-width: 48px;
+  padding: 0 10px;
+  border-right: var(--hairline) solid var(--border);
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  line-height: 20.8px;
+  text-align: right;
+  user-select: none;
+  flex-shrink: 0;
+}
+.file-diff-line-prefix {
+  min-width: 16px;
+  padding: 0 6px;
+  color: var(--text-dim);
+  font-weight: var(--fw-semibold);
+  user-select: none;
+  flex-shrink: 0;
+}
+.file-diff-line.is-added .file-diff-line-prefix { color: var(--diff-added); }
+.file-diff-line.is-removed .file-diff-line-prefix { color: var(--diff-deleted); }
+.file-diff-line-content {
+  padding: 0 8px 0 0;
+  color: var(--text);
+  white-space: pre;
+  flex-shrink: 0;
+}
+
 @media (max-width: 640px) {
   .chat-live-files {
     padding: 0 10px;
@@ -14264,7 +14837,9 @@ a:focus-visible {
 
 /* One name for the fence's body, so the component's inline `pre` colour, the
    Mermaid block and the wrapper agree. `--bg-panel` resolves where it is used,
-   so this single declaration follows every theme. */
+   so this single declaration follows every theme; in the file panel the scope
+   below re-points it to the editor's page, so a fence in a Markdown preview is
+   the same surface as the source view of the same file. */
 :root {
   --code-surface: var(--bg-panel);
 }
@@ -15131,6 +15706,1859 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
     transform: none;
   }
 }
+
+/* ═════════════════════════════════════════════════════════════════════
+   The Git panel — Branchshift's Log and Commit surfaces.
+
+   The panel is Branchshift's layout: the branch tree, the commit graph and
+   list, one commit's message, files and diff; and the staging workflow with
+   its Shelf tabs. Every colour is the app's token, so the panel takes the
+   light and dark themes with the rest of the page; the graph's lane palette is
+   the one exception, because it lives in the SVG's `stroke` and Branchshift's
+   lanes are distinguished by hue, not by a token (`components/git/log/LogPanel.tsx`).
+
+   Sizes are the app's scale: `--fs-*` for type, and spacing in the 4/6/8px
+   steps the rest of the panel uses. */
+
+.git-panel {
+  --git-graph-node-hole: var(--bg-panel);
+  /* The graph's lane hues, one per concurrent branch. They are drawn from the
+     app's ANSI palette, so a light/dark switch needs no rule here and no second
+     palette enters the panel. */
+  --git-lane-1: var(--ansi-blue);
+  --git-lane-2: var(--ansi-red);
+  --git-lane-3: var(--ansi-green);
+  --git-lane-4: var(--ansi-yellow);
+  --git-lane-5: var(--ansi-magenta);
+  --git-lane-6: var(--ansi-cyan);
+  --git-lane-7: color-mix(in srgb, var(--ansi-red) 50%, var(--ansi-yellow));
+  --git-lane-8: var(--ansi-bright-cyan);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: var(--fs-small);
+  overflow: hidden;
+}
+
+.git-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-toolbar-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The repository: the panel reads one checkout, and this names it. */
+.git-repo-switcher {
+  position: relative;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.git-repo-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 190px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.git-repo-button:hover {
+  background: var(--bg-hover);
+}
+
+.git-repo-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-repo-branch {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 92px;
+}
+
+.git-repo-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.git-repo-menu-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.git-repo-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-repo-row:hover {
+  background: var(--bg-hover);
+}
+
+.git-repo-row.is-selected {
+  background: var(--bg-selected);
+}
+
+.git-repo-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-repo-row-branch,
+.git-repo-row-tag {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.git-repo-row-tag {
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.git-repo-empty {
+  color: var(--text-dim);
+}
+
+.git-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.git-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.git-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.git-tab.is-active {
+  border-color: var(--border);
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.git-tab-badge,
+.git-badge {
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  font-size: var(--fs-micro);
+  text-align: center;
+}
+
+.git-icon-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.git-icon-button:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.git-icon-button.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.git-icon-button:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.git-icon-button .git-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+}
+
+.git-operation-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-panel));
+}
+
+.git-operation-label {
+  font-weight: 600;
+}
+
+.git-operation-error {
+  flex: 1 1 100%;
+  color: var(--danger);
+}
+
+.git-panel-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.git-log-split {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.git-split-resizer {
+  align-self: stretch;
+}
+
+.git-narrow {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.git-narrow > .git-tabs {
+  flex: 0 0 auto;
+  padding: 6px 8px 0;
+}
+
+.git-panel-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.git-status-item {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-status-dim {
+  color: var(--text-dim);
+}
+
+.git-status-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+}
+
+/* ── the branch tree ─────────────────────────────────────────────── */
+
+.git-branch-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+
+.git-panel-section-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-panel-section-title {
+  font-weight: 600;
+}
+
+.git-panel-section-count {
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.git-search-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+}
+
+.git-search-input,
+.git-date-input,
+.git-input {
+  min-width: 0;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.git-search-input {
+  flex: 1 1 auto;
+}
+
+.git-search-input:focus-visible,
+.git-date-input:focus-visible,
+.git-input:focus-visible,
+.git-message-input:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.git-search-author {
+  max-width: 84px;
+}
+
+.git-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  /* The filter row sits under the section header's rule. Flush against it read
+     as one crowded row of controls, so the row keeps its own band of space. */
+  padding: 7px 8px 6px;
+}
+
+/* The filter row is the header's second line: a rule above it keeps the two
+   rows from merging into one strip of controls. */
+.git-log-panel .git-filter-row {
+  border-top: 1px solid var(--separator, var(--border));
+}
+
+.git-date-input {
+  flex: 0 0 auto;
+  width: 118px;
+}
+
+.git-tree-scroll,
+.git-change-list,
+.git-shelf-list,
+.git-commit-files-list,
+.git-panel-list,
+.git-panel-file-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.git-tree-section {
+  padding: 2px 0 4px;
+}
+
+.git-tree-section-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 3px 8px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-tree-section-header:hover {
+  background: var(--bg-hover);
+}
+
+.git-tree-section-title {
+  flex: 1 1 auto;
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.git-tree-section-count {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.git-branch-row,
+.git-change-row,
+.git-file-row,
+.git-shelf-row,
+.git-log-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.git-branch-row,
+.git-change-row,
+.git-file-row {
+  padding: 2px 6px 2px 8px;
+  cursor: default;
+}
+
+.git-branch-row:hover,
+.git-change-row:hover,
+.git-file-row:hover,
+.git-log-row:hover {
+  background: var(--bg-hover);
+}
+
+.git-branch-row.is-selected,
+.git-file-row.is-selected,
+.git-log-row.is-selected,
+.git-change-group.is-selected {
+  background: var(--bg-selected);
+}
+
+.git-branch-row.is-current .sidebar-project-context-menu-branch-name {
+  font-weight: 600;
+}
+
+.git-branch-mark,
+.git-folder-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+
+.git-branch-tag {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.git-branch-current-mark {
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+
+.git-branch-track {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.git-branch-star {
+  flex: 0 0 auto;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.git-branch-row:hover .git-branch-star,
+.git-branch-star.is-on {
+  opacity: 1;
+}
+
+.git-branch-star.is-on {
+  color: var(--accent);
+}
+
+.git-row-menu-button,
+.file-tree-menu-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.git-branch-row:hover .git-row-menu-button,
+.git-change-row:hover .git-row-menu-button,
+.git-file-row:hover .git-row-menu-button,
+.git-log-row:hover .git-row-menu-button,
+.git-shelf-head:hover .git-row-menu-button,
+.file-tree-row:hover .file-tree-menu-button,
+.file-tree-menu-button:focus-visible {
+  opacity: 1;
+}
+
+.git-row-menu-button:hover,
+.file-tree-menu-button:hover {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* a context menu: the application's menu surface, given the panel's width */
+.git-menu,
+.file-tree-menu {
+  position: fixed;
+  z-index: 70;
+  width: 244px;
+  overflow-y: auto;
+}
+
+.git-menu-item,
+.file-tree-menu-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+}
+
+.git-menu-label,
+.file-tree-menu-label {
+  flex: 1 1 auto;
+}
+
+.git-menu-hint,
+.file-tree-menu-hint {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.git-menu-item.is-danger,
+.file-tree-menu-item.is-danger {
+  color: var(--danger);
+}
+
+/* ── the log: graph, commit list, detail ─────────────────────────── */
+
+.git-log-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.git-filter-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0 8px 6px;
+}
+
+/* The branch chip lives on the section header's row, beside the title, so it
+   does not cost the log a row of commits. */
+.git-panel-section-header .git-filter-chips {
+  padding: 0;
+}
+
+.git-panel-section-header .git-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.git-chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 4px 1px 7px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.git-chip-clear {
+  padding: 0 3px;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.git-log-scroll {
+  position: relative;
+  display: block;
+  flex: 1 1 55%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.git-graph-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.git-log-rows {
+  position: relative;
+  width: 100%;
+}
+
+/* One line: graph, refs, subject, author, sha, age. The graph's width is the
+   page's lane count (`--git-graph-width`, set on the scroll box by LogPanel), so
+   the indent is the same number the drawing used. `flex-direction: row` is
+   written out because a class shared with the project panel's commit list —
+   which is a two-line column — was inherited here once and put the subject at
+   zero height, the sha over the author, and no message on screen at all. */
+.git-log-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 28px;
+  flex-direction: row;
+  padding-left: var(--git-graph-width, 80px);
+  padding-right: 6px;
+  cursor: pointer;
+}
+
+.git-log-row.is-multi {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.git-log-refs {
+  display: inline-flex;
+  gap: 3px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.git-ref-chip {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+.git-ref-branch {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+}
+
+.git-ref-remote {
+  border-style: dashed;
+}
+
+/* A branch and its remote at the same commit: one chip, and a border in the
+   colour the user asked for. The colour is a token so the component draws with
+   a var, as the rest of the app does. */
+.git-ref-chip.is-synced {
+  border-color: var(--git-ref-synced);
+  color: var(--text);
+}
+
+.git-ref-tag {
+  border-color: color-mix(in srgb, var(--text-warm, var(--accent)) 40%, var(--border));
+}
+
+.git-log-subject {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-log-author,
+.git-log-hash,
+.git-log-date {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+.git-log-author {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.git-log-hash,
+.git-blame-hash,
+.git-commit-detail-hash {
+  font-family: var(--font-mono);
+}
+
+.git-log-date {
+  /* The whole moment, never a cut-off one: a 40px column showed `2026-11-13 2`.
+     The date is the column that keeps its room; the subject is the one that
+     shrinks, and it ellipsizes. */
+  width: auto;
+  min-width: 104px;
+  text-align: right;
+}
+
+.git-log-more {
+  padding: 6px 8px;
+  text-align: center;
+}
+
+/* A commit reads in two columns: what it says, and beside it the files it
+   touched, with a divider between. Each column scrolls in its own box —
+   `min-height: 0` on the grid and `overflow-y: auto` on the message — because a
+   long commit message used to run straight out of the panel and under the
+   window's status bar. */
+.git-commit-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  flex: 0 1 45%;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+
+.git-commit-detail-header {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-commit-detail-subject {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.git-commit-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.git-commit-detail-body {
+  margin-top: 4px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.git-commit-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.git-commit-detail-message {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 8px 10px 8px 12px;
+}
+
+.git-commit-files {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--separator, var(--border));
+}
+
+.git-commit-files-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.git-commit-files-count {
+  margin-left: auto;
+}
+
+.git-file-group-label {
+  padding: 2px 8px;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.git-file-letter,
+.git-change-row .git-file-letter {
+  flex: 0 0 auto;
+  width: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-align: center;
+}
+
+.git-file-letter.is-added {
+  color: var(--success, var(--accent));
+}
+
+.git-file-letter.is-deleted {
+  color: var(--danger);
+}
+
+.git-file-letter.is-modified,
+.git-file-letter.is-renamed {
+  color: var(--accent);
+}
+
+.git-file-letter.is-conflicted {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.git-file-name {
+  flex: 0 0 auto;
+  max-width: 46%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--text-muted) 45%, transparent);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-file-name:hover {
+  color: var(--accent);
+}
+
+.git-file-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.git-file-old {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.git-commit-diff,
+.git-compare-patch,
+.git-panel-diff {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.git-commit-diff-body {
+  min-width: max-content;
+}
+
+/* ── the commit workflow ─────────────────────────────────────────── */
+
+.git-commit-panel,
+.git-commit-tab,
+.git-shelf-tab {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.git-commit-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-change-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.git-change-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-change-group-label {
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.git-change-group-count {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+.git-message-area {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+}
+
+.git-message-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.git-check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.git-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.git-message-input {
+  width: 100%;
+  min-height: 54px;
+  padding: 6px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.git-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.git-message-count {
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.git-recent-list {
+  max-height: 168px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.git-recent-row {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-recent-row:hover {
+  background: var(--bg-hover);
+}
+
+.git-inline-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.git-inline-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.git-inline-button:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.git-inline-button.is-primary {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+  color: var(--text);
+}
+
+.git-inline-button.is-danger {
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+  color: var(--danger);
+}
+
+.git-shelf-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-shelf-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.git-shelf-head:hover {
+  background: var(--bg-hover);
+}
+
+.git-shelf-message {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-shelf-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.git-shelf-branch {
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+.git-shelf-files-list {
+  padding: 0 8px 6px 26px;
+}
+
+/* ── states, dialogs, blame, compare ─────────────────────────────── */
+
+.git-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 10px 12px;
+  color: var(--text-muted);
+}
+
+.git-state-error {
+  color: var(--danger);
+}
+
+.git-state-recovery {
+  color: var(--text-muted);
+}
+
+.git-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+
+.git-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 86vh;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel);
+  color: var(--text);
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--bg) 60%, black);
+}
+
+.git-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.git-dialog-title {
+  flex: 1 1 auto;
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+
+.git-dialog-close {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--fs-title);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.git-dialog-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.git-dialog-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 10px;
+  overflow: auto;
+}
+
+.git-dialog-footer,
+.git-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.git-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.git-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.git-field-label {
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.git-select {
+  /* the app's own control surface for a choice: AppSelect keeps the native
+     picker out of the app, so this is a plain control, not an OS menu */
+  appearance: none;
+}
+
+.git-dialog-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.git-conflict-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 8px;
+  min-height: 0;
+}
+
+.git-conflict-list {
+  max-height: 52vh;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+.git-conflict-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-conflict-row.is-selected {
+  background: var(--bg-selected);
+}
+
+.git-conflict-actions {
+  display: inline-flex;
+  gap: 4px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.git-conflict-content {
+  max-height: 46vh;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  white-space: pre-wrap;
+}
+
+.git-push-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+
+.git-push-target {
+  margin-left: auto;
+  font-family: var(--font-mono);
+}
+
+.git-blame-list {
+  min-height: 0;
+  overflow: auto;
+}
+
+.git-blame-block {
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.git-blame-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.git-blame-hash {
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.git-blame-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-blame-author,
+.git-blame-date {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+}
+
+.git-blame-line {
+  display: flex;
+  gap: 8px;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.git-blame-number {
+  flex: 0 0 auto;
+  width: 38px;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.git-blame-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.git-compare-summary {
+  color: var(--text-muted);
+}
+
+.git-hidden-clear {
+  display: none;
+}
+
+/* The phone's panel is an overlay card. Upstream hides the strip's expand
+   button there (the card already spans the width), which leaves the top-right
+   corner empty — and the Git panel is the view that wants the whole screen: a
+   branch tree, a commit list and a diff do not fit in a short card. So the
+   button stays, in the corner it has on the desktop, and on a phone "expand"
+   means the whole viewport: not expanded keeps the chat's topbar above it. */
+@media (max-width: 640px) {
+  .file-panel-expand-button {
+    display: inline-flex;
+  }
+
+  /* The panel's phone block pins the card to the viewport with `top: 0 !important`
+     (the slide-in overlay), so these carry `!important` as well: unexpanded the
+     card leaves the chat's topbar above it, expanded it is the screen. Without
+     this the strip's expand button is a press that changes nothing on a phone,
+     and the card covers the conversation it was opened beside. */
+  .right-panel-container.right-panel-open:not(.right-panel-full-width) {
+    top: 52px !important;
+    height: auto !important;
+    bottom: 0;
+    inset-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+  }
+
+  .right-panel-container.right-panel-open.right-panel-full-width {
+    top: 0;
+    bottom: 0;
+    height: var(--app-viewport-height, 100dvh);
+    inset-inline: env(safe-area-inset-left) env(safe-area-inset-right);
+  }
+}
+
+/* A finger, not a cursor: the panel's icon buttons get a thumb plate, as the
+   app's other panels do. */
+@media (pointer: coarse) {
+  .git-icon-button,
+  .git-row-menu-button,
+  .git-panel-action {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* The file tree's rows are dense (24px, as upstream laid them out), so its
+     menu button grows to the row and not past it — and there is no hover on a
+     finger, so it is simply shown. */
+  .file-tree-menu-button {
+    width: 24px;
+    height: 24px;
+    opacity: 1;
+  }
+
+  /* The panel's own tabs are the way between its two surfaces: a thumb's plate. */
+  .git-tabs .git-tab {
+    min-height: 36px;
+  }
+
+  .git-search-input {
+    min-height: 36px;
+  }
+
+  /* A row the thumb aims at is a thumb's height: the branch, the change, the
+     file. The commit row is the exception — the graph's rows are a grid the
+     virtual list positions by a constant (28px), so growing the row in CSS
+     would slide the lanes out of step with the rows. Its 32px is the grid's
+     own, and the control inside it is 36. */
+  .git-branch-row,
+  .git-change-row,
+  .git-file-row {
+    min-height: 36px;
+  }
+
+  .git-log-row {
+    height: 32px;
+    min-height: 32px;
+  }
+
+  .git-menu {
+    width: 264px;
+  }
+}
+
+/* A phone: the Log's columns stack (the panel switches to the tabs itself), so
+   nothing here needs a sideways scroll. */
+@media (max-width: 640px) {
+  .git-panel-header {
+    flex-wrap: wrap;
+  }
+
+  .git-repo-button {
+    max-width: 148px;
+  }
+
+  .git-log-author,
+  .git-log-date {
+    display: none;
+  }
+
+  .git-conflict-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The file editor — Monaco over the Ayu Monokai palette, plus the save bar and
+   the tab's unsaved mark. The editor paints with --vscode-editor-* above. */
+
+.file-editor-host {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Monaco measures the box it is mounted in, so the box has to have a height of
+   its own: the host takes the panel's space and the Monaco div fills the host.
+   Without this the editor measures a few pixels and paints a strip. */
+.code-editor-host {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.code-editor-monaco {
+  width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Monaco's find widget: the row's buttons are boxes Monaco sizes by hand, and its
+   close glyph sat low in the row. Flex the box, and the glyph is on the line. */
+.code-editor-monaco .monaco-editor .find-widget > .button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.code-editor-monaco .monaco-editor .find-widget > .button > .codicon {
+  display: block;
+  line-height: 1;
+}
+
+/* The row's centre line, and the close `x` on it. The widget is a 33px box whose
+   parts Monaco places by hand: the row (`.find-part`, 25px) carries a 3px top
+   margin and the close glyph is absolutely placed 5px down, so the row sat 1px
+   and the `x` 3.5px above the widget's middle — measured in a 520px panel at
+   centre lines 64.5 / 63.5 / 61 (widget, input row, `x`), and the same split at
+   380px and 900px, where the widget narrows itself. The row gets the widget's
+   4px gutter (33 - 25 over two), the `x` the symmetric 8.5px of its 16px box,
+   so the glyph, the field and the buttons ride one line at every width. */
+.code-editor-monaco .monaco-editor .find-widget > .find-part,
+.code-editor-monaco .monaco-editor .find-widget > .replace-part {
+  margin-top: 4px;
+}
+
+.code-editor-monaco .monaco-editor .find-widget > .button.codicon-widget-close {
+  top: 8.5px;
+}
+
+/* The strip's Git button carries the count the panel is about: the files the
+   working tree changed. A reader opens the panel from that number, not from the
+   glyph, so it hangs off the corner the button already has. */
+.git-panel-toggle {
+  position: relative;
+}
+
+.git-panel-toggle-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--bg-panel);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* A finger on the toolbar's state row: its actions are taps, not hovers. */
+@media (pointer: coarse) {
+  .file-editor-status .file-viewer-mode-button {
+    min-height: 36px;
+    min-width: 36px;
+  }
+}
+
+/* The tree's toolbar action (the switch for the convention-hidden folders). */
+.context-panel-files-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.context-panel-files-action:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.context-panel-files-action.is-active {
+  background: var(--bg-selected);
+  color: var(--accent);
+}
+
+/* The note on a row Git ignores, at the row's right edge, like the reference
+   explorer's "Git excluded". */
+.file-tree-hidden-tag {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+
+/* The panel's expand button, wearing the open state. */
+.file-viewer-toc-toggle.is-active {
+  color: var(--accent);
+  background: var(--bg-selected);
+}
+
+/* The panel's body row: the document, and its outline beside it. */
+.file-viewer-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The document is the flexible half of that row: it may shrink below the width
+   of what it holds, so the outline's column never pushes it sideways. */
+.file-viewer-body .file-viewer-content {
+  min-width: 0;
+}
+
+/* The Markdown outline is a column of the file panel — its own width, its own
+   scroll, taken from the panel and never from the document. A reader with the
+   outline open reads the same lines at the same measure as without it, and the
+   panel's expand button opens and closes the column. (An outline that reflows,
+   and covers, the text it points at is a bad way to read a file.) */
+.file-toc {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 268px;
+  min-height: 0;
+  border-left: var(--hairline) solid var(--separator);
+  background: var(--bg-panel);
+}
+
+.file-toc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 6px 8px 6px 10px;
+  border-bottom: var(--hairline) solid var(--border);
+}
+
+.file-toc-title {
+  color: var(--text);
+  font-size: var(--fs-small);
+  font-weight: var(--fw-semibold);
+}
+
+.file-toc-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 0;
+}
+
+.file-toc-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 10px;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  text-align: left;
+}
+
+.file-toc-row:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.file-toc-mark {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+
+.file-toc-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-toc-row.is-level-1 .file-toc-text {
+  color: var(--text);
+  font-weight: var(--fw-medium);
+}
+
+/* The depth of a heading is its indentation: the outline is read as a tree. */
+.file-toc-row.is-level-2 { padding-left: 20px; }
+.file-toc-row.is-level-3 { padding-left: 30px; }
+.file-toc-row.is-level-4 { padding-left: 40px; }
+.file-toc-row.is-level-5 { padding-left: 50px; }
+.file-toc-row.is-level-6 { padding-left: 60px; }
+
+.file-toc-empty {
+  display: block;
+  padding: 8px 10px;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+}
+
+/* The folders behind the name: the check, not the scan. */
+.file-viewer-path-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+.file-editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-bottom: var(--hairline) solid var(--border);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-panel));
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  line-height: 1.45;
+}
+
+.file-editor-bar.is-error {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-panel));
+  color: var(--text);
+}
+
+.file-editor-bar-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.file-editor-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.file-viewer-mode-button.is-primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.file-viewer-mode-button.is-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.file-tab-dirty {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* The Git tab's changed-file count. The number, not the glyph, is what decides
+   opening the view, so it rides in the tab's own row beside the label — the same
+   ink as the count on the strip's glyph, sized to sit on a text baseline. */
+.file-tab-badge {
+  flex-shrink: 0;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--bg-panel);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 15px;
+  text-align: center;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .file-editor-bar {
+    padding: 10px 12px;
+  }
+
+  .file-editor-bar-actions .file-viewer-mode-button {
+    min-height: 36px;
+  }
+}
+
+/* From test-merge/test-merge-pi-desk-main: the stalled-run phase card and the
+   Background Tasks card and its page, after the Git panel and editor CSS. */
 
 /* ==========================================================================
    A run that has stopped saying anything (lib/agent-run-liveness.ts)

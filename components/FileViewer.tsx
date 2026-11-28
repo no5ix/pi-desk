@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo, type ComponentPropsWithoutRef, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import {
   createElement as renderSyntaxNode,
   type SyntaxHighlighterProps,
 } from "react-syntax-highlighter";
 import { SyntaxHighlighter } from "@/lib/syntax-highlighting";
-import { calmCodeTheme } from "@/lib/code-theme";
+import { calmCodeTheme, markdownCodeTheme } from "@/lib/code-theme";
+import { CodeEditor, type CodeEditorHandle } from "./CodeEditor";
+import { isEditableExtension } from "@/lib/editor/language";
 import ReactMarkdown from "react-markdown";
 import {
   DOCX_PREVIEW_MAX_BYTES,
@@ -17,6 +19,7 @@ import {
   isVideoPath,
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import { parseMarkdownHeadings, type MarkdownHeading } from "@/lib/markdown";
 import { DelimitedTable } from "./DelimitedTable";
 import { subscribeFileWatch } from "@/lib/file-watch-channel";
 import { isDelimitedTablePath } from "@/lib/delimited-table";
@@ -42,6 +45,88 @@ import { errorMessage } from "@/lib/errors";
 
 export type { FileViewerState } from "@/lib/file-viewer-state";
 
+/**
+ * The Markdown preview's renderers, at module scope on purpose.
+ *
+ * ReactMarkdown renders through the *types* in its `components` map. A map built
+ * inside the render hands it new function types on every render, React unmounts
+ * the whole document and mounts a new one, and a reader watches the images
+ * re-load and the scroll position jump each time the panel's state ticks — a
+ * save, a watcher event, the save-status chip. Built once, with the values the
+ * renderers need read from a context, a re-render patches the document in place:
+ * an `<img>` keeps its node, so its bytes are fetched once.
+ */
+interface MarkdownPreviewScope {
+  cwd: string | null;
+  /** The folder the document lives in — where a relative image or link points. */
+  markdownDirectory: string;
+  sourceSessionId?: string | null;
+  onOpenFile?: (path: string, page?: number) => void;
+}
+
+const MARKDOWN_PREVIEW_ROOT: MarkdownPreviewScope = { cwd: null, markdownDirectory: "" };
+const MarkdownPreviewScopeContext = createContext<MarkdownPreviewScope>(MARKDOWN_PREVIEW_ROOT);
+
+function MarkdownPreviewCode(props: { className?: string; children?: ReactNode }) {
+  const { className, children, ...rest } = props;
+  const lang = className?.replace("language-", "").toLowerCase() ?? "";
+  const raw = String(children);
+  const isBlock = className?.includes("language-") || raw.includes("\n");
+  if (isBlock) {
+    if (lang === "mermaid") {
+      return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
+    }
+    return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
+  }
+  return <code className={className} {...rest}>{children}</code>;
+}
+
+/** A code block draws its own frame, so the `pre` around it steps aside. */
+function MarkdownPreviewPre({ children }: { children?: ReactNode }) {
+  return <>{children}</>;
+}
+
+function MarkdownPreviewLink(props: ComponentPropsWithoutRef<"a"> & { node?: unknown }) {
+  const { href, children, ...rest } = props;
+  delete (rest as { node?: unknown }).node;
+  const { cwd, markdownDirectory, onOpenFile } = useContext(MarkdownPreviewScopeContext);
+  const linkedFile = onOpenFile && href
+    ? resolveLocalFileHref(href, markdownDirectory, cwd ?? markdownDirectory)
+    : null;
+  if (!linkedFile || !onOpenFile) {
+    return <a href={href} {...rest}>{children}</a>;
+  }
+  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!shouldOpenLocalFileInApp(event)) return;
+    event.preventDefault();
+    onOpenFile(linkedFile, parsePdfPageFragment(href) ?? undefined);
+  };
+  return <a href={href} {...rest} onClick={handleClick}>{children}</a>;
+}
+
+function MarkdownPreviewImage(props: ComponentPropsWithoutRef<"img"> & { node?: unknown }) {
+  const { src, alt, ...rest } = props;
+  delete (rest as { node?: unknown }).node;
+  const { cwd, markdownDirectory, sourceSessionId } = useContext(MarkdownPreviewScopeContext);
+  const imagePath = typeof src === "string"
+    ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
+    : null;
+  // A path inside the project is served by the file API; a remote one loads as
+  // written. The URL has no revision in it, so the same document asks for the
+  // same bytes — a re-render must not look like a reload.
+  const imageSrc = imagePath ? getFileApiUrl(imagePath, "read", sourceSessionId) : src;
+  // Dynamic local paths are served directly by the file API.
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...rest} />;
+}
+
+const MARKDOWN_PREVIEW_COMPONENTS = {
+  code: MarkdownPreviewCode,
+  pre: MarkdownPreviewPre,
+  a: MarkdownPreviewLink,
+  img: MarkdownPreviewImage,
+};
+
 interface Props {
   filePath: string;
   cwd?: string;
@@ -53,6 +138,15 @@ interface Props {
    * card's counts are the session's own.
    */
   diffSessionId?: string | null;
+  /** The commit whose change to this file the Diff mode shows. */
+  diffCommitSha?: string | null;
+  /**
+   * The other file of a "Select for Compare" pair. The Diff mode then reads
+   * `/api/files/compare` (the two files as they are on disk) instead of the
+   * working tree's diff, and the tab is the comparison — of a file with itself
+   * against the repository, which is what a committed clean file cannot be.
+   */
+  compareWith?: string | null;
   onOpenFile?: (filePath: string, page?: number) => void;
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   /** Insert this file's relative path into the chat input (@ mention). */
@@ -64,6 +158,19 @@ interface Props {
   initialState?: FileViewerState;
   onStateChange?: (state: FileViewerState) => void;
   watchEnabled?: boolean;
+  /**
+   * Unsaved edits, reported to the tab that owns this viewer: the tab shows a
+   * dot, and closing it asks first. The viewer owns the buffer; the shell owns
+   * the tabs, so this is the only channel between them.
+   */
+  onDirtyChange?: (dirty: boolean) => void;
+  /**
+   * The buffer the tab holds, and the channel that keeps it. The shell renders
+   * one viewer at a time, so a tab switch unmounts this component: the draft
+   * lives in the tab record, and comes back here on the way in.
+   */
+  initialDraft?: string | null;
+  onDraftChange?: (draft: string | null) => void;
 }
 
 interface FileData {
@@ -74,6 +181,9 @@ interface FileData {
   truncated: boolean;
   // The file's first bytes hold a NUL (git's test): no text view, only the download.
   binary?: boolean;
+  // The on-disk modification time. The editor saves against it: a file that
+  // moved since it was read is not overwritten by an editor that did not see it.
+  mtime?: string;
 }
 
 const SOURCE_HIGHLIGHT_MAX_LINES = 1_000;
@@ -81,6 +191,15 @@ const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
   source: "Source",
   preview: "Preview",
   diff: "Diff",
+  edit: "Edit",
+};
+
+/** The route's reason, in the pack's words. Four refusals, four sentences. */
+const DIFF_DENIAL_KEYS: Record<string, string> = {
+  "outside-root": "files.diffDenied.outsideRoot",
+  "link-escapes-root": "files.diffDenied.linkEscapesRoot",
+  "parent-segment": "files.diffDenied.parentSegment",
+  "unresolvable": "files.diffDenied.unresolvable",
 };
 
 const FILE_CODE_STYLE: CSSProperties = {
@@ -386,6 +505,28 @@ function DesktopPathActions({ filePath }: { filePath: string }) {
   );
 }
 
+/**
+ * The toolbar's identity: the file's name in the row's font, and the folders it
+ * sits in behind it, in a smaller one.
+ *
+ * The row used to print the relative path, so a root file showed a bare name with
+ * nothing beside it and a deep one spent its whole width on folders the reader
+ * already knows. The name is what a reader scans; the folder is what they check.
+ */
+/** The editor's own save: a second after the last keystroke, before a reader
+ *  thinks to ask. The window for a save of their own (Cmd+S) stays open. */
+const AUTO_SAVE_MS = 1_000;
+
+function getPathNameAndDir(filePath: string, cwd?: string): { name: string; dir: string } {
+  const relative = getRelativeFilePath(filePath, cwd);
+  const slash = relative.lastIndexOf("/");
+  if (slash < 0) return { name: relative, dir: "" };
+  const name = relative.slice(slash + 1);
+  // A path that starts with `/` (no project folder known) has no directory half
+  // worth showing: the leading slash is not a folder name.
+  return { name: name || relative, dir: slash === 0 ? "" : relative.slice(0, slash + 1) };
+}
+
 function FileViewerToolbar({
   filePath,
   cwd,
@@ -402,7 +543,6 @@ function FileViewerToolbar({
   children?: ReactNode;
 }) {
   const { t } = useI18n();
-  const relativePath = getRelativeFilePath(filePath, cwd);
   const liveLabel = watching ? t("i18n.liveSync") : t("i18n.notWatching");
   return (
     <div className="file-viewer-toolbar">
@@ -410,7 +550,17 @@ function FileViewerToolbar({
         <span className="file-viewer-file-icon" aria-hidden="true">
           {getFileIcon(getFileName(filePath), 15)}
         </span>
-        <span className="file-viewer-path" title={filePath}>{relativePath}</span>
+        <span className="file-viewer-path" title={filePath}>
+          {(() => {
+            const parts = getPathNameAndDir(filePath, cwd);
+            return (
+              <>
+                <span className="file-viewer-path-name">{parts.name}</span>
+                {parts.dir ? <span className="file-viewer-path-dir">{parts.dir}</span> : null}
+              </>
+            );
+          })()}
+        </span>
         {metadata && <span className="file-viewer-meta" title={metadata}>{metadata}</span>}
       </div>
       <span
@@ -555,74 +705,38 @@ export function DiffView({ patch }: { patch: string }) {
       {segments.map((seg, si) => {
         if (seg.hidden) {
           const result = (
-            <div
-              key={si}
-              style={{
-                padding: "2px 16px",
-                color: "var(--text-dim)",
-                background: "var(--bg-panel)",
-                fontSize: "var(--fs-micro)",
-                borderTop: "var(--hairline) solid var(--border)",
-                borderBottom: "var(--hairline) solid var(--border)",
-              }}
-            >
+            <div className="file-diff-gap">
               {seg.count === null ? "⋯" : diffGapLabel(seg.count, t)}
             </div>
           );
           return result;
         }
         const lines = seg.lines.map((line, li) => {
-          const bg =
-            line.type === "added"
-              ? "rgba(0,200,80,0.12)"
-              : line.type === "removed"
-              ? "rgba(240,60,60,0.14)"
-              : "transparent";
+          /* Added and removed lines are states of the row, so their wash, rail
+             and sign ink live with the row's other rules in the stylesheet —
+             palette tokens, the same greens and reds the editor's diff gutter
+             uses. */
+          const kind = line.type === "added" ? " is-added" : line.type === "removed" ? " is-removed" : "";
           const prefix =
             line.type === "added" ? "+" : line.type === "removed" ? "-" : " ";
-          const prefixColor =
-            line.type === "added" ? "var(--success)" : line.type === "removed" ? "var(--danger)" : "var(--text-dim)";
 
           return (
             <div
               key={li}
-              className="file-diff-line"
-              style={{
-                display: "flex",
-                minWidth: "100%",
-                background: bg,
-                borderLeft: line.type === "added"
-                  ? "3px solid var(--success)"
-                  : line.type === "removed"
-                  ? "3px solid var(--danger)"
-                  : "3px solid transparent",
-              }}
+              className={`file-diff-line${kind}`}
             >
               <span
-                style={FILE_LINE_NUMBER_STYLE}
+                className="file-diff-line-number"
               >
                 {line.type === "removed" ? line.oldLineNo : line.newLineNo}
               </span>
               <span
-                style={{
-                  minWidth: 16,
-                  padding: "0 6px",
-                  color: prefixColor,
-                  userSelect: "none",
-                  flexShrink: 0,
-                  fontWeight: "var(--fw-semibold)",
-                }}
+                className="file-diff-line-prefix"
               >
                 {prefix}
               </span>
               <span
                 className="file-diff-line-content"
-                style={{
-                  flexShrink: 0,
-                  padding: "0 8px 0 0",
-                  whiteSpace: "pre",
-                  color: "var(--text)",
-                }}
               >
                 {line.text || "\u00a0"}
               </span>
@@ -1061,6 +1175,8 @@ export function FileViewer({
   cwd,
   sourceSessionId,
   diffSessionId,
+  diffCommitSha,
+  compareWith,
   onOpenFile,
   onMentionLines,
   onAtMention,
@@ -1070,6 +1186,9 @@ export function FileViewer({
   initialPage,
   onStateChange,
   watchEnabled = true,
+  onDirtyChange,
+  initialDraft,
+  onDraftChange,
 }: Props) {
   if (isImagePath(filePath)) {
     return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} watchEnabled={watchEnabled} />;
@@ -1083,7 +1202,7 @@ export function FileViewer({
   if (isDocumentPreviewPath(filePath)) {
     return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} initialPage={initialPage} watchEnabled={watchEnabled} />;
   }
-  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} diffSessionId={diffSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} onAtMention={onAtMention} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} initialState={initialState} onStateChange={onStateChange} watchEnabled={watchEnabled} />;
+  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} diffSessionId={diffSessionId} diffCommitSha={diffCommitSha} compareWith={compareWith} onOpenFile={onOpenFile} onMentionLines={onMentionLines} onAtMention={onAtMention} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} initialState={initialState} onStateChange={onStateChange} watchEnabled={watchEnabled} onDirtyChange={onDirtyChange} initialDraft={initialDraft} onDraftChange={onDraftChange} />;
 }
 
 function TextFileViewer({
@@ -1091,6 +1210,8 @@ function TextFileViewer({
   cwd,
   sourceSessionId,
   diffSessionId,
+  diffCommitSha,
+  compareWith,
   onOpenFile,
   onMentionLines,
   onAtMention,
@@ -1099,12 +1220,23 @@ function TextFileViewer({
   initialState,
   onStateChange,
   watchEnabled = true,
+  onDirtyChange,
+  initialDraft,
+  onDraftChange,
 }: Props) {
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
   const [gitDiff, setGitDiff] = useState<GitFileDiffResponse | null>(null);
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
   const [gitDiffResolved, setGitDiffResolved] = useState(false);
+  /**
+   * Why git refused this file's diff, in the route's own words (`outside-root`,
+   * `link-escapes-root`, `parent-segment`, `unresolvable`). A refused diff used to
+   * mean "no diff", and the view slid back to the source: the reader was left with
+   * a file, no change, and no sentence about why. The refusal is four different
+   * situations, and the panel names the one it is in.
+   */
+  const [gitDiffDenial, setGitDiffDenial] = useState<string | null>(null);
   const [sessionDiff, setSessionDiff] = useState<SessionFileDiffResponse | null>(null);
   const [sessionDiffLoading, setSessionDiffLoading] = useState(false);
   const [sessionDiffResolved, setSessionDiffResolved] = useState(false);
@@ -1132,6 +1264,18 @@ function TextFileViewer({
   // isolated srcDoc sandbox instead, where scripts run but local files don't load.
   const [htmlScriptsEnabled, setHtmlScriptsEnabled] = useState(false);
   const [htmlPreviewRevision, setHtmlPreviewRevision] = useState(0);
+  // Editing. `draft` is the buffer, `baseMtime` the disk time it was read at,
+  // and `saveState` what the toolbar says about it. `externalChange` is the
+  // watcher reporting a write the editor did not make: with unsaved edits the
+  // buffer wins, and the bar offers the reload.
+  const [draft, setDraft] = useState<string | null>(initialDraft ?? null);
+  const [baseMtime, setBaseMtime] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<"clean" | "dirty" | "saving" | "saved" | "conflict" | "error">("clean");
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [externalChange, setExternalChange] = useState(false);
+  const draftRef = useRef<string | null>(null);
+  const baseMtimeRef = useRef<string | null>(null);
+  const editorRef = useRef<CodeEditorHandle | null>(null);
   const contentRequestRef = useRef(0);
   const gitDiffRequestRef = useRef(0);
   const sessionDiffRequestRef = useRef(0);
@@ -1153,6 +1297,22 @@ function TextFileViewer({
     viewerStateRef.current.displayMode = nextDisplayMode;
     setDisplayMode(nextDisplayMode);
   }, []);
+
+  const dirty = draft !== null;
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  const setDraftAndDirty = useCallback((value: string | null) => {
+    setDraft(value);
+    draftRef.current = value;
+    setSaveState(value === null ? "clean" : "dirty");
+    if (value === null) setSaveMessage(null);
+    onDraftChange?.(value);
+  }, [onDraftChange]);
 
   const toggleWrapLines = useCallback(() => {
     setWrapLines((current) => {
@@ -1202,6 +1362,9 @@ function TextFileViewer({
         setData((current) => offset && current
           ? { ...d, content: current.content + d.content }
           : d);
+        baseMtimeRef.current = d.mtime ?? null;
+        setBaseMtime(d.mtime ?? null);
+        setExternalChange((current) => (draftRef.current === null ? false : current));
         return d;
       })
       .catch((e) => {
@@ -1211,9 +1374,109 @@ function TextFileViewer({
       });
   }, [sourceSessionId]);
 
+  const saveDraft = useCallback(async (options: { overwrite?: boolean } = {}) => {
+    const buffer = draftRef.current;
+    if (buffer === null) return false;
+    setSaveState("saving");
+    setSaveMessage(null);
+    try {
+      const response = await fetch(getFileApiUrl(filePath, "read", sourceSessionId), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: buffer, baseMtime: baseMtimeRef.current, allowOverwrite: options.overwrite === true }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        mtime?: string; error?: string; code?: string;
+      };
+      if (!response.ok) {
+        const code = payload.code ?? String(response.status);
+        setSaveState(code === "CONFLICT" ? "conflict" : "error");
+        setSaveMessage(payload.error ?? `HTTP ${response.status}`);
+        return false;
+      }
+      baseMtimeRef.current = payload.mtime ?? null;
+      setBaseMtime(payload.mtime ?? null);
+      // The disk now holds what the buffer holds, so say so *before* the draft is
+      // cleared. Clearing the draft first left one render in which the editor's
+      // value was the older read-view text while the model carried the typed
+      // words; the value sync replaced the model, and a full-model flush drops
+      // the undo history — Cmd+Z did nothing after a save. One state pass keeps
+      // the buffer, the base and the chip agreeing at every frame.
+      setData((current) => (current
+        ? { ...current, content: buffer, mtime: payload.mtime ?? current.mtime }
+        : current));
+      setDraftAndDirty(null);
+      setExternalChange(false);
+      setSaveState("saved");
+      // The read is the disk's answer: a formatter that rewrote the file on
+      // save shows up in the buffer as it does in the read view.
+      void fetchContent(filePath);
+      return true;
+    } catch (saveError) {
+      setSaveState("error");
+      setSaveMessage((saveError as Error).message);
+      return false;
+    }
+  }, [filePath, sourceSessionId, fetchContent, setDraftAndDirty]);
+
+  const reloadDraft = useCallback(() => {
+    setDraftAndDirty(null);
+    setExternalChange(false);
+    setSaveState("clean");
+    void fetchContent(filePath);
+  }, [filePath, fetchContent, setDraftAndDirty]);
+
+  // Cmd/Ctrl+S saves from anywhere in the viewer, including the editor itself
+  // (which binds it too, for a save started inside the buffer).
+  useEffect(() => {
+    if (displayMode !== "edit") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
+      event.preventDefault();
+      event.stopPropagation();
+      void saveDraft();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [saveDraft, displayMode]);
+
+  // The editor saves itself, one second after the typing stops. A Save button in a
+  // row of its own asked the reader to press it for every keystroke they made; the
+  // buffer is the document, and the document is saved. Cmd+S keeps working, and a
+  // save that was refused (the file changed under us, a write that failed) stops
+  // the loop and is stated in the toolbar with its Revert / Overwrite.
+  useEffect(() => {
+    if (displayMode !== "edit" || !dirty) return;
+    if (saveState === "conflict" || saveState === "error") return;
+    const timer = setTimeout(() => { void saveDraft(); }, AUTO_SAVE_MS);
+    return () => clearTimeout(timer);
+  }, [displayMode, dirty, saveState, saveDraft]);
+
   const fetchGitDiff = useCallback(async (targetPath: string) => {
     const requestId = ++gitDiffRequestRef.current;
     setGitDiffLoading(true);
+    // A "Select for Compare" tab has no working-tree story to tell: it compares
+    // two files as they sit on disk, which `/api/files/compare` answers with
+    // `git diff --no-index`. The same Diff mode renders it.
+    if (compareWith) {
+      try {
+        const params = new URLSearchParams({ a: targetPath, b: compareWith });
+        const response = await fetch(`/api/files/compare?${params.toString()}`);
+        const next = await response.json() as { patch?: string; identical?: boolean; error?: string };
+        if (requestId !== gitDiffRequestRef.current) return;
+        setGitDiff(response.ok && typeof next.patch === "string"
+          ? { supported: true, patch: next.identical ? "" : next.patch }
+          : null);
+      } catch {
+        if (requestId === gitDiffRequestRef.current) setGitDiff(null);
+      } finally {
+        if (requestId === gitDiffRequestRef.current) {
+          setGitDiffLoading(false);
+          setGitDiffResolved(true);
+        }
+      }
+      return;
+    }
     if (!cwd) {
       setGitDiff(null);
       setGitDiffLoading(false);
@@ -1223,19 +1486,24 @@ function TextFileViewer({
 
     try {
       const params = new URLSearchParams({ cwd, path: targetPath });
+      if (diffCommitSha) params.set("ref", diffCommitSha);
       const response = await fetch(`/api/git/diff?${params.toString()}`);
-      const next = await response.json() as GitFileDiffResponse & { error?: string };
+      const next = await response.json() as GitFileDiffResponse & { error?: string; reason?: string };
       if (requestId !== gitDiffRequestRef.current) return;
       setGitDiff(response.ok && next.supported && typeof next.patch === "string" ? next : null);
+      setGitDiffDenial(!response.ok && next.reason ? next.reason : null);
     } catch {
-      if (requestId === gitDiffRequestRef.current) setGitDiff(null);
+      if (requestId === gitDiffRequestRef.current) {
+        setGitDiff(null);
+        setGitDiffDenial(null);
+      }
     } finally {
       if (requestId === gitDiffRequestRef.current) {
         setGitDiffLoading(false);
         setGitDiffResolved(true);
       }
     }
-  }, [cwd]);
+  }, [cwd, compareWith]);
 
   // The session's own record of the file, for the same diff view. A committed
   // change, or a file outside the repository, has no git diff; the session's
@@ -1296,6 +1564,13 @@ function TextFileViewer({
       synchronize();
     },
     onChange: () => {
+      // Unsaved edits win over a disk write the editor has not seen: the bar
+      // offers the reload, and a save against the stale time is refused by the
+      // route rather than overwriting what arrived.
+      if (draftRef.current !== null) {
+        setExternalChange(true);
+        return;
+      }
       synchronize();
       // The served preview reads from disk itself; reload it on real changes
       // only (not on "connected", which would wipe what the user typed into it).
@@ -1328,8 +1603,10 @@ function TextFileViewer({
   const isDeletedDiff = hasDiff && activeDiff?.status === "deleted";
 
   useEffect(() => {
-    if (diffResolved && !hasDiff && displayMode === "diff") updateDisplayMode("source");
-  }, [displayMode, diffResolved, hasDiff, updateDisplayMode]);
+    // A refusal is not "this file has no change": the diff mode stays, and the
+    // pane says what the refusal was.
+    if (diffResolved && !hasDiff && !gitDiffDenial && displayMode === "diff") updateDisplayMode("source");
+  }, [displayMode, diffResolved, hasDiff, gitDiffDenial, updateDisplayMode]);
 
   // Wait for the diff requests before restoring diff mode so the unresolved
   // placeholder cannot immediately demote it back to source.
@@ -1352,6 +1629,23 @@ function TextFileViewer({
 
   const viewerContent = data?.content ?? "";
   const sourceLines = useMemo(() => viewerContent.split("\n"), [viewerContent]);
+  // The outline. It is a column of the panel, and it starts open: the headings
+  // of a Markdown file are the shape of it, and a reader who opened the file to
+  // read wants that shape in view, not hidden behind a button. The panel's expand
+  // button closes and opens the column.
+  const [tocOpen, setTocOpen] = useState(true);
+  const tocHeadings = useMemo(() => parseMarkdownHeadings(draft ?? viewerContent), [draft, viewerContent]);
+  const revealTocHeading = useCallback((heading: MarkdownHeading) => {
+    const editor = editorRef.current;
+    if (editor) {
+      editor.revealLine(heading.line);
+      return;
+    }
+    // The preview renders the document, so the outline's Nth heading is its Nth
+    // heading element: the same reading, the same target.
+    const node = contentRef.current?.querySelectorAll("h1,h2,h3,h4,h5,h6")[heading.index];
+    node?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, []);
   const language = data?.language ?? "text";
   const isBinary = data?.binary === true;
   const isDelimitedTable = !isBinary && isDelimitedTablePath(filePath);
@@ -1376,12 +1670,18 @@ function TextFileViewer({
   // react-syntax-highlighter rebuilds every token element on each render, which
   // costs hundreds of milliseconds on large files. Cache the rendered trees so
   // unrelated re-renders (panel open/close, selection changes) reuse them as-is.
+  // Markdown reads through its own sheet: Prism's markdown grammar aliases a
+  // heading to `title`/`bold`/`important` and inline code to `keyword`, so a
+  // sheet built for code roles paints a document as code — an emphasis in the
+  // string green, a code span in the keyword orange — while the preview shows the
+  // palette's headings and code chips. One language, two moods.
+  const sourceTheme = language === "markdown" ? markdownCodeTheme : calmCodeTheme;
   const highlightedSource = useMemo(
     () => (
       <SyntaxHighlighter
         className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
         language={language === "text" ? "plaintext" : language}
-        style={calmCodeTheme}
+        style={sourceTheme}
         showLineNumbers
         lineNumberStyle={wrapLines ? FILE_LINE_NUMBER_STYLE : FILE_PINNED_LINE_NUMBER_STYLE}
         customStyle={{
@@ -1409,7 +1709,7 @@ function TextFileViewer({
         {viewerContent}
       </SyntaxHighlighter>
     ),
-    [language, viewerContent, wrapLines],
+    [language, viewerContent, wrapLines, sourceTheme],
   );
   const lightweightSourceLines = useMemo(
     () => useLightweightSource ? sourceLines.map((line, lineIndex) => (
@@ -1513,6 +1813,17 @@ function TextFileViewer({
     requestedInitialDisplayMode,
   ]);
 
+  // What the preview's renderers ask the app for: the folder the document is
+  // in, the session it came from, the way to open a linked file. Memoised, so the
+  // context's value — and with it the renderers' identity — holds still across
+  // the panel's ticks: a new object each render re-renders the document, and a
+  // new *component type* replaces it, which is what makes an image reload and a
+  // reader's scroll jump. It is a hook, so it sits above the early returns.
+  const markdownPreviewScope = useMemo<MarkdownPreviewScope>(
+    () => ({ cwd: cwd ?? null, markdownDirectory: getFileDirectory(filePath), sourceSessionId, onOpenFile }),
+    [cwd, filePath, sourceSessionId, onOpenFile],
+  );
+
   if (loading || (requestedInitialDisplayMode === "diff" && diffLoading && !data)) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "var(--fs-body)" }}>
@@ -1529,17 +1840,23 @@ function TextFileViewer({
     );
   }
 
+  // What the preview's renderers ask the app for. Memoised so the context's
+  // value — and with it the renderers' identity — holds still across the panel's
+  // ticks; a new object every render re-renders the document, and a new
+  // *component type* replaces it. It is a hook, so it sits above the early
+  // return, and it reads the folder from the path it is given.
   if (!data && !isDeletedDiff) return null;
 
   const content = viewerContent;
-  const markdownDirectory = getFileDirectory(filePath);
   const lines = sourceLines;
+  const canEdit = !isBinary && !isDeletedDiff && isEditableExtension(filePath);
   const displayModes: DisplayMode[] = isDeletedDiff
     ? ["diff"]
     : [
         "source",
         ...(hasPreview ? ["preview" as const] : []),
         ...(hasDiff ? ["diff" as const] : []),
+        ...(canEdit ? ["edit" as const] : []),
       ];
   const metadata = isDeletedDiff
     ? t("files.deleted")
@@ -1564,7 +1881,15 @@ function TextFileViewer({
         }}
       >
         <span className="file-viewer-path" style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
+          {(() => {
+            const parts = getPathNameAndDir(filePath, cwd);
+            return (
+              <>
+                <span className="file-viewer-path-name">{parts.name}</span>
+                {parts.dir ? <span className="file-viewer-path-dir">{parts.dir}</span> : null}
+              </>
+            );
+          })()}
         </span>
 
         <span className="file-viewer-meta" title={metadata}>{metadata}</span>
@@ -1581,6 +1906,76 @@ function TextFileViewer({
         )}
 
         <div className="file-viewer-controls">
+          {/* The outline's way in, at the corner of the toolbar: a Markdown file
+              has sections, and a reader wants to jump between them. */}
+          {isMarkdown && effectiveDisplayMode !== "diff" ? (
+            <button
+              type="button"
+              className={`file-viewer-mode-button file-viewer-toc-toggle${tocOpen ? " is-active" : ""}`}
+              onClick={() => setTocOpen((open) => !open)}
+              aria-pressed={tocOpen}
+              aria-controls="file-toc"
+              title={t("files.tocToggle")}
+              aria-label={t("files.tocToggle")}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 5v14" />
+                <path d="M8 6h12" />
+                <path d="M11 12h9" />
+                <path d="M11 18h9" />
+              </svg>
+            </button>
+          ) : null}
+          {/* The editor's state, in the toolbar's own row. The dedicated
+              "Unsaved changes" row is gone: the editor saves a second after the
+              typing stops, so there is no Save button to press. What stays in
+              reach is the decision that has no safe default — a file that changed
+              under us — and the way back from a mistake. */}
+          {effectiveDisplayMode === "edit" && (dirty || externalChange || saveState !== "clean") ? (
+            <span
+              className={`file-editor-status${saveState === "conflict" || saveState === "error" ? " is-error" : ""}`}
+              role="status"
+              aria-live="polite"
+            >
+              <span className="file-editor-status-text">
+                {saveState === "saving"
+                  ? t("files.editorSaving")
+                  : saveState === "conflict"
+                    ? t("files.editorConflict")
+                    : saveState === "error"
+                      ? t("files.editorSaveFailed", { message: saveMessage ?? "" })
+                      : externalChange
+                        ? t("files.editorExternalChange")
+                        : dirty
+                          ? t("files.editorAutoSave")
+                          : t("files.editorSaved")}
+              </span>
+              {dirty ? (
+                <button type="button" className="file-viewer-mode-button" onClick={reloadDraft}>
+                  {t("files.editorRevert")}
+                </button>
+              ) : null}
+              {externalChange && !dirty ? (
+                <button type="button" className="file-viewer-mode-button" onClick={reloadDraft}>
+                  {t("files.editorReload")}
+                </button>
+              ) : null}
+              {saveState === "conflict" ? (
+                <>
+                  <button type="button" className="file-viewer-mode-button" onClick={reloadDraft}>
+                    {t("files.editorReload")}
+                  </button>
+                  <button
+                    type="button"
+                    className="file-viewer-mode-button is-danger"
+                    onClick={() => void saveDraft({ overwrite: true })}
+                  >
+                    {t("files.editorOverwrite")}
+                  </button>
+                </>
+              ) : null}
+            </span>
+          ) : null}
           {displayModes.length > 1 && (
             <div className="file-viewer-mode-switch" aria-label={t("i18n.fileViewMode")}>
               {displayModes.map((mode) => {
@@ -1684,6 +2079,13 @@ function TextFileViewer({
         </div>
       </div>
 
+      {/* The save bar. The buffer's state is stated in words, with the two
+          actions it calls for: save, and take the disk's version. A change the
+          watcher reports while the buffer is dirty is offered, never applied. */}
+      {/* The editor's state and its actions live in the toolbar above: the buffer
+          saves itself, and the row that used to stand here asked for a decision
+          there is no reason to make. */}
+
       {data?.truncated && (
         <div
           className="file-viewer-load-more"
@@ -1714,6 +2116,11 @@ function TextFileViewer({
         </div>
       )}
 
+      {/* The document and its outline sit side by side. The outline is a column
+          that takes its width from the panel, never a sheet laid over the text:
+          a reader with the outline open reads the same lines they read without
+          it, and the panel's own expand button opens and closes it. */}
+      <div className="file-viewer-body">
       {/* Content area */}
       <div
         ref={contentRef}
@@ -1724,7 +2131,26 @@ function TextFileViewer({
         }}
         style={{ flex: 1, overflow: "auto", background: "var(--bg)", paddingBottom: data?.truncated ? 48 : undefined }}
       >
-        {effectiveDisplayMode === "diff" && hasDiff ? (
+        {effectiveDisplayMode === "edit" ? (
+          <div className="file-editor-host">
+            <CodeEditor
+              ref={editorRef}
+              filePath={filePath}
+              value={draft ?? content}
+              wordWrap={wrapLines}
+              onChange={(value) => {
+                if (value === (draftRef.current ?? content)) return;
+                setDraftAndDirty(value === content ? null : value);
+              }}
+              onSave={() => void saveDraft()}
+            />
+          </div>
+        ) : effectiveDisplayMode === "diff" && gitDiffDenial ? (
+          <div className="file-diff-denied" role="status">
+            <span className="file-diff-denied-title">{t(DIFF_DENIAL_KEYS[gitDiffDenial] ?? "files.diffDenied.unresolvable")}</span>
+            <span className="file-diff-denied-path">{filePath}</span>
+          </div>
+        ) : effectiveDisplayMode === "diff" && hasDiff ? (
           <>
             {diffSource === "session" && (
               <div className="file-diff-source-note">
@@ -1752,71 +2178,22 @@ function TextFileViewer({
             />
           )
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
-          <div
-            className="markdown-body markdown-file-preview"
-            style={{ padding: "24px 32px" }}
-          >
-            {frontmatter?.data && <FrontmatterCard data={frontmatter.data} />}
-            <ReactMarkdown
-              remarkPlugins={markdownPreviewRemarkPlugins}
-              rehypePlugins={markdownPreviewRehypePlugins}
-              urlTransform={onOpenFile ? markdownUrlTransform : undefined}
-              components={{
-                code({ className, children, ...props }) {
-                  const lang = className?.replace("language-", "").toLowerCase() ?? "";
-                  const raw = String(children);
-                  const isBlock = className?.includes("language-") || raw.includes("\n");
-                  if (isBlock) {
-                    if (lang === "mermaid") {
-                      return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
-                    }
-                    return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
-                  }
-                  return (
-                    <code className={className} {...props}>
-                      {children}
-                    </code>
-                  );
-                },
-                pre({ children }) {
-                  // Render the code block directly — CodeBlock provides its own wrapping.
-                  // For non-mermaid blocks, pass through to default pre rendering.
-                  return <>{children}</>;
-                },
-                a({ href, children, ...props }) {
-                  delete props.node;
-                  const linkedFile = onOpenFile
-                    ? resolveLocalFileHref(href, markdownDirectory, cwd ?? markdownDirectory)
-                    : null;
-                  if (!linkedFile || !onOpenFile) {
-                    return <a href={href} {...props}>{children}</a>;
-                  }
-
-                  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-                    if (!shouldOpenLocalFileInApp(event)) return;
-                    event.preventDefault();
-                    onOpenFile(linkedFile, parsePdfPageFragment(href) ?? undefined);
-                  };
-
-                  return <a href={href} {...props} onClick={handleClick}>{children}</a>;
-                },
-                img({ src, alt, ...props }) {
-                  delete props.node;
-                  const imagePath = typeof src === "string"
-                    ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
-                    : null;
-                  const imageSrc = imagePath
-                    ? getFileApiUrl(imagePath, "read", sourceSessionId)
-                    : src;
-                  // Dynamic local paths are served directly by the file API.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  return <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;
-                },
-              }}
+          <MarkdownPreviewScopeContext.Provider value={markdownPreviewScope}>
+            <div
+              className="markdown-body markdown-file-preview"
+              style={{ padding: "24px 32px" }}
             >
-              {markdownPreview}
-            </ReactMarkdown>
-          </div>
+              {frontmatter?.data && <FrontmatterCard data={frontmatter.data} />}
+              <ReactMarkdown
+                remarkPlugins={markdownPreviewRemarkPlugins}
+                rehypePlugins={markdownPreviewRehypePlugins}
+                urlTransform={onOpenFile ? markdownUrlTransform : undefined}
+                components={MARKDOWN_PREVIEW_COMPONENTS}
+              >
+                {markdownPreview}
+              </ReactMarkdown>
+            </div>
+          </MarkdownPreviewScopeContext.Provider>
         ) : isDelimitedTable && effectiveDisplayMode === "preview" ? (
           <DelimitedTable
             content={viewerContent}
@@ -1852,6 +2229,47 @@ function TextFileViewer({
         ) : (
           highlightedSource
         )}
+      </div>
+
+      {/* The outline, as a bar on the right of the file. The document keeps its
+          width, and the bar is dismissed from its own corner, the way a reader
+          expects of a side panel. */}
+      {isMarkdown && tocOpen ? (
+        <div className="file-toc" id="file-toc" role="complementary" aria-label={t("files.tocToggle")}>
+          <div className="file-toc-header">
+            <span className="file-toc-title">{t("files.tocTitle")}</span>
+            <button
+              type="button"
+              className="file-viewer-icon-button"
+              onClick={() => setTocOpen(false)}
+              title={t("files.tocCollapse")}
+              aria-label={t("files.tocCollapse")}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M15 4v16" />
+                <path d="m9 9 3 3-3 3" />
+              </svg>
+            </button>
+          </div>
+          <div className="file-toc-list">
+            {tocHeadings.length === 0 ? (
+              <span className="file-toc-empty">{t("files.tocEmpty")}</span>
+            ) : tocHeadings.map((heading, i) => (
+              <button
+                key={`${heading.line}-${i}`}
+                type="button"
+                className={`file-toc-row is-level-${Math.min(heading.level, 6)}`}
+                onClick={() => revealTocHeading(heading)}
+                title={heading.title}
+              >
+                <span className="file-toc-mark" aria-hidden="true">{"#".repeat(heading.level)}</span>
+                <span className="file-toc-text">{heading.title}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       </div>
     </div>
   );

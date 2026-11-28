@@ -1,5 +1,36 @@
 # File access, worktrees and web auth
 
+## Three kinds of hidden in the file tree
+
+The tree's list route answers for one directory and sorts every entry into three
+kinds, in `lib/file-tree-visibility.ts`:
+
+- `always` — `.git` and `.DS_Store`. Never listed, in any mode.
+- `excluded` — the convention list (`node_modules`, `dist`, `.next`, …). Left out
+  until the tree's toolbar switch asks for them (`?type=list&hidden=1`), because
+  they are folders nobody reads and often enormous. The switch is
+  `APP_PREF_KEYS.fileTreeShowGenerated`, owned by `AppShell`, passed to
+  `FileExplorer` as `showHidden`; every listing of the tree, root or an opened
+  folder, asks with the same mode.
+- `ignored` — what Git ignores. **Listed by default, marked with the reason, and
+  the row dims with a "Git excluded" note** (`.file-tree-hidden-tag`).
+
+The last rule is the load-bearing one. A folder is opened to see what is inside
+it: `.ruff_cache` is not ignored, and the `.gitignore` ruff writes inside it
+ignores every entry there. Dropping the ignored entries opened the folder the
+user had just clicked on an empty panel, which is the report this rule answers.
+`lib/file-tree-visibility.ts`'s `readGitIgnoredNames` also treats a directory
+that ignores `*` with nothing tracked below it as "Git has no view", so the same
+folder lists as plain rows there; a folder's contents are listed either way, and
+`app/api/files/list-route.test.mjs` asserts both.
+
+Visibility is visibility. A hidden entry is still readable and writable through
+`/api/files`, which authorizes by allowed root and never consults this module.
+
+`components/FileExplorer.hidden-tree.test.mjs` asserts the client's half: the
+note's markup, the inheritance of a reason inside an ignored folder, the switch's
+pref and its `aria-pressed`, and that the route's filter is the three-kind rule.
+
 ## Worktrees and project grouping
 - `lib/worktree.ts` resolves linked worktree top-levels to the main repo `projectRoot`; `listAllSessions()` attaches it to each `SessionInfo`, so a repo's worktrees group together in the sidebar. A session whose cwd is a removed worktree is inferred back into the main project, never a phantom project row. `/api/models` resolves a cwd that is gone the same way (a finished sub-agent run removes its worktree, and its session still names it) and re-checks the repo it falls back to against the allowed roots, so the fallback only ever answers for a project that was already allowed. `/api/project-trust` does not fall back: trust is per path, the repo's decision is not the removed folder's, and trusting a folder that is gone is refused, so a GET answering for the repo would only offer a Trust button that fails.
 - `resolveProject()` caches each cwd's identity for a minute, then serves it stale while git runs again. A cold lookup and a stale refresh of the same cwd share one in-flight promise (`refreshProject()`; `invalidateProjectCache()` drops it), and the existence and canonical-path checks are asynchronous, so a session list fanning out over many cwds neither spawns git twice per cwd nor blocks the event loop on `existsSync` / `realpathSync`. A git run that never answered (a spawn out of fds, processes or memory, or git killed by the timeout) is never cached: that request alone gets the cwd as its own project, the next one asks again, and a background refresh keeps the stale identity. Whatever git itself exits with (outside a repository, at a mount point, dubious ownership, a broken `.git`), and a missing git, is the cwd's answer and cached, so a broken cwd does not spawn git and log on every session list. Classify by spawn error code and kill, never by git's message text.
@@ -84,3 +115,10 @@ and the viewer's normal missing-file handling remain authoritative.
 - `lib/auth-throttle.ts` is deliberately global, not per-IP (its header says why). Failures double the delay (1 s → 60 s cap) for everyone; a success or 5 idle minutes resets it. The reset window must stay longer than the max delay, or waiting out one block restarts the burst.
 - State lives on `globalThis` under `Symbol.for("pi-web:auth-throttle")`, so it survives hot reload and `proxy.ts` and the route handlers share it under both `next dev` and `next start`. Tests reset it with `recordAuthSuccess()`.
 - `POST /api/web-auth` and every `Authorization: Basic` header on `/api/*` share the counter; `proxy.ts` checks Basic before its `/api/web-auth` exemption, so `GET /api/web-auth` is no unthrottled password oracle. A valid session cookie is checked first and never blocked. While blocked, Basic gets `429` even with the right password, and a Basic success never resets the counter (`proxy.ts` explains both).
+
+## The file tree's listings are fetched once (`lib/file-listing-cache.ts`, fork-owned)
+- Measured on a production build, a warm `/api/files?type=list` is 12–26 ms per directory (the floor is the route's `git check-ignore` spawn, `lib/file-tree-visibility.ts`, upstream's). The waits a reader feels are requests the tree makes twice — the development double effect, a refresh bump, a folder collapsed and reopened, an expansion racing a prefetch — and folders fetched one at a time as the reader opens them.
+- `FileExplorer.fetchEntries` goes through `directoryCache.list(dirPath, showHidden, fetchRaw, { force })`. Three rules, in the module's words: **in flight is enough** (a second caller joins the running request), **a short window, not a lifetime** (`LISTING_TTL_MS` 15 s, measured to be the difference between covering the burst and covering the reader; a failed listing is never cached, so a 403 stays retryable), **a prefetch is a courtesy** (child directories fill the same cache at `PREFETCH_CONCURRENCY` 3; a refusal is swallowed and the reader who opens the folder asks for itself and sees it).
+- `fetchEntries(cwd, showHidden, true)` runs **force**: the tree's refresh must not be answered from the window. A row-menu operation (`runFileOp`) calls `invalidate(target)` + `invalidateTree(target)` — a directory, its subtree and every listing above it, because a new file changes the parent's listing — and an upload invalidates the folder it wrote into. `showHidden` is part of the key: generated files on and off are different answers.
+- Prefetch bounds are the tree's, not the cache's: `PREFETCH_CHILD_DIRS` 6 for a big folder, `PREFETCH_ALL_UNDER` 12 to take a small one whole. A home directory (this app opens one as a workspace) is a hundred folders and the reader opens one; measured at 25 prefetched requests the open got slower, which is why the caps are small.
+- Checks: `lib/file-listing-cache.test.mjs` (coalescing, the window and its end, `force`, a failure not cached, prefetch bound and its courtesy, invalidation of a folder and its ancestors, `invalidateTree` leaving a sibling alone) and `components/FileExplorer.listing-cache.test.mjs` (the wiring, the caps, the invalidation points, the URL and shape unchanged).

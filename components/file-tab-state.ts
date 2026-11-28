@@ -4,11 +4,16 @@ import type { Tab } from "./TabBar";
 interface OpenFileTabInput {
   fileName: string;
   filePath: string;
-  modeHint?: "diff";
+  /** The mode the tab opens in: a diff, or the editor. */
+  modeHint?: "diff" | "edit";
   page?: number;
   sourceSessionId?: string | null;
   /** Show the diff this session recorded, not the working tree's. */
   diffSessionId?: string | null;
+  /** The commit whose file the Diff mode reads, for a commit panel file row. */
+  diffCommitSha?: string | null;
+  /** The other file of a "Select for Compare" pair. */
+  compareWith?: string | null;
   tabId: string;
 }
 
@@ -21,6 +26,8 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
       filePath: input.filePath,
       sourceSessionId: input.sourceSessionId,
       diffSessionId: input.diffSessionId,
+      diffCommitSha: input.diffCommitSha,
+      compareWith: input.compareWith,
       initialDisplayMode: input.modeHint,
       page: input.page,
       viewerState: input.modeHint ? {
@@ -38,7 +45,10 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
   );
   const sourceUnchanged = !sourceChanged;
   const pageChanged = existing.page !== input.page;
-  const diffSourceChanged = input.diffSessionId !== undefined && existing.diffSessionId !== input.diffSessionId;
+  const diffSourceChanged =
+    (input.diffSessionId !== undefined && existing.diffSessionId !== input.diffSessionId)
+    || (input.diffCommitSha !== undefined && existing.diffCommitSha !== input.diffCommitSha)
+    || (input.compareWith !== undefined && existing.compareWith !== input.compareWith);
   if (sourceUnchanged && !input.modeHint && !pageChanged && !diffSourceChanged) return tabs;
 
   return tabs.map((tab) => {
@@ -51,6 +61,13 @@ export function openFileTab(tabs: Tab[], input: OpenFileTabInput): Tab[] {
     }
     if (input.diffSessionId !== undefined && tab.diffSessionId !== input.diffSessionId) {
       next.diffSessionId = input.diffSessionId;
+    }
+    if (input.diffCommitSha !== undefined && tab.diffCommitSha !== input.diffCommitSha) {
+      next.diffCommitSha = input.diffCommitSha;
+      bumpRevision = true;
+    }
+    if (input.compareWith !== undefined && tab.compareWith !== input.compareWith) {
+      next.compareWith = input.compareWith;
       bumpRevision = true;
     }
     if (pageChanged) {

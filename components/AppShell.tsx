@@ -174,6 +174,14 @@ const FILE_TREE_AUTO_COLLAPSE_WIDTH = FILE_TREE_MIN_WIDTH + 320;
  */
 const SETTINGS_EXIT_MS = 180;
 
+/**
+ * The right panel's Git tab. A pinned tab, not a file: its id never becomes the
+ * panel's active file tab, so the file and terminal tabs keep their own
+ * activation and the view's open state stays the single `gitPanelOpen` flag the
+ * strip's glyph, the file tabs and the keepalive already share.
+ */
+const GIT_PANEL_TAB_ID = "git:panel";
+
 function parkedNewSessionDraftKey(cwd: string): string {
   return `parked-new:${cwd}`;
 }
@@ -275,6 +283,12 @@ export function AppShell() {
   // panel crosses the threshold, so widening and narrowing again re-collapses.
   const [fileTreeNarrowOverride, setFileTreeNarrowOverride] = useState(false);
   const [fileExplorerQuery, setFileExplorerQuery] = useState("");
+  /** The tree's switch for the convention-hidden folders (node_modules, dist, …). */
+  const [fileTreeShowGenerated, setFileTreeShowGenerated] = useState(() =>
+    getPrefBool(APP_PREF_KEYS.fileTreeShowGenerated, false));
+  useEffect(() => {
+    setPref(APP_PREF_KEYS.fileTreeShowGenerated, fileTreeShowGenerated ? "1" : "0");
+  }, [fileTreeShowGenerated]);
   const [changesCount, setChangesCount] = useState(0);
   const [changesCollapsed, setChangesCollapsed] = useState(true);
   const [sessionCatalog, setSessionCatalog] = useState<SessionInfo[]>([]);
@@ -391,6 +405,15 @@ export function AppShell() {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
   const rightPanelFullWidth = rightPanelOpen && rightPanelExpanded && !isMobile;
+  /**
+   * The phone's expanded panel is not a wider column: the card is the screen.
+   * The strip's expand button is kept on the phone for exactly this, and the CSS
+   * answers `right-panel-full-width` at phone width with the viewport. The desktop
+   * rule (`!isMobile`) used to keep the class off the phone, so the button was
+   * pressed, its state moved, and the card did not change.
+   */
+  const rightPanelViewportFull = rightPanelOpen && rightPanelExpanded && isMobile;
+  const rightPanelExpandedVisual = rightPanelFullWidth || rightPanelViewportFull;
   useEffect(() => {
     const preload = () => {
       // A failed speculative load must not make the on-demand loader's state
@@ -409,8 +432,15 @@ export function AppShell() {
     return () => window.clearTimeout(id);
   }, [rightPanelOpen]);
   useEffect(() => {
-    if (!rightPanelOpen || isMobile) setRightPanelExpanded(false);
-  }, [rightPanelOpen, isMobile]);
+    // A closed panel starts unexpanded.
+    if (!rightPanelOpen) setRightPanelExpanded(false);
+  }, [rightPanelOpen]);
+  useEffect(() => {
+    // Crossing the phone/desktop boundary changes what "expanded" means — a
+    // column that spans the chat, or the whole viewport — so a crossing starts
+    // fresh rather than carrying a state whose meaning moved.
+    setRightPanelExpanded(false);
+  }, [isMobile]);
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   const viewportCompactInitializedRef = useRef(false);
   // The desktop window has no native title bar. macOS keeps its traffic lights
@@ -950,18 +980,9 @@ export function AppShell() {
       };
     });
   }, [terminalTabs]);
-  const panelTabs: Tab[] = useMemo(() => orderPanelTabs([...fileTabs, ...terminalPanelTabs, ...artifactTabs.map(artifactPanelTab), ...visibleSideTabs.map((tab) => {
-    const member = familyMembers?.find((session) => session.id === tab.sessionId);
-    const label = member ? sideChatTitle(member, translate("sideChat.title"), familyMembers ?? []) : translate("sideChat.title");
-    return { id: `agent:${tab.sessionId}`, label, filePath: label, kind: "side" as const };
-  })], panelTabOrder), [fileTabs, terminalPanelTabs, artifactTabs, visibleSideTabs, familyMembers, translate, panelTabOrder]);
   const activeSideTab = visibleSideTabs.find((tab) => `agent:${tab.sessionId}` === activeFileTabId) ?? null;
-  // A closed tab leaves the saved order, so reopening it appends it like any new tab.
-  const panelTabIds = panelTabs.map((tab) => tab.id).join("\n");
-  useEffect(() => {
-    const open = new Set(panelTabIds.split("\n"));
-    setPanelTabOrder((order) => order.every((id) => open.has(id)) ? order : order.filter((id) => open.has(id)));
-  }, [panelTabIds]);
+  // The panel's tab list is built below, once the workspace kind is known: the
+  // Git view is a tab of that bar, and a chat has no repository to tab into.
   const activeArtifactTab = artifactTabs.find((tab) => tab.id === activeFileTabId) ?? null;
   // The panel's open path lives below handleOpenTerminal: opening the panel
   // opens a terminal, so the toggle has to be able to call it.
@@ -987,6 +1008,21 @@ export function AppShell() {
       }));
     } catch { /* storage is optional */ }
   }, [terminalTabs, activeFileTabId, rightPanelOpen, terminalsRestored]);
+
+  // An open file's buffer belongs to its tab: the panel renders one viewer at a
+  // time, so a tab switch unmounts the editor. The draft and the dirty flag ride
+  // on the tab record, and closing a dirty tab asks first.
+  const handleFileDraftChange = useCallback((tabId: string, draft: string | null) => {
+    setFileTabs((prev) => prev.map((tab) => (tab.id === tabId ? { ...tab, draft } : tab)));
+  }, []);
+
+  const handleFileDirtyChange = useCallback((tabId: string, dirty: boolean) => {
+    setFileTabs((prev) => {
+      const current = prev.find((tab) => tab.id === tabId);
+      if (current && Boolean(current.dirty) === dirty) return prev;
+      return prev.map((tab) => (tab.id === tabId ? { ...tab, dirty } : tab));
+    });
+  }, []);
 
   const handleFileViewerStateChange = useCallback((
     tabId: string,
@@ -1052,6 +1088,33 @@ export function AppShell() {
   // workbench stay project-only, so they keep using visibleProjectCwd.
   const chatFolderCwd = isChatWorkspaceActive && selectedSession?.chatFolder ? selectedSession.cwd : null;
   const workbenchCwd = visibleProjectCwd ?? chatFolderCwd;
+  // The Git view is a tab of the panel's bar, pinned for as long as the project is
+  // a repository. Selecting it takes the panel's content area from the file,
+  // terminal, artifact and side-chat tabs; selecting one of those gives it back. The
+  // tab carries the count of changed files, because that number is what decides
+  // opening the view, and closing the tab hides the view rather than removing the
+  // tab — the keepalive below keeps the repository read, so switching tabs is not a
+  // reason to read it again.
+  const gitPanelTab: Tab | null = visibleProjectCwd && !isChatWorkspaceActive
+    ? {
+        id: GIT_PANEL_TAB_ID,
+        label: translate("gitPanel.title"),
+        filePath: visibleProjectCwd,
+        kind: "git",
+        badge: changesCount,
+      }
+    : null;
+  const panelTabs: Tab[] = useMemo(() => orderPanelTabs([...fileTabs, ...terminalPanelTabs, ...artifactTabs.map(artifactPanelTab), ...visibleSideTabs.map((tab) => {
+    const member = familyMembers?.find((session) => session.id === tab.sessionId);
+    const label = member ? sideChatTitle(member, translate("sideChat.title"), familyMembers ?? []) : translate("sideChat.title");
+    return { id: `agent:${tab.sessionId}`, label, filePath: label, kind: "side" as const };
+  }), ...(gitPanelTab ? [gitPanelTab] : [])], panelTabOrder), [fileTabs, terminalPanelTabs, artifactTabs, visibleSideTabs, familyMembers, translate, panelTabOrder, gitPanelTab]);
+  // A closed tab leaves the saved order, so reopening it appends it like any new tab.
+  const panelTabIds = panelTabs.map((tab) => tab.id).join("\n");
+  useEffect(() => {
+    const open = new Set(panelTabIds.split("\n"));
+    setPanelTabOrder((order) => order.every((id) => open.has(id)) ? order : order.filter((id) => open.has(id)));
+  }, [panelTabIds]);
   const projectPickerStartCwd = isChatWorkspaceActive
     ? null
     : selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
@@ -1902,14 +1965,18 @@ export function AppShell() {
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
-    options?: { sourceSessionId?: string | null; modeHint?: "diff"; page?: number; diffSessionId?: string | null },
+    options?: { sourceSessionId?: string | null; modeHint?: "diff" | "edit"; page?: number; diffSessionId?: string | null; diffCommitSha?: string | null; compareWith?: string | null },
   ) => {
     if (isChatWorkspaceActive && !(chatFolderCwd && isPathInside(filePath, chatFolderCwd))) return;
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
     const diffSessionId = options?.diffSessionId;
+    const diffCommitSha = options?.diffCommitSha;
+    const compareWith = options?.compareWith;
     const page = options?.page;
-    const tabId = `file:${filePath}`;
+    // A compare tab is its own view: the same file opened plainly is a different
+    // question, and one tab id cannot carry both.
+    const tabId = compareWith ? `compare:${filePath}:${compareWith}` : `file:${filePath}`;
     setFileTabs((prev) => openFileTab(prev, {
       fileName,
       filePath,
@@ -1917,6 +1984,8 @@ export function AppShell() {
       page,
       sourceSessionId,
       diffSessionId,
+      diffCommitSha,
+      compareWith,
       tabId,
     }));
     setActiveFileTabId(tabId);
@@ -2059,6 +2128,8 @@ export function AppShell() {
       setTerminalTabs((tabs) => tabs.map((tab) => tab.id === tabId && !tab.closing ? { ...tab, closing: "close" } : tab));
       return;
     }
+    const closing = fileTabs.find((tab) => tab.id === tabId);
+    if (closing?.dirty && !window.confirm(translate("files.editorCloseUnsaved"))) return;
     setFileTabs((prev) => {
       const next = prev.filter((t) => t.id !== tabId);
       if (next.length === 0 && terminalTabs.length === 0 && artifactTabs.length === 0 && visibleSideTabs.length === 0) setRightPanelOpen(false);
@@ -2315,9 +2386,63 @@ export function AppShell() {
     setGitPanelOpen((open) => !open);
     setRightPanelOpen(true);
   };
+  // The Git tab is the view's way in and out of the panel's content area. Picking
+  // it takes that area from the file, terminal, artifact and side-chat tabs;
+  // picking one of those hands it back. Closing the tab hides the view — the tab
+  // is pinned to the repository, so it stays in the bar. The view itself is never
+  // unmounted by a tab switch (the keepalive), so this is a look away, not a reload.
+  const handleSelectPanelTab = useCallback((tabId: string) => {
+    if (tabId === GIT_PANEL_TAB_ID) {
+      if (isMobile) setSidebarOpen(false);
+      setTopMoreOpen(false);
+      setGitPanelOpen(true);
+      setRightPanelOpen(true);
+      return;
+    }
+    setGitPanelOpen(false);
+    setActiveFileTabId(tabId);
+  }, [isMobile]);
+  const handleClosePanelTab = useCallback((tabId: string) => {
+    if (tabId === GIT_PANEL_TAB_ID) {
+      setGitPanelOpen(false);
+      return;
+    }
+    handleCloseFileTab(tabId);
+  }, [handleCloseFileTab]);
   const handleGitPanelOpenFile = useCallback((filePath: string, fileName: string) => {
     setGitPanelOpen(false);
     handleOpenFile(filePath, fileName);
+  }, [handleOpenFile]);
+  // The same tab, in the Diff mode: a file the working tree changed is read as its
+  // diff, which is what a tap on a row of the Commit panel asks for.
+  // A file row of the Git panel opens its diff, not the file. A row of a commit
+  // carries the commit, and the diff is that commit's change to the file; a row
+  // of the working tree is answered by the working tree.
+  const handleGitPanelOpenFileDiff = useCallback((filePath: string, fileName: string, commitSha?: string) => {
+    setGitPanelOpen(false);
+    handleOpenFile(filePath, fileName, { modeHint: "diff", diffCommitSha: commitSha ?? null });
+  }, [handleOpenFile]);
+  /**
+   * A file menu that asks the Git panel something ("Show File Git History",
+   * "Git Blame"). It opens the panel and names the file; the panel consumes the
+   * request and clears it, so switching tabs away and back does not re-apply a
+   * filter the user has since cleared.
+   */
+  const [gitFileRequest, setGitFileRequest] = useState<{ kind: "history" | "blame"; path: string } | null>(null);
+  const handleShowFileHistory = useCallback((filePath: string) => {
+    setRightPanelOpen(true);
+    setGitPanelOpen(true);
+    setGitFileRequest({ kind: "history", path: filePath });
+  }, []);
+  const handleFileGitBlame = useCallback((filePath: string) => {
+    setRightPanelOpen(true);
+    setGitPanelOpen(true);
+    setGitFileRequest({ kind: "blame", path: filePath });
+  }, []);
+  /** "Select for Compare" from the tree: the tab is the diff between two files. */
+  const handleCompareFiles = useCallback((left: string, right: string) => {
+    const name = (value: string) => value.split("/").pop() ?? value;
+    handleOpenFile(left, `${name(left)} \u2194 ${name(right)}`, { modeHint: "diff", compareWith: right });
   }, [handleOpenFile]);
   const activeCwdName = visibleProjectCwd ? getFileName(visibleProjectCwd) || visibleProjectCwd : null;
   // Which project the header's folder belongs to. A linked worktree is not a new
@@ -2363,6 +2488,21 @@ export function AppShell() {
   const activeProjectBranch = useProjectBranch(
     isChatWorkspaceActive || pageOpen || selectedSession ? null : visibleProjectCwd,
   );
+  // The phone's project switcher. The sidebar holds the project list, and on a
+  // phone it is a drawer away, so the header's project chip carries the list
+  // itself: the same rows, in the sidebar's order, and picking one opens a
+  // session in that project. The desktop keeps the path tip — its sidebar is open.
+  const appProjectList = useMemo(
+    () => availableProjectRoots.map((root) => ({
+      name: getProjectDisplayName(root, availableProjectRoots) ?? root.split("/").filter(Boolean).pop() ?? root,
+      path: root,
+    })),
+    [availableProjectRoots],
+  );
+  const topbarProjects = isMobile && appProjectList.length ? appProjectList : null;
+  const handleTopbarProjectSelect = useCallback((projectRoot: string) => {
+    handleNewSession(`project-${Date.now()}`, projectRoot, "project");
+  }, [handleNewSession]);
   const topBarBranch = isChatWorkspaceActive || pageOpen
     ? null
     : selectedSession?.branch ?? activeProjectBranch;
@@ -2729,7 +2869,14 @@ export function AppShell() {
                   /* A control, like the branch chip: the label is a short name, the path
                      it stands for is longer than a phone, and nothing else in the header
                      says where the session works. Tap it for `Path` over the full path. */
-                  <TopbarProjectChip name={topBarSubtitle} path={visibleProjectCwd ?? ""} isWorktree={headerProjectIsWorktree} />
+                  <TopbarProjectChip
+                    name={topBarSubtitle}
+                    path={visibleProjectCwd ?? ""}
+                    isWorktree={headerProjectIsWorktree}
+                    projects={topbarProjects ?? undefined}
+                    currentPath={visibleProjectCwd ?? undefined}
+                    onSelectProject={topbarProjects ? handleTopbarProjectSelect : undefined}
+                  />
                 ) : (
                   <small className="app-topbar-project">
                     <span>{topBarSubtitle}</span>
@@ -3690,7 +3837,7 @@ export function AppShell() {
       <div
         ref={rightPanelResizer.panelRef}
         id="file-panel"
-        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
+        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth || rightPanelViewportFull ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         // Closed, the panel is 0px wide or slid off-screen; keep it out of the
         // Tab order and the accessibility tree like the sidebar.
         inert={!rightPanelOpen}
@@ -3756,9 +3903,9 @@ export function AppShell() {
           <div className="file-tab-bar-slot">
             <TabBar
               tabs={panelTabs}
-              activeTabId={activeFileTabId ?? ""}
-              onSelectTab={setActiveFileTabId}
-              onCloseTab={handleCloseFileTab}
+              activeTabId={gitPanelOpen ? GIT_PANEL_TAB_ID : activeFileTabId ?? ""}
+              onSelectTab={handleSelectPanelTab}
+              onCloseTab={handleClosePanelTab}
               onNewTerminal={visibleProjectCwd ? () => handleOpenTerminal(visibleProjectCwd, { newTab: true }) : undefined}
               onReorderTab={(source, target, after) => setPanelTabOrder(movePanelTab(panelTabs.map((tab) => tab.id), source, target, after))}
             />
@@ -3788,7 +3935,9 @@ export function AppShell() {
               className={`file-workbench-icon-button git-panel-toggle${gitPanelOpen ? " is-active" : ""}`}
               onClick={handleGitPanelToggle}
               title={translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")}
-              aria-label={translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")}
+              aria-label={changesCount > 0
+                ? `${translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")} — ${translate("sidebar.changedFiles", { count: changesCount })}`
+                : translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")}
               aria-pressed={gitPanelOpen}
               aria-controls="git-panel"
             >
@@ -3798,6 +3947,13 @@ export function AppShell() {
                 <circle cx="6" cy="18" r="2.6" />
                 <path d="M18 9a9 9 0 0 1-9 9" />
               </svg>
+              {/* The count the panel is about: how many files the working tree changed.
+                  A reader decides to open it from that number, not from the glyph. */}
+              {changesCount > 0 && (
+                <span className="git-panel-toggle-badge" aria-hidden="true" data-count={changesCount}>
+                  {changesCount > 99 ? "99+" : changesCount}
+                </span>
+              )}
             </button>
           )}
           <button
@@ -3805,12 +3961,16 @@ export function AppShell() {
             className="file-panel-expand-button"
             onClick={handleRightPanelExpandToggle}
             aria-controls="file-panel"
-            aria-pressed={rightPanelFullWidth}
-            title={translate(rightPanelFullWidth ? "files.restorePanelWidth" : "files.expandPanel")}
-            aria-label={translate(rightPanelFullWidth ? "files.restorePanelWidth" : "files.expandPanel")}
+            aria-pressed={rightPanelExpandedVisual}
+            title={translate(isMobile
+              ? (rightPanelExpandedVisual ? "files.shrinkPanel" : "files.expandViewport")
+              : (rightPanelExpandedVisual ? "files.restorePanelWidth" : "files.expandPanel"))}
+            aria-label={translate(isMobile
+              ? (rightPanelExpandedVisual ? "files.shrinkPanel" : "files.expandViewport")
+              : (rightPanelExpandedVisual ? "files.restorePanelWidth" : "files.expandPanel"))}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d={rightPanelFullWidth
+              <path d={rightPanelExpandedVisual
                 ? "M4 9V4h5M20 15v5h-5M4 15v5h5M20 9V4h-5"
                 : "M15 4h5v5M9 20H4v-5M20 15v5h-5M4 9V4h5"} />
             </svg>
@@ -3837,17 +3997,29 @@ export function AppShell() {
         {/* Only the active viewer is mounted. Lightweight per-tab state is restored on activation. */}
         <div ref={panelBodyRef} className="right-panel-body" style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden", paddingBottom: "env(safe-area-inset-bottom)" }}>
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {gitPanelOpen && visibleProjectCwd ? (
-            // The Git view takes the content area: the side-chat tab and the panel's
-            // empty state step aside with it. The project's shells stay mounted below,
-            // hidden and told they are not active, so a shell is never restarted by
-            // reading its history.
-            <GitPanel
-              key={visibleProjectCwd}
-              cwd={visibleProjectCwd}
-              onOpenFile={handleGitPanelOpenFile}
-            />
-          ) : (
+          {/* The Git view stays mounted for as long as the right sidebar is open, and
+              hides when its own toggle is off. Closing the Git view and opening it
+              again is a look at the same repository, not a reason to read it from
+              disk again — the panel's refresh buttons and the git event stream are
+              what move its data. Closing the whole sidebar is the boundary: the next
+              open starts from a fresh read. */}
+          {visibleProjectCwd && rightPanelOpen ? (
+            <div className="git-panel-keepalive" hidden={!gitPanelOpen}>
+              <GitPanel
+                key={visibleProjectCwd}
+                cwd={visibleProjectCwd}
+                projects={appProjectList.length ? appProjectList : undefined}
+                onOpenFile={handleGitPanelOpenFile}
+                onOpenFileGitDiff={handleGitPanelOpenFileDiff}
+                fileHistoryPath={gitFileRequest?.kind === "history" ? gitFileRequest.path : null}
+                blameRequestPath={gitFileRequest?.kind === "blame" ? gitFileRequest.path : null}
+                onGitFileRequestDone={() => setGitFileRequest(null)}
+                fullWidth={rightPanelFullWidth}
+                onToggleFullWidth={handleRightPanelExpandToggle}
+              />
+            </div>
+          ) : null}
+          {gitPanelOpen ? null : (
             <>
           {activeSideTab ? (
             <div className="session-chat-panel" key={activeSideTab.sessionId}>
@@ -3887,10 +4059,14 @@ export function AppShell() {
               cwd={workbenchCwd ?? undefined}
               sourceSessionId={activeFileTab.sourceSessionId}
               diffSessionId={activeFileTab.diffSessionId}
+              diffCommitSha={activeFileTab.diffCommitSha}
               gitRefreshKey={explorerRefreshKey}
               initialDisplayMode={activeFileTab.initialDisplayMode}
               initialPage={activeFileTab.page}
               initialState={activeFileTab.viewerState}
+              initialDraft={activeFileTab.draft ?? null}
+              onDraftChange={(draft) => handleFileDraftChange(activeFileTab.id, draft)}
+              onDirtyChange={(dirty) => handleFileDirtyChange(activeFileTab.id, dirty)}
               watchEnabled={rightPanelOpen}
               onStateChange={(viewerState) => handleFileViewerStateChange(
                 activeFileTab.id,
@@ -3982,6 +4158,19 @@ export function AppShell() {
                 )}
                 <button
                   type="button"
+                  onClick={() => setFileTreeShowGenerated((value) => !value)}
+                  title={translate("files.showGenerated")}
+                  aria-label={translate("files.showGenerated")}
+                  aria-pressed={fileTreeShowGenerated}
+                  className={`context-panel-files-action${fileTreeShowGenerated ? " is-active" : ""}`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12Z" />
+                    <circle cx="12" cy="12" r="2.6" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
                   onClick={() => fileExplorerRef.current?.openUploadPicker()}
                   disabled={explorerUploadBusy}
                   title={translate("sidebar.uploadFilesTitle")}
@@ -4010,8 +4199,22 @@ export function AppShell() {
                   onAtMention={isChatWorkspaceActive ? undefined : handleAtMention}
                   onAtMentions={isChatWorkspaceActive ? undefined : handleAtMentions}
                   onUploadBusyChange={setExplorerUploadBusy}
+                  showHidden={fileTreeShowGenerated}
                   changesCollapsed={changesCollapsed}
                   onChangesCountChange={setChangesCount}
+                  gitPanelOpen={gitPanelOpen}
+                  onGitPanelOpenChange={(open) => {
+                    setGitPanelOpen(open);
+                    // The tree's "Show Git Changes" opens the panel the header's
+                    // folder opens, and on a phone that means leaving the drawer.
+                    if (open) {
+                      setRightPanelOpen(true);
+                      if (isMobile) setSidebarOpen(false);
+                    }
+                  }}
+                  onCompareFiles={handleCompareFiles}
+                  onShowFileHistory={handleShowFileHistory}
+                  onGitBlame={handleFileGitBlame}
                 />
               </div>
               </div>

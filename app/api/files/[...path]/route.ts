@@ -43,6 +43,12 @@ import { createFileWatchStream, MAX_WATCHED_FILES_PER_STREAM, type FileWatchEntr
 import { pageStreamLabel, registerPageStream } from "@/lib/page-stream-registry";
 import { contentDisposition } from "@/lib/content-disposition";
 import { errorMessage } from "@/lib/errors";
+import { MAX_WRITE_SIZE, writeProjectFile } from "@/lib/file-write";
+import {
+  FILE_OPERATION_FAILURE_STATUS,
+  runFileOperation,
+  type FileOperation,
+} from "@/lib/file-ops";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -141,6 +147,54 @@ function parseFileRequestType(value: string): FileRequestType | null {
   return FILE_REQUEST_TYPE_SET.has(value) ? (value as FileRequestType) : null;
 }
 
+/**
+ * The tree's row menu: rename, a new file, a new folder, a delete to the Trash,
+ * and a paste's copy or move. The rules live in `lib/file-ops.ts`; this is the
+ * transport, and it answers a refusal by name the way the write path does.
+ */
+async function fileOperationRequest(request: NextRequest, segments: string[]): Promise<NextResponse> {
+  if (!hasJsonContentType(request)) {
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  }
+  let body: unknown;
+  try {
+    body = await parseJsonWithinLimit(request, MAX_IMPORT_JSON_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json({ error: "Request body too large" }, { status: 413 });
+    }
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const record = (body ?? {}) as { op?: unknown; name?: unknown; targetDirectory?: unknown; overwrite?: unknown };
+  const ops = ["rename", "create", "mkdir", "delete", "copy", "move"] as const;
+  if (typeof record.op !== "string" || !ops.includes(record.op as (typeof ops)[number])) {
+    return NextResponse.json({ error: "op must be one of " + ops.join(", "), code: "BAD_REQUEST" }, { status: 400 });
+  }
+  if (record.targetDirectory !== undefined && typeof record.targetDirectory !== "string") {
+    return NextResponse.json({ error: "targetDirectory must be a path", code: "BAD_REQUEST" }, { status: 400 });
+  }
+  const targetDirectory = typeof record.targetDirectory === "string" && record.targetDirectory.trim()
+    ? path.resolve(record.targetDirectory)
+    : undefined;
+  const sourcePath = path.resolve(filePathFromApiSegments(segments));
+  if (hasParentDirectorySegment(sourcePath) || (targetDirectory && hasParentDirectorySegment(targetDirectory))) {
+    return NextResponse.json({ error: "Access denied" }, { status: 403 });
+  }
+  const result = await runFileOperation(sourcePath, {
+    op: record.op as FileOperation,
+    name: typeof record.name === "string" ? record.name : undefined,
+    targetDirectory,
+    overwrite: record.overwrite === true,
+  });
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: result.message, code: result.code },
+      { status: FILE_OPERATION_FAILURE_STATUS[result.code] },
+    );
+  }
+  return NextResponse.json({ ok: true, path: result.path, kind: result.kind, trash: result.renamed });
+}
+
 async function getUploadDirectory(segments: string[]): Promise<
   { directory: string } | { response: NextResponse }
 > {
@@ -221,6 +275,7 @@ export async function POST(
     const { path: segments } = await params;
     const type = request.nextUrl.searchParams.get("type") ?? "upload";
     if (type === "allow-link") return allowLinkedDirectory(request, segments);
+    if (type === "fsop") return fileOperationRequest(request, segments);
 
     const uploadDirectory = await getUploadDirectory(segments);
     if ("response" in uploadDirectory) return uploadDirectory.response;
@@ -429,6 +484,101 @@ export async function POST(
       return NextResponse.json({ error: "Import request is too large" }, { status: 413 });
     }
     return NextResponse.json({ error: errorMessage(error) }, { status: 500 });
+  }
+}
+
+const WRITE_STATUS: Record<string, number> = {
+  FORBIDDEN: 403,
+  OUTSIDE_ROOT: 403,
+  READ_ONLY: 403,
+  CONFLICT: 409,
+  TOO_LARGE: 413,
+  BINARY: 413,
+  NOT_A_FILE: 400,
+  NOT_FOUND: 404,
+};
+
+/**
+ * Save a text file. The same allow-list the read path uses, plus what an editor
+ * needs: a size cap, no binary content, no credential file, no `.git`, and the
+ * modification time the editor read — when the file moved on disk in the
+ * meantime, the write is refused instead of overwriting what a formatter, a git
+ * operation, or another window put there.
+ */
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  if (!isApiRequestAllowed(request)) {
+    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+  if (!hasJsonContentType(request)) {
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  }
+  const type = request.nextUrl.searchParams.get("type") ?? "read";
+  if (type !== "read") {
+    return NextResponse.json({ error: "Invalid file write request type" }, { status: 400 });
+  }
+
+  try {
+    const { path: segments } = await params;
+    const filePath = path.resolve(filePathFromApiSegments(segments));
+    // The same refusals the read path makes: an encoded slash can hide `..`, and
+    // a credential store is never served — and never written.
+    if (hasParentDirectorySegment(filePath) || isCredentialPath(filePath)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+    const allowedRoots = await getAllowedFileRoots();
+    if (!isFilePathAllowed(filePath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+    // Links are resolved for the directory the write lands in, so a link that
+    // leaves the roots is refused before anything is written. A new file in a
+    // folder that does not exist yet is authorized by the nearest ancestor that
+    // does — the same walk the write itself makes.
+    let authorizationPath = filePath;
+    while (!fs.existsSync(authorizationPath)) {
+      const parent = path.dirname(authorizationPath);
+      if (parent === authorizationPath) break;
+      authorizationPath = parent;
+    }
+    if (!isExistingFilePathAllowed(authorizationPath, allowedRoots)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    const body = await request.json().catch(() => null) as {
+      content?: unknown; baseMtime?: unknown; allowOverwrite?: unknown;
+    } | null;
+    if (typeof body?.content !== "string") {
+      return NextResponse.json({ error: "content must be a string" }, { status: 400 });
+    }
+    if (Buffer.byteLength(body.content, "utf8") > MAX_WRITE_SIZE) {
+      return NextResponse.json(
+        { error: `File too large (${MAX_WRITE_SIZE} bytes max)`, code: "TOO_LARGE" },
+        { status: 413 },
+      );
+    }
+    const baseMtimeMs = typeof body.baseMtime === "string" ? Date.parse(body.baseMtime) : Number.NaN;
+    const result = await writeProjectFile(filePath, body.content, {
+      baseMtimeMs: Number.isFinite(baseMtimeMs) ? baseMtimeMs : undefined,
+      allowOverwrite: body.allowOverwrite === true,
+    });
+    if (!result.ok) {
+      return NextResponse.json(
+        { error: result.message, code: result.code },
+        { status: WRITE_STATUS[result.code] ?? 400 },
+      );
+    }
+    return NextResponse.json({
+      ok: true,
+      mtime: new Date(result.mtimeMs).toISOString(),
+      size: result.size,
+      etag: result.etag,
+      created: result.created,
+      overwritten: result.overwritten,
+    });
+  } catch (error) {
+    return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }
 
@@ -1030,9 +1180,19 @@ export async function GET(
       return NextResponse.json({ error: "Not a directory" }, { status: 400 });
     }
 
-    // `hidden=1` (the explorer's "show hidden" switch) also lists what Git
-    // ignores and what the name list hides, marked with the reason; `.git`
-    // and `.DS_Store` stay out either way.
+    // Three kinds of hidden, and they are not the same question.
+    //
+    // `.git` and `.DS_Store` are never listed, in any mode.
+    //
+    // A name on the convention list — `node_modules`, `dist`, `.next`, the
+    // generated trees — is left out until the explorer's switch asks for it. It
+    // is a folder the user does not read, and it is often enormous.
+    //
+    // What Git ignores is listed by default, marked with the reason, and the
+    // explorer dims it with the "Git excluded" note. A folder is opened to see
+    // what is in it: `.ruff_cache` is not ignored, and the `.gitignore` that
+    // ruff writes inside it ignores every entry there — dropping the ignored
+    // entries would open the folder the user just clicked on an empty panel.
     const showHidden = request.nextUrl.searchParams.get("hidden") === "1";
     // Avoid per-entry stat calls for normal files and directories. Symlinks and
     // filesystems without directory type information use the stat fallback.
@@ -1041,7 +1201,8 @@ export async function GET(
     const entries = dirents
       .flatMap((d) => {
         const hidden = hiddenReason(d.name);
-        if (hidden === "always" || (hidden && !showHidden)) return [];
+        if (hidden === "always") return [];
+        if (hidden === "excluded" && !showHidden) return [];
         const isDir = resolveDirentIsDirectory(d, path.join(filePath, d.name));
         if (isDir === null) return [];
         const entry = { name: d.name, isDir, size: 0, modified: "" };

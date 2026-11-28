@@ -45,7 +45,7 @@ async function listNames(dir) {
   return entries.map((entry) => entry.name);
 }
 
-test("lists a tracked build/ in a Git work tree and hides what it ignores", async () => {
+test("lists a tracked build/ in a Git work tree, and the ignored folder with its reason", async () => {
   const repo = path.join(root, "repo");
   write(path.join(repo, ".gitignore"), "dist/\n");
   write(path.join(repo, "build/index.js"));
@@ -54,7 +54,19 @@ test("lists a tracked build/ in a Git work tree and hides what it ignores", asyn
   execFileSync("git", ["-C", repo, "init", "-q"]);
   execFileSync("git", ["-C", repo, "add", ".gitignore", "build", "src"]);
 
-  assert.deepEqual(await listNames(repo), ["build", "src", ".gitignore"]);
+  // `dist/` is ignored, so it arrives marked — the explorer dims it, and the
+  // user can still open it, which is the point of a tree.
+  const response = await request(repo, "list");
+  assert.equal(response.status, 200);
+  assert.deepEqual(
+    (await response.json()).entries.map(({ name, hidden }) => ({ name, hidden })),
+    [
+      { name: "build", hidden: undefined },
+      { name: "dist", hidden: "ignored" },
+      { name: "src", hidden: undefined },
+      { name: ".gitignore", hidden: undefined },
+    ],
+  );
 
   // Visibility only: an ignored file is still readable by its path.
   const read = await request(path.join(repo, "dist/bundle.js"), "read");
@@ -100,4 +112,40 @@ test("hidden=1 also lists ignored and name-list entries with their reason, never
     plainEntries.map(({ name, hidden }) => ({ name, hidden })),
     [{ name: "node_modules", hidden: "excluded" }, { name: "src", hidden: undefined }],
   );
+});
+
+test("opens a folder that is not ignored, whose own .gitignore ignores everything inside", async () => {
+  // The report: `.ruff_cache` shows in the tree, and clicking it showed nothing.
+  // ruff writes a `.gitignore` of `*` inside the cache folder, so every entry
+  // there is ignored while the folder itself is not. A folder that was opened
+  // lists its contents, marked and dimmed, and they stay readable.
+  const repo = path.join(root, "repo-cache");
+  write(path.join(repo, ".gitignore"), "*.log\n");
+  write(path.join(repo, ".ruff_cache/.gitignore"), "# Automatically created by ruff.\n*\n");
+  write(path.join(repo, ".ruff_cache/CACHEDIR.TAG"), "Signature: 8a477f594d102ae173aa59fb2e153464");
+  write(path.join(repo, ".ruff_cache/0.17.4/lock"), "");
+  write(path.join(repo, "src/main.ts"));
+  execFileSync("git", ["-C", repo, "init", "-q"]);
+  execFileSync("git", ["-C", repo, "add", ".gitignore", "src"]);
+
+  const rootNames = await listNames(repo);
+  assert.ok(rootNames.includes(".ruff_cache"), "the cache folder is listed: Git does not ignore it");
+
+  const response = await request(path.join(repo, ".ruff_cache"), "list");
+  assert.equal(response.status, 200);
+  const inside = (await response.json()).entries;
+  assert.deepEqual(
+    inside.map(({ name }) => name),
+    ["0.17.4", ".gitignore", "CACHEDIR.TAG"],
+    "its contents arrive: the folder was opened to see them",
+  );
+  for (const entry of inside) {
+    assert.ok(
+      entry.hidden === undefined || entry.hidden === "ignored",
+      `${entry.name} is plain ink or dimmed as Git-excluded, never dropped`,
+    );
+  }
+
+  const read = await request(path.join(repo, ".ruff_cache/CACHEDIR.TAG"), "read");
+  assert.equal(read.status, 200, "and an ignored entry is editable, not only visible");
 });

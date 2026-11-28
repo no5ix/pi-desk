@@ -1,0 +1,1836 @@
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
+import { type BlameResult, parseGitBlame } from "./blame";
+import { GitCache, type ReachabilityCacheEntry } from "./cache";
+import { CommitService } from "./commit/commit-service";
+import { IndexTransaction } from "./commit/index-transaction";
+import type { CommitPathSelection } from "./commit/types";
+import { GIT_NETWORK_TIMEOUT_MS, GitCommandError, GitExecutor } from "./core/git-executor";
+import type { GitRunOptions } from "./core/git-executor";
+import type { GitOperationResult } from "./core/operation-result";
+import { BranchShiftError, BranchShiftErrorCode } from "./errors";
+import { computeGraphLayout } from "./graph-layout";
+import type {
+  BranchInfo,
+  CherryPickState,
+  CommitNode,
+  CommitRequest,
+  DiffFile,
+  FileStatus,
+  GraphLayoutResult,
+  IdeaShelfEntry,
+  LaneSnapshot,
+  LogOptions,
+  LogRevision,
+  MergeState,
+  RefInfo,
+  RemoteBranchGroup,
+  TagInfo,
+} from "./types";
+
+// For parsing git output (actual null byte)
+const FIELD_SEP = "\x00";
+const RECORD_SEP = "\x00\x00\x01";
+// For git log --format (pretty-format): %x00 produces null byte
+const FMT_FIELD_SEP = "%x00";
+const FMT_RECORD_SEP = "%x00%x00%x01";
+// For git branch/tag --format (ref-format / for-each-ref): %00 produces null byte
+const REF_FMT_FIELD_SEP = "%00";
+const MAX_BUFFER = 10 * 1024 * 1024; // 10MB
+/** Network commands get the long timeout; a local command should never run for minutes. */
+const NETWORK_OPTIONS: GitRunOptions = { timeoutMs: GIT_NETWORK_TIMEOUT_MS };
+
+const LOG_FORMAT = [
+  "%H", // hash
+  "%h", // shortHash
+  "%P", // parents (space separated)
+  "%aN", // authorName (mailmap resolved)
+  "%aE", // authorEmail (mailmap resolved)
+  "%aI", // authorDate ISO 8601
+  "%s", // subject
+  "%b", // body
+  "%D", // refs
+].join(FMT_FIELD_SEP);
+
+import { RefService } from "./refs/ref-service";
+import type { RepositoryPaths } from "./repo-registry";
+import { NativeShelfService } from "./shelf/native-shelf-service";
+import { PatchShelfService } from "./shelf/patch-shelf-service";
+import { WorkingTreeService } from "./working-tree/working-tree-service";
+
+export class GitService {
+  readonly cache = new GitCache();
+  private reachabilityCache: ReachabilityCacheEntry | null = null;
+
+  private readonly executor: GitExecutor;
+  private readonly refService: RefService;
+  private readonly workingTreeService: WorkingTreeService;
+  private readonly commitService: CommitService;
+  private readonly nativeShelfService: NativeShelfService;
+  private readonly patchShelfService: PatchShelfService;
+
+  constructor(readonly paths: RepositoryPaths) {
+    this.executor = new GitExecutor(paths.workTreeRoot);
+    this.refService = new RefService(this.executor);
+    this.workingTreeService = new WorkingTreeService(this.executor);
+    const indexTransaction = new IndexTransaction(this.executor);
+    this.commitService = new CommitService(
+      this.executor,
+      this.workingTreeService,
+      indexTransaction,
+    );
+    this.nativeShelfService = new NativeShelfService(
+      this.executor,
+      this.workingTreeService,
+      indexTransaction,
+    );
+    this.patchShelfService = new PatchShelfService(
+      this.executor,
+      this.workingTreeService,
+    );
+  }
+
+  get rootPath(): string {
+    return this.paths.workTreeRoot;
+  }
+
+  private async execGit(
+    args: string[],
+    maxBuffer = MAX_BUFFER,
+    options?: GitRunOptions,
+  ): Promise<string> {
+    return this.executor.text(args, { maxBuffer, ...options });
+  }
+
+  async checkGitAvailable(): Promise<boolean> {
+    try {
+      await this.execGit(["rev-parse", "--is-inside-work-tree"]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async validateRef(ref: string): Promise<void> {
+    if (ref === "HEAD") {
+      return;
+    }
+    // A detached comparison is pinned to the full object id resolved when the
+    // panel opens. Full SHA-1/SHA-256 ids are safe argv values and cannot be
+    // interpreted as options or revision expressions.
+    if (/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(ref)) {
+      return;
+    }
+    if (!ref.startsWith("refs/")) {
+      throw new Error(`Invalid Git ref: ${ref}`);
+    }
+    try {
+      await this.execGit(["check-ref-format", ref]);
+    } catch {
+      throw new Error(`Invalid Git ref: ${ref}`);
+    }
+  }
+
+  private async validateBranch(branch: string): Promise<void> {
+    try {
+      // The legacy log protocol still accepts a plain branch field. Validate
+      // it as a branch/ref name before appending it to argv so values beginning
+      // with '-' cannot be reinterpreted as Git options.
+      await this.execGit(["check-ref-format", "--branch", branch]);
+    } catch {
+      throw new Error(`Invalid Git branch: ${branch}`);
+    }
+  }
+
+  private async appendRevision(
+    args: string[],
+    revision: LogRevision | undefined,
+    branch: string | undefined,
+  ): Promise<void> {
+    if (!revision) {
+      if (branch) {
+        await this.validateBranch(branch);
+        args.push(branch);
+      } else {
+        args.push("--all");
+      }
+      return;
+    }
+
+    switch (revision.kind) {
+      case "all":
+        args.push("--all");
+        return;
+      case "ref":
+        await this.validateRef(revision.ref);
+        args.push(revision.ref);
+        return;
+      case "range":
+        await this.validateRef(revision.excludeRef);
+        await this.validateRef(revision.includeRef);
+        args.push(`${revision.excludeRef}..${revision.includeRef}`);
+        return;
+    }
+  }
+
+  /**
+   * The commits whose hash starts with `prefix`, from git's own object store.
+   *
+   * The Log's page is a window over the history, so a hash that lives deeper
+   * than the window is not in it and the box would answer "nothing matches".
+   * `git rev-parse --disambiguate=<prefix>` is git's own prefix lookup: every
+   * object that starts with the prefix, one per line. A prefix shorter than
+   * four digits is not disambiguable, and an ambiguous prefix names more than
+   * one commit, which is what the list then shows.
+   */
+  private async resolveHashPrefix(prefix: string): Promise<CommitNode[]> {
+    if (prefix.length < 4) return [];
+    const found = await this.execGit(["rev-parse", `--disambiguate=${prefix}`]).catch(() => "");
+    const oids = found.split("\n").filter((line) => /^[0-9a-f]{40}$/.test(line.trim())).map((line) => line.trim());
+    const commits: CommitNode[] = [];
+    for (const oid of oids.slice(0, 10)) {
+      const text = await this.execGit(["log", "-1", `--format=${LOG_FORMAT}${FMT_RECORD_SEP}`, oid]).catch(() => "");
+      const parsed = parseLogOutput(text);
+      if (parsed[0]) commits.push(parsed[0]);
+    }
+    return commits;
+  }
+
+  async getLog(options: LogOptions = {}): Promise<CommitNode[]> {
+    const cacheKey = `log:${JSON.stringify(options)}`;
+    const cached = this.cache.get<CommitNode[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const args = [
+      "log",
+      `--format=${LOG_FORMAT}${FMT_RECORD_SEP}`,
+      "--date-order",
+    ];
+
+    // A word in the panel's search box is a **message** search, and a word made
+    // of hex digits is also a **hash**: the user pastes the short hash they just
+    // read in the row. git's `--grep` matches the message only, so a hash query
+    // reads a wider page and the rows are picked here (message substring, case
+    // insensitive, or the hash starting with the word) and cut back to the page.
+    const pageMax = options.maxCount ?? 200;
+    const searchWord = options.search?.trim() ?? "";
+    // Three is the shortest word a reader copies from a row: the row shows the
+    // short hash, and a hand stops typing when the list has narrowed to one.
+    const hashQuery = /^[0-9a-f]{3,40}$/i.test(searchWord) ? searchWord.toLowerCase() : null;
+    args.push(`--max-count=${hashQuery ? Math.min(pageMax * 4, 2000) : pageMax}`);
+    if (options.skip) {
+      args.push(`--skip=${options.skip}`);
+    }
+    if (options.author) {
+      args.push(`--author=${options.author}`);
+    }
+    if (options.search && !hashQuery) {
+      // Case-insensitive: a search box is not a shell, and `Memory` and `memory`
+      // are the same search to a reader.
+      args.push("-i", `--grep=${options.search}`);
+    }
+    if (options.since) {
+      args.push(`--since=${options.since}`);
+    }
+    if (options.until) {
+      args.push(`--until=${options.until}`);
+    }
+    await this.appendRevision(args, options.revision, options.branch);
+    if (options.file) {
+      args.push("--", options.file);
+    }
+
+    const output = await this.execGit(args);
+    let commits = parseLogOutput(output);
+    if (hashQuery) {
+      // A hash-shaped word names a commit, not a sentence: matching the subject
+      // and the body as well turned `8ab2` into a full-text search and surfaced
+      // commits whose message happened to contain it. Only the hash prefix is
+      // matched, and the page is widened because the commit is usually deeper
+      // in the history than the page.
+      const word = hashQuery;
+      const byHash = commits.filter((commit) =>
+        commit.hash.startsWith(word) || commit.shortHash.startsWith(word),
+      );
+      commits = byHash.length > 0
+        ? byHash
+        : [...(await this.resolveHashPrefix(word)), ...commits.filter((commit) =>
+          commit.subject.toLowerCase().includes(word) || commit.body.toLowerCase().includes(word),
+        )];
+    }
+    commits = commits.slice(0, pageMax);
+    this.cache.set(cacheKey, commits);
+    return commits;
+  }
+
+  async getLogWithReachability(
+    options: LogOptions,
+    currentRef: string,
+  ): Promise<CommitNode[]> {
+    const [commits, reachableHashes] = await Promise.all([
+      this.getLog(options),
+      this.getReachableHashes(currentRef),
+    ]);
+    return commits.map((commit) => ({
+      ...commit,
+      reachableFromCurrent: reachableHashes.has(commit.hash),
+    }));
+  }
+
+  async getGraphTopology(
+    options: LogOptions = {},
+    prevSnapshot?: LaneSnapshot,
+    currentRef?: string,
+  ): Promise<GraphLayoutResult> {
+    const commits = currentRef
+      ? await this.getLogWithReachability(options, currentRef)
+      : await this.getLog(options);
+    const breakHiddenParents = !!options.search;
+    return computeGraphLayout(commits, prevSnapshot, breakHiddenParents);
+  }
+
+  async resolveCommitRef(ref: string): Promise<string | null> {
+    await this.validateRef(ref);
+    try {
+      return (
+        await this.execGit([
+          "rev-parse",
+          "--verify",
+          "--quiet",
+          `${ref}^{commit}`,
+        ])
+      ).trim();
+    } catch (error) {
+      if (error instanceof GitCommandError && error.exitCode === 1) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  private async getReachableHashes(ref: string): Promise<Set<string>> {
+    const tip = await this.resolveCommitRef(ref);
+    if (!tip) {
+      // Reachability only decorates log rows. If the checked-out ref vanishes
+      // between the handler's availability check and this second resolution,
+      // keep the log usable and temporarily render every commit as unreachable.
+      return new Set();
+    }
+
+    const cached = this.reachabilityCache;
+    if (cached?.tip === tip) {
+      if (cached.hashes) {
+        return cached.hashes;
+      }
+      if (cached.pending) {
+        return cached.pending;
+      }
+    }
+
+    const entry: ReachabilityCacheEntry = { tip };
+    const pending = this.loadReachableHashes(tip).then(
+      (hashes) => {
+        if (this.reachabilityCache === entry) {
+          entry.hashes = hashes;
+          entry.pending = undefined;
+        }
+        return hashes;
+      },
+      (error) => {
+        if (this.reachabilityCache === entry) {
+          this.reachabilityCache = null;
+        }
+        throw error;
+      },
+    );
+    entry.pending = pending;
+    this.reachabilityCache = entry;
+    return pending;
+  }
+
+  protected loadReachableHashes(tip: string): Promise<Set<string>> {
+    return this.executor
+      .lines(["rev-list", tip])
+      .then(
+        (lines) => new Set(lines.map((line) => line.trim()).filter(Boolean)),
+      );
+  }
+
+  async getBranches(): Promise<BranchInfo[]> {
+    const cacheKey = "branches";
+    const cached = this.cache.get<BranchInfo[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const branches = await this.refService.getBranches();
+
+    this.cache.set(cacheKey, branches);
+    return branches;
+  }
+
+  async getRemoteBranches(): Promise<RemoteBranchGroup[]> {
+    // Get the actual configured remotes (not inferred from tracking branches)
+    const remoteOutput = await this.execGit(["remote"]).catch(() => "");
+    const configuredRemotes = new Set(
+      remoteOutput
+        .trim()
+        .split("\n")
+        .map((r) => r.trim())
+        .filter(Boolean),
+    );
+
+    if (configuredRemotes.size === 0) {
+      return [];
+    }
+
+    const allBranches = await this.getBranches();
+    const remoteBranches = allBranches.filter((b) => b.isRemote);
+
+    const groups = new Map<string, string[]>();
+    for (const branch of remoteBranches) {
+      const slashIdx = branch.name.indexOf("/");
+      if (slashIdx === -1) continue;
+      const remote = branch.name.substring(0, slashIdx);
+      // Only include branches for remotes that still exist
+      if (!configuredRemotes.has(remote)) continue;
+      const branchName = branch.name.substring(slashIdx + 1);
+      if (!groups.has(remote)) {
+        groups.set(remote, []);
+      }
+      groups.get(remote)?.push(branchName);
+    }
+
+    // Ensure all configured remotes appear even if they have no tracking branches yet
+    for (const remote of configuredRemotes) {
+      if (!groups.has(remote)) {
+        groups.set(remote, []);
+      }
+    }
+
+    // Sort branches alphabetically within each group (case-insensitive)
+    const result: { remote: string; branches: string[] }[] = [];
+    for (const [remote, branchList] of groups) {
+      branchList.sort((a, b) =>
+        a.localeCompare(b, undefined, { sensitivity: "base" }),
+      );
+      result.push({ remote, branches: branchList });
+    }
+
+    return result;
+  }
+
+  async getTags(): Promise<TagInfo[]> {
+    const cacheKey = "tags";
+    const cached = this.cache.get<TagInfo[]>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const tagFormat = [
+      "%(refname:short)",
+      "%(refname)",
+      "%(objectname)",
+      "%(*objectname)",
+      "%(objecttype)",
+      "%(contents:subject)",
+    ].join(REF_FMT_FIELD_SEP);
+
+    const output = await this.execGit([
+      "tag",
+      "-l",
+      `--format=${tagFormat}`,
+    ]).catch(() => "");
+
+    const tags: TagInfo[] = [];
+    for (const line of output.trim().split("\n")) {
+      if (!line.trim()) {
+        continue;
+      }
+      const fields = line.split(FIELD_SEP);
+      const hash = fields[2]?.trim() ?? "";
+      const peeledHash = fields[3]?.trim() ?? "";
+      tags.push({
+        name: fields[0]?.trim() ?? "",
+        fullRef: fields[1]?.trim() ?? `refs/tags/${fields[0]?.trim() ?? ""}`,
+        hash,
+        targetCommitHash: peeledHash || hash,
+        isAnnotated: fields[4]?.trim() === "tag",
+        message: fields[5]?.trim() || undefined,
+      });
+    }
+
+    this.cache.set(cacheKey, tags);
+    return tags;
+  }
+
+  async getDiff(ref1: string, ref2: string, file?: string): Promise<string> {
+    const args = ["diff", ref1, ref2];
+    if (file) {
+      args.push("--", file);
+    }
+    return this.execGit(args);
+  }
+
+  async getFileContent(ref: string, filePath: string): Promise<string> {
+    if (!ref) {
+      return "";
+    }
+    try {
+      return await this.execGit(["show", `${ref}:${filePath}`]);
+    } catch {
+      return "";
+    }
+  }
+
+  async getFileContentBuffer(ref: string, filePath: string): Promise<Buffer> {
+    if (!ref) {
+      return Buffer.alloc(0);
+    }
+    try {
+      return await this.executor.buffer(["show", `${ref}:${filePath}`], {
+        maxBuffer: MAX_BUFFER,
+      });
+    } catch {
+      return Buffer.alloc(0);
+    }
+  }
+
+  readFileContent(ref: string, filePath: string): Promise<Buffer> {
+    if (!ref) {
+      throw new Error("A revision is required to read file content");
+    }
+    return this.executor.buffer(["show", `${ref}:${filePath}`], {
+      maxBuffer: MAX_BUFFER,
+    });
+  }
+
+  async getCommitFiles(hash: string): Promise<DiffFile[]> {
+    return this.workingTreeService.getCommitFiles(hash);
+  }
+
+  async getCommitRangeFiles(hashes: string[]): Promise<DiffFile[]> {
+    if (hashes.length === 0) return [];
+    if (hashes.length === 1) return this.getCommitFiles(hashes[0]);
+
+    // Cherry-pick style: get diff-tree for each commit individually, then merge
+    const perCommitFiles = await Promise.all(
+      hashes.map((h) => this.getCommitFiles(h)),
+    );
+
+    const merged = new Map<string, DiffFile>();
+    for (const files of perCommitFiles) {
+      for (const f of files) {
+        const key = f.newPath || f.oldPath;
+        if (!merged.has(key)) {
+          merged.set(key, f);
+        }
+      }
+    }
+    return Array.from(merged.values());
+  }
+
+  async getGitBlame(filePath: string): Promise<BlameResult> {
+    // Reuse the same safety pattern as the other file-scoped reads: no
+    // leading "-", no absolute paths, no traversal out of the work tree.
+    const trimmed = filePath.trim();
+    if (!trimmed || trimmed.startsWith("-")) {
+      throw new Error(`Invalid file path: ${filePath}`);
+    }
+    if (path.isAbsolute(trimmed)) {
+      throw new Error(`Invalid file path: ${filePath}`);
+    }
+    const segments = trimmed.split(/[\\/]+/);
+    if (segments.includes("..")) {
+      throw new Error(`Invalid file path: ${filePath}`);
+    }
+    const output = await this.execGit([
+      "blame",
+      "--line-porcelain",
+      "--",
+      trimmed,
+    ]);
+    return parseGitBlame(output, trimmed);
+  }
+
+  async findFileRange(
+    hashes: string[],
+    filePath: string,
+  ): Promise<{ oldest: string; newest: string } | null> {
+    // From hashes (newest first), find commits that touch this file
+    const touching: string[] = [];
+    for (const h of hashes) {
+      const files = await this.getCommitFiles(h);
+      if (files.some((f) => f.newPath === filePath || f.oldPath === filePath)) {
+        touching.push(h);
+      }
+    }
+    if (touching.length === 0) return null;
+    return { newest: touching[0], oldest: touching[touching.length - 1] };
+  }
+
+  async getStatus(): Promise<FileStatus[]> {
+    return this.workingTreeService.getStatus();
+  }
+
+  getIndexFileContent(path: string): Promise<Buffer> {
+    return this.workingTreeService.getIndexFileContent(path);
+  }
+
+  async getCommitParents(hash: string): Promise<string[]> {
+    const output = await this.execGit(["rev-parse", `${hash}^@`]).catch(
+      () => "",
+    );
+    return output
+      .trim()
+      .split("\n")
+      .filter((s) => s.length > 0);
+  }
+
+  async getMergeState(): Promise<MergeState> {
+    try {
+      const mergeHead = (
+        await fs.readFile(path.join(this.paths.gitDir, "MERGE_HEAD"), "utf-8")
+      ).trim();
+      let mergeMsg = "";
+      try {
+        mergeMsg = (
+          await fs.readFile(path.join(this.paths.gitDir, "MERGE_MSG"), "utf-8")
+        ).trim();
+      } catch {}
+      return { isMerging: true, mergeHead, mergeMsg };
+    } catch {
+      return { isMerging: false };
+    }
+  }
+
+  async getCherryPickState(): Promise<CherryPickState> {
+    try {
+      const cherryPickHead = (
+        await fs.readFile(
+          path.join(this.paths.gitDir, "CHERRY_PICK_HEAD"),
+          "utf-8",
+        )
+      ).trim();
+      return { isCherryPicking: true, cherryPickHead };
+    } catch {
+      return { isCherryPicking: false };
+    }
+  }
+
+  async cherryPickAction(action: "continue" | "abort" | "skip"): Promise<void> {
+    if (action === "continue") {
+      // Stage all resolved files before continuing.
+      await this.execGit(["add", "-u"]);
+      // Use --allow-empty to handle the case where cherry-pick becomes empty after conflict resolution
+      try {
+        await this.execGit(["cherry-pick", "--continue"]);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("allow-empty")) {
+          await this.execGit(["commit", "--allow-empty"]);
+        } else {
+          throw err;
+        }
+      }
+    } else if (action === "skip") {
+      await this.execGit(["cherry-pick", "--skip"]);
+    } else {
+      await this.execGit(["cherry-pick", "--abort"]);
+    }
+    this.invalidateCache();
+  }
+
+  async getRebaseState(): Promise<{
+    isRebasing: boolean;
+    branchName?: string;
+    step?: number;
+    totalSteps?: number;
+  }> {
+    const rebaseMergePath = path.join(this.paths.gitDir, "rebase-merge");
+    const rebaseApplyPath = path.join(this.paths.gitDir, "rebase-apply");
+    try {
+      await fs.access(rebaseMergePath);
+      let branchName = "";
+      let step = 0;
+      let totalSteps = 0;
+      try {
+        const headName = await fs.readFile(
+          path.join(rebaseMergePath, "head-name"),
+          "utf-8",
+        );
+        branchName = headName.trim().replace("refs/heads/", "");
+      } catch {}
+      try {
+        const msgnum = await fs.readFile(
+          path.join(rebaseMergePath, "msgnum"),
+          "utf-8",
+        );
+        step = Number.parseInt(msgnum.trim(), 10);
+      } catch {}
+      try {
+        const end = await fs.readFile(
+          path.join(rebaseMergePath, "end"),
+          "utf-8",
+        );
+        totalSteps = Number.parseInt(end.trim(), 10);
+      } catch {}
+      return { isRebasing: true, branchName, step, totalSteps };
+    } catch {}
+    try {
+      await fs.access(rebaseApplyPath);
+      let branchName = "";
+      let step = 0;
+      let totalSteps = 0;
+      try {
+        const headName = await fs.readFile(
+          path.join(rebaseApplyPath, "head-name"),
+          "utf-8",
+        );
+        branchName = headName.trim().replace("refs/heads/", "");
+      } catch {}
+      try {
+        const next = await fs.readFile(
+          path.join(rebaseApplyPath, "next"),
+          "utf-8",
+        );
+        step = Number.parseInt(next.trim(), 10);
+      } catch {}
+      try {
+        const last = await fs.readFile(
+          path.join(rebaseApplyPath, "last"),
+          "utf-8",
+        );
+        totalSteps = Number.parseInt(last.trim(), 10);
+      } catch {}
+      return { isRebasing: true, branchName, step, totalSteps };
+    } catch {}
+    return { isRebasing: false };
+  }
+
+  async getConflictFiles(): Promise<string[]> {
+    const output = await this.execGit([
+      "diff",
+      "--name-only",
+      "--diff-filter=U",
+    ]);
+    return output
+      .trim()
+      .split("\n")
+      .filter((s) => s.length > 0);
+  }
+
+  async getFileVersions(
+    filePath: string,
+  ): Promise<{ base: string; ours: string; theirs: string }> {
+    const [base, ours, theirs] = await Promise.all([
+      this.getFileContent(":1", filePath),
+      this.getFileContent(":2", filePath),
+      this.getFileContent(":3", filePath),
+    ]);
+    return { base, ours, theirs };
+  }
+
+  async saveMergedContent(filePath: string, content: string): Promise<void> {
+    await fs.writeFile(path.join(this.rootPath, filePath), content, "utf-8");
+  }
+
+  async stageFile(filePath: string): Promise<void> {
+    await this.execGit(["add", filePath]);
+  }
+
+  async acceptOurs(filePath: string): Promise<void> {
+    await this.execGit(["checkout", "--ours", filePath]);
+    await this.execGit(["add", filePath]);
+  }
+
+  async acceptTheirs(filePath: string): Promise<void> {
+    await this.execGit(["checkout", "--theirs", filePath]);
+    await this.execGit(["add", filePath]);
+  }
+
+  async checkout(branchName: string): Promise<void> {
+    await this.execGit(["checkout", branchName]);
+    this.invalidateCache();
+  }
+
+  async createBranch(
+    newBranchName: string,
+    startPoint: string,
+    force = false,
+  ): Promise<void> {
+    const args = force
+      ? ["branch", "-f", newBranchName, startPoint]
+      : ["branch", newBranchName, startPoint];
+    await this.execGit(args);
+    this.invalidateCache();
+  }
+
+  async deleteBranch(branchName: string, force = false): Promise<void> {
+    const flag = force ? "-D" : "-d";
+    try {
+      await this.execGit(["branch", flag, branchName]);
+    } catch (error) {
+      const detail = gitErrorText(error);
+      if (!force && /not fully merged/i.test(detail)) {
+        throw new BranchShiftError(
+          BranchShiftErrorCode.BRANCH_NOT_FULLY_MERGED,
+          `Branch '${branchName}' is not fully merged`,
+          "Review its exclusive commits or force delete it.",
+        );
+      }
+      throw error;
+    }
+    this.invalidateCache();
+  }
+
+  async deleteRemoteBranch(remoteBranch: string): Promise<void> {
+    // remoteBranch is like "origin/feature" → push --delete origin feature
+    const slashIdx = remoteBranch.indexOf("/");
+    const remote = remoteBranch.substring(0, slashIdx);
+    const branch = remoteBranch.substring(slashIdx + 1);
+    await this.execGit(["push", remote, "--delete", branch]);
+    await this.execGit([
+      "update-ref",
+      "-d",
+      `refs/remotes/${remote}/${branch}`,
+    ]).catch(() => undefined);
+    this.invalidateCache();
+  }
+
+  async renameBranch(oldName: string, newName: string): Promise<void> {
+    await this.execGit(["branch", "-m", oldName, newName]);
+    this.invalidateCache();
+  }
+
+  async merge(branchName: string): Promise<void> {
+    // --no-edit: a server has no editor to open for the merge message.
+    await this.execGit(["merge", "--no-edit", branchName]);
+    this.invalidateCache();
+  }
+
+  async rebase(onto: string): Promise<void> {
+    const branch = (await this.execGit(["branch", "--show-current"])).trim();
+    if (!branch) {
+      throw new Error("Rebase requires a checked-out local branch.");
+    }
+
+    await this.execGit(["rebase", onto]);
+    this.invalidateCache();
+
+    // Rebase rewrites branch A; pull its upstream so the local branch is
+    // synchronized before returning to the UI. Only when it has one: a local
+    // branch with no remote is normal (and a failed pull there would report the
+    // rebase itself as failed, since the rebase already finished).
+    const hasUpstream = await this.execGit([
+      "rev-parse",
+      "--abbrev-ref",
+      "--symbolic-full-name",
+      "@{upstream}",
+    ])
+      .then(() => true)
+      .catch(() => false);
+    if (hasUpstream) await this.pull(branch);
+  }
+
+  async rebaseAction(action: "continue" | "abort" | "skip"): Promise<void> {
+    if (action === "continue") {
+      // Stage all resolved files before continuing
+      await this.execGit(["add", "-u"]);
+    }
+    await this.execGit(["rebase", `--${action}`]);
+    this.invalidateCache();
+  }
+
+  async mergeAbort(): Promise<void> {
+    await this.execGit(["merge", "--abort"]);
+    this.invalidateCache();
+  }
+
+  async mergeContinue(): Promise<void> {
+    // Stage all resolved files before committing
+    await this.execGit(["add", "-u"]);
+    await this.execGit(["commit", "--no-edit"]);
+    this.invalidateCache();
+  }
+
+  async checkoutAndRebase(
+    branchToCheckout: string,
+    rebaseOnto: string,
+  ): Promise<void> {
+    await this.execGit(["checkout", branchToCheckout]);
+    await this.rebase(rebaseOnto);
+  }
+
+  async push(
+    branchName: string,
+    force = false,
+    remote = "origin",
+    targetBranch?: string,
+  ): Promise<string> {
+    const args = ["push"];
+    if (force) args.push("--force-with-lease");
+    args.push(remote, `${branchName}:${targetBranch || branchName}`);
+    const output = await this.execGit(args, MAX_BUFFER, NETWORK_OPTIONS);
+    this.invalidateCache();
+    return output;
+  }
+
+  /**
+   * Get commits that are ahead of the remote tracking branch.
+   * Returns commits in newest-first order.
+   */
+  async getAheadCommits(
+    branchName: string,
+    remote?: string,
+  ): Promise<CommitNode[]> {
+    const remoteName = remote || (await this.getDefaultRemote(branchName));
+    const upstream = `${remoteName}/${branchName}`;
+    // Check if upstream exists
+    try {
+      await this.execGit(["rev-parse", "--verify", upstream]);
+    } catch {
+      // No upstream — all local commits are "ahead"
+      const args = [
+        "log",
+        `--format=${LOG_FORMAT}${FMT_RECORD_SEP}`,
+        branchName,
+        "--max-count=50",
+      ];
+      const output = await this.execGit(args);
+      return parseLogOutput(output);
+    }
+    const args = [
+      "log",
+      `--format=${LOG_FORMAT}${FMT_RECORD_SEP}`,
+      `${upstream}..${branchName}`,
+    ];
+    const output = await this.execGit(args);
+    return parseLogOutput(output);
+  }
+
+  async pull(branchName?: string): Promise<void> {
+    const args = ["pull", "--autostash"];
+    if (branchName) {
+      args.push("origin", branchName);
+    }
+    await this.execGit(args, MAX_BUFFER, NETWORK_OPTIONS);
+    this.invalidateCache();
+  }
+
+  async updateBranch(branchName: string): Promise<void> {
+    const localRef = `refs/heads/${branchName}`;
+    const trackingOutput = await this.execGit([
+      "for-each-ref",
+      `--format=%(refname)${REF_FMT_FIELD_SEP}%(upstream:remotename)${REF_FMT_FIELD_SEP}%(upstream:remoteref)`,
+      localRef,
+    ]);
+    const [resolvedRef, remote, remoteRef] = trackingOutput
+      .trim()
+      .split(FIELD_SEP);
+    if (resolvedRef !== localRef) {
+      throw new BranchShiftError(
+        BranchShiftErrorCode.BRANCH_NOT_FOUND,
+        `Local branch '${branchName}' does not exist`,
+      );
+    }
+    if (!remote || !remoteRef) {
+      throw new BranchShiftError(
+        BranchShiftErrorCode.BRANCH_NO_UPSTREAM,
+        `Branch '${branchName}' has no configured upstream`,
+      );
+    }
+
+    const currentBranch = (
+      await this.execGit(["branch", "--show-current"])
+    ).trim();
+    if (currentBranch === branchName) {
+      await this.pull();
+      return;
+    }
+
+    const checkedOutPath = parseWorktreeCheckouts(
+      await this.execGit(["worktree", "list", "--porcelain"]),
+    ).get(localRef);
+    if (checkedOutPath) {
+      throw new BranchShiftError(
+        BranchShiftErrorCode.BRANCH_CHECKED_OUT_IN_WORKTREE,
+        `Branch '${branchName}' is checked out in worktree '${checkedOutPath}'`,
+      );
+    }
+
+    try {
+      await this.execGit(["fetch", remote, `${remoteRef}:${localRef}`], MAX_BUFFER, NETWORK_OPTIONS);
+    } catch (error) {
+      const detail = gitErrorText(error);
+      if (/non-fast-forward|\[rejected\]/i.test(detail)) {
+        throw new BranchShiftError(
+          BranchShiftErrorCode.BRANCH_NON_FAST_FORWARD,
+          `Branch '${branchName}' cannot be fast-forwarded from its upstream`,
+        );
+      }
+      throw error;
+    }
+    this.invalidateCache();
+  }
+
+  async pullRebase(branchName?: string): Promise<void> {
+    const args = ["pull", "--rebase", "--autostash"];
+    if (branchName) {
+      args.push("origin", branchName);
+    }
+    await this.execGit(args, MAX_BUFFER, NETWORK_OPTIONS);
+    this.invalidateCache();
+  }
+
+  async fetch(remote = "origin"): Promise<void> {
+    await this.execGit(["fetch", remote], MAX_BUFFER, NETWORK_OPTIONS);
+    this.invalidateCache();
+  }
+
+  async cherryPick(hash: string): Promise<void> {
+    await this.execGit(["cherry-pick", hash]);
+    this.invalidateCache();
+  }
+
+  /** Cherry-pick selected commits in chronological order (oldest first). */
+  async cherryPickMany(hashes: string[]): Promise<void> {
+    this.validateCommitHashList(hashes, 2);
+    const [rebaseState, mergeState, cherryPickState] = await Promise.all([
+      this.getRebaseState(),
+      this.getMergeState(),
+      this.getCherryPickState(),
+    ]);
+    if (
+      rebaseState.isRebasing ||
+      mergeState.isMerging ||
+      cherryPickState.isCherryPicking
+    ) {
+      throw new Error(
+        "Cannot cherry-pick multiple commits while another Git operation is in progress.",
+      );
+    }
+    const status = await this.execGit(["status", "--porcelain"]);
+    if (status.trim())
+      throw new Error(
+        "Multiple cherry-pick requires a clean working tree. Commit, stash, or discard your changes first.",
+      );
+    await this.execGit(["cherry-pick", ...hashes]);
+    this.invalidateCache();
+  }
+
+  /** Squash consecutive non-merge commits at HEAD. Hashes are oldest-to-newest. */
+  async squashCommits(hashes: string[], message: string): Promise<void> {
+    this.validateCommitHashList(hashes, 2);
+    const commitMessage = message.trim();
+    if (!commitMessage)
+      throw new Error("A commit message is required to squash commits.");
+    const currentBranch = (
+      await this.execGit(["branch", "--show-current"])
+    ).trim();
+    if (!currentBranch)
+      throw new Error(
+        "Git Squash requires a checked-out local branch; HEAD is detached.",
+      );
+    const [rebaseState, mergeState, cherryPickState] = await Promise.all([
+      this.getRebaseState(),
+      this.getMergeState(),
+      this.getCherryPickState(),
+    ]);
+    if (
+      rebaseState.isRebasing ||
+      mergeState.isMerging ||
+      cherryPickState.isCherryPicking
+    ) {
+      throw new Error(
+        "Cannot squash commits while another Git operation is in progress.",
+      );
+    }
+    const status = await this.execGit(["status", "--porcelain"]);
+    if (status.trim())
+      throw new Error(
+        "Git Squash requires a clean working tree. Commit, stash, or discard your changes first.",
+      );
+    const head = (await this.execGit(["rev-parse", "HEAD"])).trim();
+    if (hashes[hashes.length - 1] !== head) {
+      throw new Error(
+        "Git Squash can only combine consecutive commits that end at the current HEAD. Select the latest commit and its consecutive ancestors.",
+      );
+    }
+    for (let index = 0; index < hashes.length; index += 1) {
+      const parents = await this.getCommitParents(hashes[index]);
+      if (parents.length !== 1)
+        throw new Error(
+          "Git Squash currently supports consecutive non-merge commits only.",
+        );
+      if (index === 0) {
+        if (!parents[0])
+          throw new Error(
+            "The initial commit cannot be included in Git Squash.",
+          );
+      } else if (parents[0] !== hashes[index - 1]) {
+        throw new Error(
+          "Selected commits are not consecutive in oldest-to-newest order. Select the complete commit sequence and try again.",
+        );
+      }
+    }
+    try {
+      await this.execGit(["reset", "--soft", `${hashes[0]}^`]);
+      await this.executor.withInput(["commit", "-F", "-"], commitMessage);
+    } finally {
+      this.invalidateCache();
+    }
+  }
+
+  private validateCommitHashList(hashes: string[], minimumCount: number): void {
+    if (!Array.isArray(hashes) || hashes.length < minimumCount)
+      throw new Error(`Select at least ${minimumCount} commits.`);
+    if (hashes.some((hash) => !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(hash))) {
+      throw new Error(
+        "One or more selected commit IDs are invalid. Refresh Git Log and try again.",
+      );
+    }
+    if (new Set(hashes).size !== hashes.length)
+      throw new Error("The same commit was selected more than once.");
+  }
+
+  async checkoutCommit(hash: string): Promise<void> {
+    await this.execGit(["checkout", hash]);
+    this.invalidateCache();
+  }
+
+  async checkoutFileFromCommit(hash: string, filePath: string): Promise<void> {
+    await this.execGit(["checkout", hash, "--", filePath]);
+    this.invalidateCache();
+  }
+
+  async checkoutFileFromParent(
+    hash: string,
+    filePath: string,
+    status?: string,
+  ): Promise<void> {
+    if (status === "added") {
+      // File was newly added in this commit, revert means removing it
+      // Use --cached to handle case where file may not exist on disk
+      try {
+        await this.execGit(["rm", "-f", "--", filePath]);
+      } catch {
+        // File might not exist in working tree or index, try removing from index only
+        try {
+          await this.execGit(["rm", "-f", "--cached", "--", filePath]);
+        } catch {
+          // File doesn't exist at all - nothing to revert
+        }
+        // Also try to remove the physical file if it exists
+        try {
+          await fs.unlink(path.join(this.rootPath, filePath));
+        } catch {
+          // File already doesn't exist on disk
+        }
+      }
+    } else if (status === "deleted") {
+      // File was deleted in this commit, revert means restoring it from parent
+      await this.execGit(["checkout", `${hash}~1`, "--", filePath]);
+    } else {
+      // File was modified/renamed/copied, revert to parent state
+      await this.execGit(["checkout", `${hash}~1`, "--", filePath]);
+    }
+    this.invalidateCache();
+  }
+
+  async resetToCommit(
+    hash: string,
+    mode: "soft" | "mixed" | "hard",
+  ): Promise<void> {
+    await this.execGit(["reset", `--${mode}`, hash]);
+    this.invalidateCache();
+  }
+
+  async revertCommit(hash: string): Promise<void> {
+    await this.execGit(["revert", "--no-edit", hash]);
+    this.invalidateCache();
+  }
+
+  async dropCommit(hash: string): Promise<void> {
+    const headHash = (await this.execGit(["rev-parse", "HEAD"])).trim();
+    const isHead = hash === headHash;
+
+    if (isHead) {
+      await this.dropHeadCommit(hash);
+    } else {
+      await this.dropNonHeadCommit(hash);
+    }
+    this.invalidateCache();
+  }
+
+  private async dropHeadCommit(hash: string): Promise<void> {
+    // Verify commit has a parent
+    const parents = await this.getCommitParents(hash);
+    if (parents.length === 0) {
+      throw new Error("Cannot drop the initial commit (no parent)");
+    }
+    await this.execGit(["reset", "--mixed", "HEAD~1"]);
+  }
+
+  private async dropNonHeadCommit(hash: string): Promise<void> {
+    // 1. Capture the target commit's diff BEFORE rebase
+    const diff = await this.execGit(["diff-tree", "-p", hash]);
+
+    // 2. Check working directory status
+    const status = await this.execGit(["status", "--porcelain"]);
+    const isDirty = status.trim().length > 0;
+
+    // 3. Stash if dirty
+    if (isDirty) {
+      await this.execGit([
+        "stash",
+        "push",
+        "-u",
+        "-m",
+        "drop-commit-autostash",
+      ]);
+    }
+
+    // 4. Execute rebase to remove the commit
+    try {
+      await this.execGit(["rebase", "--onto", `${hash}^`, hash]);
+    } catch (rebaseErr) {
+      // Abort rebase on failure
+      try {
+        await this.execGit(["rebase", "--abort"]);
+      } catch {
+        // ignore abort errors
+      }
+
+      // Restore stash if it was used
+      if (isDirty) {
+        try {
+          await this.execGit(["stash", "pop"]);
+        } catch {
+          // stash pop failure is secondary
+        }
+      }
+
+      throw rebaseErr;
+    }
+
+    // 5. Restore stashed changes on success
+    if (isDirty) {
+      await this.execGit(["stash", "pop"]);
+    }
+
+    // 6. Apply dropped commit's diff to working directory via temp file
+    if (diff.trim()) {
+      const tmpFile = path.join(os.tmpdir(), `drop-commit-${hash}.patch`);
+      try {
+        await fs.writeFile(tmpFile, diff, "utf-8");
+        await this.execGit(["apply", "--3way", tmpFile]);
+      } catch {
+        throw new Error(
+          "Commit was removed from history but its changes could not be applied to the working directory",
+        );
+      } finally {
+        try {
+          await fs.unlink(tmpFile);
+        } catch {
+          // ignore cleanup errors
+        }
+      }
+    }
+  }
+
+  async createBranchFromCommit(
+    branchName: string,
+    hash: string,
+    force = false,
+  ): Promise<void> {
+    const args = force
+      ? ["branch", "-f", branchName, hash]
+      : ["branch", branchName, hash];
+    await this.execGit(args);
+    this.invalidateCache();
+  }
+
+  async createTag(
+    tagName: string,
+    hash: string,
+    message?: string,
+  ): Promise<void> {
+    if (message) {
+      await this.execGit(["tag", "-a", tagName, hash, "-m", message]);
+    } else {
+      await this.execGit(["tag", tagName, hash]);
+    }
+    this.invalidateCache();
+  }
+
+  // ─── Commit Panel Operations ───────────────────────────────────────
+
+  async getWorkingTreeChanges(): Promise<import("./types").WorkingTreeFile[]> {
+    return this.workingTreeService.getWorkingTreeChanges();
+  }
+
+  async stageFiles(filePaths: string[]): Promise<void> {
+    if (filePaths.length === 0) return;
+    await this.execGit(["add", "--", ...filePaths]);
+  }
+
+  async unstageFile(filePath: string): Promise<void> {
+    await this.execGit(["reset", "HEAD", "--", filePath]);
+  }
+
+  async unstageAll(): Promise<void> {
+    await this.execGit(["reset", "HEAD"]);
+  }
+
+  async stageAll(): Promise<void> {
+    await this.execGit(["add", "-A"]);
+  }
+
+  async commit(message: string, amend = false): Promise<void> {
+    const args = ["commit", "-m", message];
+    if (amend) args.push("--amend");
+    await this.execGit(args);
+    this.invalidateCache();
+  }
+
+  async commitSelected(
+    request: CommitRequest,
+  ): Promise<GitOperationResult<void>> {
+    const result = await this.commitService.commitSelected(request);
+    if (result.ok) this.invalidateCache();
+    return result;
+  }
+
+  async commitAndPush(message: string, amend = false): Promise<void> {
+    await this.commit(message, amend);
+    await this.pushCurrentBranch(amend);
+  }
+
+  async pushCurrentBranch(force = false): Promise<void> {
+    const branch = await this.getCurrentBranch();
+    if (branch) {
+      await this.push(branch, force);
+    }
+  }
+
+  async getCurrentBranch(): Promise<string | null> {
+    try {
+      const output = await this.execGit(["rev-parse", "--abbrev-ref", "HEAD"]);
+      const branch = output.trim();
+      return branch === "HEAD" ? null : branch;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get the default remote for the current branch.
+   * Tries the upstream tracking remote first, then falls back to the first configured remote.
+   */
+  async getDefaultRemote(branch?: string): Promise<string> {
+    // Try to get the upstream remote for the given branch
+    if (branch) {
+      try {
+        const output = await this.execGit([
+          "config",
+          `branch.${branch}.remote`,
+        ]);
+        const remote = output.trim();
+        if (remote) return remote;
+      } catch {
+        // No upstream configured
+      }
+    }
+
+    // Fall back to first configured remote
+    try {
+      const output = await this.execGit(["remote"]);
+      const remotes = output
+        .trim()
+        .split("\n")
+        .map((r) => r.trim())
+        .filter(Boolean);
+      if (remotes.length > 0) {
+        // Prefer "origin" if it exists, otherwise first remote
+        return remotes.includes("origin") ? "origin" : remotes[0];
+      }
+    } catch {
+      // ignore
+    }
+
+    return "origin";
+  }
+
+  async getLastCommitMessage(): Promise<string> {
+    try {
+      const output = await this.execGit(["log", "-1", "--format=%B"]);
+      return output.trim();
+    } catch {
+      return "";
+    }
+  }
+
+  async getRecentCommitMessages(count = 20): Promise<string[]> {
+    try {
+      const output = await this.execGit(["log", `-${count}`, "--format=%s"]);
+      return output
+        .trim()
+        .split("\n")
+        .filter((msg) => msg.length > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  async rollbackFile(filePath: string): Promise<void> {
+    // Check if file exists in HEAD (i.e., was previously committed)
+    let existsInHead = false;
+    try {
+      await this.execGit(["cat-file", "-e", `HEAD:${filePath}`]);
+      existsInHead = true;
+    } catch {
+      existsInHead = false;
+    }
+
+    if (existsInHead) {
+      // File exists in HEAD - restore to HEAD version (handles both staged and unstaged changes)
+      await this.execGit(["checkout", "HEAD", "--", filePath]);
+    } else {
+      // File is new (not in HEAD) - remove from index and delete from disk
+      try {
+        await this.execGit(["rm", "-f", "--cached", "--", filePath]);
+      } catch {
+        // Not in index either, nothing to unstage
+      }
+      const fullPath = path.join(this.rootPath, filePath);
+      try {
+        await fs.unlink(fullPath);
+      } catch {
+        // File already doesn't exist on disk
+      }
+    }
+  }
+
+  // ─── Shelf (Stash-based) Operations ───────────────────────────────
+
+  async getShelves(): Promise<import("./types").ShelveEntry[]> {
+    try {
+      const output = await this.execGit([
+        "stash",
+        "list",
+        "--format=%gd%x00%s%x00%aI%x00%D",
+      ]);
+      if (!output.trim()) return [];
+
+      const entries: import("./types").ShelveEntry[] = [];
+      for (const line of output.trim().split("\n")) {
+        if (!line.trim()) continue;
+        const parts = line.split("\x00");
+        const id = parts[0] ?? "";
+        const message = (parts[1] ?? "").replace(/^(WIP on|On) [^:]+:\s*/, "");
+        const date = parts[2] ?? "";
+        const _refs = parts[3] ?? "";
+        // Extract branch from refs or message
+        const branchMatch = (parts[1] ?? "").match(/^(?:WIP on|On) ([^:]+)/);
+        const branch = branchMatch?.[1] ?? "";
+
+        entries.push({ id, message, date, branch, files: [] });
+      }
+
+      // Load files for each stash
+      for (const entry of entries) {
+        try {
+          const filesOutput = await this.execGit([
+            "stash",
+            "show",
+            entry.id,
+            "--name-only",
+          ]);
+          entry.files = filesOutput.trim().split("\n").filter(Boolean);
+        } catch {
+          // ignore
+        }
+      }
+
+      return entries;
+    } catch {
+      return [];
+    }
+  }
+
+  async shelveChanges(message: string, filePaths?: string[]): Promise<void> {
+    const selections = filePaths
+      ? await this.resolveShelfPaths(filePaths)
+      : undefined;
+    const result = await this.nativeShelfService.create({
+      message,
+      ...(selections !== undefined ? { selections } : {}),
+    });
+    this.unwrapShelfResult(result);
+    this.invalidateCache();
+  }
+
+  async unshelveChanges(stashId: string, drop = true): Promise<void> {
+    if (drop) {
+      await this.execGit(["stash", "pop", stashId]);
+    } else {
+      await this.execGit(["stash", "apply", stashId]);
+    }
+    this.invalidateCache();
+  }
+
+  async deleteShelve(stashId: string): Promise<void> {
+    await this.execGit(["stash", "drop", stashId]);
+  }
+
+  // ─── IDEA Shelf (patch-file based) Operations ─────────────────────
+
+  async getIdeaShelves(): Promise<IdeaShelfEntry[]> {
+    const shelfDir = path.join(this.rootPath, ".idea", "shelf");
+    try {
+      await fs.access(shelfDir);
+    } catch {
+      return [];
+    }
+
+    const entries: IdeaShelfEntry[] = [];
+    const dirContents = await fs.readdir(shelfDir);
+
+    for (const item of dirContents) {
+      if (!item.endsWith(".xml")) continue;
+      const xmlPath = path.join(shelfDir, item);
+      try {
+        const xmlContent = await fs.readFile(xmlPath, "utf-8");
+        const entry = await this.parseIdeaShelfXml(xmlContent, shelfDir);
+        if (entry) entries.push(entry);
+      } catch {
+        // skip malformed entries
+      }
+    }
+
+    // Sort by date descending (newest first)
+    entries.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+    );
+    return entries;
+  }
+
+  private async parseIdeaShelfXml(
+    xmlContent: string,
+    shelfDir: string,
+  ): Promise<IdeaShelfEntry | null> {
+    // Parse: <changelist name="..." date="..." recycled="...">
+    const nameMatch = xmlContent.match(/changelist\s+name="([^"]*)"/);
+    const dateMatch = xmlContent.match(/\bdate="(\d+)"/);
+    const pathMatch = xmlContent.match(
+      /option\s+name="PATH"\s+value="([^"]*)"/,
+    );
+    const descMatch = xmlContent.match(
+      /option\s+name="DESCRIPTION"\s+value="([^"]*)"/,
+    );
+
+    if (!nameMatch || !pathMatch) return null;
+
+    const name = nameMatch[1];
+    const dateMs = dateMatch ? Number.parseInt(dateMatch[1], 10) : Date.now();
+    const date = new Date(dateMs).toISOString();
+    const description = descMatch?.[1] ?? "";
+
+    // Resolve $PROJECT_DIR$ to workspace root
+    const patchRelative = pathMatch[1].replace(
+      /\$PROJECT_DIR\$/g,
+      this.rootPath,
+    );
+    const patchPath = path.isAbsolute(patchRelative)
+      ? patchRelative
+      : path.join(shelfDir, patchRelative);
+
+    // Parse files from patch
+    return { name, description, date, patchPath, files: await this.parseFilesFromPatchPath(patchPath) };
+  }
+
+  private async parseFilesFromPatchPath(patchPath: string): Promise<string[]> {
+    try {
+      const content = await fs.readFile(patchPath, "utf-8");
+      return this.parseFilesFromPatch(content);
+    } catch {
+      return [];
+    }
+  }
+
+  private parseFilesFromPatch(patchContent: string): string[] {
+    const files: string[] = [];
+    const lines = patchContent.split("\n");
+    for (const line of lines) {
+      // Match: diff --git a/path b/path
+      const diffMatch = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+      if (diffMatch) {
+        files.push(diffMatch[2]);
+        continue;
+      }
+      // Match: Index: path
+      const indexMatch = line.match(/^Index:\s+(.+)$/);
+      if (indexMatch) {
+        files.push(indexMatch[1]);
+      }
+    }
+    return [...new Set(files)];
+  }
+
+  async ideaShelveChanges(
+    message: string,
+    filePaths?: string[],
+  ): Promise<void> {
+    const selections = filePaths
+      ? await this.resolveShelfPaths(filePaths)
+      : undefined;
+    const result = await this.patchShelfService.create({
+      message,
+      ...(selections !== undefined ? { selections } : {}),
+    });
+    this.unwrapShelfResult(result);
+    this.invalidateCache();
+  }
+
+  async ideaUnshelveChanges(shelfName: string, drop?: boolean): Promise<void> {
+    const shelfDir = path.join(this.rootPath, ".idea", "shelf");
+    const patchPath = path.join(shelfDir, shelfName, "shelved.patch");
+
+    try {
+      const patchContent = await fs.readFile(patchPath, "utf-8");
+      if (patchContent.trim()) {
+        // Apply patch using git apply
+        try {
+          await this.execGit(["apply", "--3way", patchPath]);
+        } catch {
+          // Try without --3way as fallback
+          await this.execGit(["apply", patchPath]);
+        }
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to apply shelf "${shelfName}": ${message}`);
+    }
+
+    if (drop) {
+      await this.deleteIdeaShelf(shelfName);
+    }
+
+    this.invalidateCache();
+  }
+
+  async deleteIdeaShelf(shelfName: string): Promise<void> {
+    const shelfDir = path.join(this.rootPath, ".idea", "shelf");
+    const entryDir = path.join(shelfDir, shelfName);
+    const xmlPath = path.join(shelfDir, `${shelfName}.xml`);
+
+    // Delete directory
+    try {
+      await fs.rm(entryDir, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+
+    // Delete XML file
+    try {
+      await fs.unlink(xmlPath);
+    } catch {
+      // ignore
+    }
+  }
+
+  private sanitizeShelfName(name: string): string {
+    return name
+      .replace(/[<>:"/\\|?*]/g, "_")
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "")
+      .substring(0, 100);
+  }
+
+  async importPatchAsShelf(name: string, patchContent: string): Promise<void> {
+    const shelfDir = path.join(this.rootPath, ".idea", "shelf");
+    await fs.mkdir(shelfDir, { recursive: true });
+
+    const sanitized = this.sanitizeShelfName(name || "Imported");
+    const shelfName = await this.getUniqueShelfName(shelfDir, sanitized);
+
+    // Create shelf directory and write patch
+    const entryDir = path.join(shelfDir, shelfName);
+    await fs.mkdir(entryDir, { recursive: true });
+    await fs.writeFile(
+      path.join(entryDir, "shelved.patch"),
+      patchContent,
+      "utf-8",
+    );
+
+    // Write XML metadata
+    const now = Date.now();
+    const xml = `<changelist name="${shelfName}" date="${now}" recycled="false">\n  <option name="PATH" value="$PROJECT_DIR$/.idea/shelf/${shelfName}/shelved.patch" />\n  <option name="DESCRIPTION" value="${shelfName}" />\n</changelist>\n`;
+    await fs.writeFile(path.join(shelfDir, `${shelfName}.xml`), xml, "utf-8");
+  }
+
+  private async getUniqueShelfName(
+    shelfDir: string,
+    baseName: string,
+  ): Promise<string> {
+    let candidate = baseName;
+    let counter = 1;
+    while (true) {
+      const xmlPath = path.join(shelfDir, `${candidate}.xml`);
+      try {
+        await fs.access(xmlPath);
+        // File exists, try next
+        candidate = `${baseName}${counter}`;
+        counter++;
+      } catch {
+        // File doesn't exist, use this name
+        return candidate;
+      }
+    }
+  }
+
+  private async resolveShelfPaths(
+    filePaths: readonly string[],
+  ): Promise<CommitPathSelection[]> {
+    const changes = await this.workingTreeService.getWorkingTreeChanges();
+    return filePaths.map((filePath) => {
+      const matching = changes.filter(
+        (change) => change.path === filePath || change.oldPath === filePath,
+      );
+      const oldPath = matching.find((change) => change.oldPath)?.oldPath;
+      return {
+        path: filePath,
+        ...(oldPath ? { oldPath } : {}),
+        includeIndex: matching.some((change) => change.staged),
+        includeWorkingTree: matching.some((change) => !change.staged),
+      };
+    });
+  }
+
+  private unwrapShelfResult<T>(result: GitOperationResult<T>): T {
+    if (result.ok) return result.value;
+    throw new BranchShiftError(result.code, result.message, result.recovery);
+  }
+
+  invalidateCache(pattern?: string): void {
+    this.cache.invalidate(pattern);
+  }
+}
+
+function gitErrorText(error: unknown): string {
+  if (error && typeof error === "object") {
+    const stderr = "stderr" in error ? String(error.stderr ?? "") : "";
+    const message = "message" in error ? String(error.message ?? "") : "";
+    return `${message}\n${stderr}`;
+  }
+  return String(error);
+}
+
+function parseWorktreeCheckouts(output: string): Map<string, string> {
+  const result = new Map<string, string>();
+  let worktreePath: string | null = null;
+  for (const line of output.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      worktreePath = line.slice("worktree ".length);
+    } else if (line.startsWith("branch ") && worktreePath) {
+      result.set(line.slice("branch ".length), worktreePath);
+    } else if (!line.trim()) {
+      worktreePath = null;
+    }
+  }
+  return result;
+}
+
+function parseLogOutput(output: string): CommitNode[] {
+  const commits: CommitNode[] = [];
+  const records = output.split(RECORD_SEP);
+
+  for (const record of records) {
+    const trimmed = record.trim();
+    if (!trimmed) {
+      continue;
+    }
+    const fields = trimmed.split(FIELD_SEP);
+    if (fields.length < 9) {
+      continue;
+    }
+
+    const refsStr = fields[8]?.trim() ?? "";
+    const refs = parseRefs(refsStr);
+
+    commits.push({
+      hash: fields[0] ?? "",
+      shortHash: fields[1] ?? "",
+      parents: (fields[2] ?? "").split(" ").filter((s) => s.length > 0),
+      authorName: fields[3] ?? "",
+      authorEmail: fields[4] ?? "",
+      authorDate: fields[5] ?? "",
+      subject: fields[6] ?? "",
+      body: fields[7] ?? "",
+      refs,
+    });
+  }
+  return commits;
+}
+
+function parseRefs(refsStr: string): RefInfo[] {
+  if (!refsStr) {
+    return [];
+  }
+  const refs: RefInfo[] = [];
+  const parts = refsStr.split(",").map((s) => s.trim());
+
+  for (const part of parts) {
+    if (!part) {
+      continue;
+    }
+    if (part === "HEAD") {
+      refs.push({ type: "HEAD", name: "HEAD" });
+    } else if (part.startsWith("HEAD -> ")) {
+      refs.push({ type: "HEAD", name: "HEAD" });
+      refs.push({ type: "branch", name: part.replace("HEAD -> ", "") });
+    } else if (part.startsWith("tag: ")) {
+      refs.push({ type: "tag", name: part.replace("tag: ", "") });
+    } else if (part.includes("/")) {
+      // Distinguish remote branches from local branches with slashes (e.g. feat/xxx)
+      // Remote branches in %D format are prefixed with remote name (origin/, upstream/, etc.)
+      // Common pattern: if first segment before / is a short name (likely a remote), treat as remote
+      const firstSlash = part.indexOf("/");
+      const prefix = part.substring(0, firstSlash);
+      // Heuristic: remote names are typically short (origin, upstream, fork, etc.)
+      // Local branch names with / typically start with feat/, fix/, hotfix/, release/, etc.
+      const localPrefixes = [
+        "feat",
+        "fix",
+        "hotfix",
+        "release",
+        "bugfix",
+        "feature",
+        "chore",
+        "docs",
+        "refactor",
+        "test",
+        "ci",
+        "build",
+        "perf",
+        "style",
+        "revert",
+        "wip",
+        "dependabot",
+      ];
+      if (localPrefixes.includes(prefix.toLowerCase())) {
+        refs.push({ type: "branch", name: part });
+      } else {
+        refs.push({ type: "remote-branch", name: part });
+      }
+    } else {
+      refs.push({ type: "branch", name: part });
+    }
+  }
+  return refs;
+}

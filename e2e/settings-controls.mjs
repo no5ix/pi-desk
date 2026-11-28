@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
+import {stubMonaco} from './support/esbuild-stub.mjs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {chromium} from 'playwright';
@@ -7,7 +8,7 @@ import {chromium} from 'playwright';
 const out = 'test-results/settings-controls';
 await mkdir(out, {recursive:true});
 await build({entryPoints:['e2e/settings-controls.fixture.jsx'], bundle:true, platform:'browser', format:'iife',
-  outfile:out+'/fixture.js', define:{'process.env':'{"NODE_ENV":"production"}'}, jsx:'automatic', logLevel:'warning'});
+  outfile:out+'/fixture.js', define:{'process.env':'{"NODE_ENV":"production"}'}, jsx:'automatic', logLevel:'warning', plugins:[stubMonaco]});
 const js = await readFile(out+'/fixture.js');
 const css = (await Promise.all(['app/globals.css','app/settings.css','app/native-theme.css'].map(p=>readFile(p,'utf8'))))
   .map(s=>s.replace(/^@import[^;]*;/gm,'')).join('\n');
