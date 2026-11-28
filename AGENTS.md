@@ -2,129 +2,71 @@
 
 ## Autonomous Execution and Context Management
 
-You are an autonomous senior software engineer. Your
-responsibility is to complete the entire assigned task,
-not merely investigate it or produce a progress report.
+You are an autonomous senior software engineer. Complete the assigned task, not merely its investigation or plan. Make routine technical decisions independently and continue until the acceptance criteria are verified.
 
-### 1. Never stop because of context pressure
+### 1. Execute to completion
 
-- Never voluntarily terminate a task merely because you
-  estimate that your remaining context is low.
-- Do not interpret context pressure as task completion.
-- Use Pi's native automatic compaction mechanism.
-- Before context becomes critically low, update the
-  persistent task checkpoint.
-- After compaction, reconstruct the task state from
-  the compaction summary and checkpoint files.
-- Resume from the exact next unfinished step.
-- Do not repeat completed work unnecessarily.
+- Do not stop because of context pressure, a failed first approach, or one blocked subtask. Use Pi's native compaction; checkpoint before compaction and resume from the exact next unfinished step.
+- Do not wait for routine user approval. If one path is blocked, investigate alternatives and complete independent work first.
+- **Blocked work must not stop execution.** Record the blocker, its evidence, attempted alternatives, and the smallest external decision needed; then continue every independent task.
+- Separate implementation from verification. A code change is not complete because it looks correct or because a plan says it is done.
+- Do not substitute analysis, a progress report, or the easiest subset of the task for implementation.
 
-### 2. Maintain continuous execution
+### 2. Define and track acceptance criteria
 
-- Work through all remaining phases independently.
-- Make reasonable engineering decisions without waiting
-  for user confirmation.
-- If one approach fails, investigate alternatives.
-- If a test fails, diagnose and fix it rather than
-  merely documenting the failure.
-- Do not stop after producing an analysis or plan.
-- Do not stop after completing only the easiest phases.
+For multi-step work, keep task-specific `PLAN.md`, `PROGRESS.md`, `DECISIONS.md`, and `BLOCKERS.md`:
+- Record the target branch, base commit SHA, scope, and explicit acceptance criteria in `PLAN.md`.
+- Update `PROGRESS.md` after significant milestones with completed work, current state, exact next actions, and verification evidence.
+- Record decisions and their trade-offs in `DECISIONS.md`.
+- Keep `BLOCKERS.md` limited to real unresolved blockers; close entries when resolved.
+- Do not copy unrelated plans or stale progress from another branch. Preserve historical notes, but label inherited or superseded tasks clearly.
+- Track each acceptance criterion as not started, in progress, implemented, or verified. Only verified criteria count as complete.
 
-### 3. Use durable checkpoints
+### 3. Handle tests and baseline failures honestly
 
-Maintain:
-- PLAN.md
-- PROGRESS.md
-- DECISIONS.md
-- BLOCKERS.md
+- Inspect relevant tests and existing CI results before changing code when practical.
+- Run focused tests during implementation, then the broadest relevant suite before completion.
+- Distinguish regressions introduced by this branch from failures already present on the base commit. Capture the command and evidence for baseline failures; do not weaken or delete tests to make a report green.
+- If a test cannot run because of an external dependency or environment limitation, try a meaningful alternative and state exactly what remains unverified.
+- Do not claim a build, test, lint, typecheck, browser check, or benchmark passed unless it actually ran and passed.
 
-Update PROGRESS.md after every significant milestone.
+### 4. Verify the result, not just the patch
 
-Record:
-- Completed tasks
-- Current implementation state
-- Failed attempts and their causes
-- Outstanding work
-- Exact next actions
-- Verification results
+- Review the complete diff and inspect the affected behavior and edge cases.
+- Check types, lint, focused tests, integration tests, and relevant E2E coverage.
+- Check for regressions, security issues, stale state, races, unbounded caches, unnecessary work, and compatibility problems.
+- Re-run relevant verification after fixes. Do not declare success based on partial test results.
+- The task is complete only when its acceptance criteria are satisfied and the evidence is recorded.
 
-### 4. Handle blockers intelligently
+### 5. Work safely across branches and worktrees
 
-Do not classify low context, a failed approach, or a
-temporary tool error as a reason to abandon the task.
+- Create the requested branch from the exact requested base ref; record and verify the starting SHA before editing.
+- Never reset, clean, overwrite, or stage unrelated user changes. Stage only files this task changed; never use `git add -A` unless the entire working tree is known to be authored by this task.
+- Treat each Git worktree as an independent checkout. Use its worktree-aware dev port; set `PI_WEB_PORT` to override it when needed.
+- Do not rebase or rewrite a shared branch. Never force-push a branch you did not create, and never push `main` / `master` directly.
 
-Try alternative implementations and verification methods.
+### 6. Commit and push verified work
 
-Only stop when:
-- The task is genuinely complete;
-- An external dependency makes further progress impossible;
-- A security or safety restriction prevents continuation;
-- Or an explicit user decision is genuinely required.
+Once the relevant verification passes:
+- Commit focused changes with a message describing the behavior and cause, using the repository's commit style.
+- Push the requested branch with `git push -u origin <branch>`; never push directly to a protected/default branch.
+- Verify the remote ref points to the expected commit and check `git status --short`.
+- If a genuine blocker prevents a commit or push, finish all independent work and report the exact blocker. Never imply uncommitted work was pushed.
 
-When blocked, complete all independent work first.
+### 7. Report exact commit metadata
 
-### 5. Completion requirements
+A task that modifies project files and creates commits MUST end with a **Git Commit Summary** section, one block per commit in chronological order, containing:
+- The complete commit subject.
+- The full commit hash.
+- The commit timestamp, including timezone.
+- Every file changed by that commit.
 
-Do not declare success based on partial test results.
-
-Run the relevant verification suite, inspect the final
-Git diff, and verify the working tree.
-
-Continue until all achievable acceptance criteria are met.
-
-Do not substitute a progress report for implementation.
-
-The task is complete only when its acceptance criteria
-have been satisfied and verified.
-
-Your goal is to finish the task, even if it requires
-multiple context compactions and many execution cycles.
-
-### 6. Commit and push the verified work
-
-Verification is not the end of a task. Once the relevant
-suite passes:
-
-- `git add` the files this task changed, and only those.
-  Never stage a file the task did not touch (a user's own
-  uncommitted edits, generated `.next/`, screenshots), and
-  never `git add -A` in a tree you did not author fully.
-- Commit with a message that names the behavior fixed and
-  the cause, in the repo's `fix: …` style.
-- Push the branch the task named:
-  `git push -u origin <branch>`. Push after every
-  verification pass, so a compaction or a closed window
-  never leaves the work uncommitted.
-- Never force-push over a branch you did not author, and
-  never push `main` / `master` directly.
-- Report the commit and the pushed ref, with the working
-  tree clean (`git status --short` empty apart from files
-  that were already dirty).
-
-### 7. Report commits in the final report
-
-A task that modified project files and created commits MUST end with a
-**Git Commit Summary** section, one block per commit in chronological
-order, each with:
-
-- the complete commit subject;
-- the full commit hash (not abbreviated);
-- the commit timestamp, with its timezone;
-- every file the commit changed.
-
-Read these from Git, never from memory: `git log --format=fuller`
-(subject, author date with timezone, full hash), `git show --stat --format=%H`
-and `git diff-tree --no-commit-id --name-only -r <hash>` (the files).
-Never guess, fabricate, or reconstruct commit metadata.
-
-If no commit was created, say so explicitly. Never imply that changes
-were committed when they were not. Files left dirty go in a separate
-"uncommitted" list, clearly marked as not part of any commit.
+Read metadata from Git, never memory: `git log --format=fuller`, `git show --stat --format=%H`, and `git diff-tree --no-commit-id --name-only -r <hash>`. Never guess or reconstruct commit metadata. If no commit was created, say so explicitly; list uncommitted files separately.
 
 ## Quick Start
 
 ```bash
-npm run dev   # port 30141
+npm run dev   # worktree-aware port; PI_WEB_PORT overrides
 ```
 
 Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
@@ -153,8 +95,9 @@ Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
   and restore them (`lib/rpc-manager-chat-only.integration.test.mjs` is the
   pattern); never "fix" such a failure by weakening the assertion.
 - The `node` on `PATH` may not be the one the project runs on: the Pi app bundles its own
-  runtime, while a dev server started from a terminal uses another install. Check with
-  `ps -o command= -p $(lsof -nP -iTCP:30141 -sTCP:LISTEN -t)`.
+  runtime, while a dev server started from a terminal uses another install. Use the port
+  printed by `npm run dev` / `npm run web` (linked worktrees no longer share 30141), then check
+  with `ps -o command= -p $(lsof -nP -iTCP:<port> -sTCP:LISTEN -t)`.
 - `npm run test:e2e` refuses to start while a dev server holds `.next/dev/lock`, and
   `E2E_SERVER_MODE=start` (the mode CI uses) needs a production build. Both can be
   satisfied without touching the dev state by building into the isolated desktop dir and
@@ -384,7 +327,7 @@ hooks/
 
 ## Topic Notes
 
-Read the doc for the area you touch before changing it. Upstream docs (no prefix) come from pi-web; `fork-*` docs hold this fork's notes and win where the two disagree.
+Read the doc for the area you touch before changing it. Upstream docs (no prefix) come from pi-web; `fork-*` docs hold this fork's notes and win where the two disagree. For task execution, verification, subagents, and upstream intake, also follow [workflow.md](docs/agents/workflow.md).
 
 - [sessions.md](docs/agents/sessions.md): AgentSession lifecycle and shutdown, fork vs in-session branching, the sidebar's on-disk Fork, session file rewrites, toolCall normalization, a run's message keys across the file read, SSE reconnect and tool events, a tool card's flat arguments as rows, transcript system / usage / context-edit entries, running-state polling, custom-message collapsing, streamed chunks re-rendering only the reply, streaming markdown block by block, hand-written anchors in rendered Markdown landing after the sanitizer's id prefix, Windows drive-letter Markdown links becoming `file:///` before sanitizing, user messages' raw HTML shown as text, ```svg fences previewed only as an `<img>`, display math's Copy button, long thinking rendered in pieces, a finished turn's duration, history caches (tool-result images, subagent runs, session views) and deferred code highlighting with Prism languages loaded on demand, a patch shown in one column or two, the session sidebar (toolbar row and its brand, project groups, their order and display names, pins, archive, new-session project adoption, the files below the sessions or in a tab), the project/worktree bar above a fresh composer (the header: brand, then the bar) and what it carries across the remount, exported HTML, the extension status bar and its `command:` buttons, extension UI colors (pi's palette theme, the page's light/dark ANSI palette), cache and cost notices (pi's `notices.*` settings), the read-only Debug panel (connections, server state, sessions the server holds). Files: `lib/rpc-manager.ts`, `lib/session-reader.ts`, `lib/session-fork*.ts`, `lib/session-delete.ts`, `lib/normalize.ts`, `lib/message-keys.ts`, `lib/session-tree.ts`, `lib/session-ui-state*.ts`, `lib/sidebar-prefs.ts`, `lib/sidebar-actions.ts`, `lib/session-links.ts`, `lib/favicon-badge.ts`, `lib/new-session-context.ts`, `hooks/useAgentSession.ts`, `hooks/useSessionUiState.ts`, `hooks/useSidebarMotion.ts`, `hooks/useGroupDrag.ts`, `hooks/useFilesPlacement.ts`, `hooks/useResizablePanel.ts`, `app/api/agent/**`, `app/api/sessions/**`, `components/SessionSidebar.tsx`, `components/PiWebTitle.tsx`, `components/SessionTree.tsx`, `components/SidebarMenu.tsx`, `components/SidebarToast.tsx`, `components/SidebarIcons.tsx`, `components/ProjectWorktreePicker.tsx`, `components/NewSessionContextBar.tsx`, `components/WorktreeCreateForm.tsx`, `handleNewSession`, `handleSelectSession` and the bar's handlers in `components/AppShell.tsx`, `components/BranchNavigator.tsx`, `components/MessageView.tsx`, `lib/message-display.ts`, `lib/patch.ts`, `components/FileViewer.tsx`, `components/MarkdownBody.tsx`, `lib/markdown.ts`, `lib/markdown-blocks.ts`, `lib/streaming-message.ts`, `hooks/useStreamingSelector.ts`, `lib/turn-duration.ts`, `components/MermaidBlock.tsx`, `components/SvgBlock.tsx`, `lib/highlight-queue.ts`, `lib/prism-languages.ts`, `hooks/usePrismLanguages.ts`, `lib/session-view-cache.ts`, `components/CodemodeToolView.tsx`, `components/ExtensionStatusBar.tsx`, `components/ExtensionWidgets.tsx`, `lib/extension-ui-theme.ts`, `components/AnsiText.tsx`, `lib/transcript-notices*.ts`, `components/TranscriptNotices.tsx`, `app/api/notices/**`, `lib/tool-fields.ts`, `lib/tool-execution-progress.ts`, `lib/ansi.ts`, `lib/debug-*.ts`, `lib/stream-client.ts`, `lib/page-stream-registry.ts`, `lib/page-debug.ts`, `lib/file-watch-registry.ts`, `components/DebugPanel.tsx`, `components/debug-panel-state.ts`.
 - [tools.md](docs/agents/tools.md): tool presets and Chat only, exact system prompts, tool exposure, the codemode / tool-search / mcp built-ins, the read-only MCP policy, the Code mode and PowerShell `defaultTools` switches. Files: `lib/tool-presets.ts`, `lib/tool-preset-preference.ts`, `lib/chat-only.ts`, `lib/exact-system-prompt.ts`, `lib/builtin-extensions.ts`, `lib/mcp-read-only-policy.ts`, `lib/codemode-settings.ts`, `lib/powershell-settings.ts`, `lib/global-settings-file.ts`, `app/api/agent/new/route.ts`, `app/api/tools/settings/route.ts`, tool selection in `lib/rpc-manager.ts`.
@@ -431,7 +374,7 @@ Each one undid a real regression; the linked note has the reasoning.
 - `enabledModels`: never compare patterns as strings, never assume `provider/*` covers a provider, never rebuild the list from `getAvailable()`; every toggle is a minimal edit and only `resync` repairs entries. ([fork-models](docs/agents/fork-models.md))
 - Provider catalogs refresh over the network only when the user presses "Refresh catalog". ([fork-models](docs/agents/fork-models.md))
 - Credential deletes go through `removeStoredCredentialIfType()`, and both provider lists refresh after any auth change. ([fork-models](docs/agents/fork-models.md))
-- Built-in subagent profiles are switched off by name in `disabledBuiltIns`, never copied out to a `.md`; keep `SUBAGENT_NOTIFICATION_PREFIX` in code. ([fork-tools-subagents](docs/agents/fork-tools-subagents.md))
+- Built-in subagent profiles (including the restricted `background-task` shell worker) are switched off by name in `disabledBuiltIns`, never copied out to a `.md`; keep `SUBAGENT_NOTIFICATION_PREFIX` in code. ([fork-tools-subagents](docs/agents/fork-tools-subagents.md), [subagents](docs/agents/subagents.md))
 - Never give one iframe both `allow-scripts` and `allow-same-origin`; keep `SERVE_EXT_TO_MIME` in `getServeMime`. ([fork-files-security](docs/agents/fork-files-security.md))
 - Manual-code OAuth handshake tokens are `crypto.randomUUID()`. The auth throttle stays global, and its reset window stays longer than the max delay. ([fork-files-security](docs/agents/fork-files-security.md))
 - No literal `homedir()` in session-scanner fs calls; use `userHome()`. ([fork-sessions](docs/agents/fork-sessions.md))
@@ -466,14 +409,19 @@ When one of those assertions fails, the default is to restore the behaviour, not
 
 The third direction is `forbiddenMarkers` on a `FORK_FEATURES` entry: a region the *fork* deleted that upstream still ships. A clean merge re-adds it silently, so the entry asserts those strings stay absent from the file (currently the new-session branding header in `components/ChatWindow.tsx`). A failure there means "put the removal back", never "drop the marker".
 
-### Upstream merge decisions (standing rules)
-Full per-merge reasoning (segments E, F, G, with what was adopted and what was declined) is in [merge-history.md](docs/merge-history.md). The rules that still bind a future merge:
+### Upstream integration and selective backport policy
+
+This repository is a maintained fork, not a mirror. Do not routinely merge, rebase, or synchronize the upstream default branch. Bring upstream work in only when the user selects a PR/commit or explicitly asks for an intake review. Prefer a small, deliberate cherry-pick/backport over a broad merge.
+
+For each selected PR or commit, inspect the complete diff, linked issues, dependency commits, SDK/API assumptions, and affected fork-owned files. Determine whether it is self-contained; include only required dependencies. Decline unrelated changes and upstream UI/features the fork has intentionally rejected. Before applying, record the source PR/commit and intended scope; after applying, run fork-specific tests and inspect the final diff for reverted fork behavior. Do not treat a green upstream CI run as proof that the fork integration is correct. Full historical reasoning (segments E, F, G, including adopted and declined work) is in [merge-history.md](docs/merge-history.md).
+
+The rules that still bind any selected backport or explicitly requested merge:
 - **Upstream owns SDK adaptation.** Exact system prompts go through `lib/exact-system-prompt.ts` (`before_agent_start`); the session list comes from `lib/session-list-scanner.ts`; MCP and Code mode run on ADR 0006's `builtin:*` extensions (`createMcpExtension()` is never passed as a bare inline factory) and `resolveActiveToolNames()` replaced `withExtensionTools()`. Do not re-add a second path for any of these.
-- **Declined upstream UI stays declined**: the sidebar explorer and resizable session/explorer panes (`data-resize-handle="sidebar-sections"`), `DirectoryPicker`, `ChatMinimap`, `getSessionListIndices` windowing, the second mobile toolbar group, the topbar models/skills/settings quick-buttons, `ExtensionStatusBar` (the fork's `ExtensionStatusLine` replaces it). A merge that brings one back is re-introducing declined UI, not a test to satisfy. `SessionSearch` is the opposite case: upstream shipped it and the fork's sidebar **mounts it** for the search box's prompt/full-text results (`open={contentSearch}`, `lib/session-search.ts`), so a merge that drops the import silently leaves a search box that searches only titles — restore the mount, and `components/SessionSidebar.session-search.test.mjs` is what says so.
-- **Fork layers that must survive a merge**: `userHome()` routing instead of literal `homedir()`, models-config literal-key redaction, `resolveSessionReferences` in the send/queue paths, the monotonic request-id guards in `useAgentSession`, the project-tree sidebar with the full-height layout, desktop i18n and Settings sections.
+- **Declined upstream UI stays declined**: the sidebar explorer and resizable session/explorer panes (`data-resize-handle="sidebar-sections"`), `DirectoryPicker`, `ChatMinimap`, `getSessionListIndices` windowing, the second mobile toolbar group, the topbar models/skills/settings quick-buttons, `ExtensionStatusBar` (the fork's `ExtensionStatusLine` replaces it). A backport that brings one back is re-introducing declined UI, not a test to satisfy. `SessionSearch` is the opposite case: upstream shipped it and the fork's sidebar **mounts it** for the search box's prompt/full-text results (`open={contentSearch}`, `lib/session-search.ts`), so a backport that drops the import silently leaves a search box that searches only titles — restore the mount, and `components/SessionSidebar.session-search.test.mjs` is what says so.
+- **Fork layers that must survive integration**: `userHome()` routing instead of literal `homedir()`, models-config literal-key redaction, `resolveSessionReferences` in the send/queue paths, the monotonic request-id guards in `useAgentSession`, the project-tree sidebar with the full-height layout, desktop i18n and Settings sections.
 - **`lib/startup-preferences.ts` stays deleted** (new-session model picks are session-scoped); `PUT /api/models/default` is the only writer of global defaults.
 - **`package-lock.json` keeps the tauri plugin versions pinned to `src-tauri/Cargo.lock`**: restore HEAD's lock before `npm install --package-lock-only`, or the carets re-resolve and `release-workflows.test.mjs` fails.
-- After a merge: `node scripts/upstream-css-baseline.mjs update <upstream-ref>` and `npm run drift`.
+- After an explicitly requested merge: `node scripts/upstream-css-baseline.mjs update <upstream-ref>` and `npm run drift`. Selective backports should update only the relevant baseline/ownership records; do not run a blanket upstream sync as a side effect.
 
 ## Pi Session File Format
 
