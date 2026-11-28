@@ -8,7 +8,7 @@ const MAX_PORT_PROBES = MAX_PORT - DEFAULT_PORT + 1;
 
 function normalizePort(value) {
   const text = String(value);
-  if (!/^\\d+$/.test(text)) {
+  if (!/^\d+$/.test(text)) {
     throw new Error("Port must be a non-negative integer.");
   }
   const port = Number(text);
@@ -24,12 +24,14 @@ function readPortArgument(args = [], env = process.env) {
     if (arg === "--port" || arg === "-p") return args[index + 1];
     if (arg.startsWith("--port=")) return arg.slice("--port=".length);
     if (arg.startsWith("-p=")) return arg.slice("-p=".length);
-    if (/^-p\\d+$/.test(arg)) return arg.slice(2);
+    if (/^-p\d+$/.test(arg)) return arg.slice(2);
   }
 
-  // npm consumes options written as `npm run dev --port 30146` instead of
-  // forwarding them in argv. It exposes those options to lifecycle scripts
-  // as npm_config_* environment variables.
+  // npm 11 treats `npm run dev --port 30146` as an npm option and
+  // forwards only the value to the lifecycle script as a positional argument.
+  const positionalPort = args.find((arg) => /^\d+$/.test(arg));
+  if (positionalPort !== undefined) return positionalPort;
+
   return typeof env.npm_config_port === "string" && env.npm_config_port.trim()
     ? env.npm_config_port
     : undefined;
@@ -38,21 +40,15 @@ function readPortArgument(args = [], env = process.env) {
 function getPortCandidates(startPort = DEFAULT_PORT) {
   const start = Number(normalizePort(startPort));
   if (start === 0) return [0];
-  return Array.from(
-    { length: MAX_PORT - start + 1 },
-    (_, index) => start + index,
-  );
+  return Array.from({ length: MAX_PORT - start + 1 }, (_, index) => start + index);
 }
 
 function canListen(port, host) {
   return new Promise((resolve, reject) => {
     const server = createServer();
     server.once("error", (error) => {
-      if (error.code === "EADDRINUSE" || error.code === "EACCES") {
-        resolve(false);
-      } else {
-        reject(error);
-      }
+      if (error.code === "EADDRINUSE" || error.code === "EACCES") resolve(false);
+      else reject(error);
     });
     server.listen({ port: Number(port), host, exclusive: true }, () => {
       server.close((error) => error ? reject(error) : resolve(true));
@@ -76,11 +72,7 @@ function reserveEphemeralPort(host) {
   });
 }
 
-async function resolveDevPort({
-  env = process.env,
-  explicitPort,
-  host = "127.0.0.1",
-} = {}) {
+async function resolveDevPort({ env = process.env, explicitPort, host = "127.0.0.1" } = {}) {
   const envPort = typeof env.PI_WEB_PORT === "string" && env.PI_WEB_PORT.trim()
     ? env.PI_WEB_PORT
     : typeof env.PORT === "string" && env.PORT.trim()
@@ -92,9 +84,7 @@ async function resolveDevPort({
     const port = normalizePort(requested);
     if (port === "0") return reserveEphemeralPort(host);
     if (!(await canListen(port, host))) {
-      throw new Error(
-        "Requested port " + port + " is already in use. Choose another with --port or PI_WEB_PORT.",
-      );
+      throw new Error("Requested port " + port + " is already in use. Choose another with --port or PI_WEB_PORT.");
     }
     return port;
   }
@@ -104,9 +94,7 @@ async function resolveDevPort({
     if (await canListen(candidate, host)) return String(candidate);
   }
 
-  throw new Error(
-    "No available Pi Web development port found from " + DEFAULT_PORT + " through " + MAX_PORT + ". Set PI_WEB_PORT to choose one explicitly.",
-  );
+  throw new Error("No available Pi Web development port found from " + DEFAULT_PORT + " through " + MAX_PORT + ". Set PI_WEB_PORT to choose one explicitly.");
 }
 
 module.exports = {
