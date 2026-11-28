@@ -1,75 +1,47 @@
 "use strict";
 
-const { createHash } = require("node:crypto");
-const { execFileSync } = require("node:child_process");
 const { createServer } = require("node:net");
-const fs = require("node:fs");
-const path = require("node:path");
 
 const DEFAULT_PORT = 30141;
-const WORKTREE_PORT_START = 30200;
-const WORKTREE_PORT_COUNT = 800;
-const MAX_PORT_PROBES = 64;
+const MAX_PORT = 65535;
+const MAX_PORT_PROBES = MAX_PORT - DEFAULT_PORT + 1;
 
 function normalizePort(value) {
   const text = String(value);
-  if (!/^\d+$/.test(text)) {
+  if (!/^\\d+$/.test(text)) {
     throw new Error("Port must be a non-negative integer.");
   }
   const port = Number(text);
-  if (!Number.isSafeInteger(port) || port > 65535) {
+  if (!Number.isSafeInteger(port) || port > MAX_PORT) {
     throw new Error("Port must be between 0 and 65535.");
   }
   return String(port);
 }
 
-function readPortArgument(args = []) {
+function readPortArgument(args = [], env = process.env) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--port" || arg === "-p") return args[index + 1];
     if (arg.startsWith("--port=")) return arg.slice("--port=".length);
     if (arg.startsWith("-p=")) return arg.slice("-p=".length);
-    if (/^-p\d+$/.test(arg)) return arg.slice(2);
+    if (/^-p\\d+$/.test(arg)) return arg.slice(2);
   }
-  return undefined;
+
+  // npm consumes options written as `npm run dev --port 30146` instead of
+  // forwarding them in argv. It exposes those options to lifecycle scripts
+  // as npm_config_* environment variables.
+  return typeof env.npm_config_port === "string" && env.npm_config_port.trim()
+    ? env.npm_config_port
+    : undefined;
 }
 
-function findGitRoot(cwd) {
-  try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-function isLinkedWorktreeRoot(root) {
-  try {
-    return fs.statSync(path.join(root, ".git")).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function worktreePortForPath(root) {
-  const digest = createHash("sha256").update(path.resolve(root)).digest();
-  return WORKTREE_PORT_START + (digest.readUInt32BE(0) % WORKTREE_PORT_COUNT);
-}
-
-function getPortCandidates(preferredPort) {
-  const candidates = [Number(preferredPort)];
-  const startOffset = Number(preferredPort) >= WORKTREE_PORT_START
-    && Number(preferredPort) < WORKTREE_PORT_START + WORKTREE_PORT_COUNT
-    ? Number(preferredPort) - WORKTREE_PORT_START
-    : 0;
-  for (let offset = 0; offset < WORKTREE_PORT_COUNT; offset += 1) {
-    const candidate = WORKTREE_PORT_START + ((startOffset + offset) % WORKTREE_PORT_COUNT);
-    if (!candidates.includes(candidate)) candidates.push(candidate);
-  }
-  return candidates;
+function getPortCandidates(startPort = DEFAULT_PORT) {
+  const start = Number(normalizePort(startPort));
+  if (start === 0) return [0];
+  return Array.from(
+    { length: MAX_PORT - start + 1 },
+    (_, index) => start + index,
+  );
 }
 
 function canListen(port, host) {
@@ -104,9 +76,7 @@ function reserveEphemeralPort(host) {
   });
 }
 
-
 async function resolveDevPort({
-  cwd = process.cwd(),
   env = process.env,
   explicitPort,
   host = "127.0.0.1",
@@ -129,31 +99,22 @@ async function resolveDevPort({
     return port;
   }
 
-  const root = findGitRoot(cwd);
-  const preferredPort = root && isLinkedWorktreeRoot(root)
-    ? worktreePortForPath(root)
-    : DEFAULT_PORT;
-  const candidates = getPortCandidates(preferredPort).slice(0, MAX_PORT_PROBES);
-
+  const candidates = getPortCandidates(DEFAULT_PORT);
   for (const candidate of candidates) {
     if (await canListen(candidate, host)) return String(candidate);
   }
 
   throw new Error(
-    "No available Pi Web development port found after checking " + candidates.length + " candidates. Set PI_WEB_PORT to choose one explicitly.",
+    "No available Pi Web development port found from " + DEFAULT_PORT + " through " + MAX_PORT + ". Set PI_WEB_PORT to choose one explicitly.",
   );
 }
 
 module.exports = {
   DEFAULT_PORT,
-  WORKTREE_PORT_START,
-  WORKTREE_PORT_COUNT,
+  MAX_PORT,
   MAX_PORT_PROBES,
   normalizePort,
   readPortArgument,
-  findGitRoot,
-  isLinkedWorktreeRoot,
-  worktreePortForPath,
   getPortCandidates,
   resolveDevPort,
 };
