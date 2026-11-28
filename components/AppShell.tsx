@@ -398,6 +398,15 @@ export function AppShell() {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [rightPanelExpanded, setRightPanelExpanded] = useState(false);
   const rightPanelFullWidth = rightPanelOpen && rightPanelExpanded && !isMobile;
+  /**
+   * The phone's expanded panel is not a wider column: the card is the screen.
+   * The strip's expand button is kept on the phone for exactly this, and the CSS
+   * answers `right-panel-full-width` at phone width with the viewport. The desktop
+   * rule (`!isMobile`) used to keep the class off the phone, so the button was
+   * pressed, its state moved, and the card did not change.
+   */
+  const rightPanelViewportFull = rightPanelOpen && rightPanelExpanded && isMobile;
+  const rightPanelExpandedVisual = rightPanelFullWidth || rightPanelViewportFull;
   useEffect(() => {
     const preload = () => {
       // A failed speculative load must not make the on-demand loader's state
@@ -416,8 +425,15 @@ export function AppShell() {
     return () => window.clearTimeout(id);
   }, [rightPanelOpen]);
   useEffect(() => {
-    if (!rightPanelOpen || isMobile) setRightPanelExpanded(false);
-  }, [rightPanelOpen, isMobile]);
+    // A closed panel starts unexpanded.
+    if (!rightPanelOpen) setRightPanelExpanded(false);
+  }, [rightPanelOpen]);
+  useEffect(() => {
+    // Crossing the phone/desktop boundary changes what "expanded" means — a
+    // column that spans the chat, or the whole viewport — so a crossing starts
+    // fresh rather than carrying a state whose meaning moved.
+    setRightPanelExpanded(false);
+  }, [isMobile]);
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   const viewportCompactInitializedRef = useRef(false);
   // The desktop window has no native title bar. macOS keeps its traffic lights
@@ -3734,7 +3750,7 @@ export function AppShell() {
       <div
         ref={rightPanelResizer.panelRef}
         id="file-panel"
-        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
+        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelFullWidth || rightPanelViewportFull ? " right-panel-full-width" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         // Closed, the panel is 0px wide or slid off-screen; keep it out of the
         // Tab order and the accessibility tree like the sidebar.
         inert={!rightPanelOpen}
@@ -3858,12 +3874,16 @@ export function AppShell() {
             className="file-panel-expand-button"
             onClick={handleRightPanelExpandToggle}
             aria-controls="file-panel"
-            aria-pressed={rightPanelFullWidth}
-            title={translate(rightPanelFullWidth ? "files.restorePanelWidth" : "files.expandPanel")}
-            aria-label={translate(rightPanelFullWidth ? "files.restorePanelWidth" : "files.expandPanel")}
+            aria-pressed={rightPanelExpandedVisual}
+            title={translate(isMobile
+              ? (rightPanelExpandedVisual ? "files.shrinkPanel" : "files.expandViewport")
+              : (rightPanelExpandedVisual ? "files.restorePanelWidth" : "files.expandPanel"))}
+            aria-label={translate(isMobile
+              ? (rightPanelExpandedVisual ? "files.shrinkPanel" : "files.expandViewport")
+              : (rightPanelExpandedVisual ? "files.restorePanelWidth" : "files.expandPanel"))}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d={rightPanelFullWidth
+              <path d={rightPanelExpandedVisual
                 ? "M4 9V4h5M20 15v5h-5M4 15v5h5M20 9V4h-5"
                 : "M15 4h5v5M9 20H4v-5M20 15v5h-5M4 9V4h5"} />
             </svg>

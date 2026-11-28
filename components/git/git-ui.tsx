@@ -30,13 +30,13 @@ export interface GitMenuItem {
   onSelect?: () => void;
 }
 
-interface Anchored {
+export interface Anchored {
   top: number;
   left: number;
 }
 
 const MENU_MARGIN = 8;
-const MENU_WIDTH = 244;
+export const MENU_WIDTH = 244;
 const MENU_MAX_HEIGHT = 420;
 
 /**
@@ -48,8 +48,11 @@ const MENU_MAX_HEIGHT = 420;
  */
 const MENU_ROW_SELECTOR = ".git-branch-row, .git-log-row, .git-shelf-row, .git-change-row, [data-git-menu-row]";
 
-/** Place a menu at a point or beside an element, inside the viewport. */
-function anchorTo(anchor: { x: number; y: number } | Element, width = MENU_WIDTH): Anchored {
+/** Place a menu at a point or beside an element, inside the viewport.
+ *
+ * Exported for the browser-side check: the row's left edge is the rule, and a
+ * check that cannot call the placement code can only measure a screenshot. */
+export function anchorTo(anchor: { x: number; y: number } | Element, width = MENU_WIDTH): Anchored {
   const rect = anchor instanceof Element ? anchor.getBoundingClientRect() : { left: anchor.x, top: anchor.y, bottom: anchor.y + 1, right: anchor.x };
   const row = anchor instanceof Element ? anchor.closest(MENU_ROW_SELECTOR) : null;
   const leftEdge = row ? row.getBoundingClientRect().left : rect.left;
