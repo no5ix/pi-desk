@@ -167,6 +167,14 @@ const FILE_TREE_AUTO_COLLAPSE_WIDTH = FILE_TREE_MIN_WIDTH + 320;
  */
 const SETTINGS_EXIT_MS = 180;
 
+/**
+ * The right panel's Git tab. A pinned tab, not a file: its id never becomes the
+ * panel's active file tab, so the file and terminal tabs keep their own
+ * activation and the view's open state stays the single `gitPanelOpen` flag the
+ * strip's glyph, the file tabs and the keepalive already share.
+ */
+const GIT_PANEL_TAB_ID = "git:panel";
+
 function parkedNewSessionDraftKey(cwd: string): string {
   return `parked-new:${cwd}`;
 }
@@ -922,18 +930,9 @@ export function AppShell() {
       };
     });
   }, [terminalTabs]);
-  const panelTabs: Tab[] = useMemo(() => orderPanelTabs([...fileTabs, ...terminalPanelTabs, ...artifactTabs.map(artifactPanelTab), ...visibleSideTabs.map((tab) => {
-    const member = familyMembers?.find((session) => session.id === tab.sessionId);
-    const label = member ? sideChatTitle(member, translate("sideChat.title"), familyMembers ?? []) : translate("sideChat.title");
-    return { id: `agent:${tab.sessionId}`, label, filePath: label, kind: "side" as const };
-  })], panelTabOrder), [fileTabs, terminalPanelTabs, artifactTabs, visibleSideTabs, familyMembers, translate, panelTabOrder]);
   const activeSideTab = visibleSideTabs.find((tab) => `agent:${tab.sessionId}` === activeFileTabId) ?? null;
-  // A closed tab leaves the saved order, so reopening it appends it like any new tab.
-  const panelTabIds = panelTabs.map((tab) => tab.id).join("\n");
-  useEffect(() => {
-    const open = new Set(panelTabIds.split("\n"));
-    setPanelTabOrder((order) => order.every((id) => open.has(id)) ? order : order.filter((id) => open.has(id)));
-  }, [panelTabIds]);
+  // The panel's tab list is built below, once the workspace kind is known: the
+  // Git view is a tab of that bar, and a chat has no repository to tab into.
   const activeArtifactTab = artifactTabs.find((tab) => tab.id === activeFileTabId) ?? null;
   // The panel's open path lives below handleOpenTerminal: opening the panel
   // opens a terminal, so the toggle has to be able to call it.
@@ -1030,6 +1029,33 @@ export function AppShell() {
   // workbench stay project-only, so they keep using visibleProjectCwd.
   const chatFolderCwd = isChatWorkspaceActive && selectedSession?.chatFolder ? selectedSession.cwd : null;
   const workbenchCwd = visibleProjectCwd ?? chatFolderCwd;
+  // The Git view is a tab of the panel's bar, pinned for as long as the project is
+  // a repository. Selecting it takes the panel's content area from the file,
+  // terminal, artifact and side-chat tabs; selecting one of those gives it back. The
+  // tab carries the count of changed files, because that number is what decides
+  // opening the view, and closing the tab hides the view rather than removing the
+  // tab — the keepalive below keeps the repository read, so switching tabs is not a
+  // reason to read it again.
+  const gitPanelTab: Tab | null = visibleProjectCwd && !isChatWorkspaceActive
+    ? {
+        id: GIT_PANEL_TAB_ID,
+        label: translate("gitPanel.title"),
+        filePath: visibleProjectCwd,
+        kind: "git",
+        badge: changesCount,
+      }
+    : null;
+  const panelTabs: Tab[] = useMemo(() => orderPanelTabs([...fileTabs, ...terminalPanelTabs, ...artifactTabs.map(artifactPanelTab), ...visibleSideTabs.map((tab) => {
+    const member = familyMembers?.find((session) => session.id === tab.sessionId);
+    const label = member ? sideChatTitle(member, translate("sideChat.title"), familyMembers ?? []) : translate("sideChat.title");
+    return { id: `agent:${tab.sessionId}`, label, filePath: label, kind: "side" as const };
+  }), ...(gitPanelTab ? [gitPanelTab] : [])], panelTabOrder), [fileTabs, terminalPanelTabs, artifactTabs, visibleSideTabs, familyMembers, translate, panelTabOrder, gitPanelTab]);
+  // A closed tab leaves the saved order, so reopening it appends it like any new tab.
+  const panelTabIds = panelTabs.map((tab) => tab.id).join("\n");
+  useEffect(() => {
+    const open = new Set(panelTabIds.split("\n"));
+    setPanelTabOrder((order) => order.every((id) => open.has(id)) ? order : order.filter((id) => open.has(id)));
+  }, [panelTabIds]);
   const projectPickerStartCwd = isChatWorkspaceActive
     ? null
     : selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
@@ -2290,6 +2316,29 @@ export function AppShell() {
     setGitPanelOpen((open) => !open);
     setRightPanelOpen(true);
   };
+  // The Git tab is the view's way in and out of the panel's content area. Picking
+  // it takes that area from the file, terminal, artifact and side-chat tabs;
+  // picking one of those hands it back. Closing the tab hides the view — the tab
+  // is pinned to the repository, so it stays in the bar. The view itself is never
+  // unmounted by a tab switch (the keepalive), so this is a look away, not a reload.
+  const handleSelectPanelTab = useCallback((tabId: string) => {
+    if (tabId === GIT_PANEL_TAB_ID) {
+      if (isMobile) setSidebarOpen(false);
+      setTopMoreOpen(false);
+      setGitPanelOpen(true);
+      setRightPanelOpen(true);
+      return;
+    }
+    setGitPanelOpen(false);
+    setActiveFileTabId(tabId);
+  }, [isMobile]);
+  const handleClosePanelTab = useCallback((tabId: string) => {
+    if (tabId === GIT_PANEL_TAB_ID) {
+      setGitPanelOpen(false);
+      return;
+    }
+    handleCloseFileTab(tabId);
+  }, [handleCloseFileTab]);
   const handleGitPanelOpenFile = useCallback((filePath: string, fileName: string) => {
     setGitPanelOpen(false);
     handleOpenFile(filePath, fileName);
@@ -3751,9 +3800,9 @@ export function AppShell() {
           <div className="file-tab-bar-slot">
             <TabBar
               tabs={panelTabs}
-              activeTabId={activeFileTabId ?? ""}
-              onSelectTab={setActiveFileTabId}
-              onCloseTab={handleCloseFileTab}
+              activeTabId={gitPanelOpen ? GIT_PANEL_TAB_ID : activeFileTabId ?? ""}
+              onSelectTab={handleSelectPanelTab}
+              onCloseTab={handleClosePanelTab}
               onNewTerminal={visibleProjectCwd ? () => handleOpenTerminal(visibleProjectCwd, { newTab: true }) : undefined}
               onReorderTab={(source, target, after) => setPanelTabOrder(movePanelTab(panelTabs.map((tab) => tab.id), source, target, after))}
             />
