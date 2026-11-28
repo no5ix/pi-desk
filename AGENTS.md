@@ -42,7 +42,7 @@ For multi-step work, keep task-specific `PLAN.md`, `PROGRESS.md`, `DECISIONS.md`
 
 - Create the requested branch from the exact requested base ref; record and verify the starting SHA before editing.
 - Never reset, clean, overwrite, or stage unrelated user changes. Stage only files this task changed; never use `git add -A` unless the entire working tree is known to be authored by this task.
-- Treat each Git worktree as an independent checkout. Use its worktree-aware dev port; set `PI_WEB_PORT` to override it when needed.
+- Treat each Git worktree as an independent checkout. Dev servers in every checkout try port 30141 first and increment until an available port is found; set `PI_WEB_PORT` or pass `--port` to request a specific port.
 - Do not rebase or rewrite a shared branch. Never force-push a branch you did not create, and never push `main` / `master` directly.
 
 ### 6. Commit and push verified work
