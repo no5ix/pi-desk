@@ -6508,6 +6508,38 @@ html.dark {
     background var(--dur-base) var(--ease-native) !important;
 }
 
+/* The fold's two hand-written states, both driven from components/ChatInput.tsx.
+
+   `.is-measuring` exists for one frame, while the card's target height is read. A child that
+   is mid-transition is measured at the value it is LEAVING — the stacked shape moves the
+   text's bottom margin by 6px — so the target came out 6px shorter than the box the card
+   lands in, and the card jumped that 6px the moment its hand-written height was released.
+   Measuring with the transitions off puts every box at its final value at once, so the number
+   the animation runs to IS the resting height.
+
+   `[data-folding]` lasts as long as the animation. The box is smaller than its content for
+   that stretch, and the content's resting alignment is its top, which leaves the `+` and Send
+   below the card's bottom edge and clipped by the card's own `overflow: hidden` — measured 48px
+   below the edge at the fold's first frame, sliding up through the whole 240ms. This is the
+   box at the bottom of the screen, so what the reader saw was the two discs pressed against
+   the card's lower border with too thin a band under them, then dropping into place. Pinned to
+   the bottom edge, the discs keep the card's own bottom inset at every frame and the card opens
+   upward around the text — one motion, and the padding is the resting padding the whole way. */
+.chat-composer.is-measuring,
+.chat-composer.is-measuring * {
+  transition: none !important;
+}
+.chat-composer[data-folding] {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.chat-composer[data-folding] > .chat-composer-editor {
+  /* The card's box is the animated one, so the editor keeps the content's natural height and
+     the overflow stays the card's clipping, not a squashed editor. */
+  flex: 0 0 auto;
+}
+
 /* The lazy-loaded chat re-attaches the viewport to the row it was standing on
    when an older page is prepended (components/ChatWindow.tsx). Left at `auto`,
    the browser runs its own anchoring on the same prepend and the two mechanisms
@@ -6609,13 +6641,25 @@ html.dark {
     flex: 1 1 auto;
     margin: 0 6px;
     /* The text's box animates on every axis the two shapes and the corner's gutter move:
-       the height (the card follows it), the right gutter the corner takes out of the first
-       line, and the margins the shapes swap. Without `padding-right` the gutter appears in
-       one frame and the prompt's ink slides under the glyph and back out. */
+       the height (the card follows it) and the right gutter the corner takes out of the
+       first line. Without `padding-right` the gutter appears in one frame and the prompt's
+       ink slides under the glyph and back out.
+
+       `margin` is deliberately NOT in this list. The card's fold is measured, not guessed:
+       ChatInput pins the height the card stood at, writes the text's new height, and measures
+       the card's own height as the transition's target. The stacked shape moves the text's
+       bottom margin (0 in the row, 6px above the control row), so a margin transition was
+       mid-flight while that target was read — the measurement saw the margin at 0, the card
+       animated to a box 6px shorter than its content, and at the transition's end, when the
+       inline height is released, the card jumped 6px taller. Measured: the card opened 45 ->
+       96px and landed at 101.8px, Send jammed against the card's bottom edge for the whole
+       240ms and then dropping into place. The margin swap itself moves the text's edges by
+       half a pixel (the insets are padding in the stacked shape), so there was never motion
+       here worth animating — only an arithmetic desync between a measured box and a child
+       that had not finished moving. */
     transition:
       height var(--dur-base) var(--ease-native),
-      padding-right var(--dur-fold) var(--ease-native),
-      margin var(--dur-fold) var(--ease-native);
+      padding-right var(--dur-fold) var(--ease-native);
   }
   .chat-composer-editor[data-inline] > .chat-composer-actions {
     display: contents;
@@ -6715,13 +6759,19 @@ html.dark {
 .composer-context-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
   flex-wrap: nowrap;
   /* The chips stand on the composer's ink column — the `+` glyph's left edge, the same
      line the prompt's first character is pinned to — not on the card's edge. A chip flush
-     with the card's border read as a page label outside the composer. */
-  padding: 12px 2px 0 var(--composer-ink-inset);
+     with the card's border read as a page label outside the composer.
+
+     The chips wear a plate now (`.composer-context-row .chat-project-context` fills
+     `--bg-hover`), so the ink column is where their *text* would sit, not where a plate's
+     edge sits: at the bare ink the pair read as jammed into the card's left edge, and the
+     two plates — 4px apart — read as one control. The row steps out 6px from the ink and
+     keeps 8px between the plates, the same band the card's own row puts between its discs. */
+  padding: 12px 2px 0 calc(var(--composer-ink-inset) + 6px);
 }
 .chat-composer-wrap:has(> .composer-context-row) {
   overflow: visible;
@@ -18354,7 +18404,8 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   }
   /* The head that breathes stops breathing; it stays green, and says nothing by pulsing. */
   .bg-tasks-chip .bg-tasks-head-mark,
-  .bg-tasks-chip.has-failed .bg-tasks-head-mark {
+  .bg-tasks-chip.has-failed .bg-tasks-head-mark,
+  .session-item-bg-tasks {
     animation: none;
   }
 }
@@ -18380,7 +18431,11 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 .bg-tasks-chip .bg-tasks-head-mark {
   flex-shrink: 0;
   color: var(--success);
-  animation: subagents-breathe 2s ease-in-out infinite;
+  /* The app's one running-head motion (`agent-run-pulse`, shared with the subagents' glyph and
+     the sidebar's running rows): the movement, not a spinner, is the state. An animation name
+     that does not exist is no animation at all, and the chip sat green and still while three
+     tasks ran. */
+  animation: agent-run-pulse 1.6s var(--ease-native) infinite;
 }
 .bg-tasks-chip.is-idle .bg-tasks-head-mark {
   color: var(--text-muted);
@@ -18388,7 +18443,7 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 }
 .bg-tasks-chip.has-failed .bg-tasks-head-mark {
   color: var(--warning);
-  animation: subagents-breathe 2s ease-in-out infinite;
+  animation: agent-run-pulse 1.6s var(--ease-native) infinite;
 }
 .bg-tasks-chip-mark {
   font-size: var(--fs-micro);
@@ -18408,10 +18463,13 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
 }
 
 /* A conversation with shell work going in the background, marked in its sidebar row: the task
-   list glyph in the running green, where a live run wears its spinner. */
+   list glyph in the running green, where a live run wears its spinner. It breathes with the
+   header's chip — a row that is quietly green reads as a row that finished, and the whole point
+   of the mark is that something is running in a conversation nobody is looking at. */
 .session-item-bg-tasks {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
   color: var(--success);
+  animation: agent-run-pulse 1.6s var(--ease-native) infinite;
 }

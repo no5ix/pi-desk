@@ -27,11 +27,23 @@ test("the title and the project line keep their positions in the title block", (
     "it stays a <small>, so the narrow-screen rule that hid the row still hides it");
 });
 
-test("the branch label reads the session first, then the project directory", () => {
+test("the branch label names the checkout the conversation works in, live", () => {
+  // The header's chip is the checkout's current name, not the name the session's row was read
+  // with. The agent in the conversation switches branches and moves between worktrees by
+  // itself, so a selected session asks the endpoint too, and the row's branch is only the seed
+  // shown while the first read is in flight.
   assert.match(appShell, /import \{ useProjectBranch, useProjectIdentity, invalidateProjectBranch \} from "@\/hooks\/useProjectBranch";/);
-  assert.match(appShell, /const activeProjectBranch = useProjectBranch\(\s*isChatWorkspaceActive \|\| pageOpen \|\| selectedSession \? null : visibleProjectCwd,\s*\);/,
-    "a selected session asks the endpoint for nothing: it already carries its branch");
-  assert.match(appShell, /const topBarBranch = isChatWorkspaceActive \|\| pageOpen\s*\?\s*null\s*:\s*selectedSession\?\.branch \?\? activeProjectBranch;/);
+  assert.match(appShell, /const headerBranchCwd = isChatWorkspaceActive \|\| pageOpen\s*\?\s*null\s*:\s*selectedSession\s*\?\s*\(selectedSession\.workspaceKind === "chat" \? null : selectedSession\.cwd\)\s*:\s*visibleProjectCwd;/,
+    "a selected session asks for the branch of its own folder; a chat has no repository to ask");
+  assert.match(appShell, /const activeProjectBranch = useProjectBranch\(headerBranchCwd, selectedSession\?\.branch \?\? null\);/,
+    "the session's recorded branch seeds the chip; the endpoint answers it");
+  assert.match(appShell, /const topBarBranch = isChatWorkspaceActive \|\| pageOpen \? null : activeProjectBranch;/);
+  assert.match(hook, /export function useProjectBranch\(cwd: string \| null \| undefined, seed\?: string \| null\)/);
+  assert.match(hook, /if \(seedRef\.current\) setBranch\(seedRef\.current\);\n\s*void loadProjectBranch\(cwd\)\.then\(apply\);/,
+    "the seed is painted while the live read runs, so the chip never blinks out");
+  assert.match(hook, /const seedRef = useRef<string \| null>\(seed \?\? null\);/, "the seed is a label, read when the effect starts");
+  assert.match(hook, /}, \[cwd\]\);\n\n  return branch;/,
+    "and NOT an effect dependency: a session-list refresh hands a seed naming the branch from BEFORE the switch, and re-running the effect on it reloads the server's cached project endpoint and puts the old name back on the header between polls");
   assert.match(chip, /className="app-topbar-branch app-topbar-branch--chip"/, "the row's branch label is the chip's");
 });
 

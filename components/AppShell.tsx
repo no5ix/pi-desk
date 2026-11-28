@@ -2482,12 +2482,6 @@ export function AppShell() {
           : null)
         ?? activeCwdName
         ?? translate("appshell.subtitle");
-  // The git branch beside the project name. A selected session carries it
-  // (SessionInfo.branch, lib/session-reader.ts); a fresh composer asks the worktree
-  // endpoint for its project. Chats and page views have no repository, so no chip.
-  const activeProjectBranch = useProjectBranch(
-    isChatWorkspaceActive || pageOpen || selectedSession ? null : visibleProjectCwd,
-  );
   // The phone's project switcher. The sidebar holds the project list, and on a
   // phone it is a drawer away, so the header's project chip carries the list
   // itself: the same rows, in the sidebar's order, and picking one opens a
@@ -2503,9 +2497,20 @@ export function AppShell() {
   const handleTopbarProjectSelect = useCallback((projectRoot: string) => {
     handleNewSession(`project-${Date.now()}`, projectRoot, "project");
   }, [handleNewSession]);
-  const topBarBranch = isChatWorkspaceActive || pageOpen
+  // The git branch beside the project name. The chip says what the checkout is on **now**, so
+  // it is asked of the folder the conversation works in — including for a selected session: the
+  // branch its row carries (`SessionInfo.branch`, lib/session-reader.ts) was read off the
+  // server's 60-second project cache, and the agent in this very conversation switches branches
+  // and moves between worktrees by itself. A header that keeps naming the branch from before
+  // the switch is lying, so the hook's 3s poll drives the chip and the row's name is only the
+  // seed while the first read is in flight. Chats and page views have no repository, so no chip.
+  const headerBranchCwd = isChatWorkspaceActive || pageOpen
     ? null
-    : selectedSession?.branch ?? activeProjectBranch;
+    : selectedSession
+      ? (selectedSession.workspaceKind === "chat" ? null : selectedSession.cwd)
+      : visibleProjectCwd;
+  const activeProjectBranch = useProjectBranch(headerBranchCwd, selectedSession?.branch ?? null);
+  const topBarBranch = isChatWorkspaceActive || pageOpen ? null : activeProjectBranch;
   // The active family's subagent runs, as the four numbers that fit in the header.
   const topBarSubagents = useMemo(
     () => countSubagents(activeSessionFamily, runningSessionIds),

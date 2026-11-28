@@ -145,6 +145,8 @@ export class BackgroundTaskHostClient {
   /** The activation the last `ready` frame announced, and the `closed` frame's reason. */
   private readyActivationId: string | null = null;
   private closedActivationId: string | null = null;
+  /** Lease-miss codes already printed; a successful lease clears the set (see `ensureLease`). */
+  private readonly warnedLeaseCodes = new Set<string>();
 
   constructor(bus: EventBusLike, options: BackgroundTaskHostClientOptions) {
     this.bus = bus;
@@ -235,16 +237,33 @@ export class BackgroundTaskHostClient {
    * session that is closing — each answers an error, and the next `ready` frame retries. A bridge
    * that cannot lease yet keeps its listeners and asks again; a bridge that never leases is a
    * conversation with no background tasks in it, which is what the panel says anyway.
+   *
+   * So a miss is printed only when it is news. The bridge is attached with the session wrapper,
+   * before the extension's activation has announced itself, and the interface answers every
+   * request with `UNAVAILABLE` (`no initialized session context yet`) until that activation's
+   * first `session_start` — and with nothing at all when the package is not installed. Those are
+   * the server's startup order, said once per conversation, and the `ready` frame retries: the
+   * `npm start` log would otherwise open with a red-looking line per session that names no
+   * failure. Once this client has heard a `ready` frame the interface demonstrably works, so a
+   * miss after that is a real problem and says so — once per code, until a lease succeeds, so a
+   * control that retries on every frame cannot fill the log.
    */
   async ensureLease(): Promise<BgActivationFacts | null> {
     if (this.disposed) return null;
     if (this.lease && this.lastFacts) return this.lastFacts;
+    const announced = this.readyActivationId !== null;
     try {
       await this.acquireLease();
+      this.warnedLeaseCodes.clear();
       return this.lastFacts;
     } catch (error) {
-      const code = error instanceof BackgroundTaskHostError ? error.code : null;
-      this.logger.warn(`[pi-web] background-task lease not taken (${code ?? "error"}): ${String(error)}`);
+      if (announced) {
+        const code = error instanceof BackgroundTaskHostError ? error.code : "error";
+        if (!this.warnedLeaseCodes.has(code)) {
+          this.warnedLeaseCodes.add(code);
+          this.logger.warn(`[pi-web] background-task lease not taken (${code}): ${String(error)}`);
+        }
+      }
       return null;
     }
   }
