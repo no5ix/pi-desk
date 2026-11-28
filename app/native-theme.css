@@ -17488,6 +17488,56 @@ html[data-keyboard-open] .chat-composer.is-expanded .chat-composer-editor > .cha
   color: var(--text);
 }
 
+/* The row's own fold, in a gutter every row keeps: a heading with children wears
+   the chevron, a leaf leaves the gutter empty, so the outline's columns line up
+   whether a row folds or not. It is a span the row carries (a button cannot sit
+   inside a button), so it takes the row's focus language for itself. */
+.file-toc-disc {
+  flex: 0 0 auto;
+  align-self: center;
+  display: inline-flex;
+  width: 14px;
+  height: 16px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text-dim);
+}
+
+.file-toc-disc.is-foldable {
+  cursor: pointer;
+}
+
+.file-toc-disc.is-foldable:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.file-toc-disc:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: -1px;
+}
+
+/* One chevron, turned by state: down when the subtree is on screen, right when it
+   is folded. The glyph is drawn once, so a row's fold is a rotation, not a swap. */
+.file-toc-disc svg {
+  transition: transform var(--dur-fast) var(--ease-native);
+  transform: rotate(90deg);
+}
+
+.file-toc-disc.is-folded svg {
+  transform: rotate(0deg);
+}
+
+/* A document with no nested heading has nothing to fold: the button says so. */
+.file-toc-fold-toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .file-toc-mark {
   flex: 0 0 auto;
   color: var(--text-dim);

@@ -10,7 +10,7 @@ import type { NativeMenuEntry } from "@/lib/desktop-menu-model";
 import { getFileDirectory } from "@/lib/file-paths";
 import { showMenu } from "@/hooks/useFileContextMenu";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
-import { openPathNative, revealItemInDirNative } from "@/lib/desktop-native";
+import { openPathNative, revealItemInDir } from "@/lib/desktop-native";
 import { isTauriDesktop } from "@/lib/desktop-updater";
 import { getDesktopPlatform } from "@/lib/desktop-window";
 import { revealLabelKey } from "@/lib/file-context-menu";
@@ -282,7 +282,7 @@ export function ArtifactsView({ runningCount, onOpenInConversation, onContinueIn
       entries.push(
         { kind: "separator" },
         { label: t("artifacts.page.menuOpenDefault"), onSelect: () => { openPathNative(item.path).catch(fail); } },
-        { label: t(revealLabelKey(getDesktopPlatform())), onSelect: () => { revealItemInDirNative(item.path).catch(fail); } },
+        { label: t(revealLabelKey(getDesktopPlatform())), onSelect: () => { revealItemInDir(item.path).catch(fail); } },
       );
     }
     void showMenu(entries, { x: event.clientX, y: event.clientY });

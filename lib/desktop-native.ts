@@ -189,6 +189,48 @@ export async function revealItemInDirNative(path: string): Promise<void> {
   await invoke("reveal_item_in_dir", { path });
 }
 
+/**
+ * Reveal a local path in Finder / Explorer / file manager, on every shell.
+ *
+ * The desktop shell asks its own process. A browser cannot raise a window on a
+ * machine it does not own, so the web page asks the app's server, which runs on
+ * the computer the reader is standing at: the route answers for a local page
+ * only, and the path must sit in the app's own file roots — the same files the
+ * panel has already listed. A phone's page and a remote page get a refusal, so
+ * the menu's entry is hidden where the probe says it cannot work.
+ */
+export async function revealItemInDir(path: string): Promise<void> {
+  if (isTauriDesktop()) {
+    await revealItemInDirNative(path);
+    return;
+  }
+  const response = await fetch("/api/open-in-explorer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+  if (response.ok) return;
+  const detail = await response.json().catch(() => null) as { error?: string } | null;
+  throw new Error(detail?.error ?? `Reveal is unavailable (HTTP ${response.status})`);
+}
+
+/**
+ * Whether revealing can raise a window on this computer. The web page asks the
+ * server once: a remote page, and a server on a platform with no file manager,
+ * answer no, and the menu leaves the native half of a reveal out.
+ */
+export async function isRevealAvailable(): Promise<boolean> {
+  if (isTauriDesktop()) return true;
+  try {
+    const response = await fetch("/api/open-in-explorer");
+    if (!response.ok) return false;
+    const data = await response.json() as { supported?: boolean };
+    return data.supported === true;
+  } catch {
+    return false;
+  }
+}
+
 /** An application that can open a given file (Finder's "Open With" list). */
 export type FileOpenApp = {
   name: string;

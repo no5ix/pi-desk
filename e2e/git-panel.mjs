@@ -108,16 +108,19 @@ async function panel(label, { width, height, touch, theme = "light" }) {
     assert.fail(`${label}: the branch tree never appeared. Panel says: ${text.slice(0, 400)}; page errors: ${pageErrors.join(" | ")}`);
   });
 
-  // ─── the button that opens the view, in the panel's header row ───
-  const git = await box(page, ".right-panel-tab-strip .git-panel-toggle");
+  // ─── the tab that opens the view, in the panel's header row ───
+  // One control per view: the Git tab is the way in, and it wears the changed-file
+  // count. The strip's second, smaller Git button is gone.
+  const git = await box(page, ".right-panel-tab-strip .file-tab--git");
   const tree = await box(page, ".right-panel-tab-strip .file-tree-toggle");
   const strip = await box(page, ".right-panel-tab-strip");
-  const slot = await box(page, ".right-panel-tab-strip .file-tab-bar-slot");
-  assert.ok(git.w > 0 && git.h > 0, `${label}: the Git button is on screen (${git.w}×${git.h})`);
-  assert.ok(git.y >= strip.y - 1 && git.y + git.h <= strip.y + strip.h + 2, `${label}: the button is inside the panel's header row`);
-  assert.ok(tree.x < git.x && git.x < slot.x,
-    `${label}: the view toggles lead the row and the tabs follow (tree x=${tree.x}, git x=${git.x}, tabs x=${slot.x})`);
-  if (touch) await touchPlates(page, label, [".right-panel-tab-strip .git-panel-toggle", ".right-panel-tab-strip .file-tree-toggle"]);
+  assert.ok(git.w > 0 && git.h > 0, `${label}: the Git tab is on screen (${git.w}×${git.h})`);
+  assert.ok(git.y >= strip.y - 1 && git.y + git.h <= strip.y + strip.h + 2, `${label}: the tab is inside the panel's header row`);
+  assert.ok(tree.x < git.x,
+    `${label}: the file list's toggle and the tab row sit on one line (tree x=${tree.x}, git tab x=${git.x})`);
+  assert.equal(await page.locator(".right-panel-tab-strip .git-panel-toggle").count(), 0,
+    `${label}: no second Git button in the strip`);
+  if (touch) await touchPlates(page, label, [".right-panel-tab-strip .file-tab--git", ".right-panel-tab-strip .file-tree-toggle"]);
 
   // ─── level 1: the branch tree ───
   const rows = page.locator("#git-panel .git-branch-row");

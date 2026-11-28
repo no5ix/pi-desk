@@ -1990,6 +1990,10 @@ export function AppShell() {
     }));
     setActiveFileTabId(tabId);
     setRightPanelOpen(true);
+    // The file's tab is the point of opening a file, so the Git view steps out of
+    // the panel's content area: a click in the file list while the Git view was open
+    // used to select a tab the reader could not see, because the view kept the area.
+    setGitPanelOpen(false);
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
   }, [chatFolderCwd, isChatWorkspaceActive, isMobile]);
@@ -2378,12 +2382,13 @@ export function AppShell() {
     }
   };
   // The Git view takes the panel's content area, so opening it opens the panel; a chat
-  // has no repository and no button (visibleProjectCwd is null there), so it never sees
-  // this. Opening a file from the view hands the panel back to the file's tab.
-  const handleGitPanelToggle = () => {
+  // has no repository (visibleProjectCwd is null there), so it never sees this. Opening
+  // a file from the view hands the panel back to the file's tab. The Git tab is the
+  // only way in, so this is one-way: the tab closes the view, nothing else does.
+  const handleGitPanelOpen = () => {
     if (isMobile) setSidebarOpen(false);
     setTopMoreOpen(false);
-    setGitPanelOpen((open) => !open);
+    setGitPanelOpen(true);
     setRightPanelOpen(true);
   };
   // The Git tab is the view's way in and out of the panel's content area. Picking
@@ -3931,36 +3936,10 @@ export function AppShell() {
               </svg>
             </button>
           )}
-          {/* The Git view's way in, beside the file list's: the project's branches, a
-              branch's commits, a commit's diff. A chat has no repository, and
-              `visibleProjectCwd` is null there, so a chat's panel never gets the button. */}
-          {visibleProjectCwd && !isChatWorkspaceActive && (
-            <button
-              type="button"
-              className={`file-workbench-icon-button git-panel-toggle${gitPanelOpen ? " is-active" : ""}`}
-              onClick={handleGitPanelToggle}
-              title={translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")}
-              aria-label={changesCount > 0
-                ? `${translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")} — ${translate("sidebar.changedFiles", { count: changesCount })}`
-                : translate(gitPanelOpen ? "gitPanel.hide" : "gitPanel.show")}
-              aria-pressed={gitPanelOpen}
-              aria-controls="git-panel"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <line x1="6" y1="4" x2="6" y2="15" />
-                <circle cx="18" cy="6" r="2.6" />
-                <circle cx="6" cy="18" r="2.6" />
-                <path d="M18 9a9 9 0 0 1-9 9" />
-              </svg>
-              {/* The count the panel is about: how many files the working tree changed.
-                  A reader decides to open it from that number, not from the glyph. */}
-              {changesCount > 0 && (
-                <span className="git-panel-toggle-badge" aria-hidden="true" data-count={changesCount}>
-                  {changesCount > 99 ? "99+" : changesCount}
-                </span>
-              )}
-            </button>
-          )}
+          {/* The Git view's way in is its tab in the strip above (TabBar draws the row
+              with the changed-file count on it). The strip used to carry a second,
+              smaller Git button beside the file list's toggle: two controls for one
+              view, one of them a bare glyph with the same job as the tab next to it. */}
           <button
             type="button"
             className="file-panel-expand-button"
@@ -4209,13 +4188,10 @@ export function AppShell() {
                   onChangesCountChange={setChangesCount}
                   gitPanelOpen={gitPanelOpen}
                   onGitPanelOpenChange={(open) => {
-                    setGitPanelOpen(open);
-                    // The tree's "Show Git Changes" opens the panel the header's
-                    // folder opens, and on a phone that means leaving the drawer.
-                    if (open) {
-                      setRightPanelOpen(true);
-                      if (isMobile) setSidebarOpen(false);
-                    }
+                    // The tree's "Show Git Changes" opens the Git view through the one
+                    // handler that opens it, so the phone leaves the drawer the same way.
+                    if (open) handleGitPanelOpen();
+                    else setGitPanelOpen(false);
                   }}
                   onCompareFiles={handleCompareFiles}
                   onShowFileHistory={handleShowFileHistory}

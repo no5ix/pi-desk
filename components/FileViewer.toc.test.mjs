@@ -79,7 +79,13 @@ await test("the bar opens from the toolbar's corner, and closes from its own", (
     "the toolbar's outline button shows the state it is in");
   assert.match(viewer, /aria-pressed=\{tocOpen\}\s*\n\s*aria-controls="file-toc"/, "announced, and pointing at the bar it opens");
   assert.match(viewer, /className="file-toc" id="file-toc" role="complementary"/, "the bar is a complementary region");
-  assert.match(viewer, /onClick=\{\(\) => setTocOpen\(false\)\}/, "and its own corner closes it");
+  // The bar's own corner folds its headings, not the bar: the toolbar's button at
+  // the other corner opens and closes the column, and one control cannot do both.
+  assert.match(viewer, /onClick=\{toggleTocHeadings\}/, "the corner folds every heading that owns children");
+  assert.match(viewer, /useState<Set<string>>\(\(\) => new Set\(\)\)/, "and the fold starts empty: the headings are expanded by default");
+  assert.match(viewer, /className=\{`file-toc-disc\$\{foldable \? " is-foldable" : ""\}\$\{folded \? " is-folded" : ""\}\}`\}/,
+    "a heading with children wears a disc, and the disc says which way it is folded");
+  assert.match(css, /\.file-toc-disc\.is-folded svg \{\s*transform: rotate\(0deg\);/, "and the chevron turns with the fold");
   assert.match(viewer, /\{"#"\.repeat\(heading\.level\)\}/, "each row carries the level it is at, like the document");
   assert.match(viewer, /is-level-\$\{Math\.min\(heading\.level, 6\)\}/, "and the indentation is the level");
   assert.match(viewer, /editor\.revealLine\(heading\.line\)/, "in the editor, a row reveals the heading's line");
@@ -103,7 +109,10 @@ await test("the bar opens from the toolbar's corner, and closes from its own", (
 
 await test("the outline speaks in all three languages", () => {
   for (const [name, source] of [["en", en], ["zh-CN", cn], ["zh-TW", tw]]) {
-    for (const key of ["files.tocTitle", "files.tocToggle", "files.tocCollapse", "files.tocEmpty"]) {
+    for (const key of [
+      "files.tocTitle", "files.tocToggle", "files.tocCollapse",
+      "files.tocCollapseHeadings", "files.tocExpandHeadings", "files.tocEmpty",
+    ]) {
       assert.match(source, new RegExp(String.raw`"${key}": "[^"]+"`), `${key} is in ${name}`);
     }
   }

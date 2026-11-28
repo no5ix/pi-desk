@@ -407,7 +407,10 @@ function CommitTab({
                       type="button"
                       className="git-file-name"
                       title={file.path}
-                      onClick={() => onOpenFile(file.path)}
+                      // A tap on a changed file asks for its change: the row is in the
+                      // working tree's list of what moved, and the diff is what it moved
+                      // by. The plain file stays one menu item away ("Open File").
+                      onClick={() => onOpenFileDiff({ label: file.path, filePath: file.path, staged: file.staged })}
                     >
                       {file.path.split("/").pop()}
                     </button>

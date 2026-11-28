@@ -339,8 +339,16 @@ const strip = document.createElement("div");
 strip.className = "right-panel-tab-strip";
 strip.innerHTML = `
   <button type="button" class="file-workbench-icon-button file-tree-toggle" aria-label="Files"></button>
-  <button type="button" class="file-workbench-icon-button git-panel-toggle" aria-label="Git" aria-pressed="true"></button>
-  <div class="file-tab-bar-slot"></div>
+  <div class="file-tab-bar-slot">
+    <div class="file-tab-bar" role="tablist">
+      <div class="file-tab file-tab--git is-active" role="tab" aria-selected="true" data-tab-id="git:panel" aria-controls="git-panel">
+        <span class="file-tab-icon"></span>
+        <span class="file-tab-label">Git</span>
+        <span class="file-tab-badge" data-count="3">3</span>
+        <button class="file-tab-close" aria-label="Hide the Git view"></button>
+      </div>
+    </div>
+  </div>
   <div class="right-panel-actions"><button type="button" class="icon-button">Close</button></div>`;
 
 const panel = document.createElement("div");

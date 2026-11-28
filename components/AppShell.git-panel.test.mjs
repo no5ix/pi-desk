@@ -30,31 +30,30 @@ const cssSectionStart = css.indexOf("/* ═════════════�
 const cssSection = css.slice(cssSectionStart);
 const cssRules = cssSection.replace(/\/\*[\s\S]*?\*\//g, "");
 
-test("the Git button lives in the right panel's header row, beside the file list's toggle", () => {
+test("the Git view has one way in: its tab in the panel's bar, not a second button", () => {
   const strip = appShell.slice(
     appShell.indexOf("className={`right-panel-tab-strip"),
     appShell.indexOf("<FileTabs"),
   );
   assert.ok(strip.length > 200, "the strip is read from AppShell");
-  const toggleIndex = appShell.indexOf("file-workbench-icon-button file-tree-toggle");
-  const gitIndex = appShell.indexOf("file-workbench-icon-button git-panel-toggle");
-  assert.ok(toggleIndex > -1 && gitIndex > toggleIndex, "the Git button sits with the file list's toggle, after it");
-  assert.match(appShell, /aria-pressed=\{gitPanelOpen\}/, "pressed says the view is open");
-  assert.match(appShell, /aria-controls="git-panel"/, "and points at the view it opens");
-  assert.match(appShell, /translate\(gitPanelOpen \? "gitPanel\.hide" : "gitPanel\.show"\)/,
-    "the title and label are the app's translate");
-  assert.match(appShell, /aria-label=\{changesCount > 0[\s\S]{0,220}?gitPanel\.show"\)\}/,
-    "the label is on the button, not only the title, and names the count when there is one");
-  // The count the panel is about, on the button that opens it.
-  assert.match(appShell, /<span className="git-panel-toggle-badge" aria-hidden="true" data-count=\{changesCount\}>/,
-    "the button carries the number of files the working tree changed");
-  assert.match(appShell, /translate\("sidebar\.changedFiles", \{ count: changesCount \}\)/,
-    "the count is spoken in the app's words, beside the show/hide label");
+  // The strip used to carry a bare Git glyph beside the file list's toggle, doing the
+  // Git tab's job a few pixels away. One control per view: the tab is the way in.
+  assert.doesNotMatch(appShell, /file-workbench-icon-button git-panel-toggle/,
+    "the strip's second Git button is gone");
+  assert.match(appShell, /file-workbench-icon-button file-tree-toggle/,
+    "the file list's toggle stays");
+  assert.match(appShell, /const gitPanelTab: Tab \|\| null = visibleProjectCwd && !isChatWorkspaceActive/,
+    "the Git tab is built in AppShell, guarded by the project's cwd and the chat workspace flag");
+  assert.match(appShell, /id: GIT_PANEL_TAB_ID,[\s\S]{0,220}?label: translate\("gitPanel\.title"\)/,
+    "the tab names the view");
+  assert.match(appShell, /badge: changesCount/,
+    "and carries the number of files the working tree changed — the number the old button wore");
+  assert.match(appShell, /aria-controls="git-panel"/, "the view names itself for the panel's aria");
 });
 
-test("a chat's panel has no Git button, and no view", () => {
-  const guard = appShell.match(/\{visibleProjectCwd && !isChatWorkspaceActive && \(\s*<button[\s\S]{0,400}?git-panel-toggle/);
-  assert.ok(guard, "the button is guarded by the project's cwd and the chat workspace flag");
+test("a chat's panel has no Git tab, and no view", () => {
+  assert.match(appShell, /const gitPanelTab: Tab \|\| null = visibleProjectCwd && !isChatWorkspaceActive/,
+    "the tab is guarded by the project's cwd and the chat workspace flag");
   const view = appShell.slice(appShell.indexOf("{visibleProjectCwd && rightPanelOpen ? ("));
   assert.ok(view.length > 200, "the content area's branch is in AppShell");
   assert.ok(/<GitPanel/.test(view.slice(0, 900)), "the view only renders for a project folder");

@@ -31,7 +31,6 @@ import {
 } from "./FileTreeMenu";
 import { getDesktopPlatform } from "@/lib/desktop-window";
 import { childDirectoriesOf, directoryCache } from "@/lib/file-listing-cache";
-import { revealItemInDirNative } from "@/lib/desktop-native";
 import { revealLabelKey } from "@/lib/file-context-menu";
 import { copyText } from "@/lib/clipboard";
 
@@ -1028,10 +1027,15 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 
   /* ─── the row menu: every file and folder carries its own menu button ─── */
   const { menu: rowMenu, open: openRowMenu, close: closeRowMenu } = useFileTreeMenu();
-  // "Reveal in Finder" is a native call: it exists only in the desktop shell.
+  // The native half of "Reveal in Finder". The desktop shell asks its own process;
+  // a web page asks the server that runs on this computer, and a phone's page is
+  // told it cannot. Where it cannot, the menu keeps the tree's own reveal.
   const [canReveal, setCanReveal] = useState(false);
   useEffect(() => {
-    void import("@/lib/desktop-native").then(({ isTauriDesktop }) => setCanReveal(isTauriDesktop())).catch(() => setCanReveal(false));
+    void import("@/lib/desktop-native")
+      .then(({ isRevealAvailable }) => isRevealAvailable())
+      .then(setCanReveal)
+      .catch(() => setCanReveal(false));
   }, []);
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null);
   const [creating, setCreating] = useState<{ directory: string; kind: "file" | "directory" } | null>(null);
@@ -1355,7 +1359,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 
   const revealPath = useCallback((filePath: string) => {
     import("@/lib/desktop-native")
-      .then(({ revealItemInDirNative }) => revealItemInDirNative(filePath))
+      .then(({ revealItemInDir }) => revealItemInDir(filePath))
       .catch((error: unknown) => opFailed(t(revealLabelKey(getDesktopPlatform())), error));
   }, [opFailed, t]);
 

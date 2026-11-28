@@ -780,6 +780,8 @@ export const zhCNLocale: LocalePlugin = {
     "files.tocTitle": "大纲",
     "files.tocToggle": "目录",
     "files.tocCollapse": "收起大纲",
+    "files.tocCollapseHeadings": "收起大纲标题",
+    "files.tocExpandHeadings": "展开大纲标题",
     "files.tocEmpty": "没有标题",
     "files.editorRevert": "还原",
     "files.editorReload": "重新读取文件",

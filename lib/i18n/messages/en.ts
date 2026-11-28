@@ -780,6 +780,8 @@ export const enLocale: LocalePlugin = {
     "files.tocTitle": "Outline",
     "files.tocToggle": "Table of contents",
     "files.tocCollapse": "Collapse the outline",
+    "files.tocCollapseHeadings": "Collapse the outline's headings",
+    "files.tocExpandHeadings": "Expand the outline's headings",
     "files.tocEmpty": "No headings",
     "files.editorRevert": "Revert",
     "files.editorExternalChange": "The file changed on disk while you were editing.",

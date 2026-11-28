@@ -1,4 +1,5 @@
 import { spawn } from "child_process";
+import { dirname } from "path";
 import { isIP } from "net";
 
 const FILE_MANAGER_BY_PLATFORM = new Map<string, string>([
@@ -79,6 +80,58 @@ export function isLoopbackHost(host: string | null | undefined): boolean {
 }
 
 /**
+ * Builds the command that shows one item inside its folder.
+ *
+ * Each file manager answers differently: Finder selects the item (`open -R`),
+ * Explorer takes a `/select,` argument, and the freedesktop opener has no
+ * selection at all — it is given the parent folder, which is the closest thing
+ * to a reveal there.
+ */
+export function revealFileManagerCommand(
+  platform: string,
+  target: string,
+): { command: string; args: string[] } | null {
+  if (platform === "darwin") return { command: "open", args: ["-R", target] };
+  if (platform === "win32") return { command: "explorer.exe", args: [`/select,${target}`] };
+  if (platform === "linux") return { command: "xdg-open", args: [dirname(target)] };
+  return null;
+}
+
+/** Start one file-manager command detached, and settle when the spawn is accepted. */
+function startFileManagerCommand(spec: { command: string; args: string[] }): Promise<void> {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn(spec.command, spec.args, { detached: true, stdio: "ignore" });
+    // explorer.exe can exit with code 1 even on success, so only a failed spawn counts.
+    child.once("error", rejectPromise);
+    child.once("spawn", () => {
+      child.unref();
+      resolvePromise();
+    });
+  });
+}
+
+/**
+ * Shows `target` in the OS file manager (Finder selects it, Explorer selects it,
+ * the freedesktop opener opens its folder).
+ * @param target The file or folder to reveal (the caller checks access)
+ * @param platform A Node `process.platform` value
+ * @param env The environment that tells WSL apart from other Linux
+ * @returns Resolves once the command has started
+ */
+export function revealInFileManager(
+  target: string,
+  platform: string = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  const distro = platform === "linux" ? wslDistroName(env) : "";
+  const spec = distro
+    ? revealFileManagerCommand("win32", windowsPathForWsl(target, distro))
+    : revealFileManagerCommand(platform, target);
+  if (!spec) return Promise.reject(new Error(`Unsupported platform: ${platform}`));
+  return startFileManagerCommand(spec);
+}
+
+/**
  * Opens a directory in the OS file manager.
  *
  * On macOS, `open` launches an `.app` bundle instead of showing it, so callers
@@ -98,13 +151,5 @@ export function launchFileManager(
     ? fileManagerCommand("win32", windowsPathForWsl(target, distro))
     : fileManagerCommand(platform, target);
   if (!spec) return Promise.reject(new Error(`Unsupported platform: ${platform}`));
-  return new Promise((resolve, reject) => {
-    const child = spawn(spec.command, spec.args, { detached: true, stdio: "ignore" });
-    // explorer.exe can exit with code 1 even on success, so only a failed spawn counts.
-    child.once("error", reject);
-    child.once("spawn", () => {
-      child.unref();
-      resolve();
-    });
-  });
+  return startFileManagerCommand(spec);
 }

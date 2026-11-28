@@ -43,21 +43,21 @@ async function run(label, browserType, viewport, touch) {
   for (let i = 0; i < count; i += 1) {
     if (await toggles.nth(i).isVisible()) { await toggles.nth(i).click(); break; }
   }
-  const gitButton = page.locator("#file-panel .right-panel-tab-strip .git-panel-toggle");
+  const gitButton = page.locator("#file-panel .right-panel-tab-strip .file-tab--git");
   await gitButton.first().waitFor({ state: "visible", timeout: 60000 });
   // The panel slides in; measure it at rest, and require the button's whole plate to be
   // inside the viewport — a control the page has to scroll to reach is not on a phone.
   await page.waitForTimeout(600);
-  const git = await box(page, "#file-panel .right-panel-tab-strip .git-panel-toggle");
-  assert.ok(git.w > 0 && git.h > 0, `${label}: the Git button is in the panel's header row (${git.w}×${git.h})`);
-  assert.ok(git.x >= 0 && git.x + git.w <= viewport.width, `${label}: the button is fully on screen (x=${git.x}, w=${git.w}, viewport ${viewport.width})`);
+  const git = await box(page, "#file-panel .right-panel-tab-strip .file-tab--git");
+  assert.ok(git.w > 0 && git.h > 0, `${label}: the Git tab is in the panel's header row (${git.w}×${git.h})`);
+  assert.ok(git.x >= 0 && git.x + git.w <= viewport.width, `${label}: the tab is fully on screen (x=${git.x}, w=${git.w}, viewport ${viewport.width})`);
   const hit = await page.evaluate(() => {
-    const el = document.querySelector("#file-panel .git-panel-toggle");
+    const el = document.querySelector("#file-panel .file-tab--git");
     const b = el.getBoundingClientRect();
     const top = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
     return Boolean(top) && (top === el || el.contains(top));
   });
-  assert.ok(hit, `${label}: nothing paints over the button at its centre`);
+  assert.ok(hit, `${label}: nothing paints over the tab at its centre`);
   if (touch) {
     assert.ok(git.w >= 36 && git.h >= 36, `${label}: a finger gets ${git.w}×${git.h} on the Git button`);
   }

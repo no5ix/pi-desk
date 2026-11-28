@@ -1635,6 +1635,58 @@ function TextFileViewer({
   // button closes and opens the column.
   const [tocOpen, setTocOpen] = useState(true);
   const tocHeadings = useMemo(() => parseMarkdownHeadings(draft ?? viewerContent), [draft, viewerContent]);
+  /**
+   * The outline's own folding. A heading's line is its key, and a line in the set
+   * hides the headings nested under it. The set is empty by default: a document's
+   * shape is the reason the outline is open, so it starts fully expanded.
+   *
+   * The header's button is the same fold applied everywhere at once — every heading
+   * that has children — which is what leaves the top-level rows on screen and the
+   * rest one click away. It is not the outline's open/closed state (that is
+   * `tocOpen`, and the toolbar owns it): collapsing the headings keeps the column,
+   * and a 2 000-line document's 200-row outline becomes a table of its chapters.
+   */
+  const [collapsedTocHeadings, setCollapsedTocHeadings] = useState<Set<string>>(() => new Set());
+  // A heading is foldable when the heading after it sits deeper — the rows between
+  // them are its subtree.
+  const tocFoldableKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (let i = 0; i < tocHeadings.length; i++) {
+      const next = tocHeadings[i + 1];
+      if (next && next.level > tocHeadings[i].level) keys.add(String(tocHeadings[i].line));
+    }
+    return keys;
+  }, [tocHeadings]);
+  /** The outline with the folded subtrees taken out, and each row's disc state. */
+  const tocRows = useMemo(() => {
+    const rows: { heading: MarkdownHeading; foldable: boolean; folded: boolean }[] = [];
+    // Rows deeper than this are inside a folded heading. A row at or above the
+    // boundary is rendered and ends the fold: siblings of the folded heading are
+    // never hidden by it.
+    let hiddenBelow = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < tocHeadings.length; i++) {
+      const heading = tocHeadings[i];
+      if (heading.level > hiddenBelow) continue;
+      const key = String(heading.line);
+      const folded = collapsedTocHeadings.has(key);
+      rows.push({ heading, foldable: tocFoldableKeys.has(key), folded });
+      hiddenBelow = folded ? heading.level : Number.POSITIVE_INFINITY;
+    }
+    return rows;
+  }, [tocHeadings, tocFoldableKeys, collapsedTocHeadings]);
+  const tocHeadingsCollapsed = collapsedTocHeadings.size > 0;
+  const toggleTocHeadings = useCallback(() => {
+    setCollapsedTocHeadings((current) => (current.size > 0 ? new Set<string>() : new Set(tocFoldableKeys)));
+  }, [tocFoldableKeys]);
+  const toggleTocHeading = useCallback((line: number) => {
+    setCollapsedTocHeadings((current) => {
+      const next = new Set(current);
+      const key = String(line);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
   const revealTocHeading = useCallback((heading: MarkdownHeading) => {
     const editor = editorRef.current;
     if (editor) {
@@ -2232,37 +2284,80 @@ function TextFileViewer({
       </div>
 
       {/* The outline, as a bar on the right of the file. The document keeps its
-          width, and the bar is dismissed from its own corner, the way a reader
-          expects of a side panel. */}
+          width. The toolbar's button opens and closes the column; this bar's own
+          corner folds its headings, which is the question a reader of a long
+          document asks once the column is open. */}
       {isMarkdown && tocOpen ? (
         <div className="file-toc" id="file-toc" role="complementary" aria-label={t("files.tocToggle")}>
           <div className="file-toc-header">
             <span className="file-toc-title">{t("files.tocTitle")}</span>
+            {/* Fold the outline's headings, not the outline: the column stays, and
+                every heading that owns children folds under it, leaving the
+                document's top-level rows. The outline's own open/closed switch is
+                the toolbar's button at the other corner. */}
             <button
               type="button"
-              className="file-viewer-icon-button"
-              onClick={() => setTocOpen(false)}
-              title={t("files.tocCollapse")}
-              aria-label={t("files.tocCollapse")}
+              className={`file-viewer-icon-button file-toc-fold-toggle${tocHeadingsCollapsed ? " is-active" : ""}`}
+              onClick={toggleTocHeadings}
+              aria-pressed={tocHeadingsCollapsed}
+              disabled={tocFoldableKeys.size === 0}
+              title={t(tocHeadingsCollapsed ? "files.tocExpandHeadings" : "files.tocCollapseHeadings")}
+              aria-label={t(tocHeadingsCollapsed ? "files.tocExpandHeadings" : "files.tocCollapseHeadings")}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <rect x="3" y="4" width="18" height="16" rx="2" />
-                <path d="M15 4v16" />
-                <path d="m9 9 3 3-3 3" />
+                {tocHeadingsCollapsed ? (
+                  <>
+                    {/* Two chevrons pointing out: the fold is on, and this opens it. */}
+                    <path d="m6 7 5 5-5 5" />
+                    <path d="m13 7 5 5-5 5" />
+                  </>
+                ) : (
+                  <>
+                    {/* Two chevrons pointing in: the outline is open, and this folds it. */}
+                    <path d="m11 7-5 5 5 5" />
+                    <path d="m18 7-5 5 5 5" />
+                  </>
+                )}
               </svg>
             </button>
           </div>
           <div className="file-toc-list">
             {tocHeadings.length === 0 ? (
               <span className="file-toc-empty">{t("files.tocEmpty")}</span>
-            ) : tocHeadings.map((heading, i) => (
+            ) : tocRows.map(({ heading, foldable, folded }, i) => (
               <button
                 key={`${heading.line}-${i}`}
                 type="button"
-                className={`file-toc-row is-level-${Math.min(heading.level, 6)}`}
+                className={`file-toc-row is-level-${Math.min(heading.level, 6)}${folded ? " is-folded" : ""}`}
                 onClick={() => revealTocHeading(heading)}
                 title={heading.title}
               >
+                {/* The row's own fold. It is a span and not a nested button: the row
+                    is a button, and HTML allows no button inside one. The click is
+                    stopped so the disc folds the subtree instead of jumping to the
+                    heading; a keyboard user reaches it with its own tab stop. */}
+                <span
+                  role={foldable ? "button" : undefined}
+                  tabIndex={foldable ? 0 : undefined}
+                  aria-label={foldable ? heading.title : undefined}
+                  className={`file-toc-disc${foldable ? " is-foldable" : ""}${folded ? " is-folded" : ""}`}
+                  onClick={foldable ? (event) => {
+                    event.stopPropagation();
+                    toggleTocHeading(heading.line);
+                  } : undefined}
+                  onKeyDown={foldable ? (event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleTocHeading(heading.line);
+                  } : undefined}
+                >
+                  {foldable ? (
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m9 6 6 6-6 6" />
+                    </svg>
+                  ) : null}
+                </span>
                 <span className="file-toc-mark" aria-hidden="true">{"#".repeat(heading.level)}</span>
                 <span className="file-toc-text">{heading.title}</span>
               </button>

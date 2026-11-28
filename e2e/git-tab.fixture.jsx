@@ -35,7 +35,6 @@ function App() {
             />
           </div>
           <button type="button" className="file-workbench-icon-button file-tree-toggle"><span>files</span></button>
-          <button type="button" className="file-workbench-icon-button git-panel-toggle is-active"><span>git</span></button>
         </div>
       </div>
     </I18nProvider>
