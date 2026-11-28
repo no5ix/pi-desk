@@ -337,6 +337,24 @@ test("the extension's running counts drive the composer's disc and the sidebar's
   assert.match(hook, /stream\.stop\(\)/);
 });
 
+test("a running task's glyph breathes: the header's chip and the sidebar's row", () => {
+  const css = read("../app/native-theme.css");
+  const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  // An animation naming keyframes the sheet never defines is no animation at all: the chip's
+  // head sat green and still while three tasks ran. The app's one running-head motion is
+  // `agent-run-pulse` (the subagents' glyph, the sidebar's running rows) — one motion, one speed.
+  assert.match(rules, /@keyframes agent-run-pulse \{[\s\S]*?opacity: 0\.45;/, "the running-head keyframes exist");
+  assert.ok(!/animation: subagents-breathe/.test(css), "nothing animates a keyframe the sheet never defines");
+  assert.match(rules, /\.bg-tasks-chip \.bg-tasks-head-mark \{[^}]*animation: agent-run-pulse 1\.6s var\(--ease-native\) infinite;/,
+    "the conversation header's task glyph breathes while a task runs");
+  assert.match(rules, /\.bg-tasks-chip\.has-failed \.bg-tasks-head-mark \{[^}]*animation: agent-run-pulse 1\.6s var\(--ease-native\) infinite;/);
+  assert.match(rules, /\.bg-tasks-chip\.is-idle \.bg-tasks-head-mark \{[^}]*animation: none;/, "nothing running: nothing breathes");
+  assert.match(rules, /\.session-item-bg-tasks \{[^}]*animation: agent-run-pulse 1\.6s var\(--ease-native\) infinite;/,
+    "the session row's mark breathes with it");
+  assert.match(rules, /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.bg-tasks-chip \.bg-tasks-head-mark,[\s\S]*?\.session-item-bg-tasks \{[^}]*animation: none;/,
+    "a reduced-motion user gets green, not movement");
+});
+
 test("a finished background task leaves no card in the chat", () => {
   const view = read("./MessageView.tsx");
   assert.match(view, /isBackgroundTaskNotification/);

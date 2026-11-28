@@ -263,6 +263,27 @@ test("the card has two shapes: one row for one line, the prompt above the contro
     "pinned, flushed, and a reduced-motion reader (or a change with no height in it) gets the box back and the jump");
   assert.ok(/card\.style\.overflow = "hidden";/.test(shapeBody) && /card\.style\.overflow = "";/.test(shapeBody),
     "the taller content stays inside the card's own surface while the box grows, and the box goes back to `overflow: visible` (the `+`'s menu escapes the card)");
+  // The measured target must BE the resting height. A child mid-transition is read at the value
+  // it is leaving, and the stacked shape moves the text's bottom margin by 6px: the card animated
+  // 45 -> 96px, landed at 101.8px, and the 6px arrived as a jump 240ms after the fold (measured
+  // in a real browser). So the target is read with the card's transitions off.
+  assert.ok(/card\.classList\.add\("is-measuring"\);\s*\n\s*card\.style\.height = "auto";\s*\n\s*const to = card\.offsetHeight;\s*\n\s*card\.classList\.remove\("is-measuring"\);/.test(shapeBody),
+    "the target is measured with every box in the card already at its final value");
+  assert.ok(/\.chat-composer\.is-measuring,[\s\S]{0,80}\.chat-composer\.is-measuring \*\s*\{[^}]*transition: none !important;/.test(css),
+    "the measure frame is a rule in the sheet, not a style written in the component");
+  // And while the box is smaller than its content, the content is pinned to the card's BOTTOM
+  // edge: the discs keep the card's bottom inset at every frame, instead of sitting 48px below
+  // the card's edge (clipped) and sliding up for the whole fold — the padding that read as
+  // wrong, then fixed itself.
+  assert.ok(/card\.dataset\.folding = "true";/.test(shapeBody), "the fold is a state of the card, for its duration");
+  assert.ok(/delete card\.dataset\.folding;/.test(shapeBody),
+    "and it is cleared on the transition's end and on an unmount mid-fold");
+  assert.match(css, /\.chat-composer\[data-folding\] \{[^}]*justify-content: flex-end;/,
+    "the content is pinned to the bottom edge while the box grows");
+  assert.match(css, /\.chat-composer\[data-folding\] > \.chat-composer-editor \{[^}]*flex: 0 0 auto;/,
+    "the editor keeps its natural height, so the card clips rather than squashing the field");
+  assert.match(css, /\.chat-composer-editor\[data-inline\] > \.chat-input-textarea \{[\s\S]*?transition:\s*\n\s*height var\(--dur-base\) var\(--ease-native\),\s*\n\s*padding-right var\(--dur-fold\) var\(--ease-native\);/,
+    "the text's margins are NOT transitioned: the card's measured fold is the animation, and a margin mid-flight is what made the measurement lie");
   assert.ok(/event\.target !== card \|\| event\.propertyName !== "height"/.test(shapeBody),
     "the box is handed back on the card's own height transition, not on a child's");
   assert.ok(/return \(\) => \{[\s\S]*?card\.style\.height = "";/.test(shapeBody),

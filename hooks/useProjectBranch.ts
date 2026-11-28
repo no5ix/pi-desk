@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * The git branch of the project the header shows.
@@ -21,6 +21,16 @@ import { useEffect, useState } from "react";
  * server cache in front of it, so the poll is cheap on both sides; a hidden tab
  * is skipped, and `setBranch` is called only when the name actually changed, so
  * the tick does not re-render the shell every few seconds.
+ *
+ * `seed` is the name the caller already has for the folder (a session row carries
+ * `SessionInfo.branch`, read off the server's 60-second project cache). It is the label shown
+ * while the first live read is in flight, and the poll replaces it — the poll, not the seed, is
+ * the truth. A conversation whose own agent runs `git switch` is exactly the case that needs
+ * it: the seed is the branch from before the switch, so the seed is read when the effect
+ * (re)starts and is NEVER a dependency. A session-list refresh hands a new seed naming the old
+ * branch; re-running the effect on it reloads the server's cached project endpoint and puts the
+ * old name back on the header between polls — the flip the 3s poll exists to prevent, measured
+ * as the header taking ~8s to settle on the new name.
  */
 
 const CLIENT_CACHE_TTL_MS = 60_000;
@@ -148,11 +158,18 @@ function refreshProjectBranch(cwd: string): Promise<string | null> {
     });
 }
 
-export function useProjectBranch(cwd: string | null | undefined): string | null {
+export function useProjectBranch(cwd: string | null | undefined, seed?: string | null): string | null {
   // First render matches the server, always. The client-side cache is warm only after a
   // fetch, and the server never ran one, so seeding from it would make a hydration render
   // show a branch the HTML does not contain — React then throws the whole subtree away.
   const [branch, setBranch] = useState<string | null>(null);
+  // The seed is a label, not an input: it is read when the effect (re)starts for a folder, and
+  // keeping it out of the effect's dependencies is what stops the session row's cached name
+  // from landing on the header after the poll has moved past it.
+  const seedRef = useRef<string | null>(seed ?? null);
+  useEffect(() => {
+    seedRef.current = seed ?? null;
+  }, [seed]);
 
   useEffect(() => {
     if (!cwd) {
@@ -167,6 +184,10 @@ export function useProjectBranch(cwd: string | null | undefined): string | null 
     if (fresh && Date.now() - fresh.at < CLIENT_CACHE_TTL_MS) {
       setBranch(fresh.branch);
     } else {
+      // The caller's own name for the folder — a selected session carries the branch its file
+      // was read with. The live read is the answer; this is the label kept while it is in
+      // flight, so a chip does not blink out and back on every conversation opened.
+      if (seedRef.current) setBranch(seedRef.current);
       void loadProjectBranch(cwd).then(apply);
     }
     const poll = () => {
@@ -185,6 +206,8 @@ export function useProjectBranch(cwd: string | null | undefined): string | null 
       clearInterval(timer);
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", onVisible);
     };
+    // The seed is deliberately NOT a dependency (see the header): a new seed for the same
+    // folder is the row's cached name, not news about the checkout.
   }, [cwd]);
 
   return branch;

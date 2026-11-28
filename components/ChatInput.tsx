@@ -999,8 +999,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     // textarea's own transition animates (lib/composer-textarea-height.ts defers only the
     // write, never the animation).
     growComposerTextarea(ta, { animate: false });
+    // The card's target is measured with every box in the card already at its final value.
+    // The stacked shape moves the text's bottom margin (0 in the one row, 6px above the
+    // control row), and a child mid-transition is read at the value it is LEAVING: the
+    // measured target was then 6px shorter than the box the card lands in, so the card
+    // animated 45 -> 96px, its child finished moving inside the short box, and the card
+    // jumped 6px taller the moment the hand-written height was released. Measured: Send sat
+    // against the card's bottom edge for the whole 240ms and dropped into place after it —
+    // the padding that reads as wrong, then fixes itself.
+    card.classList.add("is-measuring");
     card.style.height = "auto";
     const to = card.offsetHeight;
+    card.classList.remove("is-measuring");
     card.style.height = `${from}px`;
     void card.offsetHeight;
     if (prefersReducedMotion() || from === to) {
@@ -1011,8 +1021,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (event.target !== card || event.propertyName !== "height") return;
       card.style.height = "";
       card.style.overflow = "";
+      delete card.dataset.folding;
     };
+    // `data-folding` is the duration of the animation: while the box is smaller than its
+    // content, the content is pinned to the card's BOTTOM edge, so the `+` and Send keep the
+    // card's own bottom inset at every frame and the card opens upward around the text.
+    // Pinned to the top — the shape's resting alignment — the control row sits under the
+    // card's bottom edge, clipped, for the whole fold: measured, 48px below the edge at the
+    // fold's first frame. The card is at the bottom of the screen, so the reader saw the two
+    // discs pressed against the card's lower border, then dropping into place.
     card.style.overflow = "hidden";
+    card.dataset.folding = "true";
     card.addEventListener("transitionend", settle);
     card.style.height = `${to}px`;
     // The observer's next callback lags a frame; the animation's own end is the number a
@@ -1023,6 +1042,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       // Unmounted mid-transition: hand the box back, so no inline height is left behind.
       card.style.height = "";
       card.style.overflow = "";
+      delete card.dataset.folding;
     };
   }, [stacked, expanded]);
   const measureTextLines = useCallback(() => {

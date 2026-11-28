@@ -223,7 +223,9 @@ test("the chips strip is under the card, on every tier", () => {
   assert.ok(wrap, "the strip's menus are allowed past the wrap");
   assert.match(wrap, /overflow: visible;/, "#63 clips the composer's strips on a phone; this row caps its own width, so clipping it only cut the menus off");
   assert.match(rowRule, /display: flex;/, "the strip is a flex row of chips");
-  assert.match(rowRule, /gap: 4px;/, "one gap between the chips");
+  assert.match(rowRule, /gap: 8px;/, "a real band between the two plates: at 4px the pair read as one control");
+  assert.match(rowRule, /padding: 12px 2px 0 calc\(var\(--composer-ink-inset\) \+ 6px\);/,
+    "the pair steps out of the card's left edge, standing on the ink column plus the plates' own room");
   assert.match(rowRule, /min-width: 0;/, "and it shrinks with the column, so a long branch name ellipsizes");
   assert.match(rowRule, /min-width: 0;/, "and it shrinks: the chips cap their own width");
   assert.ok(!/\.chat-composer-wrap \.composer-context-row/.test(css),
