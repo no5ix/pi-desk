@@ -40,14 +40,15 @@ function getHelpText() {
 Start the Pi Web UI server.
 
 Options:
-  -p, --port <port>          Server port (default: 30141, or PORT)
+  -p, --port <port>          Server port (default: 30141 for start; worktree-aware in dev; PI_WEB_PORT or PORT overrides)
   -H, --hostname <host>      Bind hostname (default: 127.0.0.1, or PI_WEB_HOSTNAME)
       --no-open              Do not open a browser automatically
   -v, --verbose              Show detailed terminal diagnostics (no payloads)
   -h, --help                 Show this help message and exit
 
 Environment:
-  PORT                       Default port when --port is omitted
+  PI_WEB_PORT                Explicit server port; takes precedence over PORT
+  PORT                       Fallback port when --port and PI_WEB_PORT are omitted
   PI_WEB_HOSTNAME            Default hostname when --hostname is omitted
   PI_WEB_NO_OPEN             Set to 1/true/yes/on to disable browser open
   PI_WEB_VERBOSE             Set to 1/true/yes/on for detailed terminal diagnostics
@@ -89,7 +90,7 @@ function parseLaunchOptions(args = process.argv.slice(2), env = process.env) {
 
   return {
     help: false,
-    port: normalizePort(values.port ?? env.PORT ?? "30141"),
+    port: normalizePort(values.port ?? env.PI_WEB_PORT ?? env.PORT ?? "30141"),
     hostname: values.hostname ?? env.PI_WEB_HOSTNAME ?? "127.0.0.1",
     openBrowser: !values["no-open"] && !isEnabled(env.PI_WEB_NO_OPEN),
     verbose: Boolean(values.verbose) || isVerboseLogging(env),
